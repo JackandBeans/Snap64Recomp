@@ -387,9 +387,13 @@ namespace RT64 {
                         return lhs.first > rhs.first;
                     });
 
-                    const size_t ShiftsUsed = 3;
-                    if (scoredShifts.size() > ShiftsUsed) {
-                        scoredShifts.resize(ShiftsUsed);
+                    // Only the single best-supported shift is used. Allowing
+                    // an address to match through a second pool's shift lets
+                    // an object whose real partner is gone pair with an
+                    // unrelated one, which mis-identifies geometry across the
+                    // whole scene rather than leaving one object unmatched.
+                    if (scoredShifts.size() > 1) {
+                        scoredShifts.resize(1);
                     }
 
                     thread_local std::unordered_map<uint32_t, uint32_t> curAddressOccurrences;

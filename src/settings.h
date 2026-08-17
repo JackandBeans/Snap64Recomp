@@ -19,13 +19,15 @@ struct Settings {
     int   msaa              = 0;      // 0, 2, 4, 8
     // 0 = Original (native rate), 1 = Display refresh, 2 = Manual.
     //
-    // Interpolation is on by default. Snap ships no matrix tags (the
-    // mechanism ports like Zelda64Recomp patch in), so the renderer instead
-    // identifies each object by the address its matrix was composed at --
-    // exact rather than inferred, which is what makes interpolated frames
-    // clean here (see snapAddressMatrixIds in rt64_workload_queue.h).
-    // Press F8 to cycle back to the native rate.
-    int   fps_mode          = 1;
+    // Defaults to Original, which reproduces the N64 output exactly. Correct
+    // interpolation needs the game to tag its matrices with object ids
+    // (gEXMatrixGroup), which ports like Zelda64Recomp patch into the game
+    // itself; Snap ships no tags, so the renderer infers identity from
+    // matrix addresses instead (snapAddressMatrixIds in
+    // rt64_workload_queue.h). That inference is right most of the time but
+    // not always, and a wrong pairing lerps one object into another, so
+    // interpolation stays opt-in: press F8 to cycle it on.
+    int   fps_mode          = 0;
     int   fps_manual_target = 120;
     bool  hq_sound          = true;   // pins the game's auSoundQuality flag to 1
     bool  three_point_filtering = true;
