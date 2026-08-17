@@ -213,9 +213,15 @@ ultramodern::input::connected_device_info_t input_get_connected_device_info(int 
         };
     }
 
+    // Report what is actually plugged in. Claiming a Rumble Pak with no
+    // controller attached sends the game down pak init and probe paths that
+    // never run on hardware without one.
+    const bool attached = (game_controller != nullptr) && SDL_GameControllerGetAttached(game_controller);
     return {
-        .connected_device = ultramodern::input::Device::Controller,
-        .connected_pak    = ultramodern::input::Pak::RumblePak,
+        .connected_device = attached ? ultramodern::input::Device::Controller
+                                     : ultramodern::input::Device::None,
+        .connected_pak    = attached ? ultramodern::input::Pak::RumblePak
+                                     : ultramodern::input::Pak::None,
     };
 }
 

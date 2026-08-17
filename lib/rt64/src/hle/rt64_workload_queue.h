@@ -61,29 +61,20 @@ namespace RT64 {
         };
 
         External ext;
-        // Pokemon Snap port: conservative frame interpolation. The game keeps
-        // its camera in the modelview stack (the projection stack is a static
-        // perspective), so world transform matching is what makes panning
-        // smooth — but the per-frame rebuilt display heap and rows of
-        // identical vegetation quads let the call-hash matcher pair draws
-        // across the screen and lerp garbage. When set, GameFrame:
-        //  - estimates the camera's frame delta from a consensus of
-        //    unique-content transforms (terrain chunks outvote moving set
-        //    pieces) and interpolates ONLY transforms that land exactly where
-        //    that delta predicts them: the static world glides with the
-        //    camera at any pan speed, while anything with motion of its own
-        //    (actors) renders whole at the game's native 20fps — per-limb
-        //    gating would tear animating models apart,
-        //  - prefers identical-vertex-content pairs, reuses the last camera
-        //    delta when no anchor is in view (animated water), and treats an
-        //    anchor delta that is both implausibly large AND discontinuous
-        //    with the previous delta as a hard camera cut, presenting those
-        //    frames unlerped instead of smearing (fast-but-continuous pans
-        //    keep interpolating), and
-        //  - never computes per-vertex velocities (heap reordering makes
-        //    equal-count vertex ranges pair misaligned geometry); the
-        //    zero-filled buffers uploaded at submission remain in effect.
-        bool snapCameraOnlyInterpolation = false;
+        // Pokemon Snap port: derive per-object matrix ids from the address
+        // each matrix was composed at, instead of guessing object identity
+        // from geometry. Games built for interpolation tag their matrices
+        // (gEXMatrixGroup) so the matcher knows which transform is which
+        // object; Snap ships no tags, and geometry matching cannot tell rows
+        // of identical vegetation quads, tiled wall/sky segments or
+        // same-species actors apart. The game does compose each actor's
+        // matrix into its display heap at a stable offset, so the address
+        // identifies the object once the double-buffered heap's base delta is
+        // recovered (GameFrame::match). Transforms that still find no partner
+        // ride the camera through TransformMap::snapSynthetic rather than
+        // standing still, because a static object against a lerped world
+        // interpenetrates it in the shared depth buffer.
+        bool snapAddressMatrixIds = false;
         // Pokemon Snap port: the last camera frame delta estimated from a
         // valid anchor, reused on frames whose view contains no static
         // unique-content geometry (e.g. looking down at the CPU-animated

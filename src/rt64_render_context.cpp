@@ -123,7 +123,7 @@ public:
 
         // Configure the RT64 application.
         RT64::ApplicationConfiguration app_config{};
-        app_config.appId = "waverace64";
+        app_config.appId = "pokemonsnap";
         // Disable config file I/O â€” we manage settings ourselves.
         app_config.useConfigurationFile = false;
 
@@ -178,10 +178,9 @@ public:
         printf("[SNAP-RT64] Renderer context created (result=%d, api=%d)\n",
                static_cast<int>(result), static_cast<int>(chosen_api));
 
-        // Interpolate only the camera on high-refresh displays; Snap's
-        // per-frame heap defeats world transform/tile/lookAt matching (see
-        // snapCameraOnlyInterpolation in rt64_workload_queue.h).
-        app_->workloadQueue->snapCameraOnlyInterpolation = true;
+        // Identify objects across frames by matrix address so interpolated
+        // frames are exact (see snapAddressMatrixIds in rt64_workload_queue.h).
+        app_->workloadQueue->snapAddressMatrixIds = true;
     }
 
     ~RT64Context() override {

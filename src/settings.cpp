@@ -25,7 +25,7 @@ Settings& settings() { return s_settings; }
 void load_settings() {
     std::ifstream f(SETTINGS_FILE);
     if (!f.good()) {
-        printf("[SNAP-CFG] no %s, using defaults (widescreen on, HQ sound on)\n", SETTINGS_FILE);
+        printf("[SNAP-CFG] no %s, using built-in defaults\n", SETTINGS_FILE);
         return;
     }
     try {

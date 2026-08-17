@@ -17,18 +17,15 @@ struct Settings {
     bool  fullscreen        = false;
     bool  widescreen        = false;  // RT64 Expand: true 16:9 FOV, not a stretch
     int   msaa              = 0;      // 0, 2, 4, 8
-    // 0 = Original (no frame interpolation), 1 = Display refresh, 2 = Manual.
+    // 0 = Original (native rate), 1 = Display refresh, 2 = Manual.
     //
-    // Defaults to Original: that is the only mode that reproduces the N64
-    // output exactly. Snap ships no matrix tags (the mechanism ports like
-    // Zelda64Recomp patch in for interpolation), so the renderer has to infer
-    // object identity from a per-frame rebuilt display heap full of identical
-    // vegetation quads, tiled wall/sky segments and same-species actors. The
-    // inference in rt64_game_frame.cpp (consensus camera anchor + prediction
-    // gating + synthetic camera ride, see snapCameraOnlyInterpolation) gets
-    // most of it right, but mispairings still surface as flicker on some
-    // geometry, so smoothing is opt-in: press F8 to cycle it on.
-    int   fps_mode          = 0;
+    // Interpolation is on by default. Snap ships no matrix tags (the
+    // mechanism ports like Zelda64Recomp patch in), so the renderer instead
+    // identifies each object by the address its matrix was composed at --
+    // exact rather than inferred, which is what makes interpolated frames
+    // clean here (see snapAddressMatrixIds in rt64_workload_queue.h).
+    // Press F8 to cycle back to the native rate.
+    int   fps_mode          = 1;
     int   fps_manual_target = 120;
     bool  hq_sound          = true;   // pins the game's auSoundQuality flag to 1
     bool  three_point_filtering = true;

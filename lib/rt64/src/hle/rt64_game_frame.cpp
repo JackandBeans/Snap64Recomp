@@ -188,12 +188,6 @@ namespace RT64 {
         float positionDifference = FLT_MAX;
         float orientationDifference = FLT_MAX;
         float screenSpaceDifference = FLT_MAX;
-        // Pokemon Snap port: xy-only screen distance. Excludes the NDC z
-        // component (steeply nonlinear near the camera, which would reject
-        // close geometry sweeping past). Deliberately NOT velocity
-        // compensated: one wrong match writes a garbage rigid-body velocity
-        // that would keep steering later frames' gating.
-        float screenSpaceDifferenceXY = FLT_MAX;
         bool valid = false;
 
         float computeDifference() const {
@@ -253,9 +247,6 @@ namespace RT64 {
         prevScreenPos = (fabs(prevScreenPos.w) < 1e-6f) ? prevScreenPos : prevScreenPos / prevScreenPos.w;
         curScreenPos = (fabs(curScreenPos.w) < 1e-6f) ? curScreenPos : curScreenPos / curScreenPos.w;
         matchResult.screenSpaceDifference = hlslpp::length(curScreenPos.xyz - prevScreenPos.xyz);
-
-        // Pokemon Snap port: xy-only distance (see screenSpaceDifferenceXY).
-        matchResult.screenSpaceDifferenceXY = hlslpp::length(curScreenPos.xy - prevScreenPos.xy);
 
         matchResult.valid = true;
         return matchResult;
@@ -318,9 +309,127 @@ namespace RT64 {
                     prevIt++;
                 }
                 else {
-                    matchTransform(curWorkload, prevWorkload, curWorkloadMap, prevWorkloadMap, curIt->second, prevIt->second, modifiedBuffers, !workloadQueue.snapCameraOnlyInterpolation);
+                    matchTransform(curWorkload, prevWorkload, curWorkloadMap, prevWorkloadMap, curIt->second, prevIt->second, modifiedBuffers, !workloadQueue.snapAddressMatrixIds);
                     curIt++;
                     prevIt++;
+                }
+            }
+
+            // Pokemon Snap port: exact per-object matching by matrix address.
+            // Games built for interpolation tag every matrix with an object id
+            // (gEXMatrixGroup); Pokemon Snap has no tags, so infer the same
+            // information from where the matrix lives. Matrices keep their
+            // address across frames while a pool is reused, and shift by one
+            // constant when the game flips to its other display heap, so
+            // recovering those shifts turns the frame into exact identity
+            // matches with none of the guesswork geometry matching needs.
+            if (workloadQueue.snapAddressMatrixIds) {
+                const std::vector<uint32_t> &curAddresses = curWorkload.drawData.worldTransformPhysicalAddresses;
+                const std::vector<uint32_t> &prevAddresses = prevWorkload.drawData.worldTransformPhysicalAddresses;
+                if (!curAddresses.empty() && !prevAddresses.empty()) {
+                    // A matrix address can be submitted more than once per
+                    // frame (shared or rebuilt in place), so keep every
+                    // occurrence and pair them in submission order.
+                    thread_local std::unordered_map<uint32_t, std::vector<uint32_t>> prevTransformsByAddress;
+                    prevTransformsByAddress.clear();
+                    for (uint32_t i = 0; i < prevAddresses.size(); i++) {
+                        prevTransformsByAddress[prevAddresses[i]].emplace_back(i);
+                    }
+
+                    // Matrices do not all come from one pool: level geometry
+                    // can sit at fixed addresses while actors are composed
+                    // into the double-buffered heap. Sampling shifts at equal
+                    // ranks of the sorted address lists proposes the shift of
+                    // each pool, so every pool gets matched instead of only
+                    // whichever one a single global guess happened to fit.
+                    thread_local std::vector<uint32_t> curSortedAddresses;
+                    thread_local std::vector<uint32_t> prevSortedAddresses;
+                    curSortedAddresses.assign(curAddresses.begin(), curAddresses.end());
+                    prevSortedAddresses.assign(prevAddresses.begin(), prevAddresses.end());
+                    std::sort(curSortedAddresses.begin(), curSortedAddresses.end());
+                    std::sort(prevSortedAddresses.begin(), prevSortedAddresses.end());
+                    curSortedAddresses.erase(std::unique(curSortedAddresses.begin(), curSortedAddresses.end()), curSortedAddresses.end());
+                    prevSortedAddresses.erase(std::unique(prevSortedAddresses.begin(), prevSortedAddresses.end()), prevSortedAddresses.end());
+
+                    thread_local std::vector<int64_t> addressShifts;
+                    addressShifts.clear();
+                    addressShifts.emplace_back(0);
+
+                    const size_t sharedCount = std::min(curSortedAddresses.size(), prevSortedAddresses.size());
+                    const size_t shiftSamples = 16;
+                    for (size_t sample = 0; sample < shiftSamples; sample++) {
+                        const size_t rank = (sharedCount * sample) / shiftSamples;
+                        if (rank < sharedCount) {
+                            addressShifts.emplace_back(int64_t(curSortedAddresses[rank]) - int64_t(prevSortedAddresses[rank]));
+                        }
+                    }
+
+                    std::sort(addressShifts.begin(), addressShifts.end());
+                    addressShifts.erase(std::unique(addressShifts.begin(), addressShifts.end()), addressShifts.end());
+
+                    // Rank the proposals by how many matrices each one lines
+                    // up, then keep the best few: one pool's shift cannot
+                    // explain another's, so several are needed at once.
+                    thread_local std::vector<std::pair<uint32_t, int64_t>> scoredShifts;
+                    scoredShifts.clear();
+                    for (int64_t shift : addressShifts) {
+                        uint32_t score = 0;
+                        for (uint32_t address : curAddresses) {
+                            score += (prevTransformsByAddress.count(uint32_t(int64_t(address) - shift)) > 0) ? 1 : 0;
+                        }
+
+                        if (score > 0) {
+                            scoredShifts.emplace_back(score, shift);
+                        }
+                    }
+
+                    std::sort(scoredShifts.begin(), scoredShifts.end(), [](const std::pair<uint32_t, int64_t> &lhs, const std::pair<uint32_t, int64_t> &rhs) {
+                        return lhs.first > rhs.first;
+                    });
+
+                    const size_t ShiftsUsed = 3;
+                    if (scoredShifts.size() > ShiftsUsed) {
+                        scoredShifts.resize(ShiftsUsed);
+                    }
+
+                    thread_local std::unordered_map<uint32_t, uint32_t> curAddressOccurrences;
+                    curAddressOccurrences.clear();
+                    for (uint32_t i = 0; i < curAddresses.size(); i++) {
+                        const uint32_t occurrence = curAddressOccurrences[curAddresses[i]]++;
+                        if (curWorkloadMap.transforms[i].mapped) {
+                            continue;
+                        }
+
+                        for (const std::pair<uint32_t, int64_t> &scoredShift : scoredShifts) {
+                            auto prevAddressIt = prevTransformsByAddress.find(uint32_t(int64_t(curAddresses[i]) - scoredShift.second));
+                            if ((prevAddressIt == prevTransformsByAddress.end()) || (occurrence >= prevAddressIt->second.size())) {
+                                continue;
+                            }
+
+                            const uint32_t prevTransformIndex = prevAddressIt->second[occurrence];
+                            if (curWorkloadMap.prevTransformsMapped[prevTransformIndex]) {
+                                continue;
+                            }
+
+                            // An address collision between unrelated objects
+                            // would lerp one into the other (ghosting), and
+                            // nothing the game draws spins this far in a
+                            // single frame, so treat it as a mis-identity.
+                            const hlslpp::float4x4 &curTransform = curWorkload.drawData.worldTransforms[i];
+                            const hlslpp::float4x4 &prevTransform = prevWorkload.drawData.worldTransforms[prevTransformIndex];
+                            const float orientationDifference =
+                                (1.0f - hlslpp::dot(hlslpp::normalize(curTransform[0].xyz), hlslpp::normalize(prevTransform[0].xyz))) +
+                                (1.0f - hlslpp::dot(hlslpp::normalize(curTransform[1].xyz), hlslpp::normalize(prevTransform[1].xyz))) +
+                                (1.0f - hlslpp::dot(hlslpp::normalize(curTransform[2].xyz), hlslpp::normalize(prevTransform[2].xyz)));
+                            const float MaxOrientationDifference = 1.0f;
+                            if (!(orientationDifference <= MaxOrientationDifference)) {
+                                continue;
+                            }
+
+                            matchTransform(curWorkload, prevWorkload, curWorkloadMap, prevWorkloadMap, i, prevTransformIndex, modifiedBuffers, false);
+                            break;
+                        }
+                    }
                 }
             }
 
@@ -440,7 +549,7 @@ namespace RT64 {
             Workload &curWorkload = workloadQueue.workloads[curProjIndices.workloadIndex];
             const FramebufferPair &curFbPair = curWorkload.fbPairs[curProjIndices.fbPairIndex];
             const Projection &curProj = curFbPair.projections[curProjIndices.projectionIndex];
-            buildCallHashMap(p, curWorkload, curProj, curCallHashMap, workloadQueue.snapCameraOnlyInterpolation);
+            buildCallHashMap(p, curWorkload, curProj, curCallHashMap);
 
             // Projection for the entire scene has been matched already, copy the mapping.
             if (mappedViewProjIndex < UINT32_MAX) {
@@ -516,7 +625,7 @@ namespace RT64 {
             const Workload &prevWorkload = workloadQueue.workloads[prevProjIndices.workloadIndex];
             const FramebufferPair &prevFbPair = prevWorkload.fbPairs[prevProjIndices.fbPairIndex];
             const Projection &prevProj = prevFbPair.projections[prevProjIndices.projectionIndex];
-            buildCallHashMap(p, prevWorkload, prevProj, prevCallHashMap, workloadQueue.snapCameraOnlyInterpolation);
+            buildCallHashMap(p, prevWorkload, prevProj, prevCallHashMap);
         }
 
         // FIXME: Transform set needs to be done per unique workload detected.
@@ -526,11 +635,6 @@ namespace RT64 {
         transformCheckSet.clear();
         tileCheckSet.clear();
         lookAtCheckSet.clear();
-
-        // Pokemon Snap port: transform pairs proposed by at least one call
-        // pair with identical vertex content (see GameCallMap::contentHash).
-        thread_local std::set<IndexPair> snapContentEqualSet;
-        snapContentEqualSet.clear();
 
         // Traverse the map and fill the set with all the combinations of transforms to check.
         for (std::pair<uint64_t, GameCallMap> curIt : curCallHashMap) {
@@ -558,22 +662,22 @@ namespace RT64 {
                         const TransformGroup &prevGroup = prevWorkload.drawData.transformGroups[prevGroupIndex];
                         if ((curGroup.matrixId == prevGroup.matrixId) && ((curGroup.matrixId == G_EX_ID_AUTO) || ((curGroup.matrixId != G_EX_ID_IGNORE) && (curGroup.ordering == G_EX_ORDER_AUTO)))) {
                             transformCheckSet.emplace(curWorldMatrix, prevWorldMatrix);
-
-                            if ((curIt.second.contentHash != 0) && (curIt.second.contentHash == prevIt->second.contentHash)) {
-                                snapContentEqualSet.emplace(curWorldMatrix, prevWorldMatrix);
-                            }
                         }
                     }
                 }
 
-                // Pokemon Snap port: tiles may only pair through calls whose
-                // vertex content is identical. Skies are drawn as rows of
-                // identical-state strips that scroll their tile coordinates
-                // with the camera; cross-strip pairs extrapolate garbage
-                // scroll deltas on interpolated frames (sky shimmer).
-                const bool snapTileContentOk = !workloadQueue.snapCameraOnlyInterpolation ||
-                    ((curIt.second.contentHash != 0) && (curIt.second.contentHash == prevIt->second.contentHash));
-                if (snapTileContentOk && (curCall.callDesc.tileCount == prevCall.callDesc.tileCount) && (curIt.second.doTileInterpolation && prevIt->second.doTileInterpolation)) {
+                // Pokemon Snap port: tiles and lookAt vectors may only pair
+                // through calls whose matrices were matched to each other by
+                // address. Skies are rows of identical-state strips that
+                // scroll their tile coordinates with the camera, so a
+                // cross-strip pair extrapolates a garbage scroll delta.
+                const uint32_t curFirstMatrix = curCall.callDesc.minWorldMatrix;
+                const uint32_t prevFirstMatrix = prevCall.callDesc.minWorldMatrix;
+                const bool snapCallsPaired = !workloadQueue.snapAddressMatrixIds ||
+                    ((curFirstMatrix < firstCurWorkloadMap.transforms.size()) &&
+                     firstCurWorkloadMap.transforms[curFirstMatrix].mapped &&
+                     (firstCurWorkloadMap.transforms[curFirstMatrix].prevTransformIndex == prevFirstMatrix));
+                if (snapCallsPaired && (curCall.callDesc.tileCount == prevCall.callDesc.tileCount) && (curIt.second.doTileInterpolation && prevIt->second.doTileInterpolation)) {
                     for (uint32_t t = 0; t < curCall.callDesc.tileCount; t++) {
                         const DrawCallTile &curCallTile = curWorkload.drawData.callTiles[curCall.callDesc.tileIndex + t];
                         const DrawCallTile &prevCallTile = prevWorkload.drawData.callTiles[prevCall.callDesc.tileIndex + t];
@@ -589,11 +693,7 @@ namespace RT64 {
                 const uint32_t textureGenMask = G_LIGHTING | G_TEXTURE_GEN;
                 const bool curUsesTextureGen = (curCall.callDesc.geometryMode & textureGenMask) == textureGenMask;
                 const bool prevUsesTextureGen = (prevCall.callDesc.geometryMode & textureGenMask) == textureGenMask;
-                // Pokemon Snap port: like tiles, lookAt vectors may only pair
-                // through identical-content calls (snapTileContentOk) — the
-                // water's env-mapped sparkles otherwise pair across calls and
-                // lerp garbage highlight directions.
-                if (snapTileContentOk && curUsesTextureGen && prevUsesTextureGen && (true && true)) { // TODO: Do look at matching condition.
+                if (snapCallsPaired && curUsesTextureGen && prevUsesTextureGen && (true && true)) { // TODO: Do look at matching condition.
                     // FIXME: We assume the same look at is used throughout the entire draw call, so we only check the first vertex.
                     const uint32_t curVertexIndex = curWorkload.drawData.faceIndices[curCall.meshDesc.faceIndicesStart];
                     const uint32_t prevVertexIndex = prevWorkload.drawData.faceIndices[prevCall.meshDesc.faceIndicesStart];
@@ -602,6 +702,13 @@ namespace RT64 {
                     lookAtCheckSet.emplace(curLookAtIndex, prevLookAtIndex);
                 }
             }
+        }
+
+        // Pokemon Snap port: transforms were already matched exactly by
+        // address, so the geometry-similarity matcher below has nothing left
+        // to do and only risks pairing look-alikes.
+        if (workloadQueue.snapAddressMatrixIds) {
+            transformCheckSet.clear();
         }
 
         // Compute all the differences between transforms and insert them into a vector that will be sorted according to the differences.
@@ -632,26 +739,15 @@ namespace RT64 {
         // belongs to it exclusively: orthographic (HUD) scenes use the
         // conservative raw-screen fallback instead and must neither read nor
         // write the perspective camera's deltas.
-        if (workloadQueue.snapCameraOnlyInterpolation && (firstCurProj.type == Projection::Type::Perspective)) {
-            // Collect the transform pairs whose call vertex content is
-            // identical and unique on both sides — meshes that can only be
-            // themselves (terrain chunks, the cart, large set pieces).
+        if (workloadQueue.snapAddressMatrixIds && (firstCurProj.type == Projection::Type::Perspective)) {
+            // Every exactly matched transform is an observation of the
+            // camera's motion; the static world outvotes the movers.
             thread_local std::vector<IndexPair> snapUniquePairs;
             snapUniquePairs.clear();
-            if (!snapContentEqualSet.empty()) {
-                thread_local std::unordered_map<uint32_t, uint32_t> snapAnchorCurCounts;
-                thread_local std::unordered_map<uint32_t, uint32_t> snapAnchorPrevCounts;
-                snapAnchorCurCounts.clear();
-                snapAnchorPrevCounts.clear();
-                for (const IndexPair &indices : snapContentEqualSet) {
-                    snapAnchorCurCounts[indices.first]++;
-                    snapAnchorPrevCounts[indices.second]++;
-                }
-
-                for (const IndexPair &indices : snapContentEqualSet) {
-                    if ((snapAnchorCurCounts[indices.first] == 1) && (snapAnchorPrevCounts[indices.second] == 1)) {
-                        snapUniquePairs.emplace_back(indices);
-                    }
+            for (uint32_t t = 0; t < firstCurWorkloadMap.transforms.size(); t++) {
+                const GameFrameMap::TransformMap &transformMap = firstCurWorkloadMap.transforms[t];
+                if (transformMap.mapped) {
+                    snapUniquePairs.emplace_back(t, transformMap.prevTransformIndex);
                 }
             }
 
@@ -791,7 +887,7 @@ namespace RT64 {
         // On a hard cut nothing in the scene lerps: the world transforms ARE
         // the camera for this game, so suppressing them presents the frame
         // clean. Tiles and lookAt pairs are dropped with them.
-        if (workloadQueue.snapCameraOnlyInterpolation && snapSceneCut) {
+        if (workloadQueue.snapAddressMatrixIds && snapSceneCut) {
             transformCheckSet.clear();
             tileCheckSet.clear();
             lookAtCheckSet.clear();
@@ -803,36 +899,7 @@ namespace RT64 {
 
             TransformMatchResult matchResult = computeTransformMatch(curTransform, firstCurViewProj, prevTransform, firstPrevViewProj, prevRigidBody);
             if (matchResult.valid) {
-                // Pokemon Snap port: judge candidates by how far they land
-                // from where the anchor-estimated camera delta predicts them.
-                // Static world geometry predicts exactly at any pan speed;
-                // actors deviate only by their own motion; cross-object pairs
-                // (identical vegetation, tiled wall/sky segments,
-                // same-species actors) deviate by their real separation and
-                // are refused. Whatever fails here still rides the camera via
-                // its synthesized previous transform, so a rejection costs
-                // only the object's own 20fps motion — never coherence with
-                // the world. Without a trustworthy anchor nothing lerps at
-                // all: unlerped is clean, garbage is not.
-                if (workloadQueue.snapCameraOnlyInterpolation) {
-                    if (snapAnchorValid) {
-                        const hlslpp::float4x4 predictedTransform = hlslpp::mul(prevTransform, snapViewDelta);
-                        hlslpp::float4 curNdc = hlslpp::mul(curTransform[3], firstCurViewProj);
-                        hlslpp::float4 predictedNdc = hlslpp::mul(predictedTransform[3], firstCurViewProj);
-                        curNdc = (fabs(curNdc.w) < 1e-6f) ? curNdc : curNdc / curNdc.w;
-                        predictedNdc = (fabs(predictedNdc.w) < 1e-6f) ? predictedNdc : predictedNdc / predictedNdc.w;
-                        const float predictionDifference = hlslpp::length(curNdc.xy - predictedNdc.xy);
-                        const bool contentEqual = (snapContentEqualSet.count(indices) != 0);
-                        const float SnapMaxPredictionDifference = contentEqual ? 0.15f : 0.08f;
-                        const float SnapContentPenalty = contentEqual ? 0.0f : 0.25f;
-                        if (predictionDifference <= SnapMaxPredictionDifference) {
-                            matchCandidates.emplace_back(indices.first, indices.second, predictionDifference + 0.5f * matchResult.orientationDifference + SnapContentPenalty);
-                        }
-                    }
-                }
-                else {
-                    matchCandidates.emplace_back(indices.first, indices.second, matchResult.computeDifference());
-                }
+                matchCandidates.emplace_back(indices.first, indices.second, matchResult.computeDifference());
             }
         }
 
@@ -847,7 +914,7 @@ namespace RT64 {
                 continue;
             }
 
-            matchTransform(firstCurWorkload, firstPrevWorkload, firstCurWorkloadMap, firstPrevWorkloadMap, candidate.curIndex, candidate.prevIndex, modifiedBuffers, !workloadQueue.snapCameraOnlyInterpolation);
+            matchTransform(firstCurWorkload, firstPrevWorkload, firstCurWorkloadMap, firstPrevWorkloadMap, candidate.curIndex, candidate.prevIndex, modifiedBuffers, !workloadQueue.snapAddressMatrixIds);
         }
 
         // Pokemon Snap port: every transform this scene draws must carry the
@@ -859,7 +926,7 @@ namespace RT64 {
         // transform equal to their current one moved backward by the camera
         // delta: they lerp exactly with the world, and only their own 20fps
         // object motion remains unlerped.
-        if (workloadQueue.snapCameraOnlyInterpolation && snapAnchorValid) {
+        if (workloadQueue.snapAddressMatrixIds && snapAnchorValid) {
             thread_local std::vector<bool> snapSceneTransformUsed;
             snapSceneTransformUsed.clear();
             snapSceneTransformUsed.resize(firstCurWorkload.drawData.worldTransforms.size(), false);
@@ -1079,8 +1146,7 @@ namespace RT64 {
         }
     }
     
-    void GameFrame::buildCallHashMap(uint32_t sceneProjIndex, const Workload &workload, const Projection &proj, std::multimap<uint64_t, GameCallMap> &hashMap, bool hashVertexContent) const {
-        thread_local std::vector<float> contentFloats;
+    void GameFrame::buildCallHashMap(uint32_t sceneProjIndex, const Workload &workload, const Projection &proj, std::multimap<uint64_t, GameCallMap> &hashMap) const {
         for (uint32_t c = 0; c < proj.gameCallCount; c++) {
             const GameCall &call = proj.gameCalls[c];
             uint32_t matrixIdHash = 0;
@@ -1098,40 +1164,7 @@ namespace RT64 {
                 doTileMatching = doTileMatching || (group.tileInterpolation == G_EX_COMPONENT_AUTO);
             }
 
-            // Pokemon Snap port: hash the call's vertex positions as a
-            // pairing preference (see GameCallMap::contentHash). Not part of
-            // the bucket key — animated models swap mesh keyframes and must
-            // still find themselves. Indexed (viewport) calls hash their
-            // model-space positions; rect calls never set faceIndicesStart,
-            // so they hash their raw screen-space vertices instead, which
-            // distinguishes the identical-state strips games draw skies with.
-            uint64_t contentHash = 0;
-            if (hashVertexContent) {
-                if (proj.usesViewport()) {
-                    const uint32_t faceIndexCount = call.callDesc.triangleCount * 3;
-                    const uint32_t faceIndexEnd = call.meshDesc.faceIndicesStart + faceIndexCount;
-                    if ((faceIndexCount > 0) && (faceIndexEnd <= workload.drawData.faceIndices.size())) {
-                        contentFloats.clear();
-                        for (uint32_t f = call.meshDesc.faceIndicesStart; f < faceIndexEnd; f++) {
-                            const uint32_t v = workload.drawData.faceIndices[f] * 3;
-                            contentFloats.emplace_back(workload.drawData.posFloats[v + 0]);
-                            contentFloats.emplace_back(workload.drawData.posFloats[v + 1]);
-                            contentFloats.emplace_back(workload.drawData.posFloats[v + 2]);
-                        }
-
-                        contentHash = XXH3_64bits(contentFloats.data(), contentFloats.size() * sizeof(float));
-                    }
-                }
-                else {
-                    const uint32_t rawFloatCount = call.callDesc.triangleCount * 3 * 4;
-                    const uint32_t rawFloatStart = call.meshDesc.rawVertexStart * 4;
-                    if ((rawFloatCount > 0) && ((rawFloatStart + rawFloatCount) <= workload.drawData.triPosFloats.size())) {
-                        contentHash = XXH3_64bits(&workload.drawData.triPosFloats[rawFloatStart], rawFloatCount * sizeof(float));
-                    }
-                }
-            }
-
-            hashMap.emplace(hashFromCall(call, matrixIdHash), GameCallMap{ sceneProjIndex, c, doTransformMatching, doTileInterpolation, doTileMatching, contentHash });
+            hashMap.emplace(hashFromCall(call, matrixIdHash), GameCallMap{ sceneProjIndex, c, doTransformMatching, doTileInterpolation, doTileMatching });
         }
     }
 

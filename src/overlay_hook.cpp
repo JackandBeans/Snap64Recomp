@@ -75,21 +75,23 @@ extern "C" void dmaLoadOverlay(uint8_t* rdram, recomp_context* ctx) {
 static constexpr uint32_t SNAP_SP_IMEM_OKAY = 0x800484E0;
 static constexpr uint32_t SNAP_SP_DMEM_OKAY = 0x800484E1;
 
+// Both report success in v0; leaving it unwritten would hand the caller
+// whatever the previously executed recompiled function left behind.
 extern "C" void check_sp_imem(uint8_t* rdram, recomp_context* ctx) {
     snap::g_rdram = rdram;
-    (void)ctx;
     MEM_B(0, (gpr)(int32_t)SNAP_SP_IMEM_OKAY) = 1;
+    ctx->r2 = 0;
 }
 
 extern "C" void check_sp_dmem(uint8_t* rdram, recomp_context* ctx) {
-    (void)ctx;
     MEM_B(0, (gpr)(int32_t)SNAP_SP_DMEM_OKAY) = 1;
+    ctx->r2 = 0;
 }
 
 
 // Publishes SDL's real audio backlog to the scratch word that auThreadMain's
 // patched AI_LEN read (vram 0x800219D8 -> 0x80700004) consumes. Lives here
-// because the MEM_W macro requires a variable literally named dram.
+// because the MEM_W macro requires a variable literally named rdram.
 extern "C" void snap_publish_ai_len(uint8_t* rdram) {
     if (rdram == nullptr) return;
     // ultramodern already models AI_LEN: queued bytes minus a lookahead margin.

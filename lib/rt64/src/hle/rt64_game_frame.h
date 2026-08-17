@@ -107,12 +107,6 @@ namespace RT64 {
         uint32_t doTransformMatching : 1;
         uint32_t doTileInterpolation : 1;
         uint32_t doTileMatching : 1;
-        // Pokemon Snap port: hash of the call's model-space vertex positions
-        // (0 when not computed). Used as a pairing preference, not a bucket
-        // key: animated models swap mesh keyframes, so equal content can't be
-        // required, but tiled wall/sky segments must strongly prefer their
-        // identical-content partner over a neighboring segment.
-        uint64_t contentHash;
     };
 
     struct ModifiedBuffers {
@@ -143,7 +137,7 @@ namespace RT64 {
         void match(RenderWorker *worker, WorkloadQueue &workloadQueue, const GameFrame &prevFrame, BufferUploader *velocityUploader, bool &velocityUploaderUsed, bool &tileInterpolationUsed, bool &lookAtInterpolationUsed);
         void matchScene(WorkloadQueue &workloadQueue, const GameFrame &prevFrame, const GameScene &curScene, const GameScene &prevScene, std::unordered_map<uint32_t, ModifiedBuffers> &workloadsModified, bool &tileInterpolationUsed, bool &lookAtInterpolationUsed);
         void matchTransform(Workload &curWorkload, const Workload &prevWorkload, GameFrameMap::WorkloadMap &curWorkloadMap, const GameFrameMap::WorkloadMap *prevWorkloadMap, uint32_t curTransformIndex, uint32_t prevTransformIndex, ModifiedBuffers &modifiedBuffers, bool computeVelocities);
-        void buildCallHashMap(uint32_t sceneProjIndex, const Workload &workload, const Projection &proj, std::multimap<uint64_t, GameCallMap> &hashMap, bool hashVertexContent) const;
+        void buildCallHashMap(uint32_t sceneProjIndex, const Workload &workload, const Projection &proj, std::multimap<uint64_t, GameCallMap> &hashMap) const;
         void buildTransformIdMap(const Workload &workload, std::multimap<uint32_t, uint32_t> &idMap, std::vector<uint32_t> &ignoredIdVector) const;
         uint64_t hashFromCall(const GameCall &call, uint32_t matrixIdHash) const;
         bool isDebuggerCameraEnabled(const WorkloadQueue &workloadQueue);
