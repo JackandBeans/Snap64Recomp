@@ -1,0 +1,83 @@
+# Pokemon Snap (USA) -- N64Recomp configuration (all-relocatable strategy)
+#
+# entrypoint 0x80000400 (CIC-6103: header 0x80100400 minus 0x100000).
+# ELF relinked with --emit-relocs so every section keeps its relocations.
+#
+# Overlay strategy: ALL 32 code sections are listed as relocatable. Rationale:
+#  - Snap's level/menu overlays share VMAs; static mode dedupes functions by
+#    address and silently drops ~16k of 20k functions. Relocatable sections
+#    are keyed (section, offset), so everything is emitted.
+#  - The ELF frontend only loads .rel* for listed sections, and static jals
+#    into overlays (scene manager -> every level) resolve via those relocs.
+
+[input]
+entrypoint = 0x80000400
+elf_path = "/home/<you>/pokemonsnap/build/pokemonsnap.relocs.elf"
+rom_file_path = "/home/<you>/pokemonsnap/pokemonsnap.z64"
+output_func_path = "/home/<you>/PokemonSnapRecomp/RecompiledFuncs"
+relocatable_sections_path = "/home/<you>/PokemonSnapRecomp/overlays.us.txt"
+bss_section_suffix = "_bss"
+single_file_output = false
+use_mdebug = false
+
+# Symbol-less callback functions discovered by prologue scan
+# (static functions splat missed; reachable only via function pointers).
+manual_funcs = [
+    { name = "manualfunc_8001FE88", section = ".main", vram = 0x8001FE88, size = 0xB8 },
+    { name = "manualfunc_8001FF40", section = ".main", vram = 0x8001FF40, size = 0x98 },
+    { name = "manualfunc_8001FFD8", section = ".main", vram = 0x8001FFD8, size = 0xC4 },
+    { name = "manualfunc_80028DA4", section = ".main", vram = 0x80028DA4, size = 0x254 },
+    { name = "manualfunc_800294D4", section = ".main", vram = 0x800294D4, size = 0x6C },
+    { name = "manualfunc_8002966C", section = ".main", vram = 0x8002966C, size = 0xA8 },
+    { name = "manualfunc_80029714", section = ".main", vram = 0x80029714, size = 0x410 },
+    { name = "manualfunc_80029B24", section = ".main", vram = 0x80029B24, size = 0xEC },
+    { name = "manualfunc_8002C958", section = ".main", vram = 0x8002C958, size = 0x2E8 },
+    { name = "manualfunc_8002CD54", section = ".main", vram = 0x8002CD54, size = 0x28C },
+    { name = "manualfunc_8002DC94", section = ".main", vram = 0x8002DC94, size = 0x14C },
+    { name = "manualfunc_8002E2F8", section = ".main", vram = 0x8002E2F8, size = 0x6F0 },
+    { name = "manualfunc_8002EA58", section = ".main", vram = 0x8002EA58, size = 0xC8 },
+    { name = "manualfunc_8002EB20", section = ".main", vram = 0x8002EB20, size = 0x10E4 },
+    { name = "manualfunc_8002FC04", section = ".main", vram = 0x8002FC04, size = 0x190 },
+    { name = "manualfunc_8002FD94", section = ".main", vram = 0x8002FD94, size = 0xE0 },
+    { name = "manualfunc_8002FE74", section = ".main", vram = 0x8002FE74, size = 0x20C },
+    { name = "manualfunc_8003020C", section = ".main", vram = 0x8003020C, size = 0x550 },
+    { name = "manualfunc_80030838", section = ".main", vram = 0x80030838, size = 0xB4 },
+    { name = "manualfunc_800308EC", section = ".main", vram = 0x800308EC, size = 0x89C },
+    { name = "manualfunc_80031188", section = ".main", vram = 0x80031188, size = 0x70 },
+    { name = "manualfunc_80032BE0", section = ".main", vram = 0x80032BE0, size = 0x11C },
+    { name = "manualfunc_80034398", section = ".main", vram = 0x80034398, size = 0x10C },
+    { name = "manualfunc_80034C70", section = ".main", vram = 0x80034C70, size = 0xC0 },
+    { name = "manualfunc_80036690", section = ".main", vram = 0x80036690, size = 0x670 },
+    { name = "manualfunc_800374B0", section = ".main", vram = 0x800374B0, size = 0x24 },
+    { name = "manualfunc_8003BD60", section = ".main", vram = 0x8003BD60, size = 0x570 },
+    { name = "manualfunc_8003CF20", section = ".main", vram = 0x8003CF20, size = 0x190 },
+]
+
+[patches]
+# RSP microcode (RSP instructions, not CPU). aspMain -> RSPRecomp/librecomp;
+# graphics ucode -> RT64. *TextEnd names alias next blob's start.
+ignored = [
+    "aspMainTextStart",
+    "aspMainTextEnd",
+    "gspF3DEX2_NoN_fifoTextStart",
+    "gspF3DEX2_NoN_fifoTextEnd",
+]
+
+
+# auThreadMain reads the AI_LEN hardware register (0xA4500004) directly to learn
+# how many audio samples are still queued; IDO inlined osAiGetLength so
+# librecomp's reimplementation never runs, and the raw MMIO address is outside
+# mapped RDRAM. Forcing the value to 0 (the previous fix) made the game think
+# the queue was always empty, so it synthesized a full frame of samples every
+# tick -- music advanced faster than wall-clock and the queue overran.
+#
+# Instead, repoint the base register at a scratch RDRAM word (0x80700000) that
+# the port updates every frame with SDL's real queued-byte count. 0x80700004 is
+# past the console's 4MB RDRAM (game never touches it) and below librecomp's
+# heap at 0x81000000.
+#   lui $t8, 0x8070   =>  0x3C188070   (was: lui $t8, 0xA450)
+# The following `lw $t9, 0x4($t8)` then reads the live value unmodified.
+[[patches.instruction]]
+func = "auThreadMain"
+vram = 0x800219D8
+value = 0x3C188070

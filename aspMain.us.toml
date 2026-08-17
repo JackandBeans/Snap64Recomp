@@ -1,0 +1,16 @@
+# Pokemon Snap (USA) aspMain audio microcode
+# text ROM 0x3E580 size 0xE20; data ROM 0x457A0.
+#
+# text_address: Snap's rspboot variant loads the ucode at IMEM 0x1080, NOT
+# 0x1000 (rspboot: addi $7,$0,0x1080 ... jr $7). Using 0x1000 shifts every
+# branch target by 0x80 into wrong instructions - the audio bug root cause.
+#
+# extra_indirect_branch_targets: command dispatch table from the data section
+# (16-bit BE IMEM offsets at data+0x10), all within 0x1080..0x1EA0.
+text_offset = 0x3E580
+text_size = 0xE20
+text_address = 0x04001080
+rom_file_path = "/home/<you>/pokemonsnap/pokemonsnap.z64"
+output_file_path = "/home/<you>/PokemonSnapRecomp/rsp/aspMain.cpp"
+output_function_name = "aspMain"
+extra_indirect_branch_targets = [ 0x1118, 0x1470, 0x11DC, 0x1B38, 0x1214, 0x187C, 0x1254, 0x12D0, 0x12EC, 0x1328, 0x140C, 0x1294, 0x138C, 0x170C, 0x144C, 0x1E24 ]

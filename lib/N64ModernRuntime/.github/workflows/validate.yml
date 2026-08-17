@@ -1,0 +1,127 @@
+name: validate
+on:
+  push:
+    branches:
+      - main
+  pull_request:
+    types: [opened, synchronize]
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-linux:
+    runs-on: ${{ matrix.arch == 'x64' && 'ubuntu-22.04' || 'blaze/ubuntu-22.04' }}
+    strategy:
+      matrix:
+        type: [ Debug, Release ]
+        arch: [ x64, arm64 ]
+    name: ubuntu (${{ matrix.arch }}, ${{ matrix.type }})
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ runner.os }}-z64re-ccache-${{ matrix.type }}-${{ matrix.arch }}
+      - name: Install Linux Dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ninja-build lld llvm clang-15
+      - name: Generate CMake Project
+        run: |
+          # enable ccache
+          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.type }} -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER=clang++-15 -DCMAKE_C_COMPILER=clang-15 -DCMAKE_MAKE_PROGRAM=ninja -G Ninja -S . -B cmake-build
+      - name: Build ultramodern
+        run: |
+          # enable ccache
+          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          cmake --build cmake-build --config ${{ matrix.type }} --target ultramodern -j $(nproc)
+      - name: Build librecomp
+        run: |
+          # enable ccache
+          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          cmake --build cmake-build --config ${{ matrix.type }} --target librecomp -j $(nproc)
+
+  build-windows:
+    runs-on: windows-latest
+    strategy:
+      matrix:
+        type: [ Debug, Release ]
+    name: windows (x64, ${{ matrix.type }})
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ runner.os }}-z64re-ccache-${{ matrix.type }}
+      - name: Install Windows Dependencies
+        run: |
+          choco install ninja
+          Remove-Item -Path "C:\ProgramData\Chocolatey\bin\ccache.exe" -Force -ErrorAction SilentlyContinue
+      - name: Configure Developer Command Prompt
+        uses: ilammy/msvc-dev-cmd@v1
+      - name: Generate CMake Project
+        run: |
+          # enable ccache
+          set $env:PATH="$env:USERPROFILE/.cargo/bin;$env:PATH"
+
+          # remove LLVM from PATH so it doesn't overshadow the one provided by VS
+          $env:PATH = ($env:PATH -split ';' | Where-Object { $_ -ne 'C:\Program Files\LLVM\bin' }) -join ';'
+
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.type }} -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER=clang-cl -DCMAKE_C_COMPILER=clang-cl -DCMAKE_MAKE_PROGRAM=ninja -G Ninja -S . -B cmake-build -DCMAKE_CXX_FLAGS="-Xclang -fexceptions -Xclang -fcxx-exceptions"
+      - name: Build ultramodern
+        run: |
+          # enable ccache
+          set $env:PATH="$env:USERPROFILE/.cargo/bin;$env:PATH"
+          $cpuCores = (Get-CimInstance -ClassName Win32_Processor).NumberOfLogicalProcessors
+
+          cmake --build cmake-build --config ${{ matrix.type }} --target ultramodern -j $cpuCores
+      - name: Build librecomp
+        run: |
+          # enable ccache
+          set $env:PATH="$env:USERPROFILE/.cargo/bin;$env:PATH"
+          $cpuCores = (Get-CimInstance -ClassName Win32_Processor).NumberOfLogicalProcessors
+
+          cmake --build cmake-build --config ${{ matrix.type }} --target librecomp -j $cpuCores
+
+  build-macos:
+    runs-on: ${{ matrix.arch == 'x64' && 'macos-15-intel' || 'macos-15' }}
+    strategy:
+      matrix:
+        type: [ Debug, Release ]
+        arch: [ x64, arm64 ]
+    name: macos (${{ matrix.arch }}, ${{ matrix.type }})
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+      - name: ccache
+        uses: hendrikmuhs/ccache-action@v1.2
+        with:
+          key: ${{ runner.os }}-z64re-ccache-${{ matrix.type }}-${{ matrix.arch }}
+      - name: Install macOS Dependencies
+        run: |
+          brew install ninja
+      - name: Generate CMake Project
+        run: |
+          # enable ccache
+          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          cmake -DCMAKE_BUILD_TYPE=${{ matrix.type }} -DCMAKE_CXX_COMPILER_LAUNCHER=ccache -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_MAKE_PROGRAM=ninja -G Ninja -S . -B cmake-build
+      - name: Build ultramodern
+        run: |
+          # enable ccache
+          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          cmake --build cmake-build --config ${{ matrix.type }} --target ultramodern -j $(sysctl -n hw.ncpu)
+      - name: Build librecomp
+        run: |
+          # enable ccache
+          export PATH="/usr/lib/ccache:/usr/local/opt/ccache/libexec:$PATH"
+          cmake --build cmake-build --config ${{ matrix.type }} --target librecomp -j $(sysctl -n hw.ncpu)

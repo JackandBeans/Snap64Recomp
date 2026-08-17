@@ -1,0 +1,1371 @@
+//
+// RT64
+//
+
+#include "common/rt64_math.h"
+
+#include "rt64_game_frame.h"
+#include "rt64_workload_queue.h"
+
+#include "xxHash/xxh3.h"
+
+namespace RT64 {
+    // GameFrame
+    
+    bool GameFrame::areFramebufferPairsCompatible(const WorkloadQueue &workloadQueue, const GameIndices::FramebufferPair &first, const GameIndices::FramebufferPair &second) {
+        if (first == second) {
+            return true;
+        }
+
+        const Workload &firstWorkload = workloadQueue.workloads[first.workloadIndex];
+        const Workload &secondWorkload = workloadQueue.workloads[second.workloadIndex];
+        const auto &firstFbPair = firstWorkload.fbPairs[first.fbPairIndex];
+        const auto &secondFbPair = secondWorkload.fbPairs[second.fbPairIndex];
+        if ((firstFbPair.depthRead || firstFbPair.depthWrite) && (secondFbPair.depthRead || secondFbPair.depthWrite)) {
+            if (firstFbPair.depthImage.address != secondFbPair.depthImage.address) {
+                return false;
+            }
+        }
+
+        const auto &firstColorImage = firstFbPair.colorImage;
+        const auto &secondColorImage = secondFbPair.colorImage;
+        if ((firstColorImage.address != secondColorImage.address) ||
+            (firstColorImage.fmt != secondColorImage.fmt) ||
+            (firstColorImage.siz != secondColorImage.siz) ||
+            (firstColorImage.width != secondColorImage.width))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    bool GameFrame::isSceneCompatible(const WorkloadQueue &workloadQueue, const GameScene &scene, const GameIndices::Projection &proj) {
+        assert(!scene.projections.empty());
+
+        const float MatrixDiffTolerance = 1e-6f;
+        const Workload &workload = workloadQueue.workloads[proj.workloadIndex];
+        const FramebufferPair &fbPair = workload.fbPairs[proj.fbPairIndex];
+        const Projection &fbProj = fbPair.projections[proj.projectionIndex];
+        const GameIndices::Projection &firstProj = scene.projections.front();
+        if (!areFramebufferPairsCompatible(workloadQueue, { firstProj.workloadIndex, firstProj.fbPairIndex }, { proj.workloadIndex, proj.fbPairIndex })) {
+            return false;
+        }
+
+        const Workload &cmpWorkload = workloadQueue.workloads[firstProj.workloadIndex];
+        const FramebufferPair &cmpFbPair = cmpWorkload.fbPairs[firstProj.fbPairIndex];
+        const Projection &cmpProj = cmpFbPair.projections[firstProj.projectionIndex];
+        const interop::float4x4 &cmpViewMatrix = cmpWorkload.drawData.viewTransforms[cmpProj.transformsIndex];
+        const interop::float4x4 &fbViewMatrix = workload.drawData.viewTransforms[fbProj.transformsIndex];
+        const float viewMatrixDiff = matrixDifference(cmpViewMatrix, fbViewMatrix);
+        if (viewMatrixDiff > MatrixDiffTolerance) {
+            return false;
+        }
+
+        const interop::float4x4 &cmpProjMatrix = cmpWorkload.drawData.projTransforms[cmpProj.transformsIndex];
+        const interop::float4x4 &fbProjMatrix = workload.drawData.projTransforms[fbProj.transformsIndex];
+        const float projMatrixDiff = matrixDifference(cmpProjMatrix, fbProjMatrix);
+        if (projMatrixDiff > MatrixDiffTolerance) {
+            return false;
+        }
+
+        return true;
+    }
+
+    void GameFrame::set(WorkloadQueue &workloadQueue, const uint32_t *workloadIndices, uint32_t indicesCount) {
+        assert(workloadIndices != nullptr);
+        assert(indicesCount > 0);
+
+        matched = false;
+        perspectiveScenes.clear();
+        orthographicScenes.clear();
+        workloads.clear();
+        workloads.insert(workloads.end(), workloadIndices, workloadIndices + indicesCount);
+
+        auto addProjection = [&](const WorkloadQueue &workloadQueue, const GameIndices::Projection &newProj, std::vector<GameScene> &gameScenes) {
+            bool added = false;
+            for (auto &gameScene : gameScenes) {
+                if (isSceneCompatible(workloadQueue, gameScene, newProj)) {
+                    gameScene.projections.emplace_back(newProj);
+                    added = true;
+                    break;
+                }
+            }
+
+            if (!added) {
+                gameScenes.emplace_back(GameScene());
+                gameScenes.back().projections.emplace_back(newProj);
+            }
+        };
+
+        for (uint32_t i = 0; i < indicesCount; i++) {
+            uint32_t w = workloadIndices[i];
+            const Workload &workload = workloadQueue.workloads[w];
+            for (uint32_t f = 0; f < workload.fbPairCount; f++) {
+                const FramebufferPair &fbPair = workload.fbPairs[f];
+                for (uint32_t p = 0; p < fbPair.projectionCount; p++) {
+                    const GameIndices::Projection newProj = { w, f, p };
+                    const auto &fbPairProj = fbPair.projections[p];
+                    switch (fbPairProj.type) {
+                    case Projection::Type::Perspective:
+                        addProjection(workloadQueue, newProj, perspectiveScenes);
+                        break;
+                    case Projection::Type::Orthographic:
+                        addProjection(workloadQueue, newProj, orthographicScenes);
+                        break;
+                    default:
+                        break;
+                    }
+                }
+            }
+        }
+
+        // Use the default values for the preset scene.
+        presetScene = PresetScene();
+
+        /*
+        // Use the settings from all enabled presets. Use the last one sorted by name enabled.
+        // TODO: Figure out a way to skip the linear lookup on the map.
+        for (const auto &it : sceneLibrary.presetMap) {
+            if (!it.second.enabled) {
+                continue;
+            }
+
+            gameFrame.presetScene = it.second;
+        }
+        */
+
+        /*
+        TODO: Must be per projection.
+        if (presetScene.estimateAmbientLight && (lightManager.ambientSum > 0)) {
+            hlslpp::float3 ambientLight = { 0.01f, 0.01f, 0.01f };
+            ambientLight = lightManager.estimatedAmbientLight(gameFrame.presetScene.ambientLightIntensity);
+            presetScene.ambientBaseColor = ambientLight;
+            presetScene.ambientNoGIColor = ambientLight;
+        }
+        */
+
+        for (const GameScene &scene : perspectiveScenes) {
+            for (const GameIndices::Projection &projection : scene.projections) {
+                Workload &workload = workloadQueue.workloads[projection.workloadIndex];
+                FramebufferPair &fbPair = workload.fbPairs[projection.fbPairIndex];
+                Projection &proj = fbPair.projections[projection.projectionIndex];
+
+                // Add all the lights stored in the workload.
+                for (const interop::PointLight &light : workload.pointLights) {
+                    proj.addPointLight(light);
+                }
+            }
+        }
+
+        frameMap.clear();
+        frameMap.workloads.resize(workloadQueue.workloads.size());
+    }
+    
+    typedef std::pair<uint32_t, uint32_t> IndexPair;
+
+    bool operator<(const IndexPair &lhs, const IndexPair &rhs) {
+        return (lhs.first < rhs.first) || ((lhs.first == rhs.first) && lhs.second < rhs.second);
+    }
+
+    struct MatchCandidate {
+        uint32_t curIndex = 0;
+        uint32_t prevIndex = 0;
+        float difference = FLT_MAX;
+
+        MatchCandidate(uint32_t curIndex, uint32_t prevIndex, float difference) {
+            this->curIndex = curIndex;
+            this->prevIndex = prevIndex;
+            this->difference = difference;
+        }
+    };
+
+    bool operator<(const MatchCandidate &lhs, const MatchCandidate &rhs) {
+        return lhs.difference < rhs.difference;
+    }
+
+    struct TransformMatchResult {
+        float positionDifference = FLT_MAX;
+        float orientationDifference = FLT_MAX;
+        float screenSpaceDifference = FLT_MAX;
+        // Pokemon Snap port: xy-only screen distance. Excludes the NDC z
+        // component (steeply nonlinear near the camera, which would reject
+        // close geometry sweeping past). Deliberately NOT velocity
+        // compensated: one wrong match writes a garbage rigid-body velocity
+        // that would keep steering later frames' gating.
+        float screenSpaceDifferenceXY = FLT_MAX;
+        bool valid = false;
+
+        float computeDifference() const {
+            if (!valid) {
+                return FLT_MAX;
+            }
+
+            float totalDiff = 0.0f;
+
+            const float PositionDiffScale = 1.0f;
+            if (positionDifference < FLT_MAX) {
+                totalDiff += positionDifference * PositionDiffScale;
+            }
+
+            const float OrientationDiffScale = 1.0f;
+            if (orientationDifference < FLT_MAX) {
+                totalDiff += orientationDifference * OrientationDiffScale;
+            }
+
+            const float ScreenSpaceDiffScale = 1.0f;
+            if (screenSpaceDifference < FLT_MAX) {
+                totalDiff += screenSpaceDifference * ScreenSpaceDiffScale;
+            }
+
+            return totalDiff;
+        }
+    };
+
+    TransformMatchResult computeTransformMatch(const hlslpp::float4x4 &curTransform, const hlslpp::float4x4 &curViewProj, const hlslpp::float4x4 &prevTransform, const hlslpp::float4x4 &prevViewProj, const RigidBody *prevRigidBody) {
+        TransformMatchResult matchResult;
+
+        // Do not accept a match between these transforms if the determinant is different, which indicates they're mirrored from each other.
+        const float m0det = hlslpp::determinant(extract3x3(prevTransform));
+        const float m1det = hlslpp::determinant(extract3x3(curTransform));
+        if ((m0det * m1det) < 0.0f) {
+            return matchResult;
+        }
+
+        // Compute the difference between the translation components of the 4x4 matrices.
+        const hlslpp::float3 curPos = curTransform[3].xyz;
+        hlslpp::float3 prevPos = prevTransform[3].xyz;
+        if (prevRigidBody != nullptr) {
+            prevPos += prevRigidBody->linearVelocity;
+        }
+
+        matchResult.positionDifference = hlslpp::length(curPos - prevPos);
+
+        // Compute the dot product difference between the normalized XYZ vectors of the 3x3 matrices.
+        matchResult.orientationDifference =
+            (1.0f - hlslpp::dot(hlslpp::normalize(curTransform[0].xyz), hlslpp::normalize(prevTransform[0].xyz))) +
+            (1.0f - hlslpp::dot(hlslpp::normalize(curTransform[1].xyz), hlslpp::normalize(prevTransform[1].xyz))) +
+            (1.0f - hlslpp::dot(hlslpp::normalize(curTransform[2].xyz), hlslpp::normalize(prevTransform[2].xyz)));
+
+        // Compute the difference between the screen-space position of both transforms on their respective projections.
+        hlslpp::float4 prevScreenPos = hlslpp::mul(prevTransform[3], prevViewProj);
+        hlslpp::float4 curScreenPos = hlslpp::mul(curTransform[3], curViewProj);
+        prevScreenPos = (fabs(prevScreenPos.w) < 1e-6f) ? prevScreenPos : prevScreenPos / prevScreenPos.w;
+        curScreenPos = (fabs(curScreenPos.w) < 1e-6f) ? curScreenPos : curScreenPos / curScreenPos.w;
+        matchResult.screenSpaceDifference = hlslpp::length(curScreenPos.xyz - prevScreenPos.xyz);
+
+        // Pokemon Snap port: xy-only distance (see screenSpaceDifferenceXY).
+        matchResult.screenSpaceDifferenceXY = hlslpp::length(curScreenPos.xy - prevScreenPos.xy);
+
+        matchResult.valid = true;
+        return matchResult;
+    }
+
+    void GameFrame::match(RenderWorker *worker, WorkloadQueue &workloadQueue, const GameFrame &prevFrame, BufferUploader *velocityUploader, bool &velocityUploaderUsed, bool &tileInterpolationUsed, bool &lookAtInterpolationUsed) {
+        tileInterpolationUsed = false;
+        lookAtInterpolationUsed = false;
+        matched = true;
+
+        thread_local std::unordered_map<uint32_t, ModifiedBuffers> workloadsModified;
+        workloadsModified.clear();
+
+        for (uint32_t w = 0; w < workloads.size(); w++) {
+            if (w >= prevFrame.workloads.size()) {
+                continue;
+            }
+
+            // We assume the workloads will be detected in the same order between frames.
+            GameFrameMap::WorkloadMap &workloadMap = frameMap.workloads[workloads[w]];
+            workloadMap.prevWorkloadIndex = prevFrame.workloads[w];
+            workloadMap.mapped = true;
+
+            Workload &curWorkload = workloadQueue.workloads[workloads[w]];
+            const Workload &prevWorkload = workloadQueue.workloads[workloadMap.prevWorkloadIndex];
+            workloadMap.viewProjections.clear();
+            workloadMap.viewProjections.resize(curWorkload.drawData.viewProjTransforms.size());
+            workloadMap.transforms.clear();
+            workloadMap.transforms.resize(curWorkload.drawData.worldTransforms.size());
+            workloadMap.tiles.clear();
+            workloadMap.tiles.resize(curWorkload.drawData.rdpTiles.size());
+            workloadMap.lookAt.clear();
+            workloadMap.lookAt.resize(curWorkload.drawData.rspLookAt.size());
+            workloadMap.prevTransformsMapped.clear();
+            workloadMap.prevTransformsMapped.resize(prevWorkload.drawData.worldTransforms.size());
+            workloadMap.prevTilesMapped.clear();
+            workloadMap.prevTilesMapped.resize(prevWorkload.drawData.rdpTiles.size());
+            workloadMap.prevLookAtMapped.clear();
+            workloadMap.prevLookAtMapped.resize(prevWorkload.drawData.rspLookAt.size());
+
+            buildTransformIdMap(curWorkload, curWorkload.transformIdMap, curWorkload.transformIgnoredIds);
+
+            // Retrieve the matching maps for the current and previous workload.
+            GameFrameMap::WorkloadMap &curWorkloadMap = frameMap.workloads[workloads[w]];
+            const GameFrameMap::WorkloadMap *prevWorkloadMap = nullptr;
+            if (prevFrame.matched && prevFrame.frameMap.workloads[workloadMap.prevWorkloadIndex].mapped) {
+                prevWorkloadMap = &prevFrame.frameMap.workloads[workloadMap.prevWorkloadIndex];
+            }
+
+            // Match the transforms linearly in the order they were submitted.
+            ModifiedBuffers modifiedBuffers;
+            auto curIt = curWorkload.transformIdMap.begin();
+            auto prevIt = prevWorkload.transformIdMap.begin();
+            bool modifiedVelocityBuffer = false;
+            while ((curIt != curWorkload.transformIdMap.end()) && (prevIt != prevWorkload.transformIdMap.end())) {
+                if (curIt->first < prevIt->first) {
+                    curIt++;
+                }
+                else if (curIt->first > prevIt->first) {
+                    prevIt++;
+                }
+                else {
+                    matchTransform(curWorkload, prevWorkload, curWorkloadMap, prevWorkloadMap, curIt->second, prevIt->second, modifiedBuffers, !workloadQueue.snapCameraOnlyInterpolation);
+                    curIt++;
+                    prevIt++;
+                }
+            }
+
+            if (!modifiedBuffers.empty()) {
+                workloadsModified[workloads[w]].merge(modifiedBuffers);
+            }
+
+            // Any transforms tagged with the empty ID will be instantly marked as used and skipped.
+            for (uint32_t curIt : curWorkload.transformIgnoredIds) {
+                GameFrameMap::TransformMap &curTransformMap = curWorkloadMap.transforms[curIt];
+                curTransformMap.rigidBody = RigidBody();
+                curTransformMap.prevTransformIndex = 0;
+                curTransformMap.mapped = false;
+            }
+        }
+
+        thread_local std::vector<MatchCandidate> matchCandidates;
+        thread_local std::vector<bool> curScenesMatched;
+        thread_local std::vector<bool> prevScenesMatched;
+        auto matchScenes = [&](const std::vector<GameScene> &curScenes, const std::vector<GameScene> &prevScenes) {
+            // Find the scenes that are the closest match possible.
+            matchCandidates.clear();
+            for (uint32_t i = 0; i < curScenes.size(); i++) {
+                const GameIndices::Projection curFirstProj = curScenes[i].projections[0];
+                const Workload &curWorkload = workloadQueue.workloads[curFirstProj.workloadIndex];
+                const FramebufferPair &curFbPair = curWorkload.fbPairs[curFirstProj.fbPairIndex];
+                const Projection &curProj = curFbPair.projections[curFirstProj.projectionIndex];
+                const hlslpp::float4x4 &curViewTransform = curWorkload.drawData.viewTransforms[curProj.transformsIndex];
+                const hlslpp::float4x4 &curProjTransform = curWorkload.drawData.projTransforms[curProj.transformsIndex];
+                for (uint32_t j = 0; j < prevScenes.size(); j++) {
+                    const GameIndices::Projection prevFirstProj = prevScenes[j].projections[0];
+                    const Workload &prevWorkload = workloadQueue.workloads[prevFirstProj.workloadIndex];
+                    const FramebufferPair &prevFbPair = prevWorkload.fbPairs[prevFirstProj.fbPairIndex];
+                    const Projection &prevProj = prevFbPair.projections[prevFirstProj.projectionIndex];
+                    const hlslpp::float4x4 &prevViewTransform = prevWorkload.drawData.viewTransforms[prevProj.transformsIndex];
+                    const hlslpp::float4x4 &prevProjTransform = prevWorkload.drawData.projTransforms[prevProj.transformsIndex];
+                    matchCandidates.emplace_back(i, j, matrixDifference(curViewTransform, prevViewTransform) + matrixDifference(curProjTransform, prevProjTransform));
+                }
+            }
+
+            curScenesMatched.clear();
+            prevScenesMatched.clear();
+            curScenesMatched.resize(curScenes.size());
+            prevScenesMatched.resize(prevScenes.size());
+            std::stable_sort(matchCandidates.begin(), matchCandidates.end());
+            for (const MatchCandidate &candidate : matchCandidates) {
+                if (curScenesMatched[candidate.curIndex]) {
+                    continue;
+                }
+
+                if (prevScenesMatched[candidate.prevIndex]) {
+                    continue;
+                }
+
+                matchScene(workloadQueue, prevFrame, curScenes[candidate.curIndex], prevScenes[candidate.prevIndex], workloadsModified, tileInterpolationUsed, lookAtInterpolationUsed);
+                curScenesMatched[candidate.curIndex] = true;
+                prevScenesMatched[candidate.prevIndex] = true;
+            }
+        };
+
+        matchScenes(perspectiveScenes, prevFrame.perspectiveScenes);
+        matchScenes(orthographicScenes, prevFrame.orthographicScenes);
+
+        if (!workloadsModified.empty()) {
+            thread_local std::vector<BufferUploader::Upload> uploads;
+            uploads.clear();
+
+            for (auto &it : workloadsModified) {
+                Workload &workload = workloadQueue.workloads[it.first];
+                if (it.second.positionVelocity) {
+                    uploads.emplace_back(BufferUploader::Upload{ workload.drawData.velFloats.data(), { 0, workload.drawData.velFloats.size() }, sizeof(float), RenderBufferFlag::FORMATTED, { RenderFormat::R32_FLOAT }, &workload.drawBuffers.velocityBuffer });
+                }
+
+                if (it.second.texcoordVelocity) {
+                    uploads.emplace_back(BufferUploader::Upload{ workload.drawData.tcVelFloats.data(), { 0, workload.drawData.tcVelFloats.size() }, sizeof(float), RenderBufferFlag::FORMATTED, { RenderFormat::R32_FLOAT }, &workload.drawBuffers.texcoordVelocityBuffer });
+                }
+            }
+
+            velocityUploader->submit(worker, uploads);
+            velocityUploaderUsed = true;
+        }
+        else {
+            velocityUploaderUsed = false;
+        }
+    }
+
+    void GameFrame::matchScene(WorkloadQueue &workloadQueue, const GameFrame &prevFrame, const GameScene &curScene, const GameScene &prevScene, std::unordered_map<uint32_t, ModifiedBuffers> &workloadsModified, bool &tileInterpolationUsed, bool &lookAtInterpolationUsed) {
+        if (curScene.projections.empty() || prevScene.projections.empty()) {
+            return;
+        }
+
+        thread_local std::multimap<uint64_t, GameCallMap> curCallHashMap;
+        thread_local std::multimap<uint64_t, GameCallMap> prevCallHashMap;
+        curCallHashMap.clear();
+        prevCallHashMap.clear();
+
+        // Pick the first projection for reference of the scene.
+        const GameIndices::Projection &firstCurProjIndices = curScene.projections[0];
+        const GameIndices::Projection &firstPrevProjIndices = prevScene.projections[0];
+        GameFrameMap::WorkloadMap &firstCurWorkloadMap = frameMap.workloads[firstCurProjIndices.workloadIndex];
+        Workload &firstCurWorkload = workloadQueue.workloads[firstCurProjIndices.workloadIndex];
+        const FramebufferPair &firstCurFbPair = firstCurWorkload.fbPairs[firstCurProjIndices.fbPairIndex];
+        const Projection &firstCurProj = firstCurFbPair.projections[firstCurProjIndices.projectionIndex];
+        const Workload &firstPrevWorkload = workloadQueue.workloads[firstPrevProjIndices.workloadIndex];
+        const FramebufferPair &firstPrevFbPair = firstPrevWorkload.fbPairs[firstPrevProjIndices.fbPairIndex];
+        const Projection &firstPrevProj = firstPrevFbPair.projections[firstPrevProjIndices.projectionIndex];
+        const GameFrameMap::WorkloadMap *firstPrevWorkloadMap = nullptr;
+        if (prevFrame.matched && prevFrame.frameMap.workloads[firstPrevProjIndices.workloadIndex].mapped) {
+            firstPrevWorkloadMap = &prevFrame.frameMap.workloads[firstPrevProjIndices.workloadIndex];
+        }
+
+        // Build a multimap with all potential compatibilities between draw calls in the projections.
+        uint32_t mappedViewProjIndex = UINT32_MAX;
+        bool snapSceneCut = false;
+        for (uint32_t p = 0; p < curScene.projections.size(); p++) {
+            const GameIndices::Projection &curProjIndices = curScene.projections[p];
+            Workload &curWorkload = workloadQueue.workloads[curProjIndices.workloadIndex];
+            const FramebufferPair &curFbPair = curWorkload.fbPairs[curProjIndices.fbPairIndex];
+            const Projection &curProj = curFbPair.projections[curProjIndices.projectionIndex];
+            buildCallHashMap(p, curWorkload, curProj, curCallHashMap, workloadQueue.snapCameraOnlyInterpolation);
+
+            // Projection for the entire scene has been matched already, copy the mapping.
+            if (mappedViewProjIndex < UINT32_MAX) {
+                firstCurWorkloadMap.viewProjections[curProj.transformsIndex] = firstCurWorkloadMap.viewProjections[mappedViewProjIndex];
+            }
+
+            // Can't map to a previous projection.
+            if (p >= prevScene.projections.size()) {
+                continue;
+            }
+
+            if (mappedViewProjIndex == UINT32_MAX) {
+                GameFrameMap::ViewProjectionMap &viewProjMap = firstCurWorkloadMap.viewProjections[curProj.transformsIndex];
+                if (viewProjMap.mapped) {
+                    mappedViewProjIndex = curProj.transformsIndex;
+                    continue;
+                }
+
+                const GameIndices::Projection &prevProjIndices = prevScene.projections[p];
+                const Workload &prevWorkload = workloadQueue.workloads[prevProjIndices.workloadIndex];
+                const FramebufferPair &prevFbPair = prevWorkload.fbPairs[prevProjIndices.fbPairIndex];
+                const Projection &prevProj = prevFbPair.projections[prevProjIndices.projectionIndex];
+                const hlslpp::float4x4 &curView = curWorkload.drawData.viewTransforms[curProj.transformsIndex];
+                const hlslpp::float4x4 &prevView = prevWorkload.drawData.viewTransforms[prevProj.transformsIndex];
+                const uint32_t curProjGroupIndex = curWorkload.drawData.viewProjTransformGroups[curProj.transformsIndex];
+                const uint32_t prevProjGroupIndex = prevWorkload.drawData.viewProjTransformGroups[prevProj.transformsIndex];
+                const TransformGroup &curProjGroup = curWorkload.drawData.transformGroups[curProjGroupIndex];
+                const TransformGroup &prevProjGroup = prevWorkload.drawData.transformGroups[prevProjGroupIndex];
+
+                // Cameras usually look better with simple interpolation, so default decomposition to off.
+                bool projectionDecompose = false;
+                uint8_t projectionLinearComponent = G_EX_COMPONENT_INTERPOLATE;
+                uint8_t projectionAngularComponent = G_EX_COMPONENT_INTERPOLATE;
+                uint8_t projectionScaleComponent = G_EX_COMPONENT_INTERPOLATE;
+                uint8_t projectionSkewComponent = G_EX_COMPONENT_INTERPOLATE;
+                uint8_t projectionPerspectiveComponent = G_EX_COMPONENT_INTERPOLATE;
+                if ((curProjGroup.matrixId != G_EX_ID_IGNORE) && (curProjGroup.matrixId != G_EX_ID_AUTO)) {
+                    projectionDecompose = curProjGroup.decompose;
+                    projectionLinearComponent = curProjGroup.positionInterpolation;
+                    projectionAngularComponent = curProjGroup.rotationInterpolation;
+                    projectionScaleComponent = curProjGroup.scaleInterpolation;
+                    projectionSkewComponent = curProjGroup.skewInterpolation;
+                    projectionPerspectiveComponent = curProjGroup.perspectiveInterpolation;
+                    viewProjMap.mapped = (curProjGroup.matrixId == prevProjGroup.matrixId);
+                }
+                else {
+                    viewProjMap.mapped = (curProjGroup.matrixId == G_EX_ID_AUTO);
+                }
+
+                if (viewProjMap.mapped) {
+                    if (firstPrevWorkloadMap != nullptr) {
+                        const GameFrameMap::ViewProjectionMap &prevViewProjMap = firstPrevWorkloadMap->viewProjections[prevProj.transformsIndex];
+                        viewProjMap.rigidBody = prevViewProjMap.rigidBody;
+                    }
+
+                    viewProjMap.rigidBody.updateLinear(prevView, curView, projectionLinearComponent);
+                    viewProjMap.rigidBody.updateAngular(prevView, curView, projectionAngularComponent, projectionScaleComponent, projectionSkewComponent);
+                    viewProjMap.rigidBody.updateDecomposition(curView, projectionDecompose);
+                    viewProjMap.prevTransformIndex = prevProj.transformsIndex;
+                }
+                else {
+                    viewProjMap.rigidBody = RigidBody();
+                }
+
+                if (viewProjMap.mapped) {
+                    mappedViewProjIndex = curProj.transformsIndex;
+                }
+            }
+        }
+
+        for (uint32_t p = 0; p < prevScene.projections.size(); p++) {
+            const GameIndices::Projection &prevProjIndices = prevScene.projections[p];
+            const Workload &prevWorkload = workloadQueue.workloads[prevProjIndices.workloadIndex];
+            const FramebufferPair &prevFbPair = prevWorkload.fbPairs[prevProjIndices.fbPairIndex];
+            const Projection &prevProj = prevFbPair.projections[prevProjIndices.projectionIndex];
+            buildCallHashMap(p, prevWorkload, prevProj, prevCallHashMap, workloadQueue.snapCameraOnlyInterpolation);
+        }
+
+        // FIXME: Transform set needs to be done per unique workload detected.
+        thread_local std::set<IndexPair> transformCheckSet;
+        thread_local std::set<IndexPair> tileCheckSet;
+        thread_local std::set<IndexPair> lookAtCheckSet;
+        transformCheckSet.clear();
+        tileCheckSet.clear();
+        lookAtCheckSet.clear();
+
+        // Pokemon Snap port: transform pairs proposed by at least one call
+        // pair with identical vertex content (see GameCallMap::contentHash).
+        thread_local std::set<IndexPair> snapContentEqualSet;
+        snapContentEqualSet.clear();
+
+        // Traverse the map and fill the set with all the combinations of transforms to check.
+        for (std::pair<uint64_t, GameCallMap> curIt : curCallHashMap) {
+            auto prevRange = prevCallHashMap.equal_range(curIt.first);
+            for (auto prevIt = prevRange.first; prevIt != prevRange.second; prevIt++) {
+                const GameIndices::Projection &curProjIndices = curScene.projections[curIt.second.sceneProjIndex];
+                const Workload &curWorkload = workloadQueue.workloads[curProjIndices.workloadIndex];
+                const FramebufferPair &curFbPair = curWorkload.fbPairs[curProjIndices.fbPairIndex];
+                const Projection &curProj = curFbPair.projections[curProjIndices.projectionIndex];
+                const GameCall &curCall = curProj.gameCalls[curIt.second.callIndex];
+                const GameIndices::Projection &prevProjIndices = prevScene.projections[prevIt->second.sceneProjIndex];
+                const Workload &prevWorkload = workloadQueue.workloads[prevProjIndices.workloadIndex];
+                const FramebufferPair &prevFbPair = prevWorkload.fbPairs[prevProjIndices.fbPairIndex];
+                const Projection &prevProj = prevFbPair.projections[prevProjIndices.projectionIndex];
+                const GameCall &prevCall = prevProj.gameCalls[prevIt->second.callIndex];
+                const uint32_t curWorldMatrixCount = (curCall.callDesc.maxWorldMatrix - curCall.callDesc.minWorldMatrix) + 1;
+                const uint32_t prevWorldMatrixCount = (prevCall.callDesc.maxWorldMatrix - prevCall.callDesc.minWorldMatrix) + 1;
+                if ((curWorldMatrixCount == prevWorldMatrixCount) && curIt.second.doTransformMatching && prevIt->second.doTransformMatching) {
+                    for (uint32_t w = 0; w < curWorldMatrixCount; w++) {
+                        const uint32_t curWorldMatrix = curCall.callDesc.minWorldMatrix + w;
+                        const uint32_t curGroupIndex = curWorkload.drawData.worldTransformGroups[curWorldMatrix];
+                        const TransformGroup &curGroup = curWorkload.drawData.transformGroups[curGroupIndex];
+                        const uint32_t prevWorldMatrix = prevCall.callDesc.minWorldMatrix + w;
+                        const uint32_t prevGroupIndex = prevWorkload.drawData.worldTransformGroups[prevWorldMatrix];
+                        const TransformGroup &prevGroup = prevWorkload.drawData.transformGroups[prevGroupIndex];
+                        if ((curGroup.matrixId == prevGroup.matrixId) && ((curGroup.matrixId == G_EX_ID_AUTO) || ((curGroup.matrixId != G_EX_ID_IGNORE) && (curGroup.ordering == G_EX_ORDER_AUTO)))) {
+                            transformCheckSet.emplace(curWorldMatrix, prevWorldMatrix);
+
+                            if ((curIt.second.contentHash != 0) && (curIt.second.contentHash == prevIt->second.contentHash)) {
+                                snapContentEqualSet.emplace(curWorldMatrix, prevWorldMatrix);
+                            }
+                        }
+                    }
+                }
+
+                // Pokemon Snap port: tiles may only pair through calls whose
+                // vertex content is identical. Skies are drawn as rows of
+                // identical-state strips that scroll their tile coordinates
+                // with the camera; cross-strip pairs extrapolate garbage
+                // scroll deltas on interpolated frames (sky shimmer).
+                const bool snapTileContentOk = !workloadQueue.snapCameraOnlyInterpolation ||
+                    ((curIt.second.contentHash != 0) && (curIt.second.contentHash == prevIt->second.contentHash));
+                if (snapTileContentOk && (curCall.callDesc.tileCount == prevCall.callDesc.tileCount) && (curIt.second.doTileInterpolation && prevIt->second.doTileInterpolation)) {
+                    for (uint32_t t = 0; t < curCall.callDesc.tileCount; t++) {
+                        const DrawCallTile &curCallTile = curWorkload.drawData.callTiles[curCall.callDesc.tileIndex + t];
+                        const DrawCallTile &prevCallTile = prevWorkload.drawData.callTiles[prevCall.callDesc.tileIndex + t];
+                        bool doTileMatching = curIt.second.doTileMatching && prevIt->second.doTileMatching;
+                        if (doTileMatching && (curCallTile.tmemHashOrID != prevCallTile.tmemHashOrID)) {
+                            continue;
+                        }
+
+                        tileCheckSet.emplace(curCall.callDesc.tileIndex + t, prevCall.callDesc.tileIndex + t);
+                    }
+                }
+
+                const uint32_t textureGenMask = G_LIGHTING | G_TEXTURE_GEN;
+                const bool curUsesTextureGen = (curCall.callDesc.geometryMode & textureGenMask) == textureGenMask;
+                const bool prevUsesTextureGen = (prevCall.callDesc.geometryMode & textureGenMask) == textureGenMask;
+                // Pokemon Snap port: like tiles, lookAt vectors may only pair
+                // through identical-content calls (snapTileContentOk) — the
+                // water's env-mapped sparkles otherwise pair across calls and
+                // lerp garbage highlight directions.
+                if (snapTileContentOk && curUsesTextureGen && prevUsesTextureGen && (true && true)) { // TODO: Do look at matching condition.
+                    // FIXME: We assume the same look at is used throughout the entire draw call, so we only check the first vertex.
+                    const uint32_t curVertexIndex = curWorkload.drawData.faceIndices[curCall.meshDesc.faceIndicesStart];
+                    const uint32_t prevVertexIndex = prevWorkload.drawData.faceIndices[prevCall.meshDesc.faceIndicesStart];
+                    const uint32_t curLookAtIndex = curWorkload.drawData.lookAtIndices[curVertexIndex] >> RSP_LOOKAT_INDEX_SHIFT;
+                    const uint32_t prevLookAtIndex = prevWorkload.drawData.lookAtIndices[prevVertexIndex] >> RSP_LOOKAT_INDEX_SHIFT;
+                    lookAtCheckSet.emplace(curLookAtIndex, prevLookAtIndex);
+                }
+            }
+        }
+
+        // Compute all the differences between transforms and insert them into a vector that will be sorted according to the differences.
+        thread_local std::vector<MatchCandidate> matchCandidates;
+        matchCandidates.clear();
+
+        const RigidBody *prevRigidBody;
+        const hlslpp::float4x4 &firstCurViewProj = firstCurWorkload.drawData.viewProjTransforms[firstCurProj.transformsIndex];
+        const hlslpp::float4x4 &firstPrevViewProj = firstPrevWorkload.drawData.viewProjTransforms[firstPrevProj.transformsIndex];
+
+        // Pokemon Snap port: the game keeps its camera inside the modelview
+        // matrices (the projection stack is a static perspective), so raw
+        // screen distance between frames measures PAN SPEED, not object
+        // identity — any distance gate rejects everything during fast pans
+        // (20fps stutter) and lets neighbors alias during slow ones. Instead,
+        // estimate the camera's frame delta from one certainly-correct match:
+        // the largest transform whose call vertex content is identical across
+        // frames and unique on both sides (a terrain chunk; identical
+        // vegetation instances are many-to-many and excluded). For any static
+        // object M with shared view V: prevMV * inv(prevAnchor) * curAnchor
+        // = M*Vp * inv(Vp)*inv(Ma) * Ma*Vc = M*Vc — the prediction is exact
+        // at any pan speed, so the gate below can be tight. A large anchor
+        // rotation or screen travel means the camera itself jumped: a hard
+        // cut, where nothing should lerp.
+        bool snapAnchorValid = false;
+        hlslpp::float4x4 snapViewDelta;
+        // The anchor machinery models the 3D camera and its persistent state
+        // belongs to it exclusively: orthographic (HUD) scenes use the
+        // conservative raw-screen fallback instead and must neither read nor
+        // write the perspective camera's deltas.
+        if (workloadQueue.snapCameraOnlyInterpolation && (firstCurProj.type == Projection::Type::Perspective)) {
+            // Collect the transform pairs whose call vertex content is
+            // identical and unique on both sides — meshes that can only be
+            // themselves (terrain chunks, the cart, large set pieces).
+            thread_local std::vector<IndexPair> snapUniquePairs;
+            snapUniquePairs.clear();
+            if (!snapContentEqualSet.empty()) {
+                thread_local std::unordered_map<uint32_t, uint32_t> snapAnchorCurCounts;
+                thread_local std::unordered_map<uint32_t, uint32_t> snapAnchorPrevCounts;
+                snapAnchorCurCounts.clear();
+                snapAnchorPrevCounts.clear();
+                for (const IndexPair &indices : snapContentEqualSet) {
+                    snapAnchorCurCounts[indices.first]++;
+                    snapAnchorPrevCounts[indices.second]++;
+                }
+
+                for (const IndexPair &indices : snapContentEqualSet) {
+                    if ((snapAnchorCurCounts[indices.first] == 1) && (snapAnchorPrevCounts[indices.second] == 1)) {
+                        snapUniquePairs.emplace_back(indices);
+                    }
+                }
+            }
+
+            auto ndcXY = [&](const hlslpp::float4 &position, const hlslpp::float4x4 &viewProj) {
+                hlslpp::float4 ndc = hlslpp::mul(position, viewProj);
+                ndc = (fabs(ndc.w) < 1e-6f) ? ndc : ndc / ndc.w;
+                return ndc.xy;
+            };
+
+            // A single anchor cannot distinguish camera motion from its own
+            // motion — looking down at the cart would elect the cart and
+            // contaminate the camera estimate with its bobbing. Take the
+            // largest few unique meshes as candidate anchors and elect the
+            // delta that the most OTHER unique meshes agree with; the static
+            // world is the consensus, a moving object is outvoted.
+            const uint32_t SnapAnchorCandidates = 4;
+            thread_local std::vector<IndexPair> snapCandidatePairs;
+            snapCandidatePairs.clear();
+            for (const IndexPair &indices : snapUniquePairs) {
+                snapCandidatePairs.emplace_back(indices);
+                for (size_t i = snapCandidatePairs.size() - 1; i > 0; i--) {
+                    const uint32_t countA = firstCurWorkload.drawData.worldTransformVertexCount(snapCandidatePairs[i].first);
+                    const uint32_t countB = firstCurWorkload.drawData.worldTransformVertexCount(snapCandidatePairs[i - 1].first);
+                    if (countA > countB) {
+                        std::swap(snapCandidatePairs[i], snapCandidatePairs[i - 1]);
+                    }
+                }
+
+                if (snapCandidatePairs.size() > SnapAnchorCandidates) {
+                    snapCandidatePairs.pop_back();
+                }
+            }
+
+            uint32_t bestScore = 0;
+            hlslpp::float4x4 bestDelta;
+            bool bestDeltaValid = false;
+            const float SnapConsensusError = 0.03f;
+            for (const IndexPair &candidate : snapCandidatePairs) {
+                const hlslpp::float4x4 &curAnchor = firstCurWorkload.drawData.worldTransforms[candidate.first];
+                const hlslpp::float4x4 &prevAnchor = firstPrevWorkload.drawData.worldTransforms[candidate.second];
+                const hlslpp::float4x4 candidateDelta = hlslpp::mul(hlslpp::inverse(prevAnchor), curAnchor);
+                uint32_t score = 0;
+                for (const IndexPair &other : snapUniquePairs) {
+                    if (other == candidate) {
+                        continue;
+                    }
+
+                    const hlslpp::float4x4 &curOther = firstCurWorkload.drawData.worldTransforms[other.first];
+                    const hlslpp::float4x4 &prevOther = firstPrevWorkload.drawData.worldTransforms[other.second];
+                    const hlslpp::float4x4 predictedOther = hlslpp::mul(prevOther, candidateDelta);
+                    const float predictionError = hlslpp::length(ndcXY(curOther[3], firstCurViewProj) - ndcXY(predictedOther[3], firstCurViewProj));
+                    if (predictionError <= SnapConsensusError) {
+                        score++;
+                    }
+                }
+
+                if (score > bestScore || !bestDeltaValid) {
+                    bestScore = score;
+                    bestDelta = candidateDelta;
+                    bestDeltaValid = true;
+                }
+            }
+
+            if (bestDeltaValid) {
+                const hlslpp::float4x4 &candidateDelta = bestDelta;
+
+                // Absolute plausibility: rotation within ordinary panning
+                // range for one 20fps game frame.
+                const float deltaRotation =
+                    (1.0f - hlslpp::normalize(candidateDelta[0].xyz).x) +
+                    (1.0f - hlslpp::normalize(candidateDelta[1].xyz).y) +
+                    (1.0f - hlslpp::normalize(candidateDelta[2].xyz).z);
+                const float SnapMaxDeltaRotation = 0.10f;
+                const bool absoluteOk = (deltaRotation <= SnapMaxDeltaRotation);
+
+                // Continuity against the PREVIOUS frame's delta, recorded
+                // even when that frame was not trusted. A sustained fast pan
+                // (the scripted intro swing) fails the absolute cap but stays
+                // consistent frame to frame, so it re-qualifies immediately
+                // instead of cascading cuts for the whole pan. A genuine cut
+                // is fast AND discontinuous.
+                bool continuityOk = false;
+                if (workloadQueue.snapPrevViewDeltaValid) {
+                    const hlslpp::float4x4 relativeDelta = hlslpp::mul(hlslpp::inverse(workloadQueue.snapPrevViewDelta), candidateDelta);
+                    const float continuityDifference =
+                        (1.0f - hlslpp::normalize(relativeDelta[0].xyz).x) +
+                        (1.0f - hlslpp::normalize(relativeDelta[1].xyz).y) +
+                        (1.0f - hlslpp::normalize(relativeDelta[2].xyz).z);
+                    const float SnapMaxContinuityDifference = 0.05f;
+                    continuityOk = (continuityDifference <= SnapMaxContinuityDifference);
+                }
+
+                // A consensus-backed delta (other meshes agree) is the
+                // camera; an unverified one (a single unique mesh in view —
+                // possibly a moving object like the cart) must not steer the
+                // estimate when a trusted delta exists.
+                const bool consensusOk = (bestScore >= 2);
+                if (consensusOk) {
+                    if (absoluteOk || continuityOk) {
+                        snapViewDelta = candidateDelta;
+                        snapAnchorValid = true;
+                        workloadQueue.snapLastViewDelta = snapViewDelta;
+                        workloadQueue.snapLastViewDeltaValid = true;
+                    }
+                    else {
+                        snapSceneCut = true;
+                        workloadQueue.snapLastViewDeltaValid = false;
+                    }
+                }
+                else if (workloadQueue.snapLastViewDeltaValid) {
+                    snapViewDelta = workloadQueue.snapLastViewDelta;
+                    snapAnchorValid = true;
+                }
+                else if (absoluteOk) {
+                    snapViewDelta = candidateDelta;
+                    snapAnchorValid = true;
+                    workloadQueue.snapLastViewDelta = snapViewDelta;
+                    workloadQueue.snapLastViewDeltaValid = true;
+                }
+                else {
+                    snapSceneCut = true;
+                }
+
+                workloadQueue.snapPrevViewDelta = candidateDelta;
+                workloadQueue.snapPrevViewDeltaValid = true;
+            }
+            // No unique-content geometry in view (e.g. looking down at the
+            // CPU-animated water): reuse the last trusted camera delta. If
+            // the camera changed course since, predictions miss the tight
+            // gate and the frame presents unlerped — never garbage.
+            else if (workloadQueue.snapLastViewDeltaValid) {
+                snapViewDelta = workloadQueue.snapLastViewDelta;
+                snapAnchorValid = true;
+            }
+        }
+
+        // On a hard cut nothing in the scene lerps: the world transforms ARE
+        // the camera for this game, so suppressing them presents the frame
+        // clean. Tiles and lookAt pairs are dropped with them.
+        if (workloadQueue.snapCameraOnlyInterpolation && snapSceneCut) {
+            transformCheckSet.clear();
+            tileCheckSet.clear();
+            lookAtCheckSet.clear();
+        }
+        for (const IndexPair &indices : transformCheckSet) {
+            const hlslpp::float4x4 &curTransform = firstCurWorkload.drawData.worldTransforms[indices.first];
+            const hlslpp::float4x4 &prevTransform = firstPrevWorkload.drawData.worldTransforms[indices.second];
+            prevRigidBody = (firstPrevWorkloadMap != nullptr) ? &firstPrevWorkloadMap->transforms[indices.second].rigidBody : nullptr;
+
+            TransformMatchResult matchResult = computeTransformMatch(curTransform, firstCurViewProj, prevTransform, firstPrevViewProj, prevRigidBody);
+            if (matchResult.valid) {
+                // Pokemon Snap port: judge candidates by how far they land
+                // from where the anchor-estimated camera delta predicts them.
+                // Static world geometry predicts exactly at any pan speed;
+                // actors deviate only by their own motion; cross-object pairs
+                // (identical vegetation, tiled wall/sky segments,
+                // same-species actors) deviate by their real separation and
+                // are refused. Whatever fails here still rides the camera via
+                // its synthesized previous transform, so a rejection costs
+                // only the object's own 20fps motion — never coherence with
+                // the world. Without a trustworthy anchor nothing lerps at
+                // all: unlerped is clean, garbage is not.
+                if (workloadQueue.snapCameraOnlyInterpolation) {
+                    if (snapAnchorValid) {
+                        const hlslpp::float4x4 predictedTransform = hlslpp::mul(prevTransform, snapViewDelta);
+                        hlslpp::float4 curNdc = hlslpp::mul(curTransform[3], firstCurViewProj);
+                        hlslpp::float4 predictedNdc = hlslpp::mul(predictedTransform[3], firstCurViewProj);
+                        curNdc = (fabs(curNdc.w) < 1e-6f) ? curNdc : curNdc / curNdc.w;
+                        predictedNdc = (fabs(predictedNdc.w) < 1e-6f) ? predictedNdc : predictedNdc / predictedNdc.w;
+                        const float predictionDifference = hlslpp::length(curNdc.xy - predictedNdc.xy);
+                        const bool contentEqual = (snapContentEqualSet.count(indices) != 0);
+                        const float SnapMaxPredictionDifference = contentEqual ? 0.15f : 0.08f;
+                        const float SnapContentPenalty = contentEqual ? 0.0f : 0.25f;
+                        if (predictionDifference <= SnapMaxPredictionDifference) {
+                            matchCandidates.emplace_back(indices.first, indices.second, predictionDifference + 0.5f * matchResult.orientationDifference + SnapContentPenalty);
+                        }
+                    }
+                }
+                else {
+                    matchCandidates.emplace_back(indices.first, indices.second, matchResult.computeDifference());
+                }
+            }
+        }
+
+        ModifiedBuffers modifiedBuffers;
+        std::stable_sort(matchCandidates.begin(), matchCandidates.end());
+        for (const MatchCandidate candidate : matchCandidates) {
+            if (firstCurWorkloadMap.transforms[candidate.curIndex].mapped) {
+                continue;
+            }
+
+            if (firstCurWorkloadMap.prevTransformsMapped[candidate.prevIndex]) {
+                continue;
+            }
+
+            matchTransform(firstCurWorkload, firstPrevWorkload, firstCurWorkloadMap, firstPrevWorkloadMap, candidate.curIndex, candidate.prevIndex, modifiedBuffers, !workloadQueue.snapCameraOnlyInterpolation);
+        }
+
+        // Pokemon Snap port: every transform this scene draws must carry the
+        // camera's motion on interpolated frames — this game's camera lives
+        // in the modelview matrices, so a transform left static lags behind
+        // the lerped world and interpenetrates it in the depth buffer.
+        // Transforms without a reliable pairing (spawns, animation keyframes
+        // that changed bucket, gate rejections) get a synthesized previous
+        // transform equal to their current one moved backward by the camera
+        // delta: they lerp exactly with the world, and only their own 20fps
+        // object motion remains unlerped.
+        if (workloadQueue.snapCameraOnlyInterpolation && snapAnchorValid) {
+            thread_local std::vector<bool> snapSceneTransformUsed;
+            snapSceneTransformUsed.clear();
+            snapSceneTransformUsed.resize(firstCurWorkload.drawData.worldTransforms.size(), false);
+            for (const GameIndices::Projection &projIndices : curScene.projections) {
+                const Workload &sceneWorkload = workloadQueue.workloads[projIndices.workloadIndex];
+                const FramebufferPair &sceneFbPair = sceneWorkload.fbPairs[projIndices.fbPairIndex];
+                const Projection &sceneProj = sceneFbPair.projections[projIndices.projectionIndex];
+                for (uint32_t c = 0; c < sceneProj.gameCallCount; c++) {
+                    const GameCall &sceneCall = sceneProj.gameCalls[c];
+                    for (uint32_t m = sceneCall.callDesc.minWorldMatrix; m <= sceneCall.callDesc.maxWorldMatrix; m++) {
+                        if (m < snapSceneTransformUsed.size()) {
+                            snapSceneTransformUsed[m] = true;
+                        }
+                    }
+                }
+            }
+
+            const hlslpp::float4x4 snapInvViewDelta = hlslpp::inverse(snapViewDelta);
+            for (size_t t = 0; t < snapSceneTransformUsed.size(); t++) {
+                if (!snapSceneTransformUsed[t]) {
+                    continue;
+                }
+
+                GameFrameMap::TransformMap &transformMap = firstCurWorkloadMap.transforms[t];
+                if (transformMap.mapped || transformMap.snapSynthetic) {
+                    continue;
+                }
+
+                transformMap.snapSynthetic = true;
+                transformMap.snapSyntheticPrev = hlslpp::mul(firstCurWorkload.drawData.worldTransforms[t], snapInvViewDelta);
+            }
+        }
+
+        if (!modifiedBuffers.empty()) {
+            workloadsModified[firstCurProjIndices.workloadIndex].merge(modifiedBuffers);
+        }
+
+        // Check for tile matches.
+        for (const IndexPair &indices : tileCheckSet) {
+            if (firstCurWorkloadMap.tiles[indices.first].mapped) {
+                continue;
+            }
+
+            if (firstCurWorkloadMap.prevTilesMapped[indices.second]) {
+                continue;
+            }
+
+            // Check for tile compatibility.
+            const interop::RDPTile &curTile = firstCurWorkload.drawData.rdpTiles[indices.first];
+            const interop::RDPTile &prevTile = firstPrevWorkload.drawData.rdpTiles[indices.second];
+            if ((curTile.fmt != prevTile.fmt) ||
+                (curTile.siz != prevTile.siz) ||
+                (curTile.stride != prevTile.stride) ||
+                (curTile.masks != prevTile.masks) ||
+                (curTile.maskt != prevTile.maskt) ||
+                (curTile.shifts != prevTile.shifts) ||
+                (curTile.shiftt != prevTile.shiftt) ||
+                (curTile.cms != prevTile.cms) ||
+                (curTile.cmt != prevTile.cmt))
+            {
+                continue;
+            }
+
+            GameFrameMap::TileMap &curTileMap = firstCurWorkloadMap.tiles[indices.first];
+            if (firstPrevWorkloadMap != nullptr) {
+                const GameFrameMap::TileMap &prevTileMap = firstPrevWorkloadMap->tiles[indices.second];
+                curTileMap = prevTileMap;
+            }
+            
+            auto modulo = [](int a, int b) {
+                if (b != 0) {
+                    int r = a % b;
+                    return r < 0 ? r + b : r;
+                }
+                else {
+                    return a;
+                }
+            };
+
+            const float deltaUls = curTile.uls - prevTile.uls;
+            const float deltaUlt = curTile.ult - prevTile.ult;
+            const float deltaLrs = curTile.lrs - prevTile.lrs;
+            const float deltaLrt = curTile.lrt - prevTile.lrt;
+            const bool tileScrolled = (deltaUls != 0.0f) || (deltaUlt != 0.0f) || (deltaLrs != 0.0f) || (deltaLrt != 0.0f);
+            const int integerUls = std::lround(curTile.uls);
+            const int integerUlt = std::lround(curTile.ult);
+            const int integerLrs = std::lround(curTile.lrs);
+            const int integerLrt = std::lround(curTile.lrt);
+            const int expectedUls = std::lround(prevTile.uls + curTileMap.deltaUls);
+            const int expectedUlt = std::lround(prevTile.ult + curTileMap.deltaUlt);
+            const int expectedLrs = std::lround(prevTile.lrs + curTileMap.deltaLrs);
+            const int expectedLrt = std::lround(prevTile.lrt + curTileMap.deltaLrt);
+            const bool wrappedUls = (curTile.cms == G_TX_WRAP) && (modulo(integerUls, curTile.masks * 4) == modulo(expectedUls, curTile.masks * 4));
+            const bool wrappedUlt = (curTile.cmt == G_TX_WRAP) && (modulo(integerUlt, curTile.maskt * 4) == modulo(expectedUlt, curTile.maskt * 4));
+            const bool wrappedLrs = (curTile.cms == G_TX_WRAP) && (modulo(integerLrs, curTile.masks * 4) == modulo(expectedLrs, curTile.masks * 4));
+            const bool wrappedLrt = (curTile.cmt == G_TX_WRAP) && (modulo(integerLrt, curTile.maskt * 4) == modulo(expectedLrt, curTile.maskt * 4));
+            curTileMap.prevUls = curTile.uls - curTileMap.deltaUls;
+            curTileMap.prevUlt = curTile.ult - curTileMap.deltaUlt;
+            curTileMap.prevLrs = curTile.lrs - curTileMap.deltaLrs;
+            curTileMap.prevLrt = curTile.lrt - curTileMap.deltaLrt;
+            curTileMap.deltaUls = wrappedUls || (abs(deltaUls) >= curTile.masks * 2) ? curTileMap.deltaUls : deltaUls;
+            curTileMap.deltaUlt = wrappedUlt || (abs(deltaUlt) >= curTile.maskt * 2) ? curTileMap.deltaUlt : deltaUlt;
+            curTileMap.deltaLrs = wrappedLrs || (abs(deltaLrs) >= curTile.masks * 2) ? curTileMap.deltaLrs : deltaLrs;
+            curTileMap.deltaLrt = wrappedLrt || (abs(deltaLrt) >= curTile.maskt * 2) ? curTileMap.deltaLrt : deltaLrt;
+            curTileMap.mapped = true;
+            firstCurWorkloadMap.prevTilesMapped[indices.second] = true;
+            tileInterpolationUsed = tileInterpolationUsed || tileScrolled;
+        }
+
+        // Check for look at matches.
+        for (const IndexPair &indices : lookAtCheckSet) {
+            if (firstCurWorkloadMap.lookAt[indices.first].mapped) {
+                continue;
+            }
+
+            if (firstCurWorkloadMap.prevLookAtMapped[indices.second]) {
+                continue;
+            }
+
+            GameFrameMap::LookAtMap &curLookAtMap = firstCurWorkloadMap.lookAt[indices.first];
+            if (firstPrevWorkloadMap != nullptr) {
+                const GameFrameMap::LookAtMap &prevLookAtMap = firstPrevWorkloadMap->lookAt[indices.second];
+                curLookAtMap = prevLookAtMap;
+            }
+
+            const interop::RSPLookAt &curLookAt = firstCurWorkload.drawData.rspLookAt[indices.first];
+            const interop::RSPLookAt &prevLookAt = firstPrevWorkload.drawData.rspLookAt[indices.second];
+            bool lookAtMoved = true;
+            curLookAtMap.mapped = true;
+            curLookAtMap.deltaX = hlslpp::float3(curLookAt.x) - hlslpp::float3(prevLookAt.x);
+            curLookAtMap.deltaY = hlslpp::float3(curLookAt.y) - hlslpp::float3(prevLookAt.y);
+            firstCurWorkloadMap.prevLookAtMapped[indices.second] = true;
+            lookAtInterpolationUsed = lookAtInterpolationUsed || lookAtMoved;
+        }
+    }
+
+    void GameFrame::matchTransform(Workload &curWorkload, const Workload &prevWorkload, GameFrameMap::WorkloadMap &curWorkloadMap, const GameFrameMap::WorkloadMap *prevWorkloadMap, uint32_t curTransformIndex, uint32_t prevTransformIndex, ModifiedBuffers &modifiedBuffers, bool computeVelocities) {
+        GameFrameMap::TransformMap &curTransformMap = curWorkloadMap.transforms[curTransformIndex];
+        if (prevWorkloadMap != nullptr) {
+            curTransformMap.rigidBody = prevWorkloadMap->transforms[prevTransformIndex].rigidBody;
+        }
+
+        const hlslpp::float4x4 &curTransform = curWorkload.drawData.worldTransforms[curTransformIndex];
+        const hlslpp::float4x4 &prevTransform = prevWorkload.drawData.worldTransforms[prevTransformIndex];
+        const uint32_t curGroupIndex = curWorkload.drawData.worldTransformGroups[curTransformIndex];
+        const TransformGroup &curGroup = curWorkload.drawData.transformGroups[curGroupIndex];
+        curTransformMap.rigidBody.updateLinear(prevTransform, curTransform, curGroup.positionInterpolation);
+        curTransformMap.rigidBody.updateAngular(prevTransform, curTransform, curGroup.rotationInterpolation, curGroup.scaleInterpolation, curGroup.skewInterpolation);
+        curTransformMap.rigidBody.updatePerspective(prevTransform, curTransform, curGroup.perspectiveInterpolation);
+        curTransformMap.rigidBody.updateDecomposition(curTransform, curGroup.decompose);
+        curTransformMap.prevTransformIndex = prevTransformIndex;
+        curTransformMap.mapped = true;
+        curWorkloadMap.prevTransformsMapped[prevTransformIndex] = true;
+
+        // Pokemon Snap port: per-vertex velocities are skipped entirely. The
+        // game rebuilds its vertex heap every frame, so equal-count vertex
+        // ranges can pair up misaligned geometry and fling vertices across
+        // the screen on interpolated frames (black needle spikes).
+        if (!computeVelocities) {
+            return;
+        }
+
+        uint64_t curVertexHash = 0;
+        uint64_t prevVertexHash = 0;
+        uint32_t curVertexIndex = curWorkload.drawData.worldTransformVertexIndices[curTransformIndex];
+        uint32_t curVertexCount = curWorkload.drawData.worldTransformVertexCount(curTransformIndex);
+        uint32_t prevVertexIndex = prevWorkload.drawData.worldTransformVertexIndices[prevTransformIndex];
+        uint32_t prevVertexCount = prevWorkload.drawData.worldTransformVertexCount(prevTransformIndex);
+        if (((curGroup.vertexInterpolation != G_EX_COMPONENT_SKIP) || (curGroup.texcoordInterpolation == G_EX_COMPONENT_AUTO)) && (curVertexCount == prevVertexCount)) {
+            const std::vector<float> &curPosFloats = curWorkload.drawData.posFloats;
+            const std::vector<float> &prevPosFloats = prevWorkload.drawData.posFloats;
+            std::vector<float> &curVelFloats = curWorkload.drawData.velFloats;
+            curVertexHash = XXH3_64bits(&curPosFloats[curVertexIndex * 3], curVertexCount * 3 * sizeof(float));
+            prevVertexHash = XXH3_64bits(&prevPosFloats[prevVertexIndex * 3], prevVertexCount * 3 * sizeof(float));
+
+            if ((curGroup.vertexInterpolation != G_EX_COMPONENT_SKIP) && (curVertexHash != prevVertexHash)) {
+                const float *curPosFloatsRef = &curPosFloats[curVertexIndex * 3];
+                const float *prevPosFloatsRef = &prevPosFloats[prevVertexIndex * 3];
+                float *curVelFloatsRef = &curVelFloats[curVertexIndex * 3];
+                for (uint32_t i = 0; i < curVertexCount; i++) {
+                    for (uint32_t j = 0; j < 3; j++) {
+                        curVelFloatsRef[i * 3 + j] = (curPosFloatsRef[i * 3 + j] - prevPosFloatsRef[i * 3 + j]);
+                    }
+                }
+
+                modifiedBuffers.positionVelocity = true;
+            }
+        }
+
+        if ((curGroup.texcoordInterpolation != G_EX_COMPONENT_SKIP) && (curVertexCount == prevVertexCount)) {
+            const std::vector<float> &curTcFloats = curWorkload.drawData.tcFloats;
+            const std::vector<float> &prevTcFloats = prevWorkload.drawData.tcFloats;
+            std::vector<float> &curVelFloats = curWorkload.drawData.tcVelFloats;
+            const hlslpp::float2 WrappingModulo = curWorkload.extended.texcoordWrapPoint;
+            const hlslpp::float2 WrappingModuloHalf = WrappingModulo / 2.0f;
+            uint64_t curTcHash = XXH3_64bits(&curTcFloats[curVertexIndex * 2], curVertexCount * 2 * sizeof(float));
+            uint64_t prevTcHash = XXH3_64bits(&prevTcFloats[prevVertexIndex * 2], prevVertexCount * 2 * sizeof(float));
+            if (((curGroup.texcoordInterpolation != G_EX_COMPONENT_AUTO) || (curVertexHash == prevVertexHash)) && (curTcHash != prevTcHash)) {
+                const float *curTcFloatsRef = &curTcFloats[curVertexIndex * 2];
+                const float *prevTcFloatsRef = &prevTcFloats[prevVertexIndex * 2];
+                float *curVelFloatsRef = &curVelFloats[curVertexIndex * 2];
+                for (uint32_t i = 0; i < curVertexCount; i++) {
+                    curVelFloatsRef[i * 2 + 0] = (curTcFloatsRef[i * 2 + 0] - prevTcFloatsRef[i * 2 + 0]);
+                    curVelFloatsRef[i * 2 + 1] = (curTcFloatsRef[i * 2 + 1] - prevTcFloatsRef[i * 2 + 1]);
+
+                    if (fabsf(curVelFloatsRef[i * 2]) > WrappingModuloHalf[0]) {
+                        curVelFloatsRef[i * 2] -= lround(curVelFloatsRef[i * 2] / WrappingModulo[0]) * WrappingModulo[0];
+                    }
+
+                    if (fabsf(curVelFloatsRef[i * 2 + 1]) > WrappingModuloHalf[1]) {
+                        curVelFloatsRef[i * 2 + 1] -= lround(curVelFloatsRef[i * 2 + 1] / WrappingModulo[1]) * WrappingModulo[1];
+                    }
+                }
+            }
+
+            modifiedBuffers.texcoordVelocity = true;
+        }
+    }
+    
+    void GameFrame::buildCallHashMap(uint32_t sceneProjIndex, const Workload &workload, const Projection &proj, std::multimap<uint64_t, GameCallMap> &hashMap, bool hashVertexContent) const {
+        thread_local std::vector<float> contentFloats;
+        for (uint32_t c = 0; c < proj.gameCallCount; c++) {
+            const GameCall &call = proj.gameCalls[c];
+            uint32_t matrixIdHash = 0;
+            bool doTransformMatching = false;
+            bool doTileInterpolation = false;
+            bool doTileMatching = false;
+            for (uint32_t m = call.callDesc.minWorldMatrix; m <= call.callDesc.maxWorldMatrix; m++) {
+                const uint32_t groupIndex = workload.drawData.worldTransformGroups[m];
+                const TransformGroup &group = workload.drawData.transformGroups[groupIndex];
+                matrixIdHash = matrixIdHash * 33 ^ group.matrixId;
+
+                const bool usesIdWithAutoOrdering = (group.matrixId != G_EX_ID_AUTO) && (group.matrixId != G_EX_ID_IGNORE) && (group.ordering == G_EX_ORDER_AUTO);
+                doTransformMatching = doTransformMatching || (group.matrixId == G_EX_ID_AUTO) || usesIdWithAutoOrdering;
+                doTileInterpolation = doTileInterpolation || (group.tileInterpolation != G_EX_COMPONENT_SKIP);
+                doTileMatching = doTileMatching || (group.tileInterpolation == G_EX_COMPONENT_AUTO);
+            }
+
+            // Pokemon Snap port: hash the call's vertex positions as a
+            // pairing preference (see GameCallMap::contentHash). Not part of
+            // the bucket key — animated models swap mesh keyframes and must
+            // still find themselves. Indexed (viewport) calls hash their
+            // model-space positions; rect calls never set faceIndicesStart,
+            // so they hash their raw screen-space vertices instead, which
+            // distinguishes the identical-state strips games draw skies with.
+            uint64_t contentHash = 0;
+            if (hashVertexContent) {
+                if (proj.usesViewport()) {
+                    const uint32_t faceIndexCount = call.callDesc.triangleCount * 3;
+                    const uint32_t faceIndexEnd = call.meshDesc.faceIndicesStart + faceIndexCount;
+                    if ((faceIndexCount > 0) && (faceIndexEnd <= workload.drawData.faceIndices.size())) {
+                        contentFloats.clear();
+                        for (uint32_t f = call.meshDesc.faceIndicesStart; f < faceIndexEnd; f++) {
+                            const uint32_t v = workload.drawData.faceIndices[f] * 3;
+                            contentFloats.emplace_back(workload.drawData.posFloats[v + 0]);
+                            contentFloats.emplace_back(workload.drawData.posFloats[v + 1]);
+                            contentFloats.emplace_back(workload.drawData.posFloats[v + 2]);
+                        }
+
+                        contentHash = XXH3_64bits(contentFloats.data(), contentFloats.size() * sizeof(float));
+                    }
+                }
+                else {
+                    const uint32_t rawFloatCount = call.callDesc.triangleCount * 3 * 4;
+                    const uint32_t rawFloatStart = call.meshDesc.rawVertexStart * 4;
+                    if ((rawFloatCount > 0) && ((rawFloatStart + rawFloatCount) <= workload.drawData.triPosFloats.size())) {
+                        contentHash = XXH3_64bits(&workload.drawData.triPosFloats[rawFloatStart], rawFloatCount * sizeof(float));
+                    }
+                }
+            }
+
+            hashMap.emplace(hashFromCall(call, matrixIdHash), GameCallMap{ sceneProjIndex, c, doTransformMatching, doTileInterpolation, doTileMatching, contentHash });
+        }
+    }
+
+    void GameFrame::buildTransformIdMap(const Workload &workload, std::multimap<uint32_t, uint32_t> &idMap, std::vector<uint32_t> &ignoredIdVector) const {
+        idMap.clear();
+        ignoredIdVector.clear();
+
+        uint32_t transformCount = uint32_t(workload.drawData.worldTransformGroups.size());
+        for (uint32_t i = 0; i < transformCount; i++) {
+            const uint32_t groupIndex = workload.drawData.worldTransformGroups[i];
+            const TransformGroup &group = workload.drawData.transformGroups[groupIndex];
+            if (group.matrixId == G_EX_ID_AUTO) {
+                continue;
+            }
+            else if (group.matrixId == G_EX_ID_IGNORE) {
+                ignoredIdVector.emplace_back(i);
+            }
+            else if (group.ordering == G_EX_ORDER_LINEAR) {
+                idMap.emplace(group.matrixId, i);
+            }
+        }
+    }
+
+    uint64_t GameFrame::hashFromCall(const GameCall &call, uint32_t matrixIdHash) const {
+        struct CallMatchKey {
+            interop::ColorCombiner colorCombiner;
+            interop::OtherMode otherMode;
+            uint32_t geometryMode;
+            uint32_t triangleCount;
+            uint32_t matrixIdHash;
+        };
+
+        CallMatchKey key;
+        key.colorCombiner = call.callDesc.colorCombiner;
+        key.otherMode = call.callDesc.otherMode;
+        key.geometryMode = call.callDesc.geometryMode;
+        key.triangleCount = call.callDesc.triangleCount;
+        key.matrixIdHash = matrixIdHash;
+        return XXH3_64bits(&key, sizeof(CallMatchKey));
+    }
+
+    bool GameFrame::isDebuggerCameraEnabled(const WorkloadQueue &workloadQueue) {
+        for (uint32_t w : workloads) {
+            if (workloadQueue.workloads[w].debuggerCamera.enabled) {
+                return true;
+            }
+        }
+
+        return false;
+    }
+
+    /*
+    void resetTransformMap(GameTransformMap &transformMap, const GameFrame &gameFrame) {
+        transformMap.fbPairs.resize(gameFrame.fbPairCount);
+        for (uint32_t f = 0; f < gameFrame.fbPairCount; f++) {
+            const auto &gameFbPair = gameFrame.fbPairs[f];
+            auto &mapFbPair = transformMap.fbPairs[f];
+            mapFbPair.projections.resize(gameFbPair.projectionCount, { });
+            for (uint32_t p = 0; p < gameFbPair.projectionCount; p++) {
+                mapFbPair.projections[p].drawCalls.clear();
+                mapFbPair.projections[p].drawCalls.resize(gameFbPair.projections[p].drawCallCount, { });
+                mapFbPair.projections[p].transformCallMap.clear();
+            }
+
+            mapFbPair.prevFbPairIndex = 0;
+            mapFbPair.mapped = false;
+        }
+
+        transformMap.transforms.clear();
+        transformMap.transforms.resize(gameFrame.drawData.worldTransforms.size(), { });
+    }
+
+    void makeTransformCallMap(GameProjection &gameProj, std::multimap<uint32_t, uint32_t> &callMap) {
+        for (uint32_t d = 0; d < gameProj.drawCallCount; d++) {
+            const auto &curCall = gameProj.drawCalls[d];
+            const uint32_t startIndex = std::max(curCall.callDesc.minWorldMatrix, static_cast<uint16_t>(1));
+            for (uint32_t t = startIndex; t <= curCall.callDesc.maxWorldMatrix; t++) {
+                callMap.emplace(t, d);
+            }
+        }
+    }
+
+    void GameFrame::matchPreviousFrame(GameFrame &prevFrame, RenderWorker *worker, BufferUploader *bufferUploader) {
+        assert(worker != nullptr);
+        assert(bufferUploader != nullptr);
+        transformMap.submissionFrame = prevFrame.submissionFrame;
+        resetTransformMap(transformMap, *this);
+        transformMap.mapped = true;
+
+        static std::vector<bool> prevTransformMapped;
+        static std::vector<TransformMatchCandidate> matchCandidates;
+        bool uploadVelBuffer = false;
+        const auto &prevDrawData = prevFrame.drawData;
+        prevTransformMapped.clear();
+        prevTransformMapped.resize(prevDrawData.worldTransforms.size(), false);
+        for (uint32_t f = 0; f < fbPairCount; f++) {
+            if (f >= prevFrame.fbPairCount) {
+                continue;
+            }
+
+            // Check if the framebuffer pairs are actually compatible.
+            auto &curFbPair = fbPairs[f];
+            auto &prevFbPair = prevFrame.fbPairs[f];
+            if ((curFbPair.colorImage.width != prevFbPair.colorImage.width) || (curFbPair.colorImage.fmt != prevFbPair.colorImage.fmt) || (curFbPair.colorImage.siz != prevFbPair.colorImage.siz)) {
+                continue;
+            }
+
+            auto &fbPairMap = transformMap.fbPairs[f];
+            fbPairMap.mapped = true;
+            fbPairMap.prevFbPairIndex = f;
+
+            for (uint32_t p = 0; p < curFbPair.projectionCount; p++) {
+                if (p >= prevFbPair.projectionCount) {
+                    continue;
+                }
+
+                // Check if the projections are actually compatible.
+                auto &curProj = curFbPair.projections[p];
+                auto &prevProj = prevFbPair.projections[p];
+                if (curProj.type != prevProj.type) {
+                    continue;
+                }
+
+                // TODO: Support more than just perspective projections.
+                if (curProj.type != GameProjection::Type::Perspective) {
+                    continue;
+                }
+
+                auto &projMap = fbPairMap.projections[p];
+                auto &callMap = projMap.transformCallMap;
+                projMap.mapped = true;
+                projMap.prevProjectionIndex = p;
+                makeTransformCallMap(curProj, callMap);
+
+                // Make a map for the previous frame if it's empty.
+                auto &prevFbMap = prevFrame.transformMap.fbPairs[fbPairMap.prevFbPairIndex];
+                auto &prevCallMap = prevFbMap.projections[projMap.prevProjectionIndex].transformCallMap;
+                if (prevCallMap.empty()) {
+                    makeTransformCallMap(prevProj, prevCallMap);
+                }
+
+                // Find all candidates for all transforms.
+                // TODO: This double loop explodes in complexity. Consider building a lookup table based on the
+                // compatibility of the calls to reduce the iteration time drastically. These could be combiner
+                // and other mode flags.
+                matchCandidates.clear();
+                const hlslpp::float4x4 &curViewProj = drawData.viewProjTransforms[curProj.transformsIndex];
+                const hlslpp::float4x4 &prevViewProj = drawData.viewProjTransforms[prevProj.transformsIndex];
+                for (auto curIt = callMap.begin(); curIt != callMap.end();) {
+                    const uint32_t curTransform = curIt->first;
+                    if (!transformMap.transforms[curTransform].mapped) {
+                        const auto &curMatrix = drawData.worldTransforms[curTransform];
+                        for (auto prevIt = prevCallMap.begin(); prevIt != prevCallMap.end();) {
+                            const uint32_t prevTransform = prevIt->first;
+                            if (!prevTransformMapped[prevTransform]) {
+                                const auto prevMatrix = prevDrawData.worldTransforms[prevTransform];
+                                if (isCallCompatible(curProj.drawCalls[curIt->second], drawData, prevProj.drawCalls[prevIt->second], prevDrawData)) {
+                                    const TransformMatchResult matchResult = computeTransformMatch(curMatrix, curViewProj, prevMatrix, prevViewProj, prevFrame.transformMap.transforms[prevTransform].rigidBody);
+                                    if (matchResult.valid) {
+                                        matchCandidates.push_back({ curTransform, prevTransform, matchResult.computeDifference() });
+                                    }
+                                }
+                            }
+
+                            do { ++prevIt; } while (prevIt != prevCallMap.end() && (prevTransform == prevIt->first));
+                        }
+                    }
+
+                    do { ++curIt; } while (curIt != callMap.end() && (curTransform == curIt->first));
+                }
+
+                // Sort all the candidates and assign them.
+                std::stable_sort(matchCandidates.begin(), matchCandidates.end());
+                for (const TransformMatchCandidate candidate : matchCandidates) {
+                    if (transformMap.transforms[candidate.curTransformIndex].mapped) {
+                        continue;
+                    }
+
+                    if (prevTransformMapped[candidate.prevTransformIndex]) {
+                        continue;
+                    }
+
+                    auto &curTransformMap = transformMap.transforms[candidate.curTransformIndex];
+                    const hlslpp::float4x4 &prevMatrix = prevDrawData.worldTransforms[candidate.prevTransformIndex];
+                    const hlslpp::float4x4 &curMatrix = drawData.worldTransforms[candidate.curTransformIndex];
+                    curTransformMap.rigidBody = prevFrame.transformMap.transforms[candidate.prevTransformIndex].rigidBody;
+                    curTransformMap.rigidBody.updateLinear(prevMatrix, curMatrix);
+                    curTransformMap.rigidBody.updateAngular(prevMatrix, curMatrix);
+                    curTransformMap.rigidBody.updateDecomposition(curMatrix);
+                    curTransformMap.prevTransformIndex = candidate.prevTransformIndex;
+                    curTransformMap.mapped = true;
+                    prevTransformMapped[candidate.prevTransformIndex] = true;
+
+                    const auto prevRange = prevCallMap.equal_range(candidate.prevTransformIndex);
+                    const auto curRange = callMap.equal_range(candidate.curTransformIndex);
+                    auto prevRangeIt = prevRange.first;
+                    auto curRangeIt = curRange.first;
+                    while ((prevRangeIt != prevRange.second) && (curRangeIt != curRange.second)) {
+                        // Check if any material defined a custom match callback for this call.
+                        GameDrawCall *curCall = &curProj.drawCalls[curRangeIt->second];
+                        GameDrawCall *prevCall = &prevProj.drawCalls[prevRangeIt->second];
+                        if (curCall->lerpDesc.matchCallback != nullptr) {
+                            curCall->lerpDesc.matchCallback(this, curCall, &prevFrame, prevCall);
+                        }
+
+                        // Check if the mesh positions are different and compute the velocity buffer if required.
+                        // TODO: Compute the velocity buffer and compute the hash some way.
+                        const bool meshHashDifference = false;
+                        uploadVelBuffer = uploadVelBuffer || meshHashDifference;
+
+                        // Check if the texture hashes are different to mark it as an animated texture material.
+                        bool tmemHashDifference = false;
+                        if (curCall->callDesc.tileCount == prevCall->callDesc.tileCount) {
+                            const uint32_t curTileBase = curCall->callDesc.tileIndex;
+                            const uint32_t prevTileBase = prevCall->callDesc.tileIndex;
+                            for (uint32_t t = 0; t < curCall->callDesc.tileCount && !tmemHashDifference; t++) {
+                                const auto &curTile = drawData.callTiles[curTileBase + t];
+                                const auto &prevTile = prevDrawData.callTiles[prevTileBase + t];
+                                tmemHashDifference = (curTile.tmemHashOrID != prevTile.tmemHashOrID);
+                            }
+                        }
+
+                        // TODO: Reimplement.
+                        //curCall->materialDesc.lockMask = tmemHashDifference ? 1.0f : 0.0f;
+
+                        auto &drawCall = projMap.drawCalls[curRangeIt->second];
+                        drawCall.prevCallIndex = prevRangeIt->second;
+                        drawCall.mapped = true;
+                        prevRangeIt++;
+                        curRangeIt++;
+                    }
+                }
+            }
+        }
+    }
+    */
+};
