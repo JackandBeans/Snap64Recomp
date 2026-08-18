@@ -61,18 +61,6 @@ namespace RT64 {
         };
 
         External ext;
-        // Pokemon Snap port: transforms carry real object ids, supplied by
-        // the port through State::snapMatrixIdLookup from the game's own
-        // object manager, so they pair exactly. With this set the geometry
-        // matcher stays off and tiles and lookAt vectors may only pair
-        // through calls whose matrices paired: a look-alike match is worse
-        // than no match, because a mispaired transform lerps one object into
-        // another while an unpaired one simply renders at its own position.
-        bool snapExactTransformIds = false;
-        // Per-frame matching counters, reported by the port (see send_dl).
-        uint32_t snapStatTransforms = 0;
-        uint32_t snapStatTagged = 0;
-        uint32_t snapStatMatched = 0;
         std::array<Workload, WORKLOAD_QUEUE_SIZE> workloads;
         int threadCursor;
         int writeCursor;

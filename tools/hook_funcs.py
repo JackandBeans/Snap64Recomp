@@ -16,12 +16,6 @@ HOOKED = [
     'dmaLoadOverlay',
     'check_sp_imem',
     'check_sp_dmem',
-    # Frame-interpolation object identity: renPrepareModelMatrix names the
-    # object whose matrices are being built, hal_mtx_f2l names the address
-    # each matrix lands at.
-    'renPrepareModelMatrix',
-    'hal_mtx_f2l',
-    'hal_mtx_f2l_fixed_w',
 ]
 
 
@@ -35,6 +29,7 @@ def main() -> int:
     header_text = header.read_text(encoding='utf-8')
     renamed = 0
 
+    hooked = set(HOOKED)
     for path in sorted(root.glob('funcs_*.c')):
         text = path.read_text(encoding='utf-8')
         original = text
@@ -42,9 +37,22 @@ def main() -> int:
             text = re.sub(r'^RECOMP_FUNC void %s\(' % re.escape(name),
                           'RECOMP_FUNC void __real_%s(' % name,
                           text, flags=re.MULTILINE)
+
+        # Reversible: a function dropped from HOOKED gets its own name back,
+        # otherwise nothing defines it and the link fails on every caller.
+        def unhook(match):
+            name = match.group(1)
+            return match.group(0) if name in hooked else 'RECOMP_FUNC void %s(' % name
+
+        text = re.sub(r'^RECOMP_FUNC void __real_(\w+)\(', unhook, text, flags=re.MULTILINE)
         if text != original:
             path.write_text(text, encoding='utf-8', newline='')
             renamed += 1
+
+    # Drop __real_ declarations for functions no longer hooked.
+    header_text = re.sub(r'^void __real_(\w+)\(uint8_t\* rdram, recomp_context\* ctx\);\n',
+                         lambda m: m.group(0) if m.group(1) in hooked else '',
+                         header_text, flags=re.MULTILINE)
 
     # Every hooked name needs both declarations: the port defines the plain
     # one, the recompiled tree defines (and callers reach) the __real_ one.

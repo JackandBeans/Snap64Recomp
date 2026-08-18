@@ -78,14 +78,6 @@ namespace RT64 {
         // framebuffer, which HLE presentation never shows). Set per frame by
         // the port's send_dl; consumed by GBI_RDP::fullSync.
         bool snapFocusDotRequest = false;
-        // Pokemon Snap port: resolves the physical address of a matrix to the
-        // id of the game object that owns it, or 0 when the owner is unknown.
-        // Supplied by the port, which learns the mapping from the game's own
-        // object manager (src/matrix_ids.cpp); RSP::setVertexCommon tags each
-        // world transform with the result so frame interpolation pairs
-        // transforms by identity instead of guessing from geometry. Called on
-        // the game thread while the display list is processed.
-        uint32_t (*snapMatrixIdLookup)(uint32_t physicalAddress) = nullptr;
         TextureManager textureManager;
         FramebufferManager framebufferManager;
         FramebufferChangePool scratchFbChangePool;

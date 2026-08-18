@@ -56,6 +56,13 @@ static SDL_GameController* game_controller = nullptr;
 static bool controller_initialized = false;
 
 static void try_open_controller() {
+    // Drop a handle whose device is gone, otherwise the stale pointer blocks
+    // every future open and a replugged controller never comes back.
+    if (game_controller != nullptr && !SDL_GameControllerGetAttached(game_controller)) {
+        SDL_GameControllerClose(game_controller);
+        game_controller = nullptr;
+    }
+
     if (game_controller != nullptr) return;
 
     int num_joysticks = SDL_NumJoysticks();
@@ -83,10 +90,8 @@ void input_poll() {
         controller_initialized = true;
     }
 
-    // Check for newly connected controllers.
-    if (game_controller == nullptr) {
-        try_open_controller();
-    }
+    // Pick up newly connected controllers, and replace detached ones.
+    try_open_controller();
 }
 
 bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {

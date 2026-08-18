@@ -309,7 +309,7 @@ namespace RT64 {
                     prevIt++;
                 }
                 else {
-                    matchTransform(curWorkload, prevWorkload, curWorkloadMap, prevWorkloadMap, curIt->second, prevIt->second, modifiedBuffers, !workloadQueue.snapExactTransformIds);
+                    matchTransform(curWorkload, prevWorkload, curWorkloadMap, prevWorkloadMap, curIt->second, prevIt->second, modifiedBuffers, true);
                     curIt++;
                     prevIt++;
                 }
@@ -317,16 +317,6 @@ namespace RT64 {
 
             if (!modifiedBuffers.empty()) {
                 workloadsModified[workloads[w]].merge(modifiedBuffers);
-            }
-
-            if (workloadQueue.snapExactTransformIds) {
-                const DrawData &drawData = curWorkload.drawData;
-                for (uint32_t t = 0; t < drawData.worldTransformGroups.size(); t++) {
-                    const TransformGroup &group = drawData.transformGroups[drawData.worldTransformGroups[t]];
-                    workloadQueue.snapStatTransforms++;
-                    workloadQueue.snapStatTagged += ((group.matrixId != G_EX_ID_AUTO) && (group.matrixId != G_EX_ID_IGNORE)) ? 1 : 0;
-                    workloadQueue.snapStatMatched += curWorkloadMap.transforms[t].mapped ? 1 : 0;
-                }
             }
 
             // Any transforms tagged with the empty ID will be instantly marked as used and skipped.
@@ -557,18 +547,7 @@ namespace RT64 {
                     }
                 }
 
-                // Pokemon Snap port: tiles and lookAt vectors may only pair
-                // through calls whose matrices were matched to each other by
-                // address. Skies are rows of identical-state strips that
-                // scroll their tile coordinates with the camera, so a
-                // cross-strip pair extrapolates a garbage scroll delta.
-                const uint32_t curFirstMatrix = curCall.callDesc.minWorldMatrix;
-                const uint32_t prevFirstMatrix = prevCall.callDesc.minWorldMatrix;
-                const bool snapCallsPaired = !workloadQueue.snapExactTransformIds ||
-                    ((curFirstMatrix < firstCurWorkloadMap.transforms.size()) &&
-                     firstCurWorkloadMap.transforms[curFirstMatrix].mapped &&
-                     (firstCurWorkloadMap.transforms[curFirstMatrix].prevTransformIndex == prevFirstMatrix));
-                if (snapCallsPaired && (curCall.callDesc.tileCount == prevCall.callDesc.tileCount) && (curIt.second.doTileInterpolation && prevIt->second.doTileInterpolation)) {
+                if ((curCall.callDesc.tileCount == prevCall.callDesc.tileCount) && (curIt.second.doTileInterpolation && prevIt->second.doTileInterpolation)) {
                     for (uint32_t t = 0; t < curCall.callDesc.tileCount; t++) {
                         const DrawCallTile &curCallTile = curWorkload.drawData.callTiles[curCall.callDesc.tileIndex + t];
                         const DrawCallTile &prevCallTile = prevWorkload.drawData.callTiles[prevCall.callDesc.tileIndex + t];
@@ -584,7 +563,7 @@ namespace RT64 {
                 const uint32_t textureGenMask = G_LIGHTING | G_TEXTURE_GEN;
                 const bool curUsesTextureGen = (curCall.callDesc.geometryMode & textureGenMask) == textureGenMask;
                 const bool prevUsesTextureGen = (prevCall.callDesc.geometryMode & textureGenMask) == textureGenMask;
-                if (snapCallsPaired && curUsesTextureGen && prevUsesTextureGen && (true && true)) { // TODO: Do look at matching condition.
+                if (curUsesTextureGen && prevUsesTextureGen && (true && true)) { // TODO: Do look at matching condition.
                     // FIXME: We assume the same look at is used throughout the entire draw call, so we only check the first vertex.
                     const uint32_t curVertexIndex = curWorkload.drawData.faceIndices[curCall.meshDesc.faceIndicesStart];
                     const uint32_t prevVertexIndex = prevWorkload.drawData.faceIndices[prevCall.meshDesc.faceIndicesStart];
@@ -595,13 +574,6 @@ namespace RT64 {
             }
         }
 
-        // Pokemon Snap port: transforms were already matched exactly by
-        // address, so the geometry-similarity matcher below has nothing left
-        // to do and only risks pairing look-alikes.
-        if (workloadQueue.snapExactTransformIds) {
-            transformCheckSet.clear();
-        }
-
         // Compute all the differences between transforms and insert them into a vector that will be sorted according to the differences.
         thread_local std::vector<MatchCandidate> matchCandidates;
         matchCandidates.clear();
@@ -609,6 +581,16 @@ namespace RT64 {
         const RigidBody *prevRigidBody;
         const hlslpp::float4x4 &firstCurViewProj = firstCurWorkload.drawData.viewProjTransforms[firstCurProj.transformsIndex];
         const hlslpp::float4x4 &firstPrevViewProj = firstPrevWorkload.drawData.viewProjTransforms[firstPrevProj.transformsIndex];
+        for (const IndexPair &indices : transformCheckSet) {
+            const hlslpp::float4x4 &curTransform = firstCurWorkload.drawData.worldTransforms[indices.first];
+            const hlslpp::float4x4 &prevTransform = firstPrevWorkload.drawData.worldTransforms[indices.second];
+            prevRigidBody = (firstPrevWorkloadMap != nullptr) ? &firstPrevWorkloadMap->transforms[indices.second].rigidBody : nullptr;
+
+            TransformMatchResult matchResult = computeTransformMatch(curTransform, firstCurViewProj, prevTransform, firstPrevViewProj, prevRigidBody);
+            if (matchResult.valid) {
+                matchCandidates.emplace_back(indices.first, indices.second, matchResult.computeDifference());
+            }
+        }
 
         ModifiedBuffers modifiedBuffers;
         std::stable_sort(matchCandidates.begin(), matchCandidates.end());
@@ -621,7 +603,7 @@ namespace RT64 {
                 continue;
             }
 
-            matchTransform(firstCurWorkload, firstPrevWorkload, firstCurWorkloadMap, firstPrevWorkloadMap, candidate.curIndex, candidate.prevIndex, modifiedBuffers, !workloadQueue.snapExactTransformIds);
+            matchTransform(firstCurWorkload, firstPrevWorkload, firstCurWorkloadMap, firstPrevWorkloadMap, candidate.curIndex, candidate.prevIndex, modifiedBuffers, true);
         }
 
         if (!modifiedBuffers.empty()) {

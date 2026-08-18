@@ -14,6 +14,7 @@
 #include <vector>
 #include <utility>
 #include <chrono>
+#include <cstdlib>
 
 #include "librecomp/game.hpp"
 #include "librecomp/overlays.hpp"
@@ -56,8 +57,12 @@ static SDL_Window* sdl_window = nullptr;
 
 static void* create_gfx() {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) {
+        // Nothing downstream can work without SDL, and the failures it would
+        // produce (no window, no native handle, no renderer) all read as
+        // unrelated bugs. Say what actually happened and stop.
         fprintf(stderr, "[SNAP] SDL_Init failed: %s\n", SDL_GetError());
-        return nullptr;
+        fflush(stderr);
+        std::exit(1);
     }
     return nullptr; // gfx_data not used
 }

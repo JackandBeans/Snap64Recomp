@@ -59,8 +59,6 @@ static void dummy_check_interrupts() {}
 namespace snap {
 
 extern bool g_app_level_resident;                            // overlay_hook.cpp
-uint32_t matrix_id_for_address(uint32_t physicalAddress);    // matrix_ids.cpp
-void matrix_id_stats(uint32_t* tracked, uint32_t* tagged, uint32_t* resolved);
 
 class RT64Context : public ultramodern::renderer::RendererContext {
 public:
@@ -180,10 +178,6 @@ public:
         printf("[SNAP-RT64] Renderer context created (result=%d, api=%d)\n",
                static_cast<int>(result), static_cast<int>(chosen_api));
 
-        // Interpolation identity comes from the game's own object manager
-        // (src/matrix_ids.cpp, snapExactTransformIds in rt64_workload_queue.h).
-        app_->state->snapMatrixIdLookup = &snap::matrix_id_for_address;
-        app_->workloadQueue->snapExactTransformIds = true;
     }
 
     ~RT64Context() override {
@@ -229,9 +223,10 @@ public:
         app_->userConfig.validate();
         app_->updateUserConfig(true);
 
-        if (new_config.wm_option != old_config.wm_option) {
-            app_->setFullScreen(new_config.wm_option == ren::WindowMode::Fullscreen);
-        }
+        // Applied unconditionally: the first push after startup compares
+        // equal to the defaults, so a saved fullscreen setting would never
+        // reach the window otherwise.
+        app_->setFullScreen(new_config.wm_option == ren::WindowMode::Fullscreen);
         return true;
     }
 
@@ -301,22 +296,6 @@ public:
         // frames and layer flicker in the intro forest and beach rock wall.
         app_->workloadQueue->waitForWorkloadId(app_->state->workloadId);
 
-        // How much of the frame carries a real object id, and how much of it
-        // the matcher paired, decides whether interpolation can look right at
-        // all. Reported once a second because the picture alone cannot say.
-        if (++interp_report_counter_ >= 60) {
-            uint32_t tracked = 0, tagged = 0, resolved = 0;
-            snap::matrix_id_stats(&tracked, &tagged, &resolved);
-            RT64::WorkloadQueue *queue = app_->workloadQueue.get();
-            fprintf(stderr, "[SNAP-INTERP] transforms=%u tagged=%u matched=%u | matrices tracked=%u tagged/s=%u resolved/s=%u\n",
-                    queue->snapStatTransforms, queue->snapStatTagged, queue->snapStatMatched,
-                    tracked, tagged, resolved);
-            fflush(stderr);
-            queue->snapStatTransforms = 0;
-            queue->snapStatTagged = 0;
-            queue->snapStatMatched = 0;
-            interp_report_counter_ = 0;
-        }
     }
 
     void update_screen() override {
@@ -346,7 +325,6 @@ public:
     }
 
 private:
-    uint32_t interp_report_counter_ = 0;
     std::unique_ptr<RT64::Application> app_;
 };
 

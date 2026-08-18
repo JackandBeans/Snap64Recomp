@@ -73,7 +73,9 @@ target_include_directories(recomp_funcs PUBLIC
 
 # Suppress warnings in generated recompiled code.
 if (MSVC)
-    target_compile_options(recomp_funcs PRIVATE /w /bigobj /O1)
+    # /O2, not /O1: this target is the whole recompiled game and is the
+    # hottest code in the build, so favour speed over size.
+    target_compile_options(recomp_funcs PRIVATE /w /bigobj /O2)
 else()
 target_compile_options(recomp_funcs PRIVATE
     -g
@@ -96,7 +98,6 @@ set(SNAP_SOURCES
     src/input.cpp
     src/os_stubs.cpp
     src/overlay_hook.cpp
-    src/matrix_ids.cpp
     src/settings.cpp
     rsp/aspMain.cpp
 )
@@ -136,21 +137,27 @@ if (WIN32)
 endif()
 endif()
 
-# Link libraries
-# Use --start-group/--end-group to handle circular dependencies between
-# recomp_funcs (which references librecomp symbols) and librecomp (which
-# needs function tables from recomp_funcs).
+# Link libraries. recomp_funcs and librecomp are mutually dependent
+# (recomp_funcs references librecomp symbols; librecomp needs recomp_funcs'
+# function tables), which GNU ld needs --start-group to resolve. MSVC's
+# link.exe resolves cyclic static libraries on its own and reports the GNU
+# flags as LNK4044 on every link, so they are only passed where they mean
+# something.
 target_link_libraries(PokemonSnapRecomp PRIVATE
-    -Wl,--start-group
     recomp_funcs
     librecomp
     ultramodern
-    -Wl,--end-group
     SDL2::SDL2
 )
 
-# Allow multiple definitions (e.g. guMtxF2L appears in multiple overlay sections)
-target_link_options(PokemonSnapRecomp PRIVATE -Wl,--allow-multiple-definition)
+if (NOT MSVC)
+    target_link_options(PokemonSnapRecomp PRIVATE
+        -Wl,--start-group
+        -Wl,--end-group
+        # guMtxF2L and friends appear in several overlay sections.
+        -Wl,--allow-multiple-definition
+    )
+endif()
 
 if (BUILD_RT64)
     target_link_libraries(PokemonSnapRecomp PRIVATE rt64)

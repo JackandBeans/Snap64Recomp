@@ -544,24 +544,7 @@ namespace RT64 {
             uint32_t physicalAddress = modelMatrixPhysicalAddressStack[modelMatrixStackSize - 1];
             workload.physicalAddressTransformMap.emplace(physicalAddress, uint32_t(worldTransformGroups.size()));
 
-            // Pokemon Snap port: tag the transform with the object that owns
-            // this matrix (see State::snapMatrixIdLookup). Linear ordering is
-            // what the game provides: an object's matrices are always built
-            // in the same order, so the nth matrix of an object pairs with
-            // the nth of the same object in the previous frame.
-            uint32_t modelGroupIndex = extended.curModelMatrixIdGroupIndex;
-            if (state->snapMatrixIdLookup != nullptr) {
-                const uint32_t matrixId = state->snapMatrixIdLookup(physicalAddress);
-                if (matrixId != 0) {
-                    TransformGroup taggedGroup = workload.drawData.transformGroups[extended.curModelMatrixIdGroupIndex];
-                    taggedGroup.matrixId = matrixId;
-                    taggedGroup.ordering = G_EX_ORDER_LINEAR;
-                    modelGroupIndex = uint32_t(workload.drawData.transformGroups.size());
-                    workload.drawData.transformGroups.emplace_back(taggedGroup);
-                }
-            }
-
-            worldTransformGroups.emplace_back(modelGroupIndex);
+            worldTransformGroups.emplace_back(extended.curModelMatrixIdGroupIndex);
             worldTransformSegmentedAddresses.emplace_back(modelMatrixSegmentedAddressStack[modelMatrixStackSize - 1]);
             worldTransformPhysicalAddresses.emplace_back(physicalAddress);
             worldTransformVertexIndices.emplace_back(workload.drawData.vertexCount());
