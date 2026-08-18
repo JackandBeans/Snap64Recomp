@@ -117,6 +117,7 @@ set(SNAP_SOURCES
     src/overlay_hook.cpp
     src/matrix_tags.cpp
     src/focus_dot.cpp
+    src/dl_budget.cpp
     src/patch_shims.cpp
     src/settings.cpp
     rsp/aspMain.cpp

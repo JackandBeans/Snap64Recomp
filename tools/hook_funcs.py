@@ -19,6 +19,10 @@ HOOKED = [
     # Turns RT64's extended commands on through the display list write pointer
     # it receives. Object identity is a game patch now, not a hook.
     'renPrepareCameraMatrix',
+    # Reports how full the game's display list buffers get. The port emits a
+    # matrix group ahead of every matrix, which the original never did, and
+    # these buffers are small and fixed.
+    'gtlCheckBuffers',
     # The camera focus indicator: the game draws it into RDRAM, which HLE
     # presentation never shows, so the port observes it and redraws it.
     'PokemonDetector_PostProcessImage',

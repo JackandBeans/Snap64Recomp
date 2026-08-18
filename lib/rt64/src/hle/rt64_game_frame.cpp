@@ -7,6 +7,8 @@
 #include "rt64_game_frame.h"
 #include "rt64_workload_queue.h"
 
+#include <cstdio>
+
 #include "xxHash/xxh3.h"
 
 namespace RT64 {
@@ -325,6 +327,36 @@ namespace RT64 {
                 curTransformMap.rigidBody = RigidBody();
                 curTransformMap.prevTransformIndex = 0;
                 curTransformMap.mapped = false;
+            }
+
+            // Pokemon Snap port: how many tagged transforms actually paired.
+            // A limb that fails to pair renders at this frame's pose while its
+            // paired siblings render interpolated, so the model separates. If
+            // the lower body is going missing because of pairing, unmatched
+            // spikes while the camera pans; if it stays at zero through a pan,
+            // the geometry is being lost somewhere after matching instead.
+            {
+                uint32_t tagged = 0;
+                uint32_t matched = 0;
+                for (const auto &entry : curWorkload.transformIdMap) {
+                    tagged++;
+                    if (curWorkloadMap.transforms[entry.second].mapped) {
+                        matched++;
+                    }
+                }
+
+                static uint32_t worstUnmatched = 0;
+                static uint32_t frameCounter = 0;
+                const uint32_t unmatched = tagged - matched;
+                frameCounter++;
+                if ((unmatched > worstUnmatched) || ((frameCounter % 120) == 0)) {
+                    if (unmatched > worstUnmatched) {
+                        worstUnmatched = unmatched;
+                    }
+                    fprintf(stdout, "[SNAP-MATCH] tagged %u matched %u unmatched %u (worst %u)\n",
+                        tagged, matched, unmatched, worstUnmatched);
+                    fflush(stdout);
+                }
             }
         }
 
