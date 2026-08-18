@@ -54,6 +54,7 @@ static constexpr const char* SNAP_INTERNAL_NAME  = "POKEMON SNAP";
 #endif
 
 static SDL_Window* sdl_window = nullptr;
+static void snap_update_window_title();
 
 static void* create_gfx() {
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) {
@@ -89,10 +90,25 @@ static ultramodern::renderer::WindowHandle create_window(void* /*gfx_data*/) {
         return wh;
     }
 
+    snap_update_window_title();
     wh.window = wmInfo.info.win.window; wh.thread_id = GetCurrentThreadId(); return wh;
 #else
     return sdl_window;
 #endif
+}
+
+// Frame interpolation is the one setting that changes how the game looks
+// rather than how it is presented, and a saved snapsettings.json silently
+// outranks the built-in default. Put its state where it cannot be missed:
+// stdout is invisible when the exe is launched from a shortcut.
+static void snap_update_window_title() {
+    if (sdl_window == nullptr) {
+        return;
+    }
+
+    SDL_SetWindowTitle(sdl_window, (snap::settings().fps_mode == 0)
+        ? "Pokemon Snap"
+        : "Pokemon Snap - frame interpolation ON (F8 to turn off)");
 }
 
 static void update_gfx(void* /*gfx_data*/) {
@@ -110,6 +126,7 @@ static void update_gfx(void* /*gfx_data*/) {
                 break;
             case SDL_KEYDOWN:
                 if (snap::handle_settings_hotkey(event.key.keysym.scancode)) {
+                    snap_update_window_title();
                     break;
                 }
                 if (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
