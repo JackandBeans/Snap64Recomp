@@ -69,6 +69,10 @@ namespace RT64 {
         // than no match, because a mispaired transform lerps one object into
         // another while an unpaired one simply renders at its own position.
         bool snapExactTransformIds = false;
+        // Per-frame matching counters, reported by the port (see send_dl).
+        uint32_t snapStatTransforms = 0;
+        uint32_t snapStatTagged = 0;
+        uint32_t snapStatMatched = 0;
         std::array<Workload, WORKLOAD_QUEUE_SIZE> workloads;
         int threadCursor;
         int writeCursor;

@@ -42,8 +42,19 @@ std::unordered_map<uint32_t, uint32_t> g_matrix_object_ids;
 // id, or 0 when no such call is in progress.
 uint32_t g_current_object_id = 0;
 
-// N64 virtual addresses to the physical form RT64 indexes RDRAM with.
-constexpr uint32_t PhysicalMask = 0x03FFFFFFu;
+// Counters behind the [SNAP-INTERP] line in send_dl. Interpolation quality
+// depends entirely on how much of the frame carries a real object id, and
+// that is not visible from the picture alone.
+struct {
+    uint32_t tagged = 0;
+    uint32_t resolved = 0;
+} g_stats;
+
+// Matrix addresses must be reduced exactly the way RT64 reduces them, or
+// the two sides key the same matrix differently and nothing resolves. RT64
+// uses RSP::fromSegmentedMasked, which masks with 0x00FFFFF8: RDRAM offset,
+// forced to the 8-byte alignment a Mtx always has.
+constexpr uint32_t PhysicalMask = 0x00FFFFF8u;
 
 // Object ids must avoid RT64's two reserved values, G_EX_ID_IGNORE (0) and
 // G_EX_ID_AUTO (0xFFFFFFFF). Object addresses fit in 24 bits of RDRAM, so
@@ -58,7 +69,20 @@ uint32_t object_id_from_address(uint32_t objectAddress) {
 
 uint32_t matrix_id_for_address(uint32_t physicalAddress) {
     auto it = g_matrix_object_ids.find(physicalAddress & PhysicalMask);
-    return (it != g_matrix_object_ids.end()) ? it->second : 0;
+    if (it == g_matrix_object_ids.end()) {
+        return 0;
+    }
+
+    g_stats.resolved++;
+    return it->second;
+}
+
+void matrix_id_stats(uint32_t *tracked, uint32_t *tagged, uint32_t *resolved) {
+    *tracked = uint32_t(g_matrix_object_ids.size());
+    *tagged = g_stats.tagged;
+    *resolved = g_stats.resolved;
+    g_stats.tagged = 0;
+    g_stats.resolved = 0;
 }
 
 } // namespace snap
@@ -82,6 +106,7 @@ extern "C" void hal_mtx_f2l(uint8_t* rdram, recomp_context* ctx) {
     const uint32_t destination = static_cast<uint32_t>(ctx->r5);
     if (snap::g_current_object_id != 0) {
         snap::g_matrix_object_ids[destination & snap::PhysicalMask] = snap::g_current_object_id;
+        snap::g_stats.tagged++;
     }
     else {
         // Built outside an object (camera, projection, one-off effects).

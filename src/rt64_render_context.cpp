@@ -60,6 +60,7 @@ namespace snap {
 
 extern bool g_app_level_resident;                            // overlay_hook.cpp
 uint32_t matrix_id_for_address(uint32_t physicalAddress);    // matrix_ids.cpp
+void matrix_id_stats(uint32_t* tracked, uint32_t* tagged, uint32_t* resolved);
 
 class RT64Context : public ultramodern::renderer::RendererContext {
 public:
@@ -299,6 +300,23 @@ public:
         // the present thread is displaying it, which showed up as random black
         // frames and layer flicker in the intro forest and beach rock wall.
         app_->workloadQueue->waitForWorkloadId(app_->state->workloadId);
+
+        // How much of the frame carries a real object id, and how much of it
+        // the matcher paired, decides whether interpolation can look right at
+        // all. Reported once a second because the picture alone cannot say.
+        if (++interp_report_counter_ >= 60) {
+            uint32_t tracked = 0, tagged = 0, resolved = 0;
+            snap::matrix_id_stats(&tracked, &tagged, &resolved);
+            RT64::WorkloadQueue *queue = app_->workloadQueue.get();
+            fprintf(stderr, "[SNAP-INTERP] transforms=%u tagged=%u matched=%u | matrices tracked=%u tagged/s=%u resolved/s=%u\n",
+                    queue->snapStatTransforms, queue->snapStatTagged, queue->snapStatMatched,
+                    tracked, tagged, resolved);
+            fflush(stderr);
+            queue->snapStatTransforms = 0;
+            queue->snapStatTagged = 0;
+            queue->snapStatMatched = 0;
+            interp_report_counter_ = 0;
+        }
     }
 
     void update_screen() override {
@@ -328,6 +346,7 @@ public:
     }
 
 private:
+    uint32_t interp_report_counter_ = 0;
     std::unique_ptr<RT64::Application> app_;
 };
 
