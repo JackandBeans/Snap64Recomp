@@ -425,6 +425,41 @@ namespace RT64 {
                     nativeColorWidth = colorImg.width;
                     nativeColorHeight = fbPair.drawColorRect.bottom(true);
 
+                    // The height cannot be allowed to shrink to the geometry, because
+                    // that height ends up clipping the geometry.
+                    //
+                    // drawColorRect is a bounding box fitted to where this pass's
+                    // vertices landed, and it is fitted at display list parse time,
+                    // from the frame's own matrices (rt64_rsp.cpp, posScreen). The
+                    // height taken from it becomes the render target's size, reaches
+                    // the rasterizer as FbParams.resolution.y, and RasterVS builds
+                    // clip space from that -- so the bottom of the fitted box is a
+                    // hard clip plane. The vertices that get tested against it are
+                    // not the ones it was fitted to: they are positioned by the
+                    // interpolated view, one subframe behind. Anything the
+                    // interpolation places below where the geometry sat this frame is
+                    // clipped away.
+                    //
+                    // Only the bottom edge does this. The width is colorImg.width,
+                    // which the game declared, and the viewport starts at y = 0, so
+                    // neither tracks content. That asymmetry is why the artifact this
+                    // fixes had one too: pitching the camera down sweeps the world up
+                    // the screen, so an interpolated subframe sits lower than the
+                    // frame the box was fitted to and crosses the bottom edge, while
+                    // pitching up moves geometry towards a fixed y = 0 it was already
+                    // inside and never clips anything. The band lost is the residual
+                    // screen displacement, a fixed number of pixels, which is most of
+                    // a distant model and only the feet of a near one.
+                    //
+                    // The scissor is the right bound to hold it to. The game authors
+                    // it, the real RDP clips against it, and it does not move when the
+                    // view is interpolated. Fitting to geometry stays fine for what it
+                    // is good for -- deciding how much to allocate and write back --
+                    // but it must not be what decides which pixels exist.
+                    if (!fbPair.scissorRect.isNull()) {
+                        nativeColorHeight = std::max(nativeColorHeight, uint32_t(std::max(0, fbPair.scissorRect.bottom(true))));
+                    }
+
                     // When the target is much bigger than the reference height, we reduce the resolution scaling (but clamped to 1.0).
                     const uint32_t heightThreshold = (workload.viFbSize[1] > 0) ? ((workload.viFbSize[1] * 3) / 2) : 360;
                     uint32_t downsampleMultiplier = workloadConfig.downsampleMultiplier;
