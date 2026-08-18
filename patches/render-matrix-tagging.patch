@@ -1,0 +1,54 @@
+diff --git a/src/sys/render.c b/src/sys/render.c
+index 38e4e80..02bab3f 100644
+--- a/src/sys/render.c
++++ b/src/sys/render.c
+@@ -4,6 +4,32 @@
+ #include "sys/gtl.h"
+ #include "sys/vi.h"
+ #include "sys/mtx.h"
++#include "rt64_extended_gbi.h"
++
++/**
++ * Object identity for RT64's frame interpolation.
++ *
++ * Interpolation blends this frame's matrices with the previous frame's, which
++ * requires knowing which object each matrix belongs to. Nothing in a display
++ * list says that, and identity guessed from geometry cannot separate rows of
++ * identical vegetation quads, tiled wall and sky segments, or two of the same
++ * Pokemon. So state it directly, the way ports built for RT64 do: precede
++ * every model matrix with a matrix group naming the DObj that owns it. A DObj
++ * keeps its address for as long as the object exists, which is exactly the
++ * stability the matcher needs.
++ *
++ * An object's matrices are always built in the same order, so linear ordering
++ * pairs its nth matrix with its own nth matrix from the previous frame. The
++ * two reserved ids cannot collide with a pointer: a DObj is never NULL
++ * (G_EX_ID_IGNORE) and never 0xFFFFFFFF (G_EX_ID_AUTO).
++ */
++#define REN_MATRIX_ID(dobj) ((u32) (uintptr_t) (dobj))
++
++#define renEXTagModelMatrix(gfx, dobj)                                        \
++    gEXMatrixGroupSimple((gfx), REN_MATRIX_ID(dobj), G_EX_NOPUSH, 0,          \
++        G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO,        \
++        G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO, G_EX_ORDER_LINEAR,          \
++        G_EX_EDIT_ALLOW, G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO)
+ 
+ #define gSPMvpRecalc(pkt) gImmp21((pkt), G_SPECIAL_1, 0, 1, 0)
+ #define gsSPMvpRecalc() gsImmp21(G_SPECIAL_1, 0, 1, 0)
+@@ -839,6 +865,7 @@ s32 renPrepareModelMatrix(Gfx** gfxPtr, DObj* dobj) {
+                 }
+             }
+             if (ommtx->kind != MTX_TYPE_2) {
++                renEXTagModelMatrix(sp2DC++, dobj);
+                 if (sp2B8 == 2 || sp2D4 == 0 && ((uintptr_t) dobj->parent == 1 || dobj->next != NULL)) {
+                     gSPMatrix(sp2DC++, mtx, G_MTX_PUSH | G_MTX_MUL | G_MTX_MODELVIEW);
+                 } else {
+@@ -2238,6 +2265,8 @@ void renPrepareCameraMatrix(Gfx** gfxPtr, OMCamera* cam) {
+     s32 spC8;
+     LookAt* lookat;
+ 
++    /* Enable RT64s extended commands before anything emits one. */
++    gEXEnable((*gfxPtr)++);
+     gfx = *gfxPtr;
+     spC8 = 0;
+     s3 = 0;
