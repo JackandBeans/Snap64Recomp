@@ -100,20 +100,38 @@ extern "C" void renPrepareModelMatrix(uint8_t* rdram, recomp_context* ctx) {
     snap::g_current_object_id = previous_object_id;
 }
 
-// a1 is the destination matrix. Record who it belongs to before the call, so
-// the mapping is in place even if the callee clobbers a1.
-extern "C" void hal_mtx_f2l(uint8_t* rdram, recomp_context* ctx) {
-    const uint32_t destination = static_cast<uint32_t>(ctx->r5);
-    if (snap::g_current_object_id != 0) {
-        snap::g_matrix_object_ids[destination & snap::PhysicalMask] = snap::g_current_object_id;
-        snap::g_stats.tagged++;
+namespace snap {
+namespace {
+
+// a1 is the destination matrix. Record who owns it before the call, so the
+// mapping is in place even if the callee clobbers a1.
+void record_matrix_owner(recomp_context* ctx) {
+    const uint32_t destination = static_cast<uint32_t>(ctx->r5) & PhysicalMask;
+    if (g_current_object_id != 0) {
+        g_matrix_object_ids[destination] = g_current_object_id;
+        g_stats.tagged++;
     }
     else {
         // Built outside an object (camera, projection, one-off effects).
-        // Dropping the entry leaves the transform untagged, which RT64 treats
-        // as "match by geometry" instead of pairing it with a stale owner.
-        snap::g_matrix_object_ids.erase(destination & snap::PhysicalMask);
+        // Dropping the entry leaves the transform untagged, which is treated
+        // as "no partner" rather than pairing it with a stale owner.
+        g_matrix_object_ids.erase(destination);
     }
+}
 
+} // namespace
+} // namespace snap
+
+// Both entry points write a finished matrix to a1. The composition helpers
+// renPrepareModelMatrix uses (hal_rotate_translate and its siblings) all end
+// in the fixed-w form, so it accounts for nearly every object matrix; the
+// plain form is only reached by a handful of direct paths.
+extern "C" void hal_mtx_f2l(uint8_t* rdram, recomp_context* ctx) {
+    snap::record_matrix_owner(ctx);
     __real_hal_mtx_f2l(rdram, ctx);
+}
+
+extern "C" void hal_mtx_f2l_fixed_w(uint8_t* rdram, recomp_context* ctx) {
+    snap::record_matrix_owner(ctx);
+    __real_hal_mtx_f2l_fixed_w(rdram, ctx);
 }

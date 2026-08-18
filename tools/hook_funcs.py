@@ -21,6 +21,7 @@ HOOKED = [
     # each matrix lands at.
     'renPrepareModelMatrix',
     'hal_mtx_f2l',
+    'hal_mtx_f2l_fixed_w',
 ]
 
 
