@@ -53,15 +53,6 @@ namespace RT64 {
             RigidBody rigidBody;
             uint32_t prevTransformIndex = 0;
             bool mapped = false;
-            // Pokemon Snap port: no reliable pairing existed for this
-            // transform, but the scene has a trusted camera delta. The
-            // processor lerps toward this synthesized previous transform so
-            // unmatched geometry still rides the camera motion on
-            // interpolated frames — left static, it lags a full game frame
-            // behind the lerped world and the shared depth buffer slices it
-            // against the terrain (actors' lower halves flickering away).
-            bool snapSynthetic = false;
-            hlslpp::float4x4 snapSyntheticPrev;
         };
 
         struct TileMap {

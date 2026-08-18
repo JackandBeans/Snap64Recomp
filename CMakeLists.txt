@@ -96,6 +96,7 @@ set(SNAP_SOURCES
     src/input.cpp
     src/os_stubs.cpp
     src/overlay_hook.cpp
+    src/matrix_ids.cpp
     src/settings.cpp
     rsp/aspMain.cpp
 )

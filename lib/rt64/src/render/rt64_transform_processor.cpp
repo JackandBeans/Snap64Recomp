@@ -37,14 +37,6 @@ namespace RT64 {
             if (prevFrameValid) {
                 const GameFrameMap::WorkloadMap &workloadMap = p.curFrame->frameMap.workloads[w];
                 const DrawData &prevDrawData = p.workloadQueue->workloads[workloadMap.prevWorkloadIndex].drawData;
-                auto lerpMatrix = [](const hlslpp::float4x4 &a, const hlslpp::float4x4 &b, float t) {
-                    hlslpp::float4x4 m;
-                    m[0] = a[0] + (b[0] - a[0]) * t;
-                    m[1] = a[1] + (b[1] - a[1]) * t;
-                    m[2] = a[2] + (b[2] - a[2]) * t;
-                    m[3] = a[3] + (b[3] - a[3]) * t;
-                    return m;
-                };
 
                 for (size_t t = 0; t < drawData.worldTransforms.size(); t++) {
                     const GameFrameMap::TransformMap &transformMap = workloadMap.transforms[t];
@@ -53,20 +45,6 @@ namespace RT64 {
                         const hlslpp::float4x4 &curTransform = drawData.worldTransforms[t];
                         prevMatrix = transformMap.rigidBody.lerp(p.prevFrameWeight, prevTransform, curTransform, true);
                         curMatrix = transformMap.rigidBody.lerp(p.curFrameWeight, prevTransform, curTransform, true);
-                        invMatrix = hlslpp::inverse(curMatrix);
-                        invTMatrix = hlslpp::transpose(invMatrix);
-                        lerpWorldTransforms.emplace_back(curMatrix);
-                        invTWorldTransforms.emplace_back(invTMatrix);
-                        prevWorldTransforms.emplace_back(prevMatrix);
-                    }
-                    // Pokemon Snap port: unmatched transform with a
-                    // synthesized previous transform — lerp so it rides the
-                    // camera motion instead of lagging behind the lerped
-                    // world (see GameFrameMap::TransformMap::snapSynthetic).
-                    else if (transformMap.snapSynthetic) {
-                        const hlslpp::float4x4 &curTransform = drawData.worldTransforms[t];
-                        prevMatrix = lerpMatrix(transformMap.snapSyntheticPrev, curTransform, p.prevFrameWeight);
-                        curMatrix = lerpMatrix(transformMap.snapSyntheticPrev, curTransform, p.curFrameWeight);
                         invMatrix = hlslpp::inverse(curMatrix);
                         invTMatrix = hlslpp::transpose(invMatrix);
                         lerpWorldTransforms.emplace_back(curMatrix);

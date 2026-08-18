@@ -309,131 +309,9 @@ namespace RT64 {
                     prevIt++;
                 }
                 else {
-                    matchTransform(curWorkload, prevWorkload, curWorkloadMap, prevWorkloadMap, curIt->second, prevIt->second, modifiedBuffers, !workloadQueue.snapAddressMatrixIds);
+                    matchTransform(curWorkload, prevWorkload, curWorkloadMap, prevWorkloadMap, curIt->second, prevIt->second, modifiedBuffers, !workloadQueue.snapExactTransformIds);
                     curIt++;
                     prevIt++;
-                }
-            }
-
-            // Pokemon Snap port: exact per-object matching by matrix address.
-            // Games built for interpolation tag every matrix with an object id
-            // (gEXMatrixGroup); Pokemon Snap has no tags, so infer the same
-            // information from where the matrix lives. Matrices keep their
-            // address across frames while a pool is reused, and shift by one
-            // constant when the game flips to its other display heap, so
-            // recovering those shifts turns the frame into exact identity
-            // matches with none of the guesswork geometry matching needs.
-            if (workloadQueue.snapAddressMatrixIds) {
-                const std::vector<uint32_t> &curAddresses = curWorkload.drawData.worldTransformPhysicalAddresses;
-                const std::vector<uint32_t> &prevAddresses = prevWorkload.drawData.worldTransformPhysicalAddresses;
-                if (!curAddresses.empty() && !prevAddresses.empty()) {
-                    // A matrix address can be submitted more than once per
-                    // frame (shared or rebuilt in place), so keep every
-                    // occurrence and pair them in submission order.
-                    thread_local std::unordered_map<uint32_t, std::vector<uint32_t>> prevTransformsByAddress;
-                    prevTransformsByAddress.clear();
-                    for (uint32_t i = 0; i < prevAddresses.size(); i++) {
-                        prevTransformsByAddress[prevAddresses[i]].emplace_back(i);
-                    }
-
-                    // Matrices do not all come from one pool: level geometry
-                    // can sit at fixed addresses while actors are composed
-                    // into the double-buffered heap. Sampling shifts at equal
-                    // ranks of the sorted address lists proposes the shift of
-                    // each pool, so every pool gets matched instead of only
-                    // whichever one a single global guess happened to fit.
-                    thread_local std::vector<uint32_t> curSortedAddresses;
-                    thread_local std::vector<uint32_t> prevSortedAddresses;
-                    curSortedAddresses.assign(curAddresses.begin(), curAddresses.end());
-                    prevSortedAddresses.assign(prevAddresses.begin(), prevAddresses.end());
-                    std::sort(curSortedAddresses.begin(), curSortedAddresses.end());
-                    std::sort(prevSortedAddresses.begin(), prevSortedAddresses.end());
-                    curSortedAddresses.erase(std::unique(curSortedAddresses.begin(), curSortedAddresses.end()), curSortedAddresses.end());
-                    prevSortedAddresses.erase(std::unique(prevSortedAddresses.begin(), prevSortedAddresses.end()), prevSortedAddresses.end());
-
-                    thread_local std::vector<int64_t> addressShifts;
-                    addressShifts.clear();
-                    addressShifts.emplace_back(0);
-
-                    const size_t sharedCount = std::min(curSortedAddresses.size(), prevSortedAddresses.size());
-                    const size_t shiftSamples = 16;
-                    for (size_t sample = 0; sample < shiftSamples; sample++) {
-                        const size_t rank = (sharedCount * sample) / shiftSamples;
-                        if (rank < sharedCount) {
-                            addressShifts.emplace_back(int64_t(curSortedAddresses[rank]) - int64_t(prevSortedAddresses[rank]));
-                        }
-                    }
-
-                    std::sort(addressShifts.begin(), addressShifts.end());
-                    addressShifts.erase(std::unique(addressShifts.begin(), addressShifts.end()), addressShifts.end());
-
-                    // Rank the proposals by how many matrices each one lines
-                    // up, then keep the best few: one pool's shift cannot
-                    // explain another's, so several are needed at once.
-                    thread_local std::vector<std::pair<uint32_t, int64_t>> scoredShifts;
-                    scoredShifts.clear();
-                    for (int64_t shift : addressShifts) {
-                        uint32_t score = 0;
-                        for (uint32_t address : curAddresses) {
-                            score += (prevTransformsByAddress.count(uint32_t(int64_t(address) - shift)) > 0) ? 1 : 0;
-                        }
-
-                        if (score > 0) {
-                            scoredShifts.emplace_back(score, shift);
-                        }
-                    }
-
-                    std::sort(scoredShifts.begin(), scoredShifts.end(), [](const std::pair<uint32_t, int64_t> &lhs, const std::pair<uint32_t, int64_t> &rhs) {
-                        return lhs.first > rhs.first;
-                    });
-
-                    // Only the single best-supported shift is used. Allowing
-                    // an address to match through a second pool's shift lets
-                    // an object whose real partner is gone pair with an
-                    // unrelated one, which mis-identifies geometry across the
-                    // whole scene rather than leaving one object unmatched.
-                    if (scoredShifts.size() > 1) {
-                        scoredShifts.resize(1);
-                    }
-
-                    thread_local std::unordered_map<uint32_t, uint32_t> curAddressOccurrences;
-                    curAddressOccurrences.clear();
-                    for (uint32_t i = 0; i < curAddresses.size(); i++) {
-                        const uint32_t occurrence = curAddressOccurrences[curAddresses[i]]++;
-                        if (curWorkloadMap.transforms[i].mapped) {
-                            continue;
-                        }
-
-                        for (const std::pair<uint32_t, int64_t> &scoredShift : scoredShifts) {
-                            auto prevAddressIt = prevTransformsByAddress.find(uint32_t(int64_t(curAddresses[i]) - scoredShift.second));
-                            if ((prevAddressIt == prevTransformsByAddress.end()) || (occurrence >= prevAddressIt->second.size())) {
-                                continue;
-                            }
-
-                            const uint32_t prevTransformIndex = prevAddressIt->second[occurrence];
-                            if (curWorkloadMap.prevTransformsMapped[prevTransformIndex]) {
-                                continue;
-                            }
-
-                            // An address collision between unrelated objects
-                            // would lerp one into the other (ghosting), and
-                            // nothing the game draws spins this far in a
-                            // single frame, so treat it as a mis-identity.
-                            const hlslpp::float4x4 &curTransform = curWorkload.drawData.worldTransforms[i];
-                            const hlslpp::float4x4 &prevTransform = prevWorkload.drawData.worldTransforms[prevTransformIndex];
-                            const float orientationDifference =
-                                (1.0f - hlslpp::dot(hlslpp::normalize(curTransform[0].xyz), hlslpp::normalize(prevTransform[0].xyz))) +
-                                (1.0f - hlslpp::dot(hlslpp::normalize(curTransform[1].xyz), hlslpp::normalize(prevTransform[1].xyz))) +
-                                (1.0f - hlslpp::dot(hlslpp::normalize(curTransform[2].xyz), hlslpp::normalize(prevTransform[2].xyz)));
-                            const float MaxOrientationDifference = 1.0f;
-                            if (!(orientationDifference <= MaxOrientationDifference)) {
-                                continue;
-                            }
-
-                            matchTransform(curWorkload, prevWorkload, curWorkloadMap, prevWorkloadMap, i, prevTransformIndex, modifiedBuffers, false);
-                            break;
-                        }
-                    }
                 }
             }
 
@@ -547,7 +425,6 @@ namespace RT64 {
 
         // Build a multimap with all potential compatibilities between draw calls in the projections.
         uint32_t mappedViewProjIndex = UINT32_MAX;
-        bool snapSceneCut = false;
         for (uint32_t p = 0; p < curScene.projections.size(); p++) {
             const GameIndices::Projection &curProjIndices = curScene.projections[p];
             Workload &curWorkload = workloadQueue.workloads[curProjIndices.workloadIndex];
@@ -677,7 +554,7 @@ namespace RT64 {
                 // cross-strip pair extrapolates a garbage scroll delta.
                 const uint32_t curFirstMatrix = curCall.callDesc.minWorldMatrix;
                 const uint32_t prevFirstMatrix = prevCall.callDesc.minWorldMatrix;
-                const bool snapCallsPaired = !workloadQueue.snapAddressMatrixIds ||
+                const bool snapCallsPaired = !workloadQueue.snapExactTransformIds ||
                     ((curFirstMatrix < firstCurWorkloadMap.transforms.size()) &&
                      firstCurWorkloadMap.transforms[curFirstMatrix].mapped &&
                      (firstCurWorkloadMap.transforms[curFirstMatrix].prevTransformIndex == prevFirstMatrix));
@@ -711,7 +588,7 @@ namespace RT64 {
         // Pokemon Snap port: transforms were already matched exactly by
         // address, so the geometry-similarity matcher below has nothing left
         // to do and only risks pairing look-alikes.
-        if (workloadQueue.snapAddressMatrixIds) {
+        if (workloadQueue.snapExactTransformIds) {
             transformCheckSet.clear();
         }
 
@@ -722,190 +599,6 @@ namespace RT64 {
         const RigidBody *prevRigidBody;
         const hlslpp::float4x4 &firstCurViewProj = firstCurWorkload.drawData.viewProjTransforms[firstCurProj.transformsIndex];
         const hlslpp::float4x4 &firstPrevViewProj = firstPrevWorkload.drawData.viewProjTransforms[firstPrevProj.transformsIndex];
-
-        // Pokemon Snap port: the game keeps its camera inside the modelview
-        // matrices (the projection stack is a static perspective), so raw
-        // screen distance between frames measures PAN SPEED, not object
-        // identity — any distance gate rejects everything during fast pans
-        // (20fps stutter) and lets neighbors alias during slow ones. Instead,
-        // estimate the camera's frame delta from one certainly-correct match:
-        // the largest transform whose call vertex content is identical across
-        // frames and unique on both sides (a terrain chunk; identical
-        // vegetation instances are many-to-many and excluded). For any static
-        // object M with shared view V: prevMV * inv(prevAnchor) * curAnchor
-        // = M*Vp * inv(Vp)*inv(Ma) * Ma*Vc = M*Vc — the prediction is exact
-        // at any pan speed, so the gate below can be tight. A large anchor
-        // rotation or screen travel means the camera itself jumped: a hard
-        // cut, where nothing should lerp.
-        bool snapAnchorValid = false;
-        hlslpp::float4x4 snapViewDelta;
-        // The anchor machinery models the 3D camera and its persistent state
-        // belongs to it exclusively: orthographic (HUD) scenes use the
-        // conservative raw-screen fallback instead and must neither read nor
-        // write the perspective camera's deltas.
-        if (workloadQueue.snapAddressMatrixIds && (firstCurProj.type == Projection::Type::Perspective)) {
-            // Every exactly matched transform is an observation of the
-            // camera's motion; the static world outvotes the movers.
-            thread_local std::vector<IndexPair> snapUniquePairs;
-            snapUniquePairs.clear();
-            for (uint32_t t = 0; t < firstCurWorkloadMap.transforms.size(); t++) {
-                const GameFrameMap::TransformMap &transformMap = firstCurWorkloadMap.transforms[t];
-                if (transformMap.mapped) {
-                    snapUniquePairs.emplace_back(t, transformMap.prevTransformIndex);
-                }
-            }
-
-            auto ndcXY = [&](const hlslpp::float4 &position, const hlslpp::float4x4 &viewProj) {
-                hlslpp::float4 ndc = hlslpp::mul(position, viewProj);
-                ndc = (fabs(ndc.w) < 1e-6f) ? ndc : ndc / ndc.w;
-                return ndc.xy;
-            };
-
-            // A single anchor cannot distinguish camera motion from its own
-            // motion — looking down at the cart would elect the cart and
-            // contaminate the camera estimate with its bobbing. Take the
-            // largest few unique meshes as candidate anchors and elect the
-            // delta that the most OTHER unique meshes agree with; the static
-            // world is the consensus, a moving object is outvoted.
-            const uint32_t SnapAnchorCandidates = 4;
-            thread_local std::vector<IndexPair> snapCandidatePairs;
-            snapCandidatePairs.clear();
-            for (const IndexPair &indices : snapUniquePairs) {
-                snapCandidatePairs.emplace_back(indices);
-                for (size_t i = snapCandidatePairs.size() - 1; i > 0; i--) {
-                    const uint32_t countA = firstCurWorkload.drawData.worldTransformVertexCount(snapCandidatePairs[i].first);
-                    const uint32_t countB = firstCurWorkload.drawData.worldTransformVertexCount(snapCandidatePairs[i - 1].first);
-                    if (countA > countB) {
-                        std::swap(snapCandidatePairs[i], snapCandidatePairs[i - 1]);
-                    }
-                }
-
-                if (snapCandidatePairs.size() > SnapAnchorCandidates) {
-                    snapCandidatePairs.pop_back();
-                }
-            }
-
-            uint32_t bestScore = 0;
-            hlslpp::float4x4 bestDelta;
-            bool bestDeltaValid = false;
-            const float SnapConsensusError = 0.03f;
-            for (const IndexPair &candidate : snapCandidatePairs) {
-                const hlslpp::float4x4 &curAnchor = firstCurWorkload.drawData.worldTransforms[candidate.first];
-                const hlslpp::float4x4 &prevAnchor = firstPrevWorkload.drawData.worldTransforms[candidate.second];
-                const hlslpp::float4x4 candidateDelta = hlslpp::mul(hlslpp::inverse(prevAnchor), curAnchor);
-                uint32_t score = 0;
-                for (const IndexPair &other : snapUniquePairs) {
-                    if (other == candidate) {
-                        continue;
-                    }
-
-                    const hlslpp::float4x4 &curOther = firstCurWorkload.drawData.worldTransforms[other.first];
-                    const hlslpp::float4x4 &prevOther = firstPrevWorkload.drawData.worldTransforms[other.second];
-                    const hlslpp::float4x4 predictedOther = hlslpp::mul(prevOther, candidateDelta);
-                    const float predictionError = hlslpp::length(ndcXY(curOther[3], firstCurViewProj) - ndcXY(predictedOther[3], firstCurViewProj));
-                    if (predictionError <= SnapConsensusError) {
-                        score++;
-                    }
-                }
-
-                if (score > bestScore || !bestDeltaValid) {
-                    bestScore = score;
-                    bestDelta = candidateDelta;
-                    bestDeltaValid = true;
-                }
-            }
-
-            if (bestDeltaValid) {
-                const hlslpp::float4x4 &candidateDelta = bestDelta;
-
-                // Absolute plausibility: rotation within ordinary panning
-                // range for one 20fps game frame.
-                const float deltaRotation =
-                    (1.0f - hlslpp::normalize(candidateDelta[0].xyz).x) +
-                    (1.0f - hlslpp::normalize(candidateDelta[1].xyz).y) +
-                    (1.0f - hlslpp::normalize(candidateDelta[2].xyz).z);
-                const float SnapMaxDeltaRotation = 0.10f;
-                const bool absoluteOk = (deltaRotation <= SnapMaxDeltaRotation);
-
-                // Continuity against the PREVIOUS frame's delta, recorded
-                // even when that frame was not trusted. A sustained fast pan
-                // (the scripted intro swing) fails the absolute cap but stays
-                // consistent frame to frame, so it re-qualifies immediately
-                // instead of cascading cuts for the whole pan. A genuine cut
-                // is fast AND discontinuous.
-                bool continuityOk = false;
-                if (workloadQueue.snapPrevViewDeltaValid) {
-                    const hlslpp::float4x4 relativeDelta = hlslpp::mul(hlslpp::inverse(workloadQueue.snapPrevViewDelta), candidateDelta);
-                    const float continuityDifference =
-                        (1.0f - hlslpp::normalize(relativeDelta[0].xyz).x) +
-                        (1.0f - hlslpp::normalize(relativeDelta[1].xyz).y) +
-                        (1.0f - hlslpp::normalize(relativeDelta[2].xyz).z);
-                    const float SnapMaxContinuityDifference = 0.05f;
-                    continuityOk = (continuityDifference <= SnapMaxContinuityDifference);
-                }
-
-                // A consensus-backed delta (other meshes agree) is the
-                // camera; an unverified one (a single unique mesh in view —
-                // possibly a moving object like the cart) must not steer the
-                // estimate when a trusted delta exists.
-                const bool consensusOk = (bestScore >= 2);
-                if (consensusOk) {
-                    if (absoluteOk || continuityOk) {
-                        snapViewDelta = candidateDelta;
-                        snapAnchorValid = true;
-                        workloadQueue.snapLastViewDelta = snapViewDelta;
-                        workloadQueue.snapLastViewDeltaValid = true;
-                    }
-                    else {
-                        snapSceneCut = true;
-                        workloadQueue.snapLastViewDeltaValid = false;
-                    }
-                }
-                else if (workloadQueue.snapLastViewDeltaValid) {
-                    snapViewDelta = workloadQueue.snapLastViewDelta;
-                    snapAnchorValid = true;
-                }
-                else if (absoluteOk) {
-                    snapViewDelta = candidateDelta;
-                    snapAnchorValid = true;
-                    workloadQueue.snapLastViewDelta = snapViewDelta;
-                    workloadQueue.snapLastViewDeltaValid = true;
-                }
-                else {
-                    snapSceneCut = true;
-                }
-
-                workloadQueue.snapPrevViewDelta = candidateDelta;
-                workloadQueue.snapPrevViewDeltaValid = true;
-            }
-            // No unique-content geometry in view (e.g. looking down at the
-            // CPU-animated water): reuse the last trusted camera delta. If
-            // the camera changed course since, predictions miss the tight
-            // gate and the frame presents unlerped — never garbage.
-            else if (workloadQueue.snapLastViewDeltaValid) {
-                snapViewDelta = workloadQueue.snapLastViewDelta;
-                snapAnchorValid = true;
-            }
-        }
-
-        // On a hard cut nothing in the scene lerps: the world transforms ARE
-        // the camera for this game, so suppressing them presents the frame
-        // clean. Tiles and lookAt pairs are dropped with them.
-        if (workloadQueue.snapAddressMatrixIds && snapSceneCut) {
-            transformCheckSet.clear();
-            tileCheckSet.clear();
-            lookAtCheckSet.clear();
-        }
-        for (const IndexPair &indices : transformCheckSet) {
-            const hlslpp::float4x4 &curTransform = firstCurWorkload.drawData.worldTransforms[indices.first];
-            const hlslpp::float4x4 &prevTransform = firstPrevWorkload.drawData.worldTransforms[indices.second];
-            prevRigidBody = (firstPrevWorkloadMap != nullptr) ? &firstPrevWorkloadMap->transforms[indices.second].rigidBody : nullptr;
-
-            TransformMatchResult matchResult = computeTransformMatch(curTransform, firstCurViewProj, prevTransform, firstPrevViewProj, prevRigidBody);
-            if (matchResult.valid) {
-                matchCandidates.emplace_back(indices.first, indices.second, matchResult.computeDifference());
-            }
-        }
 
         ModifiedBuffers modifiedBuffers;
         std::stable_sort(matchCandidates.begin(), matchCandidates.end());
@@ -918,50 +611,7 @@ namespace RT64 {
                 continue;
             }
 
-            matchTransform(firstCurWorkload, firstPrevWorkload, firstCurWorkloadMap, firstPrevWorkloadMap, candidate.curIndex, candidate.prevIndex, modifiedBuffers, !workloadQueue.snapAddressMatrixIds);
-        }
-
-        // Pokemon Snap port: every transform this scene draws must carry the
-        // camera's motion on interpolated frames — this game's camera lives
-        // in the modelview matrices, so a transform left static lags behind
-        // the lerped world and interpenetrates it in the depth buffer.
-        // Transforms without a reliable pairing (spawns, animation keyframes
-        // that changed bucket, gate rejections) get a synthesized previous
-        // transform equal to their current one moved backward by the camera
-        // delta: they lerp exactly with the world, and only their own 20fps
-        // object motion remains unlerped.
-        if (workloadQueue.snapAddressMatrixIds && snapAnchorValid) {
-            thread_local std::vector<bool> snapSceneTransformUsed;
-            snapSceneTransformUsed.clear();
-            snapSceneTransformUsed.resize(firstCurWorkload.drawData.worldTransforms.size(), false);
-            for (const GameIndices::Projection &projIndices : curScene.projections) {
-                const Workload &sceneWorkload = workloadQueue.workloads[projIndices.workloadIndex];
-                const FramebufferPair &sceneFbPair = sceneWorkload.fbPairs[projIndices.fbPairIndex];
-                const Projection &sceneProj = sceneFbPair.projections[projIndices.projectionIndex];
-                for (uint32_t c = 0; c < sceneProj.gameCallCount; c++) {
-                    const GameCall &sceneCall = sceneProj.gameCalls[c];
-                    for (uint32_t m = sceneCall.callDesc.minWorldMatrix; m <= sceneCall.callDesc.maxWorldMatrix; m++) {
-                        if (m < snapSceneTransformUsed.size()) {
-                            snapSceneTransformUsed[m] = true;
-                        }
-                    }
-                }
-            }
-
-            const hlslpp::float4x4 snapInvViewDelta = hlslpp::inverse(snapViewDelta);
-            for (size_t t = 0; t < snapSceneTransformUsed.size(); t++) {
-                if (!snapSceneTransformUsed[t]) {
-                    continue;
-                }
-
-                GameFrameMap::TransformMap &transformMap = firstCurWorkloadMap.transforms[t];
-                if (transformMap.mapped || transformMap.snapSynthetic) {
-                    continue;
-                }
-
-                transformMap.snapSynthetic = true;
-                transformMap.snapSyntheticPrev = hlslpp::mul(firstCurWorkload.drawData.worldTransforms[t], snapInvViewDelta);
-            }
+            matchTransform(firstCurWorkload, firstPrevWorkload, firstCurWorkloadMap, firstPrevWorkloadMap, candidate.curIndex, candidate.prevIndex, modifiedBuffers, !workloadQueue.snapExactTransformIds);
         }
 
         if (!modifiedBuffers.empty()) {

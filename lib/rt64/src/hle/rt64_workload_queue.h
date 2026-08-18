@@ -61,34 +61,14 @@ namespace RT64 {
         };
 
         External ext;
-        // Pokemon Snap port: derive per-object matrix ids from the address
-        // each matrix was composed at, instead of guessing object identity
-        // from geometry. Games built for interpolation tag their matrices
-        // (gEXMatrixGroup) so the matcher knows which transform is which
-        // object; Snap ships no tags, and geometry matching cannot tell rows
-        // of identical vegetation quads, tiled wall/sky segments or
-        // same-species actors apart. The game does compose each actor's
-        // matrix into its display heap at a stable offset, so the address
-        // identifies the object once the double-buffered heap's base delta is
-        // recovered (GameFrame::match). Transforms that still find no partner
-        // ride the camera through TransformMap::snapSynthetic rather than
-        // standing still, because a static object against a lerped world
-        // interpenetrates it in the shared depth buffer.
-        bool snapAddressMatrixIds = false;
-        // Pokemon Snap port: the last camera frame delta estimated from a
-        // valid anchor, reused on frames whose view contains no static
-        // unique-content geometry (e.g. looking down at the CPU-animated
-        // water). A stale delta self-corrects: wrong predictions fall outside
-        // the tight gate and simply present unlerped. Only written and read
-        // by the workload thread (GameFrame::matchScene).
-        hlslpp::float4x4 snapLastViewDelta;
-        bool snapLastViewDeltaValid = false;
-        // The previous frame's raw anchor delta, recorded even when it was
-        // not trusted. Continuity against this is what lets a sustained fast
-        // pan (the scripted intro swing) re-qualify for interpolation one
-        // frame after a cut instead of cascading into cuts for the whole pan.
-        hlslpp::float4x4 snapPrevViewDelta;
-        bool snapPrevViewDeltaValid = false;
+        // Pokemon Snap port: transforms carry real object ids, supplied by
+        // the port through State::snapMatrixIdLookup from the game's own
+        // object manager, so they pair exactly. With this set the geometry
+        // matcher stays off and tiles and lookAt vectors may only pair
+        // through calls whose matrices paired: a look-alike match is worse
+        // than no match, because a mispaired transform lerps one object into
+        // another while an unpaired one simply renders at its own position.
+        bool snapExactTransformIds = false;
         std::array<Workload, WORKLOAD_QUEUE_SIZE> workloads;
         int threadCursor;
         int writeCursor;

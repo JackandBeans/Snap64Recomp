@@ -58,7 +58,8 @@ static void dummy_check_interrupts() {}
 
 namespace snap {
 
-extern bool g_app_level_resident;  // defined in overlay_hook.cpp
+extern bool g_app_level_resident;                            // overlay_hook.cpp
+uint32_t matrix_id_for_address(uint32_t physicalAddress);    // matrix_ids.cpp
 
 class RT64Context : public ultramodern::renderer::RendererContext {
 public:
@@ -178,9 +179,10 @@ public:
         printf("[SNAP-RT64] Renderer context created (result=%d, api=%d)\n",
                static_cast<int>(result), static_cast<int>(chosen_api));
 
-        // Identify objects across frames by matrix address so interpolated
-        // frames are exact (see snapAddressMatrixIds in rt64_workload_queue.h).
-        app_->workloadQueue->snapAddressMatrixIds = true;
+        // Interpolation identity comes from the game's own object manager
+        // (src/matrix_ids.cpp, snapExactTransformIds in rt64_workload_queue.h).
+        app_->state->snapMatrixIdLookup = &snap::matrix_id_for_address;
+        app_->workloadQueue->snapExactTransformIds = true;
     }
 
     ~RT64Context() override {
