@@ -37,9 +37,20 @@ struct Settings {
     // are synthetic, so writing those back feeds invented pixels to game
     // logic. F6 toggles it to test whether that is behind an artifact.
     bool  render_to_ram     = true;
-    // Interpolate the view and projection as well as object transforms. The
-    // camera is in the modelview matrices too, so the two can disagree. F4.
-    bool  interpolate_camera = true;
+    // Interpolate the view and projection as well as object transforms.
+    //
+    // Off, because this game's camera is not in the view matrix: Snap carries
+    // it in the modelview matrices, so every object's transform already
+    // describes the camera's motion. Interpolating the view and projection on
+    // top of that blends the same motion a second time on a different
+    // schedule, and geometry swims against the view rather than sitting in
+    // it, with whatever is near an edge falling outside -- the lower half of
+    // a Pokemon disappearing while the camera pans down. Verified by toggling
+    // it mid-glitch: the artifact stops the moment this is off.
+    //
+    // Nothing is lost by leaving it off. The camera's motion still
+    // interpolates, through the object transforms that carry it. F4 toggles.
+    bool  interpolate_camera = false;
     int   downsample        = 1;
 };
 
