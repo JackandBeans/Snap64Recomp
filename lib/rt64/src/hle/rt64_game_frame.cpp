@@ -319,6 +319,16 @@ namespace RT64 {
                 workloadsModified[workloads[w]].merge(modifiedBuffers);
             }
 
+            {
+                const DrawData &statDrawData = curWorkload.drawData;
+                for (uint32_t t = 0; t < statDrawData.worldTransformGroups.size(); t++) {
+                    const TransformGroup &group = statDrawData.transformGroups[statDrawData.worldTransformGroups[t]];
+                    workloadQueue.snapStatTransforms++;
+                    workloadQueue.snapStatTagged += ((group.matrixId != G_EX_ID_AUTO) && (group.matrixId != G_EX_ID_IGNORE)) ? 1 : 0;
+                    workloadQueue.snapStatMatched += curWorkloadMap.transforms[t].mapped ? 1 : 0;
+                }
+            }
+
             // Any transforms tagged with the empty ID will be instantly marked as used and skipped.
             for (uint32_t curIt : curWorkload.transformIgnoredIds) {
                 GameFrameMap::TransformMap &curTransformMap = curWorkloadMap.transforms[curIt];
