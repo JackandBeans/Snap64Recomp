@@ -27,6 +27,8 @@
 
 #include "recomp.h"
 
+#include "settings.h"
+
 extern "C" {
 #include "funcs.h"
 }
@@ -131,7 +133,10 @@ extern "C" void renPrepareModelMatrix(uint8_t* rdram, recomp_context* ctx) {
     const uint32_t gfxPtrAddress = static_cast<uint32_t>(ctx->r4);
     const uint32_t dobj = static_cast<uint32_t>(ctx->r5);
 
-    if (snap::valid_ram_address(gfxPtrAddress) && (dobj != snap::IdIgnore) && (dobj != snap::IdAuto)) {
+    // Only worth emitting when something consumes it. Every command written
+    // here occupies space in the game's own display list buffer.
+    if ((snap::settings().fps_mode != 0) &&
+        snap::valid_ram_address(gfxPtrAddress) && (dobj != snap::IdIgnore) && (dobj != snap::IdAuto)) {
         const uint32_t gfx = MEM_W(0, (gpr)(int32_t)gfxPtrAddress);
         if (snap::valid_ram_address(gfx)) {
             // gEXMatrixGroup occupies two commands: opcode and id, then the
@@ -152,7 +157,7 @@ extern "C" void renPrepareModelMatrix(uint8_t* rdram, recomp_context* ctx) {
 extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
     const uint32_t gfxPtrAddress = static_cast<uint32_t>(ctx->r4);
 
-    if (snap::valid_ram_address(gfxPtrAddress)) {
+    if ((snap::settings().fps_mode != 0) && snap::valid_ram_address(gfxPtrAddress)) {
         const uint32_t gfx = MEM_W(0, (gpr)(int32_t)gfxPtrAddress);
         if (snap::valid_ram_address(gfx)) {
             MEM_W(0x0, (gpr)(int32_t)gfx) = snap::EnableWord0;

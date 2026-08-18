@@ -19,10 +19,16 @@ struct Settings {
     int   msaa              = 0;      // 0, 2, 4, 8
     // 0 = Original (native rate), 1 = Display refresh, 2 = Manual.
     //
-    // Interpolation pairs each frame's transforms with the previous frame's
-    // by object id, which src/matrix_tags.cpp emits into the display list the
-    // way ports built for RT64 do. Press F8 to cycle back to the native rate.
-    int   fps_mode          = 1;
+    // Defaults to Original, and should stay there for normal play.
+    //
+    // This game reads back its own rendered framebuffer: photo scoring
+    // re-renders and counts pixels, and the focus indicator copies tiles of
+    // the colour buffer after each Pokemon draws to decide whether one is
+    // centred. Interpolation renders and presents synthetic frames around the
+    // real one, so what the game reads back is no longer what it drew, and
+    // those mechanics stop working -- the red dot stops appearing. F8 enables
+    // it anyway for a look at high-refresh motion, at that cost.
+    int   fps_mode          = 0;
     int   fps_manual_target = 120;
     bool  hq_sound          = true;   // pins the game's auSoundQuality flag to 1
     bool  three_point_filtering = true;
