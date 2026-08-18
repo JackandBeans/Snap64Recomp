@@ -273,11 +273,23 @@ public:
         // Gate exactly like the game's own dot draw: focused, not in a
         // directed cutscene, and the pokemon has POKEMON_FLAG_4. Addresses
         // are link-time .app_level bss symbols from the decomp build map.
+        //
+        // The condition is PokemonDetector_PostProcessImage's own, from
+        // src/app_level/pokemon_detect.c:
+        //
+        //     if (PokemonDetector_HasPokemonInFocus && gDirectionIndex == -1 &&
+        //         (PokemonDetector_PokemonFlagsInFocus & POKEMON_FLAG_4))
+        //
+        // These are the detector's variables, not the player-facing
+        // gHasPokemonInFocus / gPokemonFlagsInFocus that sit 0x10 above them
+        // and are only assigned alongside them at init. Reading those instead
+        // is why the dot stopped appearing. Addresses are from the decomp's
+        // ELF symbols; s32 reads direct, u16 reads at addr^2.
         {
-            uint8_t* RDRAM = app_->core.RDRAM;
-            const uint32_t hasFocus = *reinterpret_cast<uint32_t*>(RDRAM + 0x3AE768);   // gHasPokemonInFocus
-            const int32_t  dirIndex = *reinterpret_cast<int32_t*>(RDRAM + 0x382BFC);    // gDirectionIndex
-            const uint16_t flags    = *reinterpret_cast<uint16_t*>(RDRAM + (0x3AE774 ^ 2)); // gPokemonFlagsInFocus
+            const uint8_t* RDRAM = app_->core.RDRAM;
+            const int32_t  hasFocus = *reinterpret_cast<const int32_t*>(RDRAM + 0x3AE758);   // PokemonDetector_HasPokemonInFocus
+            const int32_t  dirIndex = *reinterpret_cast<const int32_t*>(RDRAM + 0x382BFC);   // gDirectionIndex
+            const uint16_t flags    = *reinterpret_cast<const uint16_t*>(RDRAM + (0x3AE764 ^ 2)); // PokemonDetector_PokemonFlagsInFocus
             app_->state->snapFocusDotRequest = snap::g_app_level_resident &&
                 (hasFocus != 0) && (dirIndex == -1) && ((flags & 0x4) != 0);
         }
