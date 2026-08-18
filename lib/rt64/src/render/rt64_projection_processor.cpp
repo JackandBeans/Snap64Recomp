@@ -70,7 +70,8 @@ namespace RT64 {
             const interop::float4x4 *prevViewMatrix = nullptr;
             const RigidBody *rigidBody = nullptr;
             const GameFrameMap::WorkloadMap &workloadMap = p.curFrame->frameMap.workloads[sceneProj.workloadIndex];
-            if ((p.prevFrame != nullptr) && workloadMap.mapped && !workload.debuggerCamera.enabled) {
+            if ((p.prevFrame != nullptr) && workloadMap.mapped && !workload.debuggerCamera.enabled &&
+                p.workloadQueue->snapInterpolateCamera) {
                 const GameFrameMap::ViewProjectionMap &viewProjMap = workloadMap.viewProjections[proj.transformsIndex];
                 if (viewProjMap.mapped) {
                     const Workload &prevWorkload = p.workloadQueue->workloads[workloadMap.prevWorkloadIndex];

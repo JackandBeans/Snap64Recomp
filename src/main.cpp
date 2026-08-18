@@ -107,9 +107,10 @@ static void snap_update_window_title() {
     }
 
     char title[128];
-    snprintf(title, sizeof(title), "Pokemon Snap%s%s",
+    snprintf(title, sizeof(title), "Pokemon Snap%s%s%s",
              (snap::settings().fps_mode == 0) ? "" : " - interpolation ON (F8)",
-             snap::settings().render_to_ram ? "" : " - render-to-RAM OFF (F6)");
+             snap::settings().render_to_ram ? "" : " - render-to-RAM OFF (F6)",
+             snap::settings().interpolate_camera ? "" : " - camera lerp OFF (F4)");
     SDL_SetWindowTitle(sdl_window, title);
 }
 

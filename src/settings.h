@@ -37,6 +37,9 @@ struct Settings {
     // are synthetic, so writing those back feeds invented pixels to game
     // logic. F6 toggles it to test whether that is behind an artifact.
     bool  render_to_ram     = true;
+    // Interpolate the view and projection as well as object transforms. The
+    // camera is in the modelview matrices too, so the two can disagree. F4.
+    bool  interpolate_camera = true;
     int   downsample        = 1;
 };
 

@@ -257,6 +257,7 @@ public:
         // NOT caused by this reset.
         // Kept in sync every list so F6 takes effect immediately.
         app_->state->setRenderToRAM(snap::settings().render_to_ram ? 1 : 0);
+        app_->workloadQueue->snapInterpolateCamera = snap::settings().interpolate_camera;
 
         app_->state->rsp->reset();
 

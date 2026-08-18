@@ -61,6 +61,12 @@ namespace RT64 {
         };
 
         External ext;
+        // Pokemon Snap port: interpolate the view and projection. This game
+        // carries its camera in the modelview matrices as well, so both
+        // describe the same motion and blending them on separate schedules
+        // makes geometry swim against the view. Toggled at runtime to test
+        // that (F4).
+        bool snapInterpolateCamera = true;
         // Pokemon Snap port: interpolation diagnostics, reported by send_dl.
         uint32_t snapStatTransforms = 0;
         uint32_t snapStatRejected = 0;

@@ -122,6 +122,10 @@ bool handle_settings_hotkey(int scancode) {
             apply_game_settings(g_rdram);
             printf("[SNAP-CFG] HQ sound: %s\n", s_settings.hq_sound ? "on" : "off");
             return true;
+        case SDL_SCANCODE_F4:
+            s_settings.interpolate_camera = !s_settings.interpolate_camera;
+            printf("[SNAP-CFG] camera interpolation: %s\n", s_settings.interpolate_camera ? "on" : "off");
+            return true;
         case SDL_SCANCODE_F6:
             s_settings.render_to_ram = !s_settings.render_to_ram;
             printf("[SNAP-CFG] render to RAM: %s\n", s_settings.render_to_ram ? "on" : "off");
