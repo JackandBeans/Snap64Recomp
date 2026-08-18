@@ -59,6 +59,7 @@ static void dummy_check_interrupts() {}
 namespace snap {
 
 extern bool g_app_level_resident;                            // overlay_hook.cpp
+extern bool g_focus_dot_visible;                             // focus_dot.cpp
 
 class RT64Context : public ultramodern::renderer::RendererContext {
 public:
@@ -273,26 +274,12 @@ public:
         // Gate exactly like the game's own dot draw: focused, not in a
         // directed cutscene, and the pokemon has POKEMON_FLAG_4. Addresses
         // are link-time .app_level bss symbols from the decomp build map.
-        //
-        // The condition is PokemonDetector_PostProcessImage's own, from
-        // src/app_level/pokemon_detect.c:
-        //
-        //     if (PokemonDetector_HasPokemonInFocus && gDirectionIndex == -1 &&
-        //         (PokemonDetector_PokemonFlagsInFocus & POKEMON_FLAG_4))
-        //
-        // These are the detector's variables, not the player-facing
-        // gHasPokemonInFocus / gPokemonFlagsInFocus that sit 0x10 above them
-        // and are only assigned alongside them at init. Reading those instead
-        // is why the dot stopped appearing. Addresses are from the decomp's
-        // ELF symbols; s32 reads direct, u16 reads at addr^2.
-        {
-            const uint8_t* RDRAM = app_->core.RDRAM;
-            const int32_t  hasFocus = *reinterpret_cast<const int32_t*>(RDRAM + 0x3AE758);   // PokemonDetector_HasPokemonInFocus
-            const int32_t  dirIndex = *reinterpret_cast<const int32_t*>(RDRAM + 0x382BFC);   // gDirectionIndex
-            const uint16_t flags    = *reinterpret_cast<const uint16_t*>(RDRAM + (0x3AE764 ^ 2)); // PokemonDetector_PokemonFlagsInFocus
-            app_->state->snapFocusDotRequest = snap::g_app_level_resident &&
-                (hasFocus != 0) && (dirIndex == -1) && ((flags & 0x4) != 0);
-        }
+        // The game draws its focus indicator into the framebuffer in RDRAM,
+        // which HLE presentation never shows. src/focus_dot.cpp watches the
+        // game's own draw and reports it here, so the condition, its timing
+        // and the state behind it all stay the game's (see
+        // State::snapFocusDotRequest).
+        app_->state->snapFocusDotRequest = snap::g_app_level_resident && snap::g_focus_dot_visible;
 
         // Process the display list. Pass 0 for dlEndAddress â€” RT64 will walk
         // the list until it encounters a G_ENDDL command.

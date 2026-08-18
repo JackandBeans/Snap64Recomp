@@ -99,6 +99,7 @@ set(SNAP_SOURCES
     src/os_stubs.cpp
     src/overlay_hook.cpp
     src/matrix_tags.cpp
+    src/focus_dot.cpp
     src/settings.cpp
     rsp/aspMain.cpp
 )

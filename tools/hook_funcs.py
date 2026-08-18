@@ -20,6 +20,9 @@ HOOKED = [
     # pointer, so the port can emit RT64 matrix groups through it.
     'renPrepareModelMatrix',
     'renPrepareCameraMatrix',
+    # The camera focus indicator: the game draws it into RDRAM, which HLE
+    # presentation never shows, so the port observes it and redraws it.
+    'PokemonDetector_PostProcessImage',
 ]
 
 
