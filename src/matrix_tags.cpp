@@ -81,13 +81,29 @@ constexpr uint32_t MatrixGroupWord2 =
     Param(ComponentAuto, 2, 7) |            // scale
     Param(ComponentAuto, 2, 9) |            // skew
     Param(ComponentAuto, 2, 11) |           // perspective
-    Param(ComponentAuto, 2, 13) |           // vertices
-    Param(ComponentAuto, 2, 15) |           // tiles
+    //
+    // Everything below is interpolated from per-vertex and per-tile data
+    // rather than from the matrix, and all of it is skipped here.
+    //
+    // Vertex interpolation derives a velocity per vertex by comparing this
+    // frame's vertex data with the previous frame's over the matched
+    // transform's vertex range. That assumes a vertex keeps its position in
+    // the range between frames, which does not hold in this game: the vertex
+    // heap is rebuilt every frame, so equally sized ranges routinely describe
+    // different geometry and the velocities become meaningless. Applied to a
+    // close, animated model it tears the model apart. Texture coordinate,
+    // tile and lookAt interpolation are derived the same way, from data this
+    // game also rebuilds, so they are skipped for the same reason.
+    //
+    // The transform itself still interpolates, which is where the smoothness
+    // comes from.
+    Param(ComponentSkip, 2, 13) |           // vertices
+    Param(ComponentSkip, 2, 15) |           // tiles
     Param(OrderLinear, 2, 17) |
     Param(EditAllow, 1, 19) |
     Param(0, 2, 20) |                       // aspect: automatic
-    Param(ComponentAuto, 2, 22) |           // texture coordinates
-    Param(ComponentAuto, 2, 24);            // lookAt
+    Param(ComponentSkip, 2, 22) |           // texture coordinates
+    Param(ComponentSkip, 2, 24);            // lookAt
 
 // A Gfx command is two 32-bit words.
 constexpr uint32_t GfxCommandSize = 8;
