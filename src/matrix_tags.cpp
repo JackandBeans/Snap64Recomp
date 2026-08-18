@@ -52,7 +52,7 @@ constexpr uint32_t ComponentAuto = 0x2;   // G_EX_COMPONENT_AUTO
 constexpr uint32_t ComponentSkip = 0x0;   // G_EX_COMPONENT_SKIP
 constexpr uint32_t OrderLinear = 0x0;     // G_EX_ORDER_LINEAR
 constexpr uint32_t EditAllow = 0x1;       // G_EX_EDIT_ALLOW
-constexpr uint32_t InterpolateSimple = 0x0;
+constexpr uint32_t InterpolateDecompose = 0x1;
 constexpr uint32_t NoPush = 0x0;
 
 constexpr uint32_t EnableWord0 = Param(HookOpcode, 8, 24) | Param(HookMagicNumber, 24, 0);
@@ -60,17 +60,26 @@ constexpr uint32_t EnableWord1 = Param(HookOpEnable, 4, 28) | Param(ExtendedOpco
 
 constexpr uint32_t MatrixGroupWord0 = Param(ExtendedOpcode, 8, 24) | Param(MatrixGroupV1, 24, 0);
 
-// Matches gEXMatrixGroupSimple: no push, modelview rather than projection,
-// every component left on automatic, and linear ordering, which is what pairs
-// an object's nth matrix with its own nth matrix from the previous frame.
+// Matches gEXMatrixGroupDecomposed: no push, modelview rather than
+// projection, every component automatic, and linear ordering, which pairs an
+// object's nth matrix with its own nth matrix from the previous frame.
+//
+// Decomposed rather than simple interpolation, which matters more here than in
+// most games. Simple mode lerps the matrix element by element, and the result
+// of blending two rotations that way is not a rotation: it skews and shrinks,
+// the more so the larger the angle between them. Snap keeps the camera in the
+// modelview matrices, so pitching the camera down rotates *every* object's
+// matrix at once, and a fast look turns that error into visible warping.
+// Decomposing into position, rotation and scale interpolates the rotation as a
+// rotation, which is what RT64 recommends and what other ports tag actors with.
 constexpr uint32_t MatrixGroupWord2 =
     Param(NoPush, 1, 0) |
     Param(0, 1, 1) |                        // proj: modelview
-    Param(InterpolateSimple, 1, 2) |
+    Param(InterpolateDecompose, 1, 2) |
     Param(ComponentAuto, 2, 3) |            // position
     Param(ComponentAuto, 2, 5) |            // rotation
-    Param(ComponentSkip, 2, 7) |            // scale, unused by simple mode
-    Param(ComponentSkip, 2, 9) |            // skew, unused by simple mode
+    Param(ComponentAuto, 2, 7) |            // scale
+    Param(ComponentAuto, 2, 9) |            // skew
     Param(ComponentAuto, 2, 11) |           // perspective
     Param(ComponentAuto, 2, 13) |           // vertices
     Param(ComponentAuto, 2, 15) |           // tiles
