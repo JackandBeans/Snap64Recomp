@@ -1084,14 +1084,6 @@ namespace RT64 {
                         displayTicks += workload.viOriginalRate;
                         curFrameWeight = std::clamp((workloadConfig.targetRate + displayTicks - logicalTicks) / float(workloadConfig.targetRate), 0.0f, 1.0f);
 
-                        // Pokemon Snap port, temporary: pin every generated
-                        // frame to the current one. Extra frames are still
-                        // rendered and presented, through the same separate
-                        // targets and the same depth and presentation path,
-                        // but nothing is blended, so an artifact that survives
-                        // this cannot come from interpolated geometry.
-                        prevFrameWeight = 0.0f;
-                        curFrameWeight = 1.0f;
 
                         // Override the render target.
                         if (usingMSAA || (frame > 0)) {

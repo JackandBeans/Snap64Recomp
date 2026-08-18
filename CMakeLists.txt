@@ -100,7 +100,10 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/RecompiledPatches/patches.c")
     message(STATUS "Game patches: RecompiledPatches/patches.c")
     # Same treatment the recompiled game gets: it is generated MIPS-derived C.
     set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/RecompiledPatches/patches.c"
-        PROPERTIES COMPILE_OPTIONS "$<IF:$<BOOL:${MSVC}>,/w;/O2,-w>")
+        # /Oi-: the game has functions named sinf and cosf, which MSVC would
+        # otherwise replace with its math intrinsics and then reject for
+        # taking the recompiler's two arguments.
+        PROPERTIES COMPILE_OPTIONS "$<IF:$<BOOL:${MSVC}>,/w;/O2;/Oi-,-w>")
 endif()
 
 set(SNAP_SOURCES
@@ -114,6 +117,7 @@ set(SNAP_SOURCES
     src/overlay_hook.cpp
     src/matrix_tags.cpp
     src/focus_dot.cpp
+    src/patch_shims.cpp
     src/settings.cpp
     rsp/aspMain.cpp
 )

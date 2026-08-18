@@ -43,7 +43,7 @@ def sections(elf):
 def functions(elf):
     """FUNC symbols with a size, grouped by section index."""
     out = subprocess.run(['readelf', '-sW', elf], capture_output=True, text=True, check=True).stdout
-    by_section = {}
+    entries = []
     for line in out.splitlines():
         fields = line.split()
         # Num: Value Size Type Bind Vis Ndx Name
@@ -56,8 +56,22 @@ def functions(elf):
         except ValueError:
             continue
         name = fields[7]
-        # The recompiler rejects unaligned or empty functions.
-        if size == 0 or (vram & 3):
+        if vram & 3:
+            continue
+        entries.append((ndx, name, vram, size))
+
+    # A weak alias carries no size of its own -- sinf aliasing __sinf, for
+    # instance -- and dropping those leaves calls to them unresolvable. Give
+    # each the size of the real symbol at the same address.
+    size_by_vram = {}
+    for _, _, vram, size in entries:
+        if size > size_by_vram.get(vram, 0):
+            size_by_vram[vram] = size
+
+    by_section = {}
+    for ndx, name, vram, size in entries:
+        size = size or size_by_vram.get(vram, 0)
+        if size == 0:
             continue
         by_section.setdefault(ndx, []).append((name, vram, size))
     return by_section

@@ -16,9 +16,8 @@ HOOKED = [
     'dmaLoadOverlay',
     'check_sp_imem',
     'check_sp_dmem',
-    # Frame-interpolation object identity: both receive the display list write
-    # pointer, so the port can emit RT64 matrix groups through it.
-    'renPrepareModelMatrix',
+    # Turns RT64's extended commands on through the display list write pointer
+    # it receives. Object identity is a game patch now, not a hook.
     'renPrepareCameraMatrix',
     # The camera focus indicator: the game draws it into RDRAM, which HLE
     # presentation never shows, so the port observes it and redraws it.

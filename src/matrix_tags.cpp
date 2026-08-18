@@ -1,6 +1,6 @@
 /**
  * @file matrix_tags.cpp
- * @brief Object identity for RT64's frame interpolation.
+ * @brief Enables RT64's extended display list commands.
  *
  * Interpolation blends this frame's matrices with the previous frame's, which
  * requires knowing which object each matrix belongs to. A display list does
@@ -127,31 +127,9 @@ bool valid_ram_address(uint32_t address) {
 } // namespace
 } // namespace snap
 
-// a0 is Gfx**, the game's display list write pointer. Emitting through it and
-// storing it back keeps the game unaware that anything was inserted.
-extern "C" void renPrepareModelMatrix(uint8_t* rdram, recomp_context* ctx) {
-    const uint32_t gfxPtrAddress = static_cast<uint32_t>(ctx->r4);
-    const uint32_t dobj = static_cast<uint32_t>(ctx->r5);
-
-    // Only worth emitting when something consumes it. Every command written
-    // here occupies space in the game's own display list buffer.
-    if ((snap::settings().fps_mode != 0) &&
-        snap::valid_ram_address(gfxPtrAddress) && (dobj != snap::IdIgnore) && (dobj != snap::IdAuto)) {
-        const uint32_t gfx = MEM_W(0, (gpr)(int32_t)gfxPtrAddress);
-        if (snap::valid_ram_address(gfx)) {
-            // gEXMatrixGroup occupies two commands: opcode and id, then the
-            // component flags and a reserved word.
-            MEM_W(0x0, (gpr)(int32_t)gfx) = snap::MatrixGroupWord0;
-            MEM_W(0x4, (gpr)(int32_t)gfx) = dobj;
-            MEM_W(0x8, (gpr)(int32_t)gfx) = snap::MatrixGroupWord2;
-            MEM_W(0xC, (gpr)(int32_t)gfx) = 0;
-            MEM_W(0, (gpr)(int32_t)gfxPtrAddress) = gfx + (2 * snap::GfxCommandSize);
-        }
-    }
-
-    __real_renPrepareModelMatrix(rdram, ctx);
-}
-
+// Object identity itself now comes from patches/src/render_patch.c, which
+// tags each matrix with the OMMtx it belongs to from inside the game. All
+// that is left here is switching the extended commands on.
 // Camera setup runs ahead of object rendering each frame, so this is where the
 // extension gets turned on. RT64 keeps the state, and re-enabling is harmless.
 extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
