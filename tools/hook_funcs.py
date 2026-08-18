@@ -16,6 +16,10 @@ HOOKED = [
     'dmaLoadOverlay',
     'check_sp_imem',
     'check_sp_dmem',
+    # Frame-interpolation object identity: both receive the display list write
+    # pointer, so the port can emit RT64 matrix groups through it.
+    'renPrepareModelMatrix',
+    'renPrepareCameraMatrix',
 ]
 
 

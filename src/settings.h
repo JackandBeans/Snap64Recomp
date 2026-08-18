@@ -19,14 +19,10 @@ struct Settings {
     int   msaa              = 0;      // 0, 2, 4, 8
     // 0 = Original (native rate), 1 = Display refresh, 2 = Manual.
     //
-    // Defaults to Original, which reproduces the N64 output exactly. RT64
-    // interpolates by pairing each frame's transforms with the previous
-    // frame's, and games written for it tag their matrices with object ids so
-    // the pairing is exact. Snap ships no tags, so RT64 falls back to matching
-    // on geometry, which cannot separate rows of identical vegetation quads,
-    // tiled wall and sky segments, or same-species Pokemon. Press F8 to cycle
-    // interpolation on; expect mispaired geometry to shimmer while it is.
-    int   fps_mode          = 0;
+    // Interpolation pairs each frame's transforms with the previous frame's
+    // by object id, which src/matrix_tags.cpp emits into the display list the
+    // way ports built for RT64 do. Press F8 to cycle back to the native rate.
+    int   fps_mode          = 1;
     int   fps_manual_target = 120;
     bool  hq_sound          = true;   // pins the game's auSoundQuality flag to 1
     bool  three_point_filtering = true;
