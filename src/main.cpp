@@ -106,9 +106,11 @@ static void snap_update_window_title() {
         return;
     }
 
-    SDL_SetWindowTitle(sdl_window, (snap::settings().fps_mode == 0)
-        ? "Pokemon Snap"
-        : "Pokemon Snap - frame interpolation ON (F8 to turn off)");
+    char title[128];
+    snprintf(title, sizeof(title), "Pokemon Snap%s%s",
+             (snap::settings().fps_mode == 0) ? "" : " - interpolation ON (F8)",
+             snap::settings().render_to_ram ? "" : " - render-to-RAM OFF (F6)");
+    SDL_SetWindowTitle(sdl_window, title);
 }
 
 static void update_gfx(void* /*gfx_data*/) {

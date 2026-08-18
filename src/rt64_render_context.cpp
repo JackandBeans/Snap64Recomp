@@ -254,6 +254,9 @@ public:
         // REQUIRED: removing this leaks matrix/vertex state across frames and
         // shreds terrain geometry (tested 2026-08-15). The texture flashing is
         // NOT caused by this reset.
+        // Kept in sync every list so F6 takes effect immediately.
+        app_->state->setRenderToRAM(snap::settings().render_to_ram ? 1 : 0);
+
         app_->state->rsp->reset();
 
         // Tell the HLE interpreter which GBI microcode variant to use.

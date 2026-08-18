@@ -50,7 +50,7 @@ constexpr uint32_t MatrixGroupV1 = 0x00000C;
 
 constexpr uint32_t ComponentAuto = 0x2;   // G_EX_COMPONENT_AUTO
 constexpr uint32_t ComponentSkip = 0x0;   // G_EX_COMPONENT_SKIP
-constexpr uint32_t OrderAuto = 0x1;       // G_EX_ORDER_AUTO
+constexpr uint32_t OrderLinear = 0x0;     // G_EX_ORDER_LINEAR
 constexpr uint32_t EditAllow = 0x1;       // G_EX_EDIT_ALLOW
 constexpr uint32_t InterpolateDecompose = 0x1;
 constexpr uint32_t NoPush = 0x0;
@@ -99,20 +99,11 @@ constexpr uint32_t MatrixGroupWord2 =
     // comes from.
     Param(ComponentSkip, 2, 13) |           // vertices
     Param(ComponentSkip, 2, 15) |           // tiles
-    //
-    // Automatic rather than linear ordering. Linear pairs an object's nth
-    // matrix with its nth matrix of the previous frame, which is only correct
-    // if the object emits the same number every frame. renPrepareModelMatrix
-    // does not: its loop skips matrices by kind, continues early, and defers
-    // to custom matrix handlers, all of which vary with animation state. One
-    // extra or missing matrix then shifts every pairing after it, blending an
-    // animated model's parts into each other while static geometry, whose
-    // matrix count never changes, stays correct.
-    //
-    // Automatic ordering matches within the group by similarity instead, and
-    // because a pair must still share an id, this keeps identity exact
-    // between objects while tolerating an object's own list changing shape.
-    Param(OrderAuto, 2, 17) |
+    // Linear ordering. Automatic ordering was tried and stopped transforms
+    // pairing at all (matched fell to zero while tagging stayed at 3891 of
+    // 3951), so identity by id plus position in the object's list is what
+    // actually matches here.
+    Param(OrderLinear, 2, 17) |
     Param(EditAllow, 1, 19) |
     Param(0, 2, 20) |                       // aspect: automatic
     Param(ComponentSkip, 2, 22) |           // texture coordinates

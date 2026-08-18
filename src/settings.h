@@ -26,6 +26,11 @@ struct Settings {
     int   fps_manual_target = 120;
     bool  hq_sound          = true;   // pins the game's auSoundQuality flag to 1
     bool  three_point_filtering = true;
+    // RT64 writes each rendered frame back into RDRAM, which this game needs:
+    // photo scoring reads the framebuffer it just drew. Interpolated frames
+    // are synthetic, so writing those back feeds invented pixels to game
+    // logic. F6 toggles it to test whether that is behind an artifact.
+    bool  render_to_ram     = true;
     int   downsample        = 1;
 };
 
