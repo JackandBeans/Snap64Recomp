@@ -75,9 +75,17 @@ namespace RT64 {
         uploads.clear();
 
         for (uint32_t w : p.curFrame->workloads) {
-            const bool prevFrameValid = (p.prevFrame != nullptr);
             Workload &workload = p.workloadQueue->workloads[w];
             const DrawData &drawData = workload.drawData;
+            // process() only fills the lerp and prev vectors when the workload
+            // is mapped to one in the previous frame; otherwise it clears them
+            // and fills nothing. Testing prevFrame alone, as this did, then
+            // hands the GPU an empty vector's data while asking it to read a
+            // matrix per world transform, so an unmapped workload uploads
+            // whatever happens to follow in memory as its world matrices.
+            // Geometry warps and sinks through the scene for that frame, and
+            // unmapped workloads are routine while the view is changing.
+            const bool prevFrameValid = (p.prevFrame != nullptr) && !drawData.lerpWorldTransforms.empty();
             DrawBuffers &drawBuffers = workload.drawBuffers;
             const interop::float4x4 *worldMatrices = prevFrameValid ? drawData.lerpWorldTransforms.data() : drawData.worldTransforms.data();
             const interop::float4x4 *prevWorldMatrices = prevFrameValid ? drawData.prevWorldTransforms.data() : drawData.worldTransforms.data();
