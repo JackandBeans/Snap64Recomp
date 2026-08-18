@@ -298,12 +298,14 @@ public:
 
         if (++interp_report_counter_ >= 60) {
             RT64::WorkloadQueue *queue = app_->workloadQueue.get();
-            fprintf(stderr, "[SNAP-INTERP] transforms=%u tagged=%u matched=%u\n",
-                    queue->snapStatTransforms, queue->snapStatTagged, queue->snapStatMatched);
+            fprintf(stderr, "[SNAP-INTERP] transforms=%u tagged=%u matched=%u rejected=%u\n",
+                    queue->snapStatTransforms, queue->snapStatTagged, queue->snapStatMatched,
+                    queue->snapStatRejected);
             fflush(stderr);
             queue->snapStatTransforms = 0;
             queue->snapStatTagged = 0;
             queue->snapStatMatched = 0;
+            queue->snapStatRejected = 0;
             interp_report_counter_ = 0;
         }
 
