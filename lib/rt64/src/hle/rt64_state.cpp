@@ -2769,13 +2769,6 @@ namespace RT64 {
     }
 
     void State::enableExtendedGBI(uint8_t opCode) {
-        static bool reported = false;
-        if (!reported) {
-            reported = true;
-            fprintf(stderr, "[SNAP-EXGBI] extended GBI enabled, opcode 0x%02X\n", opCode);
-            fflush(stderr);
-        }
-
         ext.interpreter->extendedOpCode = opCode;
     }
 

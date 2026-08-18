@@ -39,18 +39,30 @@ struct Settings {
     bool  render_to_ram     = true;
     // Interpolate the view and projection as well as object transforms.
     //
-    // Off, because this game's camera is not in the view matrix: Snap carries
-    // it in the modelview matrices, so every object's transform already
-    // describes the camera's motion. Interpolating the view and projection on
-    // top of that blends the same motion a second time on a different
-    // schedule, and geometry swims against the view rather than sitting in
-    // it, with whatever is near an edge falling outside -- the lower half of
-    // a Pokemon disappearing while the camera pans down. Verified by toggling
-    // it mid-glitch: the artifact stops the moment this is off.
+    // On, and it has to be: this game's camera lives in the projection stack,
+    // not the modelview. renPrepareCameraMatrix loads the perspective matrix
+    // with G_MTX_PROJECTION and then multiplies the lookat into the same
+    // stack, and every camera the game creates is a non-MVIEW kind that takes
+    // that path -- MTX_TYPE_LOOKAT_REFLECT_ROLL for the camera you look
+    // through on a course. RT64 sees an affine matrix multiplied into the
+    // projection and routes it to the view, which is correct, so the view
+    // matrix is the camera and nothing else carries its motion. Turning this
+    // off pins the camera: an object that does not move on its own has an
+    // identical transform in both frames, so interpolating it is a no-op and
+    // the world can only change at the native rate, while a Pokemon still
+    // looks smooth because its own animation is in the modelview. That is
+    // exactly the 280Hz-Pokemon-in-a-30Hz-world split, and it is why this is
+    // no longer off.
     //
-    // Nothing is lost by leaving it off. The camera's motion still
-    // interpolates, through the object transforms that carry it. F4 toggles.
-    bool  interpolate_camera = false;
+    // It was off because turning it off stopped an artifact. It did, but by
+    // removing the motion that exposed one: a screen-space rejection gate in
+    // matchScene was refusing to pair any transform that moved more than half
+    // of NDC between frames, which during a pan is every untagged transform
+    // there is. Those parts froze while their tagged siblings interpolated,
+    // which is a model coming apart. The gate is gone and both of the game's
+    // matrix emitters are tagged now, so there is nothing left for it to
+    // hide. F4 toggles it for comparison.
+    bool  interpolate_camera = true;
     int   downsample        = 1;
 };
 

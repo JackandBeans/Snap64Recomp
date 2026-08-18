@@ -683,3 +683,68 @@ s32 renPrepareModelMatrix(Gfx** gfxPtr, DObj* dobj) {
     *gfxPtr = sp2DC;
     return sp2D4;
 }
+
+/**
+ * The game's other matrix emitter, reproduced from src/sys/render.c with the
+ * same addition. Objects reach the display list through one of these two, and
+ * only what they tag can be paired between frames, so leaving this one alone
+ * interpolated the Pokemon and left the world it stands in at the native
+ * rate.
+ */
+s32 ren_func_80013C5C(Gfx** gfxPtr, DObj* dobj) {
+    Gfx* gfxPos = *gfxPtr;
+    s32 i;
+    s32 mtxCount = 0;
+
+    for (i = 0; i < dobj->numMatrices; i++) {
+        OMMtx* ommtx = dobj->matrices[i];
+        if (ommtx != NULL) {
+            Mtx** unk;
+            Mtx* mtx;
+
+            if (ommtx->kind != MTX_TYPE_53) {
+                continue;
+            }
+
+            unk = (Mtx**) &ommtx->unk_08;
+            mtx = &ommtx->unk_08;
+
+            if (ommtx->unk_05 != 2) {
+                if (ommtx->unk_05 == 4) {
+                    if (dobj->obj->lastDrawFrame != (u8) gtlDrawnFrameCounter) {
+                        *unk = gtlCurrentGfxHeap.ptr;
+                        mtx = gtlCurrentGfxHeap.ptr;
+                        gtlCurrentGfxHeap.ptr = (u8*) gtlCurrentGfxHeap.ptr + sizeof(Mtx);
+                    } else {
+                        mtx = *unk;
+                        goto END;
+                    }
+                } else {
+                    if (gtlContextId > 0) {
+                        mtx = gtlCurrentGfxHeap.ptr;
+                        gtlCurrentGfxHeap.ptr = (u8*) gtlCurrentGfxHeap.ptr + sizeof(Mtx);
+                    } else if (dobj->obj->lastDrawFrame == (u8) gtlDrawnFrameCounter) {
+                        if (ommtx->unk_05 != 3) {
+                            goto END;
+                        }
+                        mtx = gtlCurrentGfxHeap.ptr;
+                        gtlCurrentGfxHeap.ptr = (u8*) gtlCurrentGfxHeap.ptr + sizeof(Mtx);
+                    }
+                }
+                hal_scale(mtx, renScaleX, renScaleY, renScaleZ);
+                renIsScaleMtxPushed = true;
+            END:
+                if (ommtx->unk_05 == 1 && &ommtx->unk_08 == mtx) {
+                    ommtx->unk_05 = 2;
+                }
+            }
+
+            renEXTagModelMatrix(gfxPos++, ommtx);
+            gSPMatrix(gfxPos++, mtx, G_MTX_PUSH | G_MTX_MUL | G_MTX_MODELVIEW);
+            mtxCount++;
+        }
+    }
+
+    *gfxPtr = gfxPos;
+    return mtxCount;
+}

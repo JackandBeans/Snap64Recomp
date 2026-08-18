@@ -319,16 +319,6 @@ namespace RT64 {
                 workloadsModified[workloads[w]].merge(modifiedBuffers);
             }
 
-            {
-                const DrawData &statDrawData = curWorkload.drawData;
-                for (uint32_t t = 0; t < statDrawData.worldTransformGroups.size(); t++) {
-                    const TransformGroup &group = statDrawData.transformGroups[statDrawData.worldTransformGroups[t]];
-                    workloadQueue.snapStatTransforms++;
-                    workloadQueue.snapStatTagged += ((group.matrixId != G_EX_ID_AUTO) && (group.matrixId != G_EX_ID_IGNORE)) ? 1 : 0;
-                    workloadQueue.snapStatMatched += curWorkloadMap.transforms[t].mapped ? 1 : 0;
-                }
-            }
-
             // Any transforms tagged with the empty ID will be instantly marked as used and skipped.
             for (uint32_t curIt : curWorkload.transformIgnoredIds) {
                 GameFrameMap::TransformMap &curTransformMap = curWorkloadMap.transforms[curIt];
@@ -598,24 +588,6 @@ namespace RT64 {
 
             TransformMatchResult matchResult = computeTransformMatch(curTransform, firstCurViewProj, prevTransform, firstPrevViewProj, prevRigidBody);
             if (matchResult.valid) {
-                // Pokemon Snap port: an id says two transforms are the same
-                // object; it does not say the object stayed in one place. The
-                // ids here are DObj addresses, and the object manager pools
-                // DObjs: a despawned actor's slot is handed to another one,
-                // and the id then names two unrelated positions. Interpolating
-                // across that stretches a model between them, which is what
-                // actors churning in and out of view -- exactly what pitching
-                // the camera down causes -- produces.
-                //
-                // Nothing the game draws crosses this much of the screen in a
-                // single frame, so treat it as a recycled id rather than
-                // motion and leave the transform unpaired.
-                const float MaxScreenSpaceDifference = 0.5f;
-                if (matchResult.screenSpaceDifference > MaxScreenSpaceDifference) {
-                    workloadQueue.snapStatRejected++;
-                    continue;
-                }
-
                 matchCandidates.emplace_back(indices.first, indices.second, matchResult.computeDifference());
             }
         }

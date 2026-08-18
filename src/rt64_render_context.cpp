@@ -299,18 +299,6 @@ public:
         // frames and layer flicker in the intro forest and beach rock wall.
         app_->workloadQueue->waitForWorkloadId(app_->state->workloadId);
 
-        if (++interp_report_counter_ >= 60) {
-            RT64::WorkloadQueue *queue = app_->workloadQueue.get();
-            fprintf(stderr, "[SNAP-INTERP] transforms=%u tagged=%u matched=%u rejected=%u\n",
-                    queue->snapStatTransforms, queue->snapStatTagged, queue->snapStatMatched,
-                    queue->snapStatRejected);
-            fflush(stderr);
-            queue->snapStatTransforms = 0;
-            queue->snapStatTagged = 0;
-            queue->snapStatMatched = 0;
-            queue->snapStatRejected = 0;
-            interp_report_counter_ = 0;
-        }
 
     }
 
@@ -341,7 +329,6 @@ public:
     }
 
 private:
-    uint32_t interp_report_counter_ = 0;
     std::unique_ptr<RT64::Application> app_;
 };
 

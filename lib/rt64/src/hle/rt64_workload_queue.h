@@ -67,11 +67,6 @@ namespace RT64 {
         // makes geometry swim against the view. Toggled at runtime to test
         // that (F4).
         bool snapInterpolateCamera = true;
-        // Pokemon Snap port: interpolation diagnostics, reported by send_dl.
-        uint32_t snapStatTransforms = 0;
-        uint32_t snapStatRejected = 0;
-        uint32_t snapStatTagged = 0;
-        uint32_t snapStatMatched = 0;
         std::array<Workload, WORKLOAD_QUEUE_SIZE> workloads;
         int threadCursor;
         int writeCursor;

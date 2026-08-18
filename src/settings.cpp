@@ -39,6 +39,8 @@ void load_settings() {
         s_settings.hq_sound           = j.value("hq_sound", s_settings.hq_sound);
         s_settings.three_point_filtering = j.value("three_point_filtering", s_settings.three_point_filtering);
         s_settings.downsample         = j.value("downsample", s_settings.downsample);
+        s_settings.interpolate_camera = j.value("interpolate_camera", s_settings.interpolate_camera);
+        s_settings.render_to_ram      = j.value("render_to_ram", s_settings.render_to_ram);
         printf("[SNAP-CFG] loaded %s\n", SETTINGS_FILE);
     } catch (const std::exception& e) {
         fprintf(stderr, "[SNAP-CFG] failed to parse %s: %s (using defaults)\n", SETTINGS_FILE, e.what());
@@ -55,6 +57,8 @@ void save_settings() {
         {"hq_sound",              s_settings.hq_sound},
         {"three_point_filtering", s_settings.three_point_filtering},
         {"downsample",            s_settings.downsample},
+        {"interpolate_camera",    s_settings.interpolate_camera},
+        {"render_to_ram",         s_settings.render_to_ram},
     };
     std::ofstream f(SETTINGS_FILE);
     f << j.dump(2) << "\n";
