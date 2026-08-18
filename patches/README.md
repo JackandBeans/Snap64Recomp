@@ -1,58 +1,76 @@
-# Decomp patches
+# Game-side patches
 
-Changes to the Pokemon Snap decompilation (`~/pokemonsnap` under WSL), kept
-here because they belong to this port but live in another tree.
+Changes to Pokemon Snap's own code, compiled and recompiled separately from
+the game and linked ahead of it, so a function here replaces the game's own of
+the same name. **The ROM is never rebuilt**, so its layout, the `manual_funcs`
+addresses in `pokemonsnap.us.toml`, the overlay section table and every
+absolute address the port depends on all stay valid.
 
-Apply from the decomp root:
+This is the mechanism N64Recomp provides for patching (`single_file_output`
+plus link order), and the same approach shipped ports use to change game
+behaviour.
+
+## Building
+
+Needs the decompilation (`~/pokemonsnap` under WSL) built at least once, since
+the patch links against its symbols and is compiled with its copy of IDO.
 
 ```sh
-git apply /mnt/c/Users/<you>/PokemonSnapRecomp/patches/render-matrix-tagging.patch
-cp /mnt/c/Users/<you>/PokemonSnapRecomp/lib/rt64/include/rt64_extended_gbi.h include/
+# 1. Symbol files: what the patch links against, and what the recompiler
+#    resolves calls into the game with.
+python tools/gen_reference_syms.py ~/pokemonsnap/build/pokemonsnap.elf \
+    patches/pokemonsnap.syms.toml patches/game_syms.ld
+
+# 2. Compile and link the patch elf.
+make -C patches DECOMP=$HOME/pokemonsnap
+
+# 3. Recompile it to C.
+~/N64Recomp/build/N64Recomp patches.toml
+
+# 4. Build the port. CMake picks up RecompiledPatches/patches.c automatically.
+cmake --build build-win --config Release --target PokemonSnapRecomp --parallel
 ```
+
+Everything except `src/`, the Makefile and the linker script is generated and
+is not tracked.
+
+## How the pieces fit
+
+- **IDO, not gcc.** The decomp builds with `tools/ido7.1/cc` and no MIPS gcc is
+  installed, so the patch uses the same compiler as the code it replaces.
+- **Calls stay unresolved on purpose.** `--emit-relocs` keeps a relocation on
+  each call out of the patch, and the recompiler matches those relocations to
+  the game's functions through `func_reference_syms_file`. Resolving them at
+  link time instead bakes in an address it cannot attribute to anything, which
+  fails with "No function found for jal target". Data symbols are the
+  opposite: they are fixed locations, so `game_syms.ld` supplies them.
+  `--noinhibit-exec` is needed because an unresolved call cannot satisfy
+  R_MIPS_26's range.
+- **`.recomp_patch` marks a replacement.** The recompiler rejects a function
+  that shadows a game function without being marked, and one that is marked
+  but matches nothing. IDO has no section attributes, so `patch.ld` places
+  every function in the patch build into that section.
+- **Link order decides the winner.** `RecompiledPatches/patches.c` compiles
+  straight into the executable, so it is resolved before the linker reaches
+  `recomp_funcs`. MSVC still needs `/FORCE:MULTIPLE` to accept the duplicate,
+  since it pulls the containing object in for its other symbols.
+
+## render_patch.c
+
+`renRenderModelTypeACommon`, reproduced from `src/sys/render.c` with one
+addition: a `gEXMatrixGroup` naming the `DObj` whose matrices follow. That is
+what lets RT64 pair an object with itself between frames rather than inferring
+identity from geometry, which cannot separate rows of identical vegetation
+quads, tiled wall and sky segments, or two of the same Pokemon.
+
+The other `renRenderModelNodeType*` and `renRenderModelType*` functions take
+the same one-line addition when wanted; this one is the smallest and was done
+first.
 
 ## render-matrix-tagging.patch
 
-Gives RT64 real object identity for frame interpolation, the way ports built
-for RT64 do it. Interpolation blends each frame's matrices with the previous
-frame's and needs to know which object every matrix belongs to; a display list
-does not say, and identity guessed from geometry cannot separate rows of
-identical vegetation quads, tiled wall and sky segments, or two of the same
-Pokemon. Every attempt to infer it renderer-side failed, and the failures are
-recorded in the port's memory notes so they are not retried.
-
-`renPrepareModelMatrix(Gfx** gfxPtr, DObj* dobj)` receives the owning object in
-its **second** argument -- the first is a display-list pointer, which is what
-earlier host-side hooks mistakenly read. The patch precedes every model matrix
-with a `gEXMatrixGroup` carrying that DObj, under `G_EX_ORDER_LINEAR` so an
-object's nth matrix pairs with its own nth matrix from the previous frame, and
-enables the extended commands from `renPrepareCameraMatrix`, which runs ahead
-of object rendering each frame.
-
-Status: written, compiles and links. **Not yet shipped**, because rebuilding
-the game grows `.main` by 0x50 bytes and that invalidates four things the port
-currently depends on:
-
-1. The ROM layout shifts, so the original `pokemonsnap.z64` no longer matches
-   what the recompiled code expects. The port would have to load the rebuilt
-   ROM, which means updating `SNAP_ROM_HASH` in `src/main.cpp`.
-2. `.main_bss` moves with it, so the port's hardcoded addresses shift --
-   `SNAP_SP_IMEM_OKAY` / `SNAP_SP_DMEM_OKAY` in `src/overlay_hook.cpp` and any
-   other absolute bss address.
-3. `manual_funcs` in `pokemonsnap.us.toml` are hardcoded vram addresses found
-   by a prologue scan; they need re-scanning against the new ELF. N64Recomp
-   fails on `manualfunc_80028DA4` until they are.
-4. The overlay section table needs regenerating. `RecompiledFuncs/` already
-   contains an N64Recomp-generated `recomp_overlays.inl`; whether it can
-   replace the hand-generated `src/recomp_overlays.inl` (which currently wins
-   on include order) is the open question there.
-
-Rebuild pipeline once those are handled:
-
-```sh
-cd ~/pokemonsnap && ninja                     # checksum WILL fail: the ROM changed on purpose
-mips-linux-gnu-ld --emit-relocs -T undefined_syms.txt -T undefined_syms_auto.txt \
-    -Map build/pokemonsnap.relocs.map -T pokemonsnap.ld -o build/pokemonsnap.relocs.elf
-~/N64Recomp/build/N64Recomp <toml with /mnt/c output paths>
-python tools/hook_funcs.py                    # from the port root
-cmake --build build-win --config Release --target PokemonSnapRecomp --parallel
-```
+An earlier attempt at the same goal by editing the decomp directly and
+rebuilding the ROM. Superseded by the patch mechanism above, which needs no
+rebuild, and kept only as a record of why: growing `.main` by 0x50 bytes moved
+`.main_bss`, invalidated the `manual_funcs` addresses and the overlay table,
+and left the original cartridge no longer matching the recompiled code.

@@ -1,0 +1,21 @@
+# Recompiles the game-side patches on their own, without touching the game.
+#
+# single_file_output emits one C file. Linking it ahead of the recompiled game
+# makes each function here win over the original of the same name, because a
+# linker only reaches into a static library for symbols it has not already
+# resolved. Nothing about the ROM changes, so the section layout, the
+# manual_funcs addresses and the overlay table all stay valid.
+#
+# Run from the port root, after building patches/ and regenerating the symbol
+# file with tools/gen_reference_syms.py:
+#
+#   ~/N64Recomp/build/N64Recomp patches.toml
+
+[input]
+# No entrypoint: this elf holds replacement functions, not a program.
+elf_path = "patches/build/patches.elf"
+output_func_path = "RecompiledPatches"
+single_file_output = true
+
+# Lets the recompiler resolve calls out of the patch into the game.
+func_reference_syms_file = "patches/pokemonsnap.syms.toml"

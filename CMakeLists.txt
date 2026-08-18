@@ -90,7 +90,21 @@ endif()
 # =============================================================================
 # Game executable
 # =============================================================================
+# Game-side patches, recompiled from patches/ by N64Recomp (see patches.toml).
+# Compiled straight into the executable rather than into a library, so these
+# definitions are already resolved by the time the linker reaches
+# recomp_funcs and the game's own versions are never pulled in.
+set(SNAP_PATCH_SOURCES)
+if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/RecompiledPatches/patches.c")
+    set(SNAP_PATCH_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/RecompiledPatches/patches.c")
+    message(STATUS "Game patches: RecompiledPatches/patches.c")
+    # Same treatment the recompiled game gets: it is generated MIPS-derived C.
+    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/RecompiledPatches/patches.c"
+        PROPERTIES COMPILE_OPTIONS "$<IF:$<BOOL:${MSVC}>,/w;/O2,-w>")
+endif()
+
 set(SNAP_SOURCES
+    ${SNAP_PATCH_SOURCES}
     src/main.cpp
     src/rt64_render_context.cpp
     src/rsp_microcode.cpp
@@ -152,11 +166,19 @@ target_link_libraries(PokemonSnapRecomp PRIVATE
     SDL2::SDL2
 )
 
-if (NOT MSVC)
+if (MSVC)
+    # A patch defines a function the recompiled game also defines. Object
+    # files are linked before libraries and the first definition wins, so the
+    # patch in RecompiledPatches takes precedence over recomp_funcs; the
+    # linker still has to be told the duplicate is intentional. This replaces
+    # the --allow-multiple-definition that serves the same purpose under GNU
+    # ld, which also covers symbols such as guMtxF2L appearing in several
+    # overlay sections.
+    target_link_options(PokemonSnapRecomp PRIVATE /FORCE:MULTIPLE /IGNORE:4006 /IGNORE:4088)
+else()
     target_link_options(PokemonSnapRecomp PRIVATE
         -Wl,--start-group
         -Wl,--end-group
-        # guMtxF2L and friends appear in several overlay sections.
         -Wl,--allow-multiple-definition
     )
 endif()
