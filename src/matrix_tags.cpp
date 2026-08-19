@@ -136,7 +136,11 @@ bool valid_ram_address(uint32_t address) {
 extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
     const uint32_t gfxPtrAddress = static_cast<uint32_t>(ctx->r4);
 
-    if ((snap::settings().fps_mode != 0) && snap::valid_ram_address(gfxPtrAddress)) {
+    // Unconditional: the game patches emit extended commands whether or not
+    // interpolation is on -- the matrix tags and the widescreen border fills
+    // both ride in the display list -- and an extension that is never enabled
+    // leaves them as unknown opcodes. Enabling costs nothing when unused.
+    if (snap::valid_ram_address(gfxPtrAddress)) {
         const uint32_t gfx = MEM_W(0, (gpr)(int32_t)gfxPtrAddress);
         if (snap::valid_ram_address(gfx)) {
             MEM_W(0x0, (gpr)(int32_t)gfx) = snap::EnableWord0;
