@@ -121,15 +121,24 @@ void report_detector(uint8_t* rdram) {
 extern "C" void PokemonDetector_PostProcessImage(uint8_t* rdram, recomp_context* ctx) {
     const uint32_t framebuffer = static_cast<uint32_t>(ctx->r4);
 
-    __real_PokemonDetector_PostProcessImage(rdram, ctx);
-
     if (!snap::valid_ram_address(framebuffer)) {
+        __real_PokemonDetector_PostProcessImage(rdram, ctx);
         return;
     }
 
+    // Clear the pixel that is about to be sampled, so that finding the dot
+    // colour there afterwards can only mean the game wrote it on this call.
+    // Reading it cold is not enough: render to RAM copies each rendered frame
+    // back over the framebuffer in RDRAM, and that frame contains the dot RT64
+    // drew last time, so the test would keep seeing its own output. Writing
+    // here is free because RDRAM framebuffer contents are never presented.
+    const uint32_t centerAddress = framebuffer + snap::DotCenterOffset;
+    MEM_H(0, (gpr)(int32_t)centerAddress) = static_cast<int16_t>(~snap::DotColor);
+
+    __real_PokemonDetector_PostProcessImage(rdram, ctx);
+
     // MEM_H applies the byte-order XOR itself, so doing it here as well cancels
     // it and samples the pixel next door.
-    const uint32_t centerAddress = framebuffer + snap::DotCenterOffset;
     snap::g_focus_dot_visible = (MEM_H(0, (gpr)(int32_t)centerAddress) & 0xFFFF) == snap::DotColor;
 
     snap::report_detector(rdram);

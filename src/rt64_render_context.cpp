@@ -272,15 +272,30 @@ public:
         // GPU render target instead, so the CPU's scribble is never visible.
         // Instead, ask RT64 to draw the dot as the frame's final draws right
         // before G_RDPFULLSYNC (see snapFocusDotRequest in rt64_state.h).
-        // Gate exactly like the game's own dot draw: focused, not in a
-        // directed cutscene, and the pokemon has POKEMON_FLAG_4. Addresses
-        // are link-time .app_level bss symbols from the decomp build map.
         // The game draws its focus indicator into the framebuffer in RDRAM,
         // which HLE presentation never shows. src/focus_dot.cpp watches the
         // game's own draw and reports it here, so the condition, its timing
         // and the state behind it all stay the game's (see
         // State::snapFocusDotRequest).
-        app_->state->snapFocusDotRequest = snap::g_app_level_resident && snap::g_focus_dot_visible;
+        //
+        // Nothing else gates this. It used to be qualified with the in-level
+        // overlay being resident, from an earlier design where this code read
+        // .app_level bss directly and needed those addresses to mean
+        // something. It does not any more, and the qualifier was never true
+        // during play in any case: the flag is only set for the overlay whose
+        // ROM start is 0x46270, and it is cleared again by any load covering
+        // the level code region, which the 0x05F050 overlay does every time it
+        // comes in. So the indicator was suppressed even on the frames the
+        // game had drawn it. The observation is self-gating -- the hook only
+        // runs when the game runs it, and it clears itself below.
+        app_->state->snapFocusDotRequest = snap::g_focus_dot_visible;
+
+        // Consumed, so the next frame has to be established by the game again.
+        // Without this the indicator latches on: with render to RAM enabled the
+        // frame RT64 drew, dot included, is copied back over the framebuffer in
+        // RDRAM, so the pixel the hook samples would already be the dot colour
+        // before the game had decided anything.
+        snap::g_focus_dot_visible = false;
 
         // Process the display list. Pass 0 for dlEndAddress â€” RT64 will walk
         // the list until it encounters a G_ENDDL command.
