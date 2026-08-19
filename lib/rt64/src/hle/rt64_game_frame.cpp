@@ -345,16 +345,14 @@ namespace RT64 {
                     }
                 }
 
-                static uint32_t worstUnmatched = 0;
-                static uint32_t frameCounter = 0;
+                // Only a partial failure is worth saying anything about. Some of
+                // an object's matrices pairing while their siblings do not is a
+                // model coming apart; nothing pairing at all is just the first
+                // frame of a scene, which has no previous frame to pair against.
                 const uint32_t unmatched = tagged - matched;
-                frameCounter++;
-                if ((unmatched > worstUnmatched) || ((frameCounter % 120) == 0)) {
-                    if (unmatched > worstUnmatched) {
-                        worstUnmatched = unmatched;
-                    }
-                    fprintf(stdout, "[SNAP-MATCH] tagged %u matched %u unmatched %u (worst %u)\n",
-                        tagged, matched, unmatched, worstUnmatched);
+                if ((unmatched > 0) && (matched > 0)) {
+                    fprintf(stdout, "[SNAP-MATCH] %u of %u tagged transforms did not pair\n",
+                        unmatched, tagged);
                     fflush(stdout);
                 }
             }

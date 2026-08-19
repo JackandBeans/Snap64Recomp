@@ -92,8 +92,13 @@ extern "C" void gtlCheckBuffers(uint8_t* rdram, recomp_context* ctx) {
             continue;
         }
 
+        // Quiet unless a buffer is running out. The port emits more display
+        // list than the game does, so the margin is worth watching, but it was
+        // measured at 57.5% of the main buffer and there is nothing to report
+        // frame by frame.
         const uint32_t used = pos - start;
-        if (used > snap::g_peak_used[kind]) {
+        const uint32_t reportThreshold = (capacity / 10) * 9;
+        if ((used > snap::g_peak_used[kind]) && (used >= reportThreshold)) {
             snap::g_peak_used[kind] = used;
             printf("[SNAP-DL] kind %u peak %u / %u bytes (%.1f%% full, %d spare)\n",
                    kind, used, capacity, (100.0 * used) / capacity,
@@ -117,7 +122,8 @@ extern "C" void gtlCheckBuffers(uint8_t* rdram, recomp_context* ctx) {
     if ((heap_start != 0) && (heap_end > heap_start) && (heap_ptr >= heap_start)) {
         const uint32_t used     = heap_ptr - heap_start;
         const uint32_t capacity = heap_end - heap_start;
-        if (used > snap::g_peak_heap) {
+        const uint32_t heapThreshold = (capacity / 10) * 9;
+        if ((used > snap::g_peak_heap) && (used >= heapThreshold)) {
             snap::g_peak_heap = used;
             printf("[SNAP-DL] matrix heap peak %u / %u bytes (%.1f%% full)\n",
                    used, capacity, (100.0 * used) / capacity);

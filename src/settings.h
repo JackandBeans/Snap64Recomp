@@ -36,6 +36,10 @@ struct Settings {
     // photo scoring reads the framebuffer it just drew. Interpolated frames
     // are synthetic, so writing those back feeds invented pixels to game
     // logic. F6 toggles it to test whether that is behind an artifact.
+    // Also what puts the camera's focus indicator on screen: the game draws
+    // that dot into the framebuffer in RDRAM, and src/focus_dot.cpp can only
+    // see it there because the rendered frame was copied back first. Turning
+    // this off takes the indicator with it.
     bool  render_to_ram     = true;
     // Interpolate the view and projection as well as object transforms.
     //
