@@ -262,18 +262,24 @@ namespace RT64 {
         // Pokemon Snap port: the game moves its world origin as the rail crosses
         // between blocks. enterNextBlock translates the camera and everything in
         // the world by the difference between the two blocks' positions, which is
-        // hundreds of units per axis and a couple of thousand across a corner.
-        // Both frames are correct; they are simply expressed about different
-        // origins, so there is no motion between them to interpolate and blending
-        // them sweeps the whole scene across the screen. A model caught in that
-        // sweep is stretched over the view and reads as a frame of flat colour.
-        // Nothing here can tell that apart from real motion, so the game says when
-        // it happens and this frame is drawn as it is.
-        if (workloadQueue.snapDiscontinuity) {
-            workloadQueue.snapDiscontinuity = false;
-            matched = false;
-            return;
-        }
+        // a couple of thousand units across a corner. Both frames are correct and
+        // describe the same scene; they are measured about different origins, so
+        // there is no motion between them to interpolate.
+        //
+        // The world side already copes. Snap's matrices are tagged with automatic
+        // components, so updateLinear compares the step against its velocity
+        // tolerance, sees a shift far beyond anything real, and declines to
+        // interpolate the translation. The camera is not tagged, so it keeps the
+        // defaults below, which force plain interpolation and lerp the view's
+        // translation whatever its size. One factor snaps and the other slides,
+        // and that mismatch is the sweep -- not the interpolation itself.
+        //
+        // So the camera is given the same treatment as everything else for this
+        // one frame, rather than the frame being dropped entirely. Rotation still
+        // interpolates, so a pan through a corner stays smooth, and only the
+        // component that cannot be meaningfully interpolated is held.
+        snapRebaseFrame = workloadQueue.snapDiscontinuity;
+        workloadQueue.snapDiscontinuity = false;
 
         thread_local std::unordered_map<uint32_t, ModifiedBuffers> workloadsModified;
         workloadsModified.clear();
@@ -513,6 +519,13 @@ namespace RT64 {
                 uint8_t projectionScaleComponent = G_EX_COMPONENT_INTERPOLATE;
                 uint8_t projectionSkewComponent = G_EX_COMPONENT_INTERPOLATE;
                 uint8_t projectionPerspectiveComponent = G_EX_COMPONENT_INTERPOLATE;
+                // On the frame the origin moves, let the camera's translation be
+                // judged the way every tagged matrix already judges its own, so it
+                // declines the shift instead of sliding across it.
+                if (snapRebaseFrame) {
+                    projectionLinearComponent = G_EX_COMPONENT_AUTO;
+                }
+
                 if ((curProjGroup.matrixId != G_EX_ID_IGNORE) && (curProjGroup.matrixId != G_EX_ID_AUTO)) {
                     projectionDecompose = curProjGroup.decompose;
                     projectionLinearComponent = curProjGroup.positionInterpolation;
