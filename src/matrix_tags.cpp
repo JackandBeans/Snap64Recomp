@@ -147,31 +147,36 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
     __real_renPrepareCameraMatrix(rdram, ctx);
 }
 
-// Object identity for interpolation is the OMMtx a matrix belongs to, and that
-// alone is not enough, because the addresses come back.
+// Object identity for interpolation is the OMMtx a matrix belongs to, and its
+// address alone is not enough, because the addresses come back.
 //
-// omGetMtx and omFreeMtx are a plain LIFO free list: freeing pushes onto the
-// head and allocating pops it, with no clearing and nothing held back. The most
-// recently released matrix is the very next one handed out. That would be
-// harmless if it happened between scenes, but enterNextBlock does it mid-frame
-// during ordinary play -- it deletes the Pokemon belonging to the block being
-// left and creates the next block's on the following line, so the addresses
-// freed by the first call are reissued by the second, before that frame's
-// display list is built.
+// omGetMtx and omFreeMtx are a plain LIFO free list (om.c:464-486): freeing
+// pushes onto the head and allocating pops it, with no clearing and nothing
+// held back, so the most recently released matrix is the very next one handed
+// out. Between scenes that would not matter. enterNextBlock does it mid-frame
+// during ordinary play -- it deletes the Pokemon of the block being left and
+// creates the next block's on the following line -- so addresses freed by the
+// first call are reissued by the second before that frame's display list is
+// built. Tagged by address, a new object's limb and a dead one's limb are the
+// same id, they pair, and the limb is interpolated from an object a world
+// block away. Stretched between two unrelated transforms it covers the screen,
+// which is the frame of flat colour at a block boundary.
 //
-// Tagged with the bare address, the new object's limb and the dead object's
-// limb are the same id, so they pair, and the limb is interpolated from an
-// object a whole world block away. It lasts as long as the previous frame
-// remembers the dead object, which is a frame or two, and then rights itself.
+// The counter it carries has to be wide. A first attempt folded three bits into
+// the spare low bits of the address, which leaves a one in eight chance that a
+// reissued address collides with what it replaced; with dozens of matrices
+// recycled at once that is several collisions at every boundary, and the
+// artifact survived. This gives each allocation its own number instead, so a
+// collision needs the counter to go all the way round.
 //
-// A serial stamped at allocation separates them. Offset 6 is real padding: the
-// struct is next, kind, unk_05, then the matrix at 8, which is 8-aligned
-// because Mtx carries a long long for alignment. Nothing in the game reads or
-// writes those two bytes, and nothing clears an OMMtx.
+// It goes in the next field, which is free for the whole time a matrix is
+// allocated: omGetMtx reads it to advance the free list before it returns, and
+// nothing touches it again until omFreeMtx overwrites it on release. Every
+// other reference to it in the game is the free list itself (om.c:483).
 //
-// It lives here rather than in the game patch because the patch's own data
-// would be placed outside the memory the game can see; state it needs to keep
-// has to be held on this side.
+// This lives here rather than in the game patch because the patch's own data is
+// placed outside the memory the game can see, so state that has to persist
+// belongs on this side.
 extern "C" void omGetMtx(uint8_t* rdram, recomp_context* ctx) {
     __real_omGetMtx(rdram, ctx);
 
@@ -180,12 +185,12 @@ extern "C" void omGetMtx(uint8_t* rdram, recomp_context* ctx) {
         return;
     }
 
-    // Never zero, so a stamped matrix is always distinguishable from one that
-    // has not been through here.
-    static uint16_t serial = 0;
-    if (++serial == 0) {
-        serial = 1;
-    }
+    // Skips both values the extended commands reserve, so a serial can never be
+    // read as "ignore this matrix" or "work the identity out yourself".
+    static uint32_t serial = 0;
+    do {
+        serial++;
+    } while ((serial == snap::IdIgnore) || (serial == snap::IdAuto));
 
-    MEM_HU(0x6, (gpr)(int32_t)mtx) = serial;
+    MEM_W(0x0, (gpr)(int32_t)mtx) = serial;
 }
