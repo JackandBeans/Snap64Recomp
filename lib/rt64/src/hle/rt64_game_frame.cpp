@@ -682,12 +682,31 @@ namespace RT64 {
         const RigidBody *prevRigidBody;
         const hlslpp::float4x4 &firstCurViewProj = firstCurWorkload.drawData.viewProjTransforms[firstCurProj.transformsIndex];
         const hlslpp::float4x4 &firstPrevViewProj = firstPrevWorkload.drawData.viewProjTransforms[firstPrevProj.transformsIndex];
+
+        // On the frame the world origin moves, candidates have to be judged with
+        // the previous frame read in the new origin, or every distance carries
+        // the whole shift and the nearest previous transform to anything is the
+        // wrong one: with the world moved further than the spacing between
+        // repeated objects, a fence post's best raw match is a different post.
+        // The per-pair check in matchTransform re-decides against the raw data,
+        // so this only makes selection see the same geometry it will.
+        hlslpp::float4x4 rebasedFirstPrevViewProj;
+        const hlslpp::float4x4 *effectivePrevViewProj = &firstPrevViewProj;
+        const bool rebasingCandidates = snapRebaseUsable();
+        if (rebasingCandidates) {
+            rebasedFirstPrevViewProj = hlslpp::mul(matrixTranslation(-snapOriginDelta), firstPrevViewProj);
+            effectivePrevViewProj = &rebasedFirstPrevViewProj;
+        }
+
         for (const IndexPair &indices : transformCheckSet) {
             const hlslpp::float4x4 &curTransform = firstCurWorkload.drawData.worldTransforms[indices.first];
-            const hlslpp::float4x4 &prevTransform = firstPrevWorkload.drawData.worldTransforms[indices.second];
+            hlslpp::float4x4 prevTransform = firstPrevWorkload.drawData.worldTransforms[indices.second];
+            if (rebasingCandidates) {
+                prevTransform[3].xyz = prevTransform[3].xyz + snapOriginDelta;
+            }
             prevRigidBody = (firstPrevWorkloadMap != nullptr) ? &firstPrevWorkloadMap->transforms[indices.second].rigidBody : nullptr;
 
-            TransformMatchResult matchResult = computeTransformMatch(curTransform, firstCurViewProj, prevTransform, firstPrevViewProj, prevRigidBody);
+            TransformMatchResult matchResult = computeTransformMatch(curTransform, firstCurViewProj, prevTransform, *effectivePrevViewProj, prevRigidBody);
             if (matchResult.valid) {
                 matchCandidates.emplace_back(indices.first, indices.second, matchResult.computeDifference());
             }
