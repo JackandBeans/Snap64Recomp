@@ -19,9 +19,6 @@ HOOKED = [
     # Turns RT64's extended commands on through the display list write pointer
     # it receives. Object identity is a game patch now, not a hook.
     'renPrepareCameraMatrix',
-    # Carries the distance the world origin moved by, so the previous frame can
-    # be expressed in the new one rather than skipped.
-    'bindCameraNextBlock',
     # Tells the renderer the world origin moved, which no frame can be
     # interpolated across.
     'enterNextBlock',

@@ -41,14 +41,8 @@ namespace RT64 {
                 for (size_t t = 0; t < drawData.worldTransforms.size(); t++) {
                     const GameFrameMap::TransformMap &transformMap = workloadMap.transforms[t];
                     if (transformMap.mapped) {
-                        hlslpp::float4x4 prevTransform = prevDrawData.worldTransforms[workloadMap.transforms[t].prevTransformIndex];
+                        const hlslpp::float4x4 &prevTransform = prevDrawData.worldTransforms[workloadMap.transforms[t].prevTransformIndex];
                         const hlslpp::float4x4 &curTransform = drawData.worldTransforms[t];
-
-                        // Matching decided this one reads correctly in the new
-                        // origin, so move it the same way before interpolating.
-                        if (transformMap.snapRebasedPrev) {
-                            prevTransform[3].xyz = prevTransform[3].xyz + p.curFrame->snapOriginDelta;
-                        }
                         prevMatrix = transformMap.rigidBody.lerp(p.prevFrameWeight, prevTransform, curTransform, true);
                         curMatrix = transformMap.rigidBody.lerp(p.curFrameWeight, prevTransform, curTransform, true);
                         invMatrix = hlslpp::inverse(curMatrix);

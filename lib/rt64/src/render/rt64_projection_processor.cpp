@@ -68,7 +68,6 @@ namespace RT64 {
             // Check the current mapping for the projection.
             const interop::float4x4 *prevProjMatrix = nullptr;
             const interop::float4x4 *prevViewMatrix = nullptr;
-            interop::float4x4 rebasedPrevView;
             const RigidBody *rigidBody = nullptr;
             const GameFrameMap::WorkloadMap &workloadMap = p.curFrame->frameMap.workloads[sceneProj.workloadIndex];
             if ((p.prevFrame != nullptr) && workloadMap.mapped && !workload.debuggerCamera.enabled &&
@@ -77,14 +76,6 @@ namespace RT64 {
                 if (viewProjMap.mapped) {
                     const Workload &prevWorkload = p.workloadQueue->workloads[workloadMap.prevWorkloadIndex];
                     prevViewMatrix = &prevWorkload.drawData.viewTransforms[viewProjMap.prevTransformIndex];
-
-                    // Matching read the previous camera in this frame's origin,
-                    // so the interpolation has to as well or the two disagree by
-                    // the whole shift.
-                    if (viewProjMap.snapRebasedPrev) {
-                        rebasedPrevView = hlslpp::mul(matrixTranslation(-p.curFrame->snapOriginDelta), *prevViewMatrix);
-                        prevViewMatrix = &rebasedPrevView;
-                    }
                     prevProjMatrix = &prevWorkload.drawData.projTransforms[viewProjMap.prevTransformIndex];
                     rigidBody = &viewProjMap.rigidBody;
                 }

@@ -70,7 +70,6 @@ namespace RT64 {
         // Pokemon Snap port: set for the one frame on which the game rebases the
         // world origin, which nothing can meaningfully be interpolated across.
         bool snapDiscontinuity = false;
-        hlslpp::float3 snapOriginDelta = {};
         std::array<Workload, WORKLOAD_QUEUE_SIZE> workloads;
         int threadCursor;
         int writeCursor;
