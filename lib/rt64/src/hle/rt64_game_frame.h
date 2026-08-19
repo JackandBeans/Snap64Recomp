@@ -47,12 +47,16 @@ namespace RT64 {
             RigidBody rigidBody;
             uint32_t prevTransformIndex = 0;
             bool mapped = false;
+            // Pokemon Snap port: the previous view was moved into this frame's
+            // origin, so whatever reads it later has to move it too.
+            bool snapRebasedPrev = false;
         };
 
         struct TransformMap {
             RigidBody rigidBody;
             uint32_t prevTransformIndex = 0;
             bool mapped = false;
+            bool snapRebasedPrev = false;
         };
 
         struct TileMap {
@@ -127,6 +131,15 @@ namespace RT64 {
         void set(WorkloadQueue &workloadQueue, const uint32_t *workloadIndices, uint32_t indicesCount);
         // Pokemon Snap port: set for the frame the game moves its world origin on.
         bool snapRebaseFrame = false;
+        hlslpp::float3 snapOriginDelta = {};
+
+        // True when the origin moved this frame and the distance it moved by is
+        // known, which is when the previous frame can be read in this one's
+        // terms. Without a usable distance the camera falls back to declining
+        // the shift, which is correct but holds for a frame.
+        bool snapRebaseUsable() const {
+            return snapRebaseFrame && (float(hlslpp::length(snapOriginDelta)) > 1.0f);
+        }
 
         void match(RenderWorker *worker, WorkloadQueue &workloadQueue, const GameFrame &prevFrame, BufferUploader *velocityUploader, bool &velocityUploaderUsed, bool &tileInterpolationUsed, bool &lookAtInterpolationUsed);
         void matchScene(WorkloadQueue &workloadQueue, const GameFrame &prevFrame, const GameScene &curScene, const GameScene &prevScene, std::unordered_map<uint32_t, ModifiedBuffers> &workloadsModified, bool &tileInterpolationUsed, bool &lookAtInterpolationUsed);

@@ -279,7 +279,15 @@ namespace RT64 {
         // interpolates, so a pan through a corner stays smooth, and only the
         // component that cannot be meaningfully interpolated is held.
         snapRebaseFrame = workloadQueue.snapDiscontinuity;
+        snapOriginDelta = workloadQueue.snapOriginDelta;
         workloadQueue.snapDiscontinuity = false;
+
+        // With the distance known, the previous frame can be moved into this
+        // frame's origin instead of being held: expressed the same way, the two
+        // differ only by whatever genuinely moved, and everything interpolates
+        // as it does on any other frame. Each candidate is checked individually
+        // and only taken when it lands nearer than the unmoved one, so a delta
+        // that is wrong, stale, or absent simply is not used.
 
         thread_local std::unordered_map<uint32_t, ModifiedBuffers> workloadsModified;
         workloadsModified.clear();
@@ -522,7 +530,7 @@ namespace RT64 {
                 // On the frame the origin moves, let the camera's translation be
                 // judged the way every tagged matrix already judges its own, so it
                 // declines the shift instead of sliding across it.
-                if (snapRebaseFrame) {
+                if (snapRebaseFrame && !snapRebaseUsable()) {
                     projectionLinearComponent = G_EX_COMPONENT_AUTO;
                 }
 
@@ -545,8 +553,24 @@ namespace RT64 {
                         viewProjMap.rigidBody = prevViewProjMap.rigidBody;
                     }
 
-                    viewProjMap.rigidBody.updateLinear(prevView, curView, projectionLinearComponent);
-                    viewProjMap.rigidBody.updateAngular(prevView, curView, projectionAngularComponent, projectionScaleComponent, projectionSkewComponent);
+                    // The camera was translated along with everything else, so
+                    // its previous position has to be read in the new origin too.
+                    // A point given in the new origin is the old one plus the
+                    // delta, so undoing it before the old view is what lines the
+                    // two frames up.
+                    hlslpp::float4x4 rebasedPrevView;
+                    const hlslpp::float4x4 *effectivePrevView = &prevView;
+                    if (snapRebaseUsable()) {
+                        rebasedPrevView = hlslpp::mul(matrixTranslation(-snapOriginDelta), prevView);
+                        if (float(hlslpp::length(curView[3].xyz - rebasedPrevView[3].xyz)) <
+                            float(hlslpp::length(curView[3].xyz - prevView[3].xyz))) {
+                            effectivePrevView = &rebasedPrevView;
+                            viewProjMap.snapRebasedPrev = true;
+                        }
+                    }
+
+                    viewProjMap.rigidBody.updateLinear(*effectivePrevView, curView, projectionLinearComponent);
+                    viewProjMap.rigidBody.updateAngular(*effectivePrevView, curView, projectionAngularComponent, projectionScaleComponent, projectionSkewComponent);
                     viewProjMap.rigidBody.updateDecomposition(curView, projectionDecompose);
                     viewProjMap.prevTransformIndex = prevProj.transformsIndex;
                 }
@@ -775,7 +799,25 @@ namespace RT64 {
         }
 
         const hlslpp::float4x4 &curTransform = curWorkload.drawData.worldTransforms[curTransformIndex];
-        const hlslpp::float4x4 &prevTransform = prevWorkload.drawData.worldTransforms[prevTransformIndex];
+        const hlslpp::float4x4 &rawPrevTransform = prevWorkload.drawData.worldTransforms[prevTransformIndex];
+
+        // Object matrices carry positions in the world's own frame, so moving
+        // one into this frame's origin is just adding the delta to it. Taken
+        // only when it lands nearer than leaving it alone, which is what keeps a
+        // wrong delta from doing damage.
+        hlslpp::float4x4 rebasedPrevTransform;
+        const hlslpp::float4x4 *effectivePrev = &rawPrevTransform;
+        if (snapRebaseUsable()) {
+            rebasedPrevTransform = rawPrevTransform;
+            rebasedPrevTransform[3].xyz = rebasedPrevTransform[3].xyz + snapOriginDelta;
+            if (float(hlslpp::length(curTransform[3].xyz - rebasedPrevTransform[3].xyz)) <
+                float(hlslpp::length(curTransform[3].xyz - rawPrevTransform[3].xyz))) {
+                effectivePrev = &rebasedPrevTransform;
+                curTransformMap.snapRebasedPrev = true;
+            }
+        }
+
+        const hlslpp::float4x4 &prevTransform = *effectivePrev;
         const uint32_t curGroupIndex = curWorkload.drawData.worldTransformGroups[curTransformIndex];
         const TransformGroup &curGroup = curWorkload.drawData.transformGroups[curGroupIndex];
         curTransformMap.rigidBody.updateLinear(prevTransform, curTransform, curGroup.positionInterpolation);

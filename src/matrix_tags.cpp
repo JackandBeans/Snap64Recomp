@@ -24,6 +24,7 @@
  */
 
 #include <cstdint>
+#include <cstring>
 
 #include "recomp.h"
 
@@ -200,6 +201,27 @@ extern "C" void omGetMtx(uint8_t* rdram, recomp_context* ctx) {
 // before it. Consumed by send_dl, which passes it to the renderer.
 namespace snap {
 bool g_world_rebased = false;
+float g_world_rebase_delta[3] = {};
+}
+
+// enterNextBlock hands this the distance the origin is about to move, which is
+// what lets the previous frame be re-expressed in the new one instead of being
+// thrown away.
+//
+// Only the first two floats of an o32 call arrive in floating point registers.
+// The generated code settles it: bindCameraNextBlock opens with mtc1 $a2, $f20,
+// the compiler pulling the third out of an integer register. Reading it as a
+// float register gives whatever happened to be there.
+extern "C" void bindCameraNextBlock(uint8_t* rdram, recomp_context* ctx) {
+    float dz;
+    const uint32_t bits = static_cast<uint32_t>(ctx->r6);
+    std::memcpy(&dz, &bits, sizeof(dz));
+
+    snap::g_world_rebase_delta[0] = ctx->f12.fl;
+    snap::g_world_rebase_delta[1] = ctx->f14.fl;
+    snap::g_world_rebase_delta[2] = dz;
+
+    __real_bindCameraNextBlock(rdram, ctx);
 }
 
 // enterNextBlock returns the block moved into, or NULL when there was nowhere to
