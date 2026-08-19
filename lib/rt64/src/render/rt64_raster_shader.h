@@ -48,6 +48,7 @@ namespace RT64 {
         bool culling;
         bool NoN;
         bool zCmp;
+        bool zCmpEqual;
         bool zUpd;
         bool cvgAdd;
         bool usesHDR;

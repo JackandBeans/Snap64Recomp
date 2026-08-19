@@ -229,6 +229,13 @@ namespace RT64 {
         creation.culling = !copyMode && desc.flags.culling;
         creation.zCmp = !copyMode && desc.otherMode.zCmp() && (desc.otherMode.zMode() != ZMODE_DEC);
         creation.zUpd = !copyMode && desc.otherMode.zUpd();
+        // The RDP's opaque compare passes at equal depth -- its dz term only ever makes the
+        // incoming fragment win more easily -- so a later coplanar draw replaces an earlier one.
+        // Only ZMODE_XLU compares strictly. Quantisation puts far more fragments exactly level
+        // than a full precision buffer ever would, so this direction decides which of two
+        // duplicated surfaces is seen. Permissive is the safe direction: it can only add a
+        // surface, never drop one.
+        creation.zCmpEqual = (desc.otherMode.zMode() != ZMODE_XLU);
         creation.cvgAdd = (desc.otherMode.cvgDst() == CVG_DST_WRAP) || (desc.otherMode.cvgDst() == CVG_DST_SAVE);
         creation.NoN = desc.flags.NoN;
         creation.usesHDR = desc.flags.usesHDR;
@@ -275,10 +282,10 @@ namespace RT64 {
         pss << std::string_view(RenderParamsText, sizeof(RenderParamsText));
         pss << "RenderParams getRenderParams() {" + renderParamsCode + "; return rp; }";
         pss <<
-            "bool RasterPS(const RenderParams, float4, float2, float4, float4, bool, out float4, out float4);"
+            "bool RasterPS(const RenderParams, float4, float2, float4, float4, bool, out float4, out float4, out float);"
             "[shader(\"pixel\")]"
             "void PSMain("
-            "  in float4 vertexPosition : SV_POSITION"
+            "  noperspective centroid in float4 vertexPosition : SV_POSITION"
             ", in float2 vertexUV : TEXCOORD"
             ", in float4 vertexSmoothColor : COLOR0";
 
@@ -289,6 +296,7 @@ namespace RT64 {
         pss <<
             ", out float4 pixelColor : SV_TARGET0"
             ", out float4 pixelAlpha : SV_TARGET1"
+            ", out float pixelDepth : SV_DepthGreaterEqual"
             ") {";
 
         if (desc.flags.smoothShade) {
@@ -298,9 +306,11 @@ namespace RT64 {
         pss <<
             "   float4 resultColor;"
             "   float4 resultAlpha;"
-            "   if (!RasterPS(getRenderParams(), vertexPosition, vertexUV, vertexSmoothColor, vertexFlatColor, false, resultColor, resultAlpha)) discard;"
+            "   float resultDepth;"
+            "   if (!RasterPS(getRenderParams(), vertexPosition, vertexUV, vertexSmoothColor, vertexFlatColor, false, resultColor, resultAlpha, resultDepth)) discard;"
             "   pixelColor = resultColor;"
             "   pixelAlpha = resultAlpha;"
+            "   pixelDepth = resultDepth;"
             "}";
 
         return { vss.str(), pss.str() };
@@ -314,7 +324,7 @@ namespace RT64 {
         pipelineDesc.cullMode = c.culling ? RenderCullMode::FRONT : RenderCullMode::NONE;
         pipelineDesc.depthClipEnabled = !c.NoN;
         pipelineDesc.depthEnabled = c.zCmp || c.zUpd;
-        pipelineDesc.depthFunction = c.zCmp ? RenderComparisonFunction::LESS : RenderComparisonFunction::ALWAYS;
+        pipelineDesc.depthFunction = c.zCmp ? (c.zCmpEqual ? RenderComparisonFunction::LESS_EQUAL : RenderComparisonFunction::LESS) : RenderComparisonFunction::ALWAYS;
         pipelineDesc.depthWriteEnabled = c.zUpd;
         pipelineDesc.depthTargetFormat = RenderFormat::D32_FLOAT;
         pipelineDesc.multisampling = c.multisampling;
@@ -478,6 +488,9 @@ namespace RT64 {
             creation.zCmp = i & (1 << 0);
             creation.zUpd = i & (1 << 1);
             creation.cvgAdd = i & (1 << 2);
+            // The ubershader carries no zMode bit. Z_UPD tracks it exactly across every zCmp
+            // render mode this game emits, and this pipeline only serves shader warm-up.
+            creation.zCmpEqual = creation.zUpd;
 
             pipelineThreadCreations[threadIndex].emplace_back(creation);
             threadIndex = (threadIndex + 1) % threadCount;

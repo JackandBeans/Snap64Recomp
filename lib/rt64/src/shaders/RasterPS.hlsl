@@ -46,8 +46,11 @@ float sampleBackgroundDepth(int2 pixelPos, uint sampleCount) {
 #endif
 
 LIBRARY_EXPORT bool RasterPS(const RenderParams rp, float4 vertexPosition, float2 vertexUV, float4 vertexSmoothColor, float4 vertexFlatColor,
-    bool isFrontFace, out float4 resultColor, out float4 resultAlpha) 
+    bool isFrontFace, out float4 resultColor, out float4 resultAlpha, out float resultDepth) 
 {
+    // Defined on every path out of here, including the ones that return false.
+    resultDepth = vertexPosition.z;
+
     const OtherMode otherMode = { rp.omL, rp.omH };
 #if defined(DYNAMIC_RENDER_PARAMS)
     if ((otherMode.cycleType() != G_CYC_COPY) && renderFlagCulling(rp.flags) && isFrontFace) {
@@ -87,6 +90,13 @@ LIBRARY_EXPORT bool RasterPS(const RenderParams rp, float4 vertexPosition, float
             return false;
         }
     }
+
+    // Quantise the depth this fragment writes onto the hardware's grid. This has to happen after
+    // the clipping above, which must keep testing the raw interpolated value because the hardware
+    // clips before it encodes, and after interpolation, which is the only point at which the
+    // hardware quantises at all. Snapping per vertex instead flattens the depth gradient across
+    // large polygons and loses the geometry entirely.
+    resultDepth = QuantizeDepthN64(vertexPosition.z);
 
     if (depthDecal) {
         // Sample the depth buffer for this pixel to compare for the decal check.
@@ -281,7 +291,9 @@ RenderParams getRenderParams() {
 
 #if defined(DYNAMIC_RENDER_PARAMS) || defined(SPEC_CONSTANT_RENDER_PARAMS)
 void PSMain(
-      in float4 vertexPosition : SV_POSITION
+      // noperspective centroid is required, not stylistic: writing SV_DepthGreaterEqual from a
+      // shader that reads SV_POSITION is a DXIL validation error without it.
+      noperspective centroid in float4 vertexPosition : SV_POSITION
     , in float2 vertexUV : TEXCOORD
     , in float4 vertexSmoothColor : COLOR0
 #if defined(DYNAMIC_RENDER_PARAMS) || defined(VERTEX_FLAT_COLOR)
@@ -292,6 +304,7 @@ void PSMain(
 #endif
     , [[vk::location(0)]] [[vk::index(0)]] out float4 pixelColor : SV_TARGET0
     , [[vk::location(0)]] [[vk::index(1)]] out float4 pixelAlpha : SV_TARGET1
+    , out float pixelDepth : SV_DepthGreaterEqual
 )
 {
 #if !defined(DYNAMIC_RENDER_PARAMS)
@@ -303,11 +316,12 @@ void PSMain(
     float4 resultColor;
     float4 resultAlpha;
     float resultDepth;
-    if (!RasterPS(getRenderParams(), vertexPosition, vertexUV, vertexSmoothColor, vertexFlatColor, isFrontFace, resultColor, resultAlpha)) {
+    if (!RasterPS(getRenderParams(), vertexPosition, vertexUV, vertexSmoothColor, vertexFlatColor, isFrontFace, resultColor, resultAlpha, resultDepth)) {
         discard;
     }
 
     pixelColor = resultColor;
     pixelAlpha = resultAlpha;
+    pixelDepth = resultDepth;
 }
 #endif
