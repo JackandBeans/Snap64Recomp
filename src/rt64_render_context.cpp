@@ -294,10 +294,15 @@ public:
 
         // Crossing into the next world block moves the origin everything is
         // expressed about, so this frame cannot be blended with the last one.
+        // Written onto the workload this display list is about to fill, so the
+        // rebase travels with its own frame. The queue's write slot was begun at
+        // the end of the previous list, so nothing resets it between here and
+        // the renderer reading it.
         if (snap::g_world_rebased) {
             snap::g_world_rebased = false;
-            app_->workloadQueue->snapDiscontinuity = true;
-            app_->workloadQueue->snapOriginDelta = hlslpp::float3(
+            RT64::Workload &workload = app_->workloadQueue->workloads[app_->workloadQueue->writeCursor];
+            workload.snapOriginRebased = true;
+            workload.snapOriginDelta = hlslpp::float3(
                 snap::g_world_rebase_delta[0],
                 snap::g_world_rebase_delta[1],
                 snap::g_world_rebase_delta[2]);

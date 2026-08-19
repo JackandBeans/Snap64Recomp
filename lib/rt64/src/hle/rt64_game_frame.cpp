@@ -278,9 +278,16 @@ namespace RT64 {
         // one frame, rather than the frame being dropped entirely. Rotation still
         // interpolates, so a pan through a corner stays smooth, and only the
         // component that cannot be meaningfully interpolated is held.
-        snapRebaseFrame = workloadQueue.snapDiscontinuity;
-        snapOriginDelta = workloadQueue.snapOriginDelta;
-        workloadQueue.snapDiscontinuity = false;
+        snapRebaseFrame = false;
+        snapOriginDelta = hlslpp::float3(0.0f, 0.0f, 0.0f);
+        for (uint32_t w : workloads) {
+            Workload &rebaseWorkload = workloadQueue.workloads[w];
+            if (rebaseWorkload.snapOriginRebased) {
+                rebaseWorkload.snapOriginRebased = false;
+                snapRebaseFrame = true;
+                snapOriginDelta = rebaseWorkload.snapOriginDelta;
+            }
+        }
 
         // With the distance known, the previous frame can be moved into this
         // frame's origin instead of being held: expressed the same way, the two
@@ -562,8 +569,19 @@ namespace RT64 {
                     const hlslpp::float4x4 *effectivePrevView = &prevView;
                     if (snapRebaseUsable()) {
                         rebasedPrevView = hlslpp::mul(matrixTranslation(-snapOriginDelta), prevView);
-                        if (float(hlslpp::length(curView[3].xyz - rebasedPrevView[3].xyz)) <
-                            float(hlslpp::length(curView[3].xyz - prevView[3].xyz))) {
+
+                        // The translation row of a view matrix is the eye
+                        // position already rotated through the view, so
+                        // distances taken on it mix the rotation in and say
+                        // nothing about how far the camera moved. Inverting
+                        // gives the eye itself, which is what the rebase
+                        // shifted; the rebased view's eye is by construction
+                        // the old eye plus the delta.
+                        const hlslpp::float3 curEye = hlslpp::inverse(curView)[3].xyz;
+                        const hlslpp::float3 prevEye = hlslpp::inverse(prevView)[3].xyz;
+                        const hlslpp::float3 rebasedPrevEye = prevEye + snapOriginDelta;
+                        if (float(hlslpp::length(curEye - rebasedPrevEye)) <
+                            float(hlslpp::length(curEye - prevEye))) {
                             effectivePrevView = &rebasedPrevView;
                             viewProjMap.snapRebasedPrev = true;
                         }

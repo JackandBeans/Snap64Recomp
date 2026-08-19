@@ -211,6 +211,13 @@ namespace RT64 {
 
     struct Workload {
         uint64_t submissionFrame;
+        // Pokemon Snap port: set on the workload of the frame the game moved its
+        // world origin on, with the distance it moved by. Carried here rather
+        // than on the queue because the render thread runs behind the game
+        // thread, and a queue-level flag is read against whichever frame pair
+        // happens to be current when it gets there.
+        bool snapOriginRebased = false;
+        hlslpp::float3 snapOriginDelta = {};
         DrawData drawData;
         DrawRanges drawRanges;
         DrawBuffers drawBuffers;
