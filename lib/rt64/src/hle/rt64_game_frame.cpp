@@ -259,6 +259,22 @@ namespace RT64 {
         lookAtInterpolationUsed = false;
         matched = true;
 
+        // Pokemon Snap port: the game moves its world origin as the rail crosses
+        // between blocks. enterNextBlock translates the camera and everything in
+        // the world by the difference between the two blocks' positions, which is
+        // hundreds of units per axis and a couple of thousand across a corner.
+        // Both frames are correct; they are simply expressed about different
+        // origins, so there is no motion between them to interpolate and blending
+        // them sweeps the whole scene across the screen. A model caught in that
+        // sweep is stretched over the view and reads as a frame of flat colour.
+        // Nothing here can tell that apart from real motion, so the game says when
+        // it happens and this frame is drawn as it is.
+        if (workloadQueue.snapDiscontinuity) {
+            workloadQueue.snapDiscontinuity = false;
+            matched = false;
+            return;
+        }
+
         thread_local std::unordered_map<uint32_t, ModifiedBuffers> workloadsModified;
         workloadsModified.clear();
 

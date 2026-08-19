@@ -194,3 +194,20 @@ extern "C" void omGetMtx(uint8_t* rdram, recomp_context* ctx) {
 
     MEM_W(0x0, (gpr)(int32_t)mtx) = serial;
 }
+
+// Set when the game crosses into the next world block. enterNextBlock rebases
+// the world origin, so the frame it runs on is not continuous with the one
+// before it. Consumed by send_dl, which passes it to the renderer.
+namespace snap {
+bool g_world_rebased = false;
+}
+
+// enterNextBlock returns the block moved into, or NULL when there was nowhere to
+// go, which is the case where nothing was rebased.
+extern "C" void enterNextBlock(uint8_t* rdram, recomp_context* ctx) {
+    __real_enterNextBlock(rdram, ctx);
+
+    if (static_cast<uint32_t>(ctx->r2) != 0) {
+        snap::g_world_rebased = true;
+    }
+}

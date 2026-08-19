@@ -67,6 +67,9 @@ namespace RT64 {
         // makes geometry swim against the view. Toggled at runtime to test
         // that (F4).
         bool snapInterpolateCamera = true;
+        // Pokemon Snap port: set for the one frame on which the game rebases the
+        // world origin, which nothing can meaningfully be interpolated across.
+        bool snapDiscontinuity = false;
         std::array<Workload, WORKLOAD_QUEUE_SIZE> workloads;
         int threadCursor;
         int writeCursor;

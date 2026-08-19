@@ -19,6 +19,9 @@ HOOKED = [
     # Turns RT64's extended commands on through the display list write pointer
     # it receives. Object identity is a game patch now, not a hook.
     'renPrepareCameraMatrix',
+    # Tells the renderer the world origin moved, which no frame can be
+    # interpolated across.
+    'enterNextBlock',
     # Stamps a serial into each matrix as it is handed out, so a recycled
     # address does not read as the same object it was last time.
     'omGetMtx',

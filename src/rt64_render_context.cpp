@@ -60,6 +60,7 @@ namespace snap {
 
 extern bool g_app_level_resident;                            // overlay_hook.cpp
 extern bool g_focus_dot_visible;                             // focus_dot.cpp
+extern bool g_world_rebased;                                 // matrix_tags.cpp
 
 class RT64Context : public ultramodern::renderer::RendererContext {
 public:
@@ -289,6 +290,13 @@ public:
         // game had drawn it. The observation is self-gating -- the hook only
         // runs when the game runs it, and it clears itself below.
         app_->state->snapFocusDotRequest = snap::g_focus_dot_visible;
+
+        // Crossing into the next world block moves the origin everything is
+        // expressed about, so this frame cannot be blended with the last one.
+        if (snap::g_world_rebased) {
+            snap::g_world_rebased = false;
+            app_->workloadQueue->snapDiscontinuity = true;
+        }
 
         // Consumed, so the next frame has to be established by the game again.
         // Without this the indicator latches on: with render to RAM enabled the
