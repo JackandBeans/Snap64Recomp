@@ -7,7 +7,6 @@
 #include "shared/rt64_rsp_lookat.h"
 #include "shared/rt64_rsp_viewport.h"
 
-#include "Depth.hlsli"
 #include "TextureGen.hlsli"
 
 #define GROUP_SIZE 64
@@ -128,31 +127,7 @@ void CSMain(uint vertexIndex : SV_DispatchThreadID) {
     // Convert to N64 screen position.
     const RSPViewport rspViewport = rspViewportVector[viewProjIndex];
     const float3 ndcPos = tfPos.xyz / float3(tfPos.w, -tfPos.w, tfPos.w);
-    float4 screenPos = float4(ndcPos * rspViewport.scale + rspViewport.translate, tfPos.w);
-
-    // Quantise screen z the way the hardware's depth buffer does.
-    //
-    // The N64 stores depth in a 16 bit floating point format, and the resulting
-    // quantum is enormous at distance: with a near of 10 and a far of 25600 it
-    // covers on the order of a couple of hundred world units out at the far end
-    // of a course. Content was authored against that. Two surfaces modelled in
-    // roughly the same place -- a background block's cliff face continuing a
-    // foreground block's, say -- landed in the same depth bucket, the depth test
-    // rejected the second, and which one was seen came down to draw order, the
-    // same way on every frame.
-    //
-    // Kept in full float precision they no longer land in the same bucket. A
-    // D32_FLOAT ULP out there is a fraction of a world unit, thousands of times
-    // finer than the hardware ever resolved, so geometry decides the contest
-    // instead of draw order and the winner changes per pixel as the camera
-    // moves. On a rail, where the camera is never still, that is a surface that
-    // will not stop flickering.
-    //
-    // Rounding to what the hardware could actually represent puts the dead band
-    // back, and the tie falls to draw order again. This is what the depth buffer
-    // does anyway on writeback; it just was not being applied to the test.
-    screenPos.z = Depth16ToFloat(FloatToDepth16(screenPos.z, 0.0f));
-
+    const float4 screenPos = float4(ndcPos * rspViewport.scale + rspViewport.translate, tfPos.w);
     dstPos[vertexOffsetIndex] = screenPos;
     dstTc[vertexOffsetIndex] = tc;
     dstCol[vertexOffsetIndex] = vertexColor;
