@@ -962,7 +962,18 @@ namespace RT64 {
     }
     
     void RDP::setPrimDepth(uint16_t z, uint16_t dz) {
-        const float Fixed15ToFloat = 1.0f / 32767.0f;
+        // 1/32768, not 1/32767: geometry depth is normalised as viewport units
+        // over 1024, which makes a 15-bit hardware z exactly z/32768 in the
+        // depth buffer. Decoding the primitive depth with the off-by-one
+        // divisor renders every G_ZS_PRIM draw about one 15-bit step farther
+        // than the geometry it was authored against -- a bias that grows with
+        // the square of distance in world units, and quietly buries sprites
+        // that sit a small distance in front of a large surface. Snap's sleep
+        // effect over Snorlax is drawn exactly that way (a prim-depth textured
+        // rectangle with a transparent, non-writing compare) and vanished once
+        // the cart was far enough away; on hardware the sprite and the scene
+        // share one scale, so it never loses.
+        const float Fixed15ToFloat = 1.0f / 32768.0f;
         const float Fixed16ToFloat = 1.0f / 65535.0f;
         hlslpp::float2 &primDepth = primDepthStack[primDepthStackSize - 1];
         primDepth.x = (z & 0x7FFFU) * Fixed15ToFloat;
