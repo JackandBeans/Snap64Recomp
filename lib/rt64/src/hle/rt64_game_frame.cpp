@@ -859,6 +859,14 @@ namespace RT64 {
                 ignoredIdVector.emplace_back(i);
             }
             else if (group.ordering == G_EX_ORDER_LINEAR) {
+                // One-shot: are the ids the serials the port stamps, or still
+                // raw OMMtx addresses? Serials are small; addresses are 0x80xxxxxx.
+                static int sampled = 0;
+                if (sampled < 12) {
+                    sampled++;
+                    fprintf(stdout, "[SNAP-ID] matrixId 0x%08X\n", group.matrixId);
+                    fflush(stdout);
+                }
                 idMap.emplace(group.matrixId, i);
             }
         }
