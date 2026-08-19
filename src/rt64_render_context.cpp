@@ -61,6 +61,7 @@ namespace snap {
 extern bool g_app_level_resident;                            // overlay_hook.cpp
 extern bool g_focus_dot_visible;                             // focus_dot.cpp
 extern bool g_world_rebased;                                 // matrix_tags.cpp
+extern float g_world_rebase_delta[3];                        // matrix_tags.cpp
 
 class RT64Context : public ultramodern::renderer::RendererContext {
 public:
@@ -296,6 +297,10 @@ public:
         if (snap::g_world_rebased) {
             snap::g_world_rebased = false;
             app_->workloadQueue->snapDiscontinuity = true;
+            app_->workloadQueue->snapOriginDelta = hlslpp::float3(
+                snap::g_world_rebase_delta[0],
+                snap::g_world_rebase_delta[1],
+                snap::g_world_rebase_delta[2]);
         }
 
         // Consumed, so the next frame has to be established by the game again.
