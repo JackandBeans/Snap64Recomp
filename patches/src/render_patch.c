@@ -61,7 +61,15 @@ extern Mtx4f renMvpMatrixF;
 extern Mtx4f ren_D_8004AFA8;
 extern Mtx4f ren_D_8004AFE8;
 
-#define renEXTagModelMatrix(gfx, ommtx)                                            gEXMatrixGroupDecomposed((gfx), (u32) (uintptr_t) (ommtx), G_EX_NOPUSH, 0,         G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO,                 G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO, G_EX_COMPONENT_SKIP,                 G_EX_COMPONENT_SKIP, G_EX_ORDER_LINEAR, G_EX_EDIT_ALLOW,                       G_EX_COMPONENT_SKIP, G_EX_COMPONENT_SKIP)
+/* OMMtx come from gtlMalloc with 8 byte alignment and a 0x48 stride, so the
+   low three bits of the address are always zero and can carry the serial that
+   src/matrix_tags.cpp stamps at offset 6 when the matrix is handed out. Two
+   different matrices still cannot collide, because every address bit is kept;
+   what changes is the same address before and after it has been recycled. */
+#define OM_MTX_GEN(m) (*(u16*) ((u8*) (m) + 6))
+#define OM_MTX_TAG(m) ((((u32) (uintptr_t) (m)) & ~7u) | (OM_MTX_GEN(m) & 7u))
+
+#define renEXTagModelMatrix(gfx, ommtx)                                            gEXMatrixGroupDecomposed((gfx), OM_MTX_TAG(ommtx), G_EX_NOPUSH, 0,         G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO,                 G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO, G_EX_COMPONENT_SKIP,                 G_EX_COMPONENT_SKIP, G_EX_ORDER_LINEAR, G_EX_EDIT_ALLOW,                       G_EX_COMPONENT_SKIP, G_EX_COMPONENT_SKIP)
 
 s32 renPrepareModelMatrix(Gfx** gfxPtr, DObj* dobj) {
     Gfx* sp2DC;

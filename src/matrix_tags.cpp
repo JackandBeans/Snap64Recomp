@@ -146,3 +146,46 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
 
     __real_renPrepareCameraMatrix(rdram, ctx);
 }
+
+// Object identity for interpolation is the OMMtx a matrix belongs to, and that
+// alone is not enough, because the addresses come back.
+//
+// omGetMtx and omFreeMtx are a plain LIFO free list: freeing pushes onto the
+// head and allocating pops it, with no clearing and nothing held back. The most
+// recently released matrix is the very next one handed out. That would be
+// harmless if it happened between scenes, but enterNextBlock does it mid-frame
+// during ordinary play -- it deletes the Pokemon belonging to the block being
+// left and creates the next block's on the following line, so the addresses
+// freed by the first call are reissued by the second, before that frame's
+// display list is built.
+//
+// Tagged with the bare address, the new object's limb and the dead object's
+// limb are the same id, so they pair, and the limb is interpolated from an
+// object a whole world block away. It lasts as long as the previous frame
+// remembers the dead object, which is a frame or two, and then rights itself.
+//
+// A serial stamped at allocation separates them. Offset 6 is real padding: the
+// struct is next, kind, unk_05, then the matrix at 8, which is 8-aligned
+// because Mtx carries a long long for alignment. Nothing in the game reads or
+// writes those two bytes, and nothing clears an OMMtx.
+//
+// It lives here rather than in the game patch because the patch's own data
+// would be placed outside the memory the game can see; state it needs to keep
+// has to be held on this side.
+extern "C" void omGetMtx(uint8_t* rdram, recomp_context* ctx) {
+    __real_omGetMtx(rdram, ctx);
+
+    const uint32_t mtx = static_cast<uint32_t>(ctx->r2);   // v0 holds the OMMtx*
+    if (!snap::valid_ram_address(mtx)) {
+        return;
+    }
+
+    // Never zero, so a stamped matrix is always distinguishable from one that
+    // has not been through here.
+    static uint16_t serial = 0;
+    if (++serial == 0) {
+        serial = 1;
+    }
+
+    MEM_HU(0x6, (gpr)(int32_t)mtx) = serial;
+}
