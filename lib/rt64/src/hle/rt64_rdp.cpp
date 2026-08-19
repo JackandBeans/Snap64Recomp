@@ -1345,6 +1345,25 @@ namespace RT64 {
             state->updateDrawStatusAttribute(DrawAttribute::Texture);
         }
         
+        // Pokemon Snap port, diagnostic: the game's effect sprites -- Snorlax's
+        // sleep symbols, Meowth's tornado -- are texture rectangles that supply
+        // their own depth, and they are not visible. This says whether they
+        // reach the renderer at all, and with what: if nothing prints while an
+        // effect should be on screen, the game side never submitted it; if
+        // sane rectangles print and no sprite shows, the renderer is eating
+        // them and the depth, alpha, or rect path is at fault.
+        if (otherMode.zSource() != 0) {
+            static uint32_t primRectCount = 0;
+            primRectCount++;
+            if ((primRectCount <= 24) || ((primRectCount % 240) == 0)) {
+                const hlslpp::float2 &pd = primDepthStack[primDepthStackSize - 1];
+                fprintf(stdout, "[SNAP-FX] #%u rect (%d,%d)-(%d,%d) px primZ %.6f cyc %u zCmp %u zUpd %u\n",
+                    primRectCount, ulx >> 2, uly >> 2, lrx >> 2, lry >> 2,
+                    float(pd.x), otherMode.cycleType(), otherMode.zCmp() ? 1u : 0u, otherMode.zUpd() ? 1u : 0u);
+                fflush(stdout);
+            }
+        }
+
         // Divide dsdx by 4 and add an extra pixel to the edges if it uses copy mode.
         const bool usesCopyMode = (otherMode.cycleType() == G_CYC_COPY);
         if (usesCopyMode) {
