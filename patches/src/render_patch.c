@@ -333,7 +333,22 @@ s32 renPrepareModelMatrix(Gfx** gfxPtr, DObj* dobj) {
                         renScaleY *= sp2C0->v.y;
                         renScaleZ *= sp2C0->v.z;
                         break;
+                    /* The billboard kinds never push a matrix: they recompute
+                       the combined matrix and then overwrite its rotation rows
+                       one element at a time, and they leave this loop early,
+                       before the tag every pushed matrix receives. The
+                       renderer reconstructs a world transform for the
+                       overwritten matrix and files it under whichever identity
+                       was named last -- some other object's -- so between
+                       frames the billboard is paired with that object and its
+                       corners are interpolated towards it. Snorlax's sleep
+                       symbols smear into a streak instead of drawing, and
+                       every billboard in the game flashes the same streak for
+                       a frame whenever the pairing lands differently. Naming
+                       the billboard's own matrix before the overwrite gives
+                       the reconstruction the identity it always deserved. */
                     case MTX_TYPE_41:
+                        renEXTagModelMatrix(sp2DC++, ommtx);
                         gSPMvpRecalc(sp2DC++);
                         gMoveWd(sp2DC++, G_MW_MATRIX, G_MWO_MATRIX_YX_YY_I, renProjectionMatrix->m[0][0]);
                         gMoveWd(sp2DC++, G_MW_MATRIX, G_MWO_MATRIX_YZ_YW_I, renProjectionMatrix->m[0][1]);
@@ -349,6 +364,7 @@ s32 renPrepareModelMatrix(Gfx** gfxPtr, DObj* dobj) {
                         gMoveWd(sp2DC++, G_MW_MATRIX, G_MWO_MATRIX_XZ_XW_F, renProjectionMatrix->m[3][1]);
                         continue;
                     case MTX_TYPE_42:
+                        renEXTagModelMatrix(sp2DC++, ommtx);
                         gSPMvpRecalc(sp2DC++);
                         gMoveWd(sp2DC++, G_MW_MATRIX, G_MWO_MATRIX_XX_XY_I, renProjectionMatrix->m[0][0]);
                         gMoveWd(sp2DC++, G_MW_MATRIX, G_MWO_MATRIX_XZ_XW_I, renProjectionMatrix->m[0][1]);
@@ -379,6 +395,7 @@ s32 renPrepareModelMatrix(Gfx** gfxPtr, DObj* dobj) {
                         renMvpMatrixF[2][2] = renPerspectiveMatrixF[2][2] * renScaleX;
                         renMvpMatrixF[2][3] = renPerspectiveMatrixF[2][3] * renScaleX;
                         hal_mtx_f2l(renMvpMatrixF, mtx);
+                        renEXTagModelMatrix(sp2DC++, ommtx);
                         gSPMvpRecalc(sp2DC++);
                         gMoveWd(sp2DC++, G_MW_MATRIX, G_MWO_MATRIX_YX_YY_I, mtx->m[0][0]);
                         gMoveWd(sp2DC++, G_MW_MATRIX, G_MWO_MATRIX_YZ_YW_I, mtx->m[0][1]);
@@ -409,6 +426,7 @@ s32 renPrepareModelMatrix(Gfx** gfxPtr, DObj* dobj) {
                         renMvpMatrixF[2][2] = renPerspectiveMatrixF[2][2] * renScaleX;
                         renMvpMatrixF[2][3] = renPerspectiveMatrixF[2][3] * renScaleX;
                         hal_mtx_f2l(renMvpMatrixF, mtx);
+                        renEXTagModelMatrix(sp2DC++, ommtx);
                         gSPMvpRecalc(sp2DC++);
                         gMoveWd(sp2DC++, G_MW_MATRIX, G_MWO_MATRIX_XX_XY_I, mtx->m[0][0]);
                         gMoveWd(sp2DC++, G_MW_MATRIX, G_MWO_MATRIX_XZ_XW_I, mtx->m[0][1]);
@@ -443,6 +461,7 @@ s32 renPrepareModelMatrix(Gfx** gfxPtr, DObj* dobj) {
                         renMvpMatrixF[2][2] = renPerspectiveMatrixF[2][2] * renScaleX;
                         renMvpMatrixF[2][3] = renPerspectiveMatrixF[2][3] * renScaleX;
                         hal_mtx_f2l(renMvpMatrixF, mtx);
+                        renEXTagModelMatrix(sp2DC++, ommtx);
                         gSPMvpRecalc(sp2DC++);
                         gMoveWd(sp2DC++, G_MW_MATRIX, G_MWO_MATRIX_XX_XY_I, mtx->m[0][0]);
                         gMoveWd(sp2DC++, G_MW_MATRIX, G_MWO_MATRIX_XZ_XW_I, mtx->m[0][1]);
@@ -478,6 +497,7 @@ s32 renPrepareModelMatrix(Gfx** gfxPtr, DObj* dobj) {
                         renMvpMatrixF[2][2] = renPerspectiveMatrixF[2][2] * renScaleX;
                         renMvpMatrixF[2][3] = renPerspectiveMatrixF[2][3] * renScaleX;
                         hal_mtx_f2l(renMvpMatrixF, mtx);
+                        renEXTagModelMatrix(sp2DC++, ommtx);
                         gSPMvpRecalc(sp2DC++);
                         gMoveWd(sp2DC++, G_MW_MATRIX, G_MWO_MATRIX_XX_XY_I, mtx->m[0][0]);
                         gMoveWd(sp2DC++, G_MW_MATRIX, G_MWO_MATRIX_XZ_XW_I, mtx->m[0][1]);
@@ -509,6 +529,7 @@ s32 renPrepareModelMatrix(Gfx** gfxPtr, DObj* dobj) {
                         renMvpMatrixF[2][2] = ren_D_8004AFA8[2][2] * renScaleX;
                         renMvpMatrixF[2][3] = ren_D_8004AFA8[2][3] * renScaleX;
                         hal_mtx_f2l(renMvpMatrixF, mtx);
+                        renEXTagModelMatrix(sp2DC++, ommtx);
                         gSPMvpRecalc(sp2DC++);
                         gMoveWd(sp2DC++, G_MW_MATRIX, G_MWO_MATRIX_YX_YY_I, mtx->m[0][0]);
                         gMoveWd(sp2DC++, G_MW_MATRIX, G_MWO_MATRIX_YZ_YW_I, mtx->m[0][1]);
@@ -540,6 +561,7 @@ s32 renPrepareModelMatrix(Gfx** gfxPtr, DObj* dobj) {
                         renMvpMatrixF[2][2] = ren_D_8004AFA8[2][2] * renScaleX;
                         renMvpMatrixF[2][3] = ren_D_8004AFA8[2][3] * renScaleX;
                         hal_mtx_f2l(renMvpMatrixF, mtx);
+                        renEXTagModelMatrix(sp2DC++, ommtx);
                         gSPMvpRecalc(sp2DC++);
                         gMoveWd(sp2DC++, G_MW_MATRIX, G_MWO_MATRIX_XX_XY_I, mtx->m[0][0]);
                         gMoveWd(sp2DC++, G_MW_MATRIX, G_MWO_MATRIX_XZ_XW_I, mtx->m[0][1]);
@@ -571,6 +593,7 @@ s32 renPrepareModelMatrix(Gfx** gfxPtr, DObj* dobj) {
                         renMvpMatrixF[2][2] = ren_D_8004AFE8[2][2] * renScaleX;
                         renMvpMatrixF[2][3] = ren_D_8004AFE8[2][3] * renScaleX;
                         hal_mtx_f2l(renMvpMatrixF, mtx);
+                        renEXTagModelMatrix(sp2DC++, ommtx);
                         gSPMvpRecalc(sp2DC++);
                         gMoveWd(sp2DC++, G_MW_MATRIX, G_MWO_MATRIX_YX_YY_I, mtx->m[0][0]);
                         gMoveWd(sp2DC++, G_MW_MATRIX, G_MWO_MATRIX_YZ_YW_I, mtx->m[0][1]);
@@ -602,6 +625,7 @@ s32 renPrepareModelMatrix(Gfx** gfxPtr, DObj* dobj) {
                         renMvpMatrixF[2][2] = ren_D_8004AFE8[2][2] * renScaleX;
                         renMvpMatrixF[2][3] = ren_D_8004AFE8[2][3] * renScaleX;
                         hal_mtx_f2l(renMvpMatrixF, mtx);
+                        renEXTagModelMatrix(sp2DC++, ommtx);
                         gSPMvpRecalc(sp2DC++);
                         gMoveWd(sp2DC++, G_MW_MATRIX, G_MWO_MATRIX_XX_XY_I, mtx->m[0][0]);
                         gMoveWd(sp2DC++, G_MW_MATRIX, G_MWO_MATRIX_XZ_XW_I, mtx->m[0][1]);
