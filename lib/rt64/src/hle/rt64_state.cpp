@@ -695,7 +695,14 @@ namespace RT64 {
                         if ((ciTiles <= 4) || ((ciTiles % 500) == 0)) {
                             const uint8_t *tmem8 = reinterpret_cast<const uint8_t *>(rdp->TMEM);
                             const uint16_t *pal = reinterpret_cast<const uint16_t *>(tmem8 + (RDP_TMEM_BYTES / 2) + (callTile.loadTile.palette << 7));
-                            const uint32_t texelBase = (callTile.loadTile.tmem << 3) & RDP_TMEM_MASK16;
+                            // Sampled from the middle row: these sprites keep
+                            // their art in the centre and their first rows
+                            // legitimately blank, so the top of the texture
+                            // cannot distinguish an intact sprite from a
+                            // missing one.
+                            const uint32_t rowStride = uint32_t(callTile.loadTile.line) << 3;
+                            const uint32_t midRow = (callTile.sampleHeight / 2) * rowStride;
+                            const uint32_t texelBase = ((callTile.loadTile.tmem << 3) + midRow) & RDP_TMEM_MASK16;
                             fprintf(stdout, "[SNAP-CI4] #%u %ux%u line %u tmem %u pal %u tlut %u texels",
                                 ciTiles, callTile.sampleWidth, callTile.sampleHeight, callTile.loadTile.line,
                                 callTile.loadTile.tmem, callTile.loadTile.palette, callTile.tlut);
