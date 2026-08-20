@@ -41,6 +41,7 @@ void load_settings() {
         s_settings.downsample         = j.value("downsample", s_settings.downsample);
         s_settings.interpolate_camera = j.value("interpolate_camera", s_settings.interpolate_camera);
         s_settings.render_to_ram      = j.value("render_to_ram", s_settings.render_to_ram);
+        s_settings.ubershaders_only   = j.value("ubershaders_only", s_settings.ubershaders_only);
         printf("[SNAP-CFG] loaded %s\n", SETTINGS_FILE);
     } catch (const std::exception& e) {
         fprintf(stderr, "[SNAP-CFG] failed to parse %s: %s (using defaults)\n", SETTINGS_FILE, e.what());
@@ -59,6 +60,7 @@ void save_settings() {
         {"downsample",            s_settings.downsample},
         {"interpolate_camera",    s_settings.interpolate_camera},
         {"render_to_ram",         s_settings.render_to_ram},
+        {"ubershaders_only",      s_settings.ubershaders_only},
     };
     std::ofstream f(SETTINGS_FILE);
     f << j.dump(2) << "\n";
@@ -125,6 +127,10 @@ bool handle_settings_hotkey(int scancode) {
             s_settings.hq_sound = !s_settings.hq_sound;
             apply_game_settings(g_rdram);
             printf("[SNAP-CFG] HQ sound: %s\n", s_settings.hq_sound ? "on" : "off");
+            return true;
+        case SDL_SCANCODE_F3:
+            s_settings.ubershaders_only = !s_settings.ubershaders_only;
+            printf("[SNAP-CFG] ubershaders only: %s\n", s_settings.ubershaders_only ? "on" : "off");
             return true;
         case SDL_SCANCODE_F4:
             s_settings.interpolate_camera = !s_settings.interpolate_camera;

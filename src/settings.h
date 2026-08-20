@@ -68,6 +68,15 @@ struct Settings {
     // hide. F4 toggles it for comparison.
     bool  interpolate_camera = true;
     int   downsample        = 1;
+
+    // Diagnostic, not shipped as a feature. RT64 draws every call through a
+    // fallback ubershader until the call's specialised pipeline finishes
+    // compiling, and Snorlax's sleep symbols are visible during exactly that
+    // window and never after -- the two paths disagree about one material.
+    // Forcing the fallback for every draw splits the renderer in half live:
+    // if the symbols show while this is on and vanish when it is off, the
+    // specialised pipeline is convicted. F3 toggles it.
+    bool  ubershaders_only  = false;
 };
 
 Settings& settings();
