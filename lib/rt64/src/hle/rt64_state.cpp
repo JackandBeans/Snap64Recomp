@@ -675,6 +675,44 @@ namespace RT64 {
                     callTile.tmemHashOrID = textureManager.uploadTMEM(this, callTile.loadTile, ext.textureCache, workload.submissionFrame, 0, RDP_TMEM_BYTES, callTile.sampleWidth, callTile.sampleHeight, callTile.tlut);
                 }
                 else {
+                    // Pokemon Snap port, diagnostic: the game's effect sprites --
+                    // Snorlax's sleep symbols, Meowth's tornado -- are palette
+                    // indexed 4-bit rectangles that reach the renderer with the
+                    // right rectangle, the right primitive depth and full prim
+                    // alpha, and still show nothing. Their colour can only come
+                    // from a texel index and the palette entry it selects, and
+                    // this is the one place where both actually exist: texture
+                    // memory is filled by the deferred load replay just above,
+                    // not when the display list was parsed.
+                    //
+                    // All zero texels mean the sprite bitmap never arrived. Real
+                    // indices with an all zero palette mean the TLUT is the
+                    // problem. Both good means the fault is downstream, in the
+                    // upload or the sampler.
+                    if ((callTile.loadTile.fmt == G_IM_FMT_CI) && (callTile.loadTile.siz == G_IM_SIZ_4b)) {
+                        static uint32_t ciTiles = 0;
+                        ciTiles++;
+                        if ((ciTiles <= 4) || ((ciTiles % 500) == 0)) {
+                            const uint8_t *tmem8 = reinterpret_cast<const uint8_t *>(rdp->TMEM);
+                            const uint16_t *pal = reinterpret_cast<const uint16_t *>(tmem8 + (RDP_TMEM_BYTES / 2) + (callTile.loadTile.palette << 7));
+                            const uint32_t texelBase = (callTile.loadTile.tmem << 3) & RDP_TMEM_MASK16;
+                            fprintf(stdout, "[SNAP-CI4] #%u %ux%u line %u tmem %u pal %u tlut %u texels",
+                                ciTiles, callTile.sampleWidth, callTile.sampleHeight, callTile.loadTile.line,
+                                callTile.loadTile.tmem, callTile.loadTile.palette, callTile.tlut);
+                            for (int b = 0; b < 16; b++) {
+                                fprintf(stdout, " %02X", tmem8[(texelBase + b) & RDP_TMEM_MASK16]);
+                            }
+                            fprintf(stdout, " pal");
+                            // Each palette entry is replicated across its 64-bit
+                            // word, so stride 4 picks one copy of each of the 16.
+                            for (int e = 0; e < 16; e++) {
+                                fprintf(stdout, " %04X", pal[e * 4]);
+                            }
+                            fprintf(stdout, "\n");
+                            fflush(stdout);
+                        }
+                    }
+
                     callTile.tmemHashOrID = textureManager.uploadTexture(this, callTile.loadTile, ext.textureCache, workload.submissionFrame, callTile.sampleWidth, callTile.sampleHeight, callTile.tlut);
                 }
             }

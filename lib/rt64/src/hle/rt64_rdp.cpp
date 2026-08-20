@@ -134,6 +134,21 @@ namespace RT64 {
         auto &fbManager = state->framebufferManager;
         Framebuffer *fb = fbManager.findMostRecentContaining(addressStart, addressEnd);
         if (fb != nullptr) {
+            // Pokemon Snap port, diagnostic: which texture loads are being
+            // claimed by a tracked framebuffer, and by which one. A claim
+            // replaces the load's content with framebuffer-sourced data, which
+            // for anything that is not actually a framebuffer -- a sprite
+            // texture, a palette -- destroys it.
+            {
+                static uint32_t claimCount = 0;
+                claimCount++;
+                if (claimCount <= 40) {
+                    fprintf(stdout, "[SNAP-FBCLAIM] #%u src %08X..%08X claimed by fb %08X (w %u maxH %u) tmemWord %u tileCopy %u\n",
+                        claimCount, addressStart, addressEnd, fb->addressStart, fb->width, fb->maxHeight,
+                        tmemStart, makeTileCopy ? 1u : 0u);
+                    fflush(stdout);
+                }
+            }
             const bool gpuCopiesEnabled = state->ext.emulatorConfig->framebuffer.copyWithGPU;
             if (!gpuCopiesEnabled) {
                 return;
@@ -523,6 +538,35 @@ namespace RT64 {
         const uint32_t textureEnd = textureStart + (wordCount << 3);
         const bool RGBA32 = (loadTile.siz == G_IM_SIZ_32b) && (loadTile.fmt == G_IM_FMT_RGBA);
         if (deferred) {
+            // Pokemon Snap port, diagnostic: sprite bitmaps arrive at draw time
+            // as zeros while their palettes are intact, so the question is what
+            // the source memory holds at the moment the game submits the frame
+            // versus where that memory is. Sampled on the 4-bit and 8-bit
+            // loads, which is what the effect sprites use.
+            {
+                // 4-bit textures load as 16-bit blocks, so the size cannot
+                // identify the sprites; a zero-content load can. Print every
+                // load whose first bytes are all zero (capped), plus a sparse
+                // baseline of ordinary loads for comparison.
+                static uint32_t loadCount = 0;
+                static uint32_t zeroCount = 0;
+                loadCount++;
+                const uint8_t *src = state->RDRAM + textureStart;
+                uint32_t sum = 0;
+                for (int b = 0; b < 16; b++) {
+                    sum |= src[b];
+                }
+                const bool zeroLoad = (sum == 0) && (zeroCount < 60);
+                if (zeroLoad) {
+                    zeroCount++;
+                }
+                if (zeroLoad || ((loadCount % 500) == 0)) {
+                    fprintf(stdout, "[SNAP-FXLOAD] #%u fmt %u siz %u src %08X words %u zero %u\n",
+                        loadCount, loadTile.fmt, loadTile.siz, textureStart, wordCount, zeroLoad ? 1u : 0u);
+                    fflush(stdout);
+                }
+            }
+
             checkImageOverlap(textureStart, textureEnd);
 
             // Discard any FB regions currently loaded into TMEM within the specified range.
@@ -1352,14 +1396,31 @@ namespace RT64 {
         // effect should be on screen, the game side never submitted it; if
         // sane rectangles print and no sprite shows, the renderer is eating
         // them and the depth, alpha, or rect path is at fault.
+        //
+        // Only the rectangle is read here. Texture memory is deliberately not:
+        // at parse time the RDP's TMEM is still whatever the previous frame's
+        // replay left in it, because a load command only records a deferred
+        // operation and the contents are not materialised until the workload
+        // is replayed at full sync. Reading it here reports stale bytes that
+        // have nothing to do with the sprite being drawn.
         if (otherMode.zSource() != 0) {
             static uint32_t primRectCount = 0;
             primRectCount++;
-            if ((primRectCount <= 24) || ((primRectCount % 240) == 0)) {
+            // Depth-tested ones are the effect sprites and they are rare, so
+            // every one prints, along with the scissor that clips it. The
+            // depth-less ones are HUD tiles at framerate volume and drowned
+            // the sampling; a trickle of those is plenty.
+            const bool depthTested = otherMode.zCmp();
+            if (depthTested || (primRectCount <= 8) || ((primRectCount % 1000) == 0)) {
                 const hlslpp::float2 &pd = primDepthStack[primDepthStackSize - 1];
-                fprintf(stdout, "[SNAP-FX] #%u rect (%d,%d)-(%d,%d) px primZ %.6f cyc %u zCmp %u zUpd %u\n",
+                const FixedRect &sc = scissorRectStack[scissorStackSize - 1];
+                const LoadTile &lt = tiles[tile];
+                fprintf(stdout, "[SNAP-FX] #%u rect (%d,%d)-(%d,%d) px primZ %.6f cyc %u zCmp %u zUpd %u sc (%d,%d)-(%d,%d) fmt %u siz %u pal %u tmem %u tlut %u\n",
                     primRectCount, ulx >> 2, uly >> 2, lrx >> 2, lry >> 2,
-                    float(pd.x), otherMode.cycleType(), otherMode.zCmp() ? 1u : 0u, otherMode.zUpd() ? 1u : 0u);
+                    float(pd.x), otherMode.cycleType(), otherMode.zCmp() ? 1u : 0u, otherMode.zUpd() ? 1u : 0u,
+                    sc.ulx >> 2, sc.uly >> 2, sc.lrx >> 2, sc.lry >> 2,
+                    lt.fmt, lt.siz, lt.palette, lt.tmem, otherMode.textLUT());
+
                 fflush(stdout);
             }
         }

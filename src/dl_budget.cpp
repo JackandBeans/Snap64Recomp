@@ -77,6 +77,9 @@ bool     g_overflowed[BufferKinds] = {};
 bool     g_heap_overflowed = false;
 
 } // namespace
+
+// Defined below, called from the per-frame check.
+void watch_blobs(uint8_t* rdram);
 } // namespace snap
 
 extern "C" void gtlCheckBuffers(uint8_t* rdram, recomp_context* ctx) {
@@ -136,5 +139,69 @@ extern "C" void gtlCheckBuffers(uint8_t* rdram, recomp_context* ctx) {
         }
     }
 
+    snap::watch_blobs(rdram);
+
     __real_gtlCheckBuffers(rdram, ctx);
 }
+
+// The effect sprite blobs: recorded when the game loads one, re-checked every
+// frame from the buffer check above, so the log shows the exact frame the
+// content changes. The sprites were proven to be zeros at draw time while
+// their palettes survive, and the load path reads correctly at boot, so either
+// the load itself fails at course start or something overwrites the blob
+// afterwards -- and the transition timing says which, and when.
+namespace snap {
+namespace {
+struct WatchedBlob {
+    uint32_t address = 0;
+    uint32_t size = 0;
+    bool hadData = false;
+};
+WatchedBlob g_blobs[8];
+uint32_t g_blob_count = 0;
+uint32_t g_watch_frame = 0;
+
+bool blob_has_data(uint8_t* rdram, uint32_t address) {
+    uint32_t sum = 0;
+    for (uint32_t i = 0; i < 32; i += 4) {
+        sum |= MEM_W(i, (gpr)(int32_t)address);
+    }
+    return sum != 0;
+}
+} // namespace
+} // namespace snap
+
+// a0 = ROM start, a1 = ROM end; v0 = destination the blob was loaded to.
+extern "C" void func_800A73C0(uint8_t* rdram, recomp_context* ctx) {
+    const uint32_t romStart = (uint32_t)ctx->r4;
+    const uint32_t romEnd = (uint32_t)ctx->r5;
+
+    __real_func_800A73C0(rdram, ctx);
+
+    const uint32_t dst = (uint32_t)ctx->r2;
+    if (dst != 0 && snap::g_blob_count < 8) {
+        snap::WatchedBlob& blob = snap::g_blobs[snap::g_blob_count++];
+        blob.address = dst;
+        blob.size = romEnd - romStart;
+        blob.hadData = snap::blob_has_data(rdram, dst);
+        printf("[SNAP-BLOB] loaded rom %08X..%08X -> %08X (%u bytes) data %u\n",
+               romStart, romEnd, dst, blob.size, blob.hadData ? 1u : 0u);
+        fflush(stdout);
+    }
+}
+
+namespace snap {
+void watch_blobs(uint8_t* rdram) {
+    g_watch_frame++;
+    for (uint32_t i = 0; i < g_blob_count; i++) {
+        WatchedBlob& blob = g_blobs[i];
+        const bool has = blob_has_data(rdram, blob.address);
+        if (has != blob.hadData) {
+            printf("[SNAP-BLOB] %08X changed to %s at frame %u\n",
+                   blob.address, has ? "DATA" : "ZERO", g_watch_frame);
+            fflush(stdout);
+            blob.hadData = has;
+        }
+    }
+}
+} // namespace snap
