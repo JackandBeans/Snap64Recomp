@@ -841,7 +841,28 @@ namespace RT64 {
         const uint32_t globalIndex = indices[vtxIndex];
         const float screenZ = workload.drawData.posScreen[globalIndex][2] * DepthRange;
         const float zValueFloat = zValue / 65536.0f;
-        if (forceBranch || (screenZ < zValueFloat)) {
+        const bool taken = forceBranch || (screenZ < zValueFloat);
+
+        // Pokemon Snap port, diagnostic: every model part in this game sits
+        // behind a pair of these branches -- take the near model, else the far
+        // model, else draw nothing at all. A part that fails both tests
+        // vanishes while everything the game computes for it stays healthy,
+        // which is exactly the shape of the missing sleep symbols. A taken
+        // branch is routine and stays quiet; the interesting event is the
+        // refusal, and refusals are rare enough to print whole.
+        if (!taken) {
+            static uint32_t refusals = 0;
+            refusals++;
+            if ((refusals <= 2000) || ((refusals % 100) == 0)) {
+                fprintf(stdout, "[SNAP-BRZ] #%u dl %08X vtx %u z %.2f limit %.2f\n",
+                    refusals, branchDl, vtxIndex, screenZ, zValueFloat);
+                if ((refusals % 32) == 0) {
+                    fflush(stdout);
+                }
+            }
+        }
+
+        if (taken) {
             const uint32_t rdramAddress = fromSegmentedMasked(branchDl);
             *dl = reinterpret_cast<DisplayList *>(state->fromRDRAM(rdramAddress)) - 1;
         }
