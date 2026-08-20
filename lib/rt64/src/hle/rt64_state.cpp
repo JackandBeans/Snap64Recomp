@@ -1012,6 +1012,47 @@ namespace RT64 {
                     if (proj.usesViewport()) {
                         meshDesc.faceIndicesStart = faceIndex;
                         faceIndex += callDesc.triangleCount * 3;
+
+                        // Pokemon Snap port, diagnostic: Snorlax's sleep
+                        // symbols -- a four bit intensity texture on a two
+                        // cycle translucent surface that tests depth without
+                        // writing it -- are submitted by the game every frame
+                        // and drawn by neither the ubershader nor the
+                        // specialised pipeline. Both consume the same geometry,
+                        // so the question is where that geometry lands. This
+                        // prints the screen bounds the renderer computed for
+                        // exactly these calls: on screen at sane depth means
+                        // the fragments die later, off screen or degenerate
+                        // means the transform stage ate them.
+                        {
+                            const bool xluNoWrite = callDesc.otherMode.zCmp() && !callDesc.otherMode.zUpd() &&
+                                (callDesc.otherMode.zMode() == ZMODE_XLU) &&
+                                (callDesc.otherMode.cycleType() == G_CYC_2CYCLE);
+                            bool i4Texture = false;
+                            if (xluNoWrite && (callDesc.tileCount > 0)) {
+                                const auto &lt = workload.drawData.callTiles[callDesc.tileIndex].loadTile;
+                                i4Texture = (lt.fmt == G_IM_FMT_I) && (lt.siz == G_IM_SIZ_4b);
+                            }
+                            if (i4Texture && (callDesc.triangleCount > 0)) {
+                                static uint32_t zCalls = 0;
+                                zCalls++;
+                                if ((zCalls <= 120) || ((zCalls % 25) == 0)) {
+                                    float minX = 1e9f, minY = 1e9f, minZ = 1e9f;
+                                    float maxX = -1e9f, maxY = -1e9f, maxZ = -1e9f;
+                                    const uint32_t indexCount = callDesc.triangleCount * 3;
+                                    for (uint32_t i = 0; i < indexCount; i++) {
+                                        const uint32_t v = faceIndices[meshDesc.faceIndicesStart + i];
+                                        const auto &ps = workload.drawData.posScreen[v];
+                                        minX = std::min(minX, float(ps[0])); maxX = std::max(maxX, float(ps[0]));
+                                        minY = std::min(minY, float(ps[1])); maxY = std::max(maxY, float(ps[1]));
+                                        minZ = std::min(minZ, float(ps[2])); maxZ = std::max(maxZ, float(ps[2]));
+                                    }
+                                    fprintf(stdout, "[SNAP-ZGEO] #%u tris %u x %.1f..%.1f y %.1f..%.1f z %.5f..%.5f\n",
+                                        zCalls, callDesc.triangleCount, minX, maxX, minY, maxY, minZ, maxZ);
+                                    fflush(stdout);
+                                }
+                            }
+                        }
                     }
                     else {
                         meshDesc.rawVertexStart = rawVertexIndex;
