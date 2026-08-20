@@ -66,6 +66,10 @@ namespace RT64 {
                     const std::unique_lock<std::mutex> lock(shaderCache->GPUShadersMutex);
                     shaderCache->GPUShaders[shaderDesc.hash()] = std::move(newShader);
                 }
+
+                // The moment the specialised pipeline replaces the ubershader.
+                fprintf(stdout, "[SNAP-SHADER] ready  %016llX\n", (unsigned long long)shaderDesc.hash());
+                fflush(stdout);
             }
         }
     }
@@ -123,6 +127,20 @@ namespace RT64 {
             }
 
             found = true;
+
+            // Pokemon Snap port, diagnostic: every draw whose specialised
+            // pipeline is still compiling renders through the ubershader,
+            // whose fixed state differs from the specialised one in depth
+            // equality and blending. An object that is visible exactly once,
+            // at first sight, and never again would look like this handoff.
+            // The submission and the completion below bracket the window.
+            fprintf(stdout, "[SNAP-SHADER] submit %016llX om %08X %08X cc %08X %08X cyc %u zc %u zu %u zm %u\n",
+                (unsigned long long)shaderHash, desc.otherMode.H, desc.otherMode.L,
+                desc.colorCombiner.H, desc.colorCombiner.L,
+                desc.otherMode.cycleType() >> G_MDSFT_CYCLETYPE,
+                desc.otherMode.zCmp() ? 1u : 0u, desc.otherMode.zUpd() ? 1u : 0u,
+                desc.otherMode.zMode() >> 10);
+            fflush(stdout);
         }
 
         // Push a new shader compilation to the queue.
