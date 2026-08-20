@@ -25,6 +25,10 @@ HOOKED = [
     # Say whether the effect system runs at all: the draw pass and the spawns.
     'fx_draw',
     'fx_createEffect',
+    # The two allocation choke points. Every effect in the game passes through
+    # them, and both hand back nothing when their pool is empty, silently.
+    'fx_getEffect',
+    'fx_createParticle',
     # Carries the distance the world origin moved by, so the previous frame can
     # be expressed in the new one rather than skipped.
     'bindCameraNextBlock',
