@@ -29,6 +29,9 @@ HOOKED = [
     # them, and both hand back nothing when their pool is empty, silently.
     'fx_getEffect',
     'fx_createParticle',
+    # Builds the per-frame material display lists -- the animated flipbook
+    # textures that only Pokemon models carry. Snorlax's sleep symbols are one.
+    'renLoadTextures',
     # Carries the distance the world origin moved by, so the previous frame can
     # be expressed in the new one rather than skipped.
     'bindCameraNextBlock',

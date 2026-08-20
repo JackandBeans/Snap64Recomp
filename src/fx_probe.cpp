@@ -150,3 +150,45 @@ extern "C" void fx_createParticle(uint8_t* rdram, recomp_context* ctx) {
         g_particle_empty++;
     }
 }
+
+// Materials are the other way the game animates a picture: a mesh whose
+// texture is swapped per frame from a flipbook of images, driven by the
+// material's lodLevel. Snorlax's sleep symbols are one of these -- a model
+// part, not a particle -- which is why the particle census above never saw
+// them. Only Pokemon models carry materials, so the volume is small enough
+// to log each build whole, after the real function has chosen the frame.
+extern "C" void renLoadTextures(uint8_t* rdram, recomp_context* ctx) {
+    const uint32_t dobj = (uint32_t)ctx->r4;
+
+    __real_renLoadTextures(rdram, ctx);
+
+    const uint32_t mobjHead = (uint32_t)MEM_W(0x80, (gpr)(int32_t)dobj);
+    if (mobjHead == 0) {
+        return;
+    }
+
+    static uint32_t builds = 0;
+    builds++;
+
+    char line[512];
+    int len = snprintf(line, sizeof(line), "[SNAP-MAT] #%u dobj %08X", builds, dobj);
+    uint32_t mobj = mobjHead;
+    int guard = 0;
+    while ((mobj != 0) && (guard++ < 6) && (len < (int)sizeof(line) - 96)) {
+        float lod;
+        const uint32_t lodBits = (uint32_t)MEM_W(0x84, (gpr)(int32_t)mobj);
+        std::memcpy(&lod, &lodBits, sizeof(lod));
+        const uint32_t imageIndex = MEM_HU(0x80, (gpr)(int32_t)mobj);
+        const uint32_t images = (uint32_t)MEM_W(0x0C, (gpr)(int32_t)mobj);
+        const uint32_t image = (images != 0) ? (uint32_t)MEM_W(imageIndex * 4, (gpr)(int32_t)images) : 0;
+        len += snprintf(line + len, sizeof(line) - len,
+                        " | fl %04X lod %.2f idx %u img %08X a %02X",
+                        (uint32_t)MEM_HU(0x38, (gpr)(int32_t)mobj), lod, imageIndex, image,
+                        MEM_BU(0x5B, (gpr)(int32_t)mobj));
+        mobj = (uint32_t)MEM_W(0x00, (gpr)(int32_t)mobj);
+    }
+    printf("%s\n", line);
+    if ((builds % 64) == 0) {
+        fflush(stdout);
+    }
+}
