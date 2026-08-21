@@ -280,6 +280,7 @@ namespace RT64 {
         // interpolates, so a pan through a corner stays smooth, and only the
         // component that cannot be meaningfully interpolated is held.
         snapRebaseFrame = false;
+        snapViewCut = false;
         snapOriginDelta = hlslpp::float3(0.0f, 0.0f, 0.0f);
         for (uint32_t w : workloads) {
             Workload &rebaseWorkload = workloadQueue.workloads[w];
@@ -664,6 +665,26 @@ namespace RT64 {
                             float(hlslpp::length(curEye - prevEye))) {
                             effectivePrevView = &rebasedPrevView;
                             viewProjMap.snapRebasedPrev = true;
+                        }
+                    }
+
+                    // A matched perspective camera whose eye jumped further in
+                    // one frame than any motion in this game carries it is a
+                    // scripted scene cut. The threshold is two orders of
+                    // magnitude above the cart's fastest real movement and
+                    // well under the smallest cut observed; block transitions
+                    // compare against the rebased eye above, so their known
+                    // origin shift does not trip this.
+                    if (curProj.type == Projection::Type::Perspective) {
+                        const hlslpp::float3 cutCurEye = hlslpp::inverse(curView)[3].xyz;
+                        const hlslpp::float3 cutPrevEye = hlslpp::inverse(*effectivePrevView)[3].xyz;
+                        const float eyeJump = float(hlslpp::length(cutCurEye - cutPrevEye));
+                        if (eyeJump > 250.0f) {
+                            snapViewCut = true;
+                            if (snapdiag::diagEnabled()) {
+                                fprintf(stdout, "[SNAP-CUT] view jump %.0f -> cut\n", eyeJump);
+                                fflush(stdout);
+                            }
                         }
                     }
 

@@ -1271,8 +1271,11 @@ namespace RT64 {
                         // inside a surviving object's display list, culled
                         // segment by segment. Until the removed geometry can
                         // be kept drawn for the one extra frame blending needs,
-                        // every transition cuts.
-                        if (curFrame.snapRebaseFrame) {
+                        // every transition cuts. snapViewCut is the same
+                        // verdict from a different witness: a scripted camera
+                        // cut, like the intro movie's scene changes, which
+                        // never crosses a world block.
+                        if (curFrame.snapRebaseFrame || curFrame.snapViewCut) {
                             prevFrameWeight = 0.0f;
                             curFrameWeight = 1.0f;
                         }
@@ -1317,7 +1320,7 @@ namespace RT64 {
                     // repeat the full workload displayFrames times on exactly
                     // the frames that are already the heaviest. Frame zero
                     // renders; the rest are a texture copy of its target.
-                    const bool snapCutCopy = generateInterpolatedFrames && curFrame.snapRebaseFrame &&
+                    const bool snapCutCopy = generateInterpolatedFrames && (curFrame.snapRebaseFrame || curFrame.snapViewCut) &&
                         !usingMSAA && (overrideTarget != nullptr);
                     if (snapCutCopy) {
                         threadCopyOverrideTarget(interpolationTargetKey, overrideTarget);

@@ -137,6 +137,15 @@ namespace RT64 {
         bool snapRebaseFrame = false;
         hlslpp::float3 snapOriginDelta = {};
 
+        // Set when the matched main camera's eye moved further in one frame
+        // than any legitimate motion carries it: a scripted scene cut, like
+        // the ones in the intro movie, which never cross a world block and so
+        // never raise snapRebaseFrame. A cut is a cut whatever raised it --
+        // blending across one sweeps the whole screen between two unrelated
+        // poses for a frame -- so the workload queue treats both flags the
+        // same way.
+        bool snapViewCut = false;
+
         // True when the origin moved this frame and the distance it moved by is
         // known, which is when the previous frame can be read in this one's
         // terms. Without a usable distance the camera falls back to declining
