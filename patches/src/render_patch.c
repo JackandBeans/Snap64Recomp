@@ -66,7 +66,19 @@ extern Mtx4f ren_D_8004AFE8;
    an address freed on one line comes back on the next and would otherwise read
    as the object that released it. The serial occupies the next field, which is
    the free list's and is unused for as long as the matrix is allocated. */
-#define OM_MTX_TAG(m) (*(u32*) (m))
+/* One object drawn by two cameras in the same frame -- the main scene and
+   the photo detector's offscreen pass -- emits the same matrices twice, and
+   two transforms wearing one name make the name useless: the renderer's
+   matcher can hand one pass's history to the other, and whichever previous
+   instance loses the toss is left free to be claimed by unrelated untagged
+   geometry. The game already knows which draw is a re-draw: lastDrawFrame is
+   stamped after a GObj's first render of the frame, so a pass that finds it
+   current is not the first. That bit becomes part of the name, giving each
+   pass its own stable identity namespace. The serial allocator counts from
+   one and would take centuries of frames to reach the salt bit. */
+static u32 renEXPassSalt = 0;
+
+#define OM_MTX_TAG(m) ((*(u32*) (m)) | renEXPassSalt)
 
 #define renEXTagModelMatrix(gfx, ommtx)                                            gEXMatrixGroupDecomposed((gfx), OM_MTX_TAG(ommtx), G_EX_NOPUSH, 0,         G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO,                 G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO, G_EX_COMPONENT_SKIP,                 G_EX_COMPONENT_SKIP, G_EX_ORDER_LINEAR, G_EX_EDIT_ALLOW,                       G_EX_COMPONENT_SKIP, G_EX_COMPONENT_SKIP)
 
@@ -94,6 +106,7 @@ s32 renPrepareModelMatrix(Gfx** gfxPtr, DObj* dobj) {
     s32 sp2B8;
     s32 (*func)(Mtx*, void*, Gfx**);
 
+    renEXPassSalt = (dobj->obj->lastDrawFrame == (u8) gtlDrawnFrameCounter) ? 0x40000000 : 0;
     sp2DC = *gfxPtr;
     sp2D4 = 0;
 
@@ -738,6 +751,7 @@ s32 ren_func_80013C5C(Gfx** gfxPtr, DObj* dobj) {
     s32 i;
     s32 mtxCount = 0;
 
+    renEXPassSalt = (dobj->obj->lastDrawFrame == (u8) gtlDrawnFrameCounter) ? 0x40000000 : 0;
     for (i = 0; i < dobj->numMatrices; i++) {
         OMMtx* ommtx = dobj->matrices[i];
         if (ommtx != NULL) {

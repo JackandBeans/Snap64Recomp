@@ -194,6 +194,31 @@ namespace RT64 {
                     ext.sharedResources->workloadMutex.lock();
                 }
 
+                // Pokemon Snap port, diagnostic: a frame that cannot be
+                // interpolated is presented once, raw -- a pacing hiccup at
+                // the display rate, which is a stutter by construction. If
+                // these land on the frames that flash, the presentation path
+                // is the flash; if the presented address is ever not one of
+                // the game's two display buffers, the wrong image is being
+                // shown outright.
+                {
+                    static uint32_t rawPresents = 0;
+                    static uint32_t lastAddress = 0;
+                    const uint32_t addr = presentFb->addressStart;
+                    if (!presentFb->interpolationEnabled) {
+                        rawPresents++;
+                        if ((rawPresents <= 200) || ((rawPresents % 50) == 0)) {
+                            fprintf(stdout, "[SNAP-PRESENT] raw present #%u addr %08X\n", rawPresents, addr);
+                            fflush(stdout);
+                        }
+                    }
+                    else if ((addr != lastAddress) && (addr != 0x3B5000) && (addr != 0x3DA800)) {
+                        fprintf(stdout, "[SNAP-PRESENT] unusual address %08X\n", addr);
+                        fflush(stdout);
+                    }
+                    lastAddress = addr;
+                }
+
                 RenderTargetKey colorTargetKey(presentFb->addressStart, presentFb->width, presentFb->siz, Framebuffer::Type::Color);
                 colorTarget = &targetManager.get(colorTargetKey, true);
                 if (!colorTarget->isEmpty()) {
