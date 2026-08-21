@@ -31,7 +31,7 @@ namespace {
         uint64_t bufferSize = 0;
         uint32_t width = 0;
         uint32_t height = 0;
-        uint32_t alignedWidth = 0;
+        uint32_t rowPitchBytes = 0;
         uint32_t filesWritten = 0;
         uint32_t counter = 0;
         bool pending = false;
@@ -39,6 +39,20 @@ namespace {
         bool dirMade = false;
     };
     SnapPresentCapture g_snapCapture;
+
+    // The formats the interpolated color targets actually use. RT64 renders
+    // in 16-bit unorm color by default, so that one matters most.
+    uint32_t snapCaptureBytesPerPixel(RenderFormat format) {
+        switch (format) {
+            case RenderFormat::R8G8B8A8_UNORM:
+            case RenderFormat::B8G8R8A8_UNORM:
+                return 4;
+            case RenderFormat::R16G16B16A16_UNORM:
+                return 8;
+            default:
+                return 0;
+        }
+    }
 
     // Records a copy of the texture the VI is about to draw into a readback
     // buffer on the open command list. The caller's existing execute + wait
@@ -48,7 +62,8 @@ namespace {
             return;
         }
 
-        if ((format != RenderFormat::R8G8B8A8_UNORM) && (format != RenderFormat::B8G8R8A8_UNORM)) {
+        const uint32_t bytesPerPixel = snapCaptureBytesPerPixel(format);
+        if (bytesPerPixel == 0) {
             if (!g_snapCapture.warned) {
                 g_snapCapture.warned = true;
                 fprintf(stdout, "[SNAP-PCAP] present format %u not supported, captures disabled\n", uint32_t(format));
@@ -57,10 +72,10 @@ namespace {
             return;
         }
 
-        // D3D12 requires the row pitch aligned to 256 bytes; 64 pixels of four
-        // bytes each is exactly that.
-        const uint32_t alignedWidth = (width + 63u) & ~63u;
-        const uint64_t requiredSize = uint64_t(alignedWidth) * height * 4;
+        // D3D12 requires the row pitch aligned to 256 bytes.
+        const uint32_t alignPixels = 256 / bytesPerPixel;
+        const uint32_t alignedWidth = (width + alignPixels - 1) & ~(alignPixels - 1);
+        const uint64_t requiredSize = uint64_t(alignedWidth) * height * bytesPerPixel;
         if ((g_snapCapture.buffer == nullptr) || (g_snapCapture.bufferSize < requiredSize)) {
             g_snapCapture.buffer = device->createBuffer(RenderBufferDesc::ReadbackBuffer(requiredSize));
             g_snapCapture.bufferSize = requiredSize;
@@ -76,7 +91,7 @@ namespace {
 
         g_snapCapture.width = width;
         g_snapCapture.height = height;
-        g_snapCapture.alignedWidth = alignedWidth;
+        g_snapCapture.rowPitchBytes = alignedWidth * bytesPerPixel;
         g_snapCapture.pending = true;
     }
 
@@ -128,12 +143,20 @@ namespace {
             fwrite(header, 1, sizeof(header), f);
 
             const bool sourceIsBGRA = (format == RenderFormat::B8G8R8A8_UNORM);
+            const uint32_t bytesPerPixel = snapCaptureBytesPerPixel(format);
             std::vector<uint8_t> row(rowBytes, 0);
             for (int32_t y = int32_t(outHeight) - 1; y >= 0; y--) {
-                const uint8_t *src = pixels + uint64_t(y) * 2 * g_snapCapture.alignedWidth * 4;
+                const uint8_t *src = pixels + uint64_t(y) * 2 * g_snapCapture.rowPitchBytes;
                 for (uint32_t x = 0; x < outWidth; x++) {
-                    const uint8_t *p = src + uint64_t(x) * 2 * 4;
-                    if (sourceIsBGRA) {
+                    const uint8_t *p = src + uint64_t(x) * 2 * bytesPerPixel;
+                    if (bytesPerPixel == 8) {
+                        // Sixteen bits per channel, little endian: the high
+                        // byte of each channel is the eight-bit value.
+                        row[x * 3 + 0] = p[5];
+                        row[x * 3 + 1] = p[3];
+                        row[x * 3 + 2] = p[1];
+                    }
+                    else if (sourceIsBGRA) {
                         row[x * 3 + 0] = p[0];
                         row[x * 3 + 1] = p[1];
                         row[x * 3 + 2] = p[2];
