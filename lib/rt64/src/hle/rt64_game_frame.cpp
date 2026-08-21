@@ -490,6 +490,35 @@ namespace RT64 {
         else {
             velocityUploaderUsed = false;
         }
+
+        // Pokemon Snap port, diagnostic: the flash the player sees lives on
+        // the block transition frame, and both compensations for the origin
+        // rebase sit behind a take-only-if-nearer guard. This says whether
+        // they actually fired: on a rebase frame, how far the origin moved,
+        // how many paired transforms accepted the moved previous frame versus
+        // kept the raw one, and the same for the matched cameras. A guard
+        // that refused is a smoking gun; a rebase frame that never printed
+        // means the flag never reached the renderer at all.
+        if (snapRebaseUsable()) {
+            uint32_t xfRebased = 0, xfRaw = 0, viewRebased = 0, viewRaw = 0;
+            for (uint32_t w : workloads) {
+                const GameFrameMap::WorkloadMap &wm = frameMap.workloads[w];
+                for (const auto &tm : wm.transforms) {
+                    if (tm.mapped) {
+                        if (tm.snapRebasedPrev) { xfRebased++; } else { xfRaw++; }
+                    }
+                }
+                for (const auto &vm : wm.viewProjections) {
+                    if (vm.mapped) {
+                        if (vm.snapRebasedPrev) { viewRebased++; } else { viewRaw++; }
+                    }
+                }
+            }
+            fprintf(stdout, "[SNAP-REBASE] delta (%.1f,%.1f,%.1f) xf rebased %u raw %u / views rebased %u raw %u\n",
+                float(snapOriginDelta.x), float(snapOriginDelta.y), float(snapOriginDelta.z),
+                xfRebased, xfRaw, viewRebased, viewRaw);
+            fflush(stdout);
+        }
     }
 
     void GameFrame::matchScene(WorkloadQueue &workloadQueue, const GameFrame &prevFrame, const GameScene &curScene, const GameScene &prevScene, std::unordered_map<uint32_t, ModifiedBuffers> &workloadsModified, bool &tileInterpolationUsed, bool &lookAtInterpolationUsed) {
