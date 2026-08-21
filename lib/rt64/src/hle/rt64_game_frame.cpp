@@ -519,6 +519,7 @@ namespace RT64 {
                 xfRebased, xfRaw, viewRebased, viewRaw);
             fflush(stdout);
         }
+
     }
 
     void GameFrame::matchScene(WorkloadQueue &workloadQueue, const GameFrame &prevFrame, const GameScene &curScene, const GameScene &prevScene, std::unordered_map<uint32_t, ModifiedBuffers> &workloadsModified, bool &tileInterpolationUsed, bool &lookAtInterpolationUsed) {

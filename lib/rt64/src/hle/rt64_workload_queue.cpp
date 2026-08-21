@@ -356,7 +356,10 @@ namespace RT64 {
             // spawn frames the flash is reported on -- ask the game side to
             // dump the framebuffers around this moment (src/frame_dump.cpp),
             // so the artifact itself lands on disk as images.
-            if (prevFrame.matched && (transformCount >= 10) && (mappedCount * 5 < transformCount * 3)) {
+            // Off unless asked for: the readbacks and file writes stall the
+            // present thread enough to feel like the stutter being studied.
+            static const bool snapCaptureEnabled = (std::getenv("SNAP_CAPTURE") != nullptr);
+            if (snapCaptureEnabled && prevFrame.matched && (transformCount >= 10) && (mappedCount * 5 < transformCount * 3)) {
                 snap_frame_dump_pending = 6;
             }
 
@@ -1197,6 +1200,23 @@ namespace RT64 {
                         prevFrameWeight = std::clamp((workloadConfig.targetRate + displayTicks - logicalTicks) / float(workloadConfig.targetRate), 0.0f, 1.0f);
                         displayTicks += workload.viOriginalRate;
                         curFrameWeight = std::clamp((workloadConfig.targetRate + displayTicks - logicalTicks) / float(workloadConfig.targetRate), 0.0f, 1.0f);
+
+                        // Pokemon Snap port: crossing a world block is a cut in
+                        // the draw set, not a step in a motion. The game stops
+                        // drawing the block it left in the same frame it starts
+                        // drawing the next one, and it builds that frame for the
+                        // camera's real pose. A synthesized frame between the
+                        // two poses aims the camera partway back at geometry
+                        // that is no longer in the display list, and the sky
+                        // shows through the gap as a hard-edged flash at every
+                        // corner with a transition on it. A cut cannot be
+                        // blended, so for this one frame every synthesized
+                        // image is the real frame: content and pose agree, and
+                        // the cost is a single native-rate step of motion.
+                        if (curFrame.snapRebaseFrame) {
+                            prevFrameWeight = 0.0f;
+                            curFrameWeight = 1.0f;
+                        }
 
 
                         // Override the render target.
