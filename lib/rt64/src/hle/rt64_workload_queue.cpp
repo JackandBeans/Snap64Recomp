@@ -303,13 +303,26 @@ namespace RT64 {
     // frame the transition cut already rendered. The cut makes every image of
     // its interval identical, and a texture copy is a fraction of the cost of
     // replaying the whole workload on frames that are already the heaviest of
-    // the ride.
-    void WorkloadQueue::threadCopyOverrideTarget(const RenderTargetKey &srcKey, RenderTarget *dstTarget) {
+    // the ride. Returns whether the copy happened; the caller renders the
+    // frame normally when it did not.
+    bool WorkloadQueue::threadCopyOverrideTarget(const RenderTargetKey &srcKey, RenderTarget *dstTarget) {
         std::scoped_lock<std::mutex> managerLock(ext.sharedResources->workloadMutex);
         RenderTargetManager &targetManager = ext.sharedResources->renderTargetManager;
         RenderTarget &src = targetManager.get(srcKey);
         if (src.isEmpty()) {
-            return;
+            return false;
+        }
+
+        // Targets only ever grow, so a destination left over from a larger
+        // scene stays larger than this frame -- and scene size changes land
+        // exactly on scripted cuts, the frames this path runs on. Presenting
+        // a small image copied into a big texture shows it shifted with a
+        // band of stale pixels at the edge. The copy is only an identity
+        // when the sizes agree; otherwise the frame renders normally.
+        const uint32_t grownWidth = std::max(dstTarget->width, src.width);
+        const uint32_t grownHeight = std::max(dstTarget->height, src.height);
+        if ((grownWidth != src.width) || (grownHeight != src.height)) {
+            return false;
         }
 
         workerMutex.lock();
@@ -339,6 +352,7 @@ namespace RT64 {
         dstTarget->downsampleMultiplier = src.downsampleMultiplier;
         dstTarget->misalignX = src.misalignX;
         dstTarget->invMisalignX = src.invMisalignX;
+        return true;
     }
 
     void WorkloadQueue::threadRenderFrame(GameFrame &curFrame, const GameFrame &prevFrame, const WorkloadConfiguration &workloadConfig,
@@ -1322,10 +1336,7 @@ namespace RT64 {
                     // renders; the rest are a texture copy of its target.
                     const bool snapCutCopy = generateInterpolatedFrames && (curFrame.snapRebaseFrame || curFrame.snapViewCut) &&
                         !usingMSAA && (overrideTarget != nullptr);
-                    if (snapCutCopy) {
-                        threadCopyOverrideTarget(interpolationTargetKey, overrideTarget);
-                    }
-                    else {
+                    if (!snapCutCopy || !threadCopyOverrideTarget(interpolationTargetKey, overrideTarget)) {
                         // A frame whose weights were forced to the raw pose is
                         // not an interpolated replay: its pose matches its
                         // content, so the RDRAM depth coherence machinery may
