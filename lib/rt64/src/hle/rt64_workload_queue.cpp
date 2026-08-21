@@ -1213,7 +1213,13 @@ namespace RT64 {
                         // blended, so for this one frame every synthesized
                         // image is the real frame: content and pose agree, and
                         // the cost is a single native-rate step of motion.
-                        if (curFrame.snapRebaseFrame) {
+                        //
+                        // Only transitions that removed drawn geometry need
+                        // it. A transition that only added content -- a block
+                        // or a Pokemon turning visible ahead -- blends safely,
+                        // with the new geometry appearing a fraction of a
+                        // frame early instead of the motion holding a beat.
+                        if (curFrame.snapRebaseFrame && curFrame.snapContentLost) {
                             prevFrameWeight = 0.0f;
                             curFrameWeight = 1.0f;
                         }

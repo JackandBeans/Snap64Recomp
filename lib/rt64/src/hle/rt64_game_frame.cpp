@@ -279,6 +279,7 @@ namespace RT64 {
         // interpolates, so a pan through a corner stays smooth, and only the
         // component that cannot be meaningfully interpolated is held.
         snapRebaseFrame = false;
+        snapContentLost = false;
         snapOriginDelta = hlslpp::float3(0.0f, 0.0f, 0.0f);
         for (uint32_t w : workloads) {
             Workload &rebaseWorkload = workloadQueue.workloads[w];
@@ -520,6 +521,29 @@ namespace RT64 {
             fflush(stdout);
         }
 
+        // On a block-transition frame, count how much of the previous frame's
+        // geometry nothing claimed: those transforms were drawn last frame and
+        // are gone from this one. Losing several at once is the block cull
+        // that opens holes under blended poses, so only those frames cut.
+        // Small counts are the ordinary flicker of intermittently drawn
+        // objects and blend fine.
+        if (snapRebaseFrame) {
+            uint32_t lost = 0;
+            for (uint32_t w : workloads) {
+                const GameFrameMap::WorkloadMap &wm = frameMap.workloads[w];
+                if (!wm.mapped) {
+                    continue;
+                }
+                for (size_t p = 0; p < wm.prevTransformsMapped.size(); p++) {
+                    if (!wm.prevTransformsMapped[p]) {
+                        lost++;
+                    }
+                }
+            }
+            snapContentLost = (lost >= 8);
+            fprintf(stdout, "[SNAP-CUT] transition lost %u -> %s\n", lost, snapContentLost ? "cut" : "blend");
+            fflush(stdout);
+        }
     }
 
     void GameFrame::matchScene(WorkloadQueue &workloadQueue, const GameFrame &prevFrame, const GameScene &curScene, const GameScene &prevScene, std::unordered_map<uint32_t, ModifiedBuffers> &workloadsModified, bool &tileInterpolationUsed, bool &lookAtInterpolationUsed) {

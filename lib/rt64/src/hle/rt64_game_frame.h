@@ -133,6 +133,14 @@ namespace RT64 {
         bool snapRebaseFrame = false;
         hlslpp::float3 snapOriginDelta = {};
 
+        // True when a block-transition frame removed a meaningful amount of
+        // geometry that was drawn the frame before. Synthesized frames blend
+        // poses backward toward where that geometry was, and nothing is there
+        // to draw any more, so these frames are presented as themselves. A
+        // transition that only added content blends safely: the new geometry
+        // simply appears a fraction of a frame early.
+        bool snapContentLost = false;
+
         // True when the origin moved this frame and the distance it moved by is
         // known, which is when the previous frame can be read in this one's
         // terms. Without a usable distance the camera falls back to declining

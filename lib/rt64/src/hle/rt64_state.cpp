@@ -1627,6 +1627,13 @@ namespace RT64 {
             // Perform any preliminar setup before processing the framebuffer pairs.
             renderSetup();
 
+            // Pokemon Snap port, diagnostic: every synchronized pair below is
+            // a GPU submit and wait taken on the game thread, and the frames
+            // the player feels a hitch on are the ones with many of them. Per
+            // frame this reports how many fired and what they cost.
+            int64_t snapSyncMicro = 0;
+            uint32_t snapSyncCount = 0;
+
             // Start loading tiles, sampling tiles and drawing the framebuffer pairs as required.
             for (uint32_t f = 0; f < workload.fbPairCount; f++) {
                 FramebufferPair &fbPair = workload.fbPairs[f];
@@ -1639,15 +1646,28 @@ namespace RT64 {
                 }
 
                 if (fbPair.syncRequired) {
+                    const auto snapSyncStart = std::chrono::steady_clock::now();
                     renderAndSynchronize(f);
                     renderSetup();
+                    snapSyncMicro += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - snapSyncStart).count();
+                    snapSyncCount++;
                 }
 
                 fullSyncFramebufferPairTiles(workload, fbPair, loadOpCursor, rdpTileCursor);
             }
 
             // Render any remaining batches of framebuffers.
-            renderAndSynchronize(workload.fbPairCount);
+            {
+                const auto snapSyncStart = std::chrono::steady_clock::now();
+                renderAndSynchronize(workload.fbPairCount);
+                snapSyncMicro += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - snapSyncStart).count();
+            }
+
+            if (snapSyncMicro > 5000) {
+                fprintf(stdout, "[SNAP-SYNC] pairs %u midframe syncs %u total %lld us\n",
+                    workload.fbPairCount, snapSyncCount, (long long)snapSyncMicro);
+                fflush(stdout);
+            }
         }
         else {
             // Process all tiles.
