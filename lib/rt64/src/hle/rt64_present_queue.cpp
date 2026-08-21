@@ -9,7 +9,153 @@
 
 #include "rt64_workload_queue.h"
 
+#include <direct.h>
+
+// Pokemon Snap port: defined in src/frame_dump.cpp on the game side. While it
+// is positive the game is saving its framebuffers around a churn frame, and
+// this queue saves what is actually being presented over the same window. The
+// game-side images already proved every rendered frame is clean, so the flash
+// can only exist in the interpolated presents, which never touch RDRAM and can
+// only be photographed here.
+extern "C" volatile int32_t snap_frame_dump_pending;
+
 namespace RT64 {
+
+namespace {
+    // Written at half resolution: the artifact is full-screen scale and half
+    // res keeps a burst of captures in the tens of megabytes.
+    constexpr uint32_t SnapCaptureMaxFiles = 120;
+
+    struct SnapPresentCapture {
+        std::unique_ptr<RenderBuffer> buffer;
+        uint64_t bufferSize = 0;
+        uint32_t width = 0;
+        uint32_t height = 0;
+        uint32_t alignedWidth = 0;
+        uint32_t filesWritten = 0;
+        uint32_t counter = 0;
+        bool pending = false;
+        bool warned = false;
+        bool dirMade = false;
+    };
+    SnapPresentCapture g_snapCapture;
+
+    // Records a copy of the texture the VI is about to draw into a readback
+    // buffer on the open command list. The caller's existing execute + wait
+    // makes the buffer safe to map afterwards.
+    void snapCaptureRecord(RenderDevice *device, RenderCommandList *commandList, const RenderTexture *texture, RenderFormat format, uint32_t width, uint32_t height) {
+        if (g_snapCapture.filesWritten >= SnapCaptureMaxFiles) {
+            return;
+        }
+
+        if ((format != RenderFormat::R8G8B8A8_UNORM) && (format != RenderFormat::B8G8R8A8_UNORM)) {
+            if (!g_snapCapture.warned) {
+                g_snapCapture.warned = true;
+                fprintf(stdout, "[SNAP-PCAP] present format %u not supported, captures disabled\n", uint32_t(format));
+                fflush(stdout);
+            }
+            return;
+        }
+
+        // D3D12 requires the row pitch aligned to 256 bytes; 64 pixels of four
+        // bytes each is exactly that.
+        const uint32_t alignedWidth = (width + 63u) & ~63u;
+        const uint64_t requiredSize = uint64_t(alignedWidth) * height * 4;
+        if ((g_snapCapture.buffer == nullptr) || (g_snapCapture.bufferSize < requiredSize)) {
+            g_snapCapture.buffer = device->createBuffer(RenderBufferDesc::ReadbackBuffer(requiredSize));
+            g_snapCapture.bufferSize = requiredSize;
+        }
+
+        RenderTextureBarrier toCopy(const_cast<RenderTexture *>(texture), RenderTextureLayout::COPY_SOURCE);
+        RenderBufferBarrier bufferWrite(g_snapCapture.buffer.get(), RenderBufferAccess::WRITE);
+        commandList->barriers(RenderBarrierStage::COPY, &bufferWrite, 1, &toCopy, 1);
+        commandList->copyTextureRegion(
+            RenderTextureCopyLocation::PlacedFootprint(g_snapCapture.buffer.get(), format, width, height, 1, alignedWidth),
+            RenderTextureCopyLocation::Subresource(texture));
+        commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(const_cast<RenderTexture *>(texture), RenderTextureLayout::SHADER_READ));
+
+        g_snapCapture.width = width;
+        g_snapCapture.height = height;
+        g_snapCapture.alignedWidth = alignedWidth;
+        g_snapCapture.pending = true;
+    }
+
+    // Maps the readback and writes the image at half resolution as a BMP.
+    // Only called after the present worker's fence wait.
+    void snapCaptureFinish(RenderFormat format) {
+        if (!g_snapCapture.pending) {
+            return;
+        }
+        g_snapCapture.pending = false;
+
+        const uint32_t outWidth = g_snapCapture.width / 2;
+        const uint32_t outHeight = g_snapCapture.height / 2;
+        if ((outWidth == 0) || (outHeight == 0)) {
+            return;
+        }
+
+        RenderRange readRange(0, g_snapCapture.bufferSize);
+        const uint8_t *pixels = reinterpret_cast<const uint8_t *>(g_snapCapture.buffer->map(0, &readRange));
+        if (pixels == nullptr) {
+            return;
+        }
+
+        if (!g_snapCapture.dirMade) {
+            _mkdir("snap_frame_dumps");
+            g_snapCapture.dirMade = true;
+        }
+
+        char path[128];
+        snprintf(path, sizeof(path), "snap_frame_dumps/present_%05u.bmp", g_snapCapture.counter++);
+        FILE *f = fopen(path, "wb");
+        if (f != nullptr) {
+            const uint32_t rowBytes = ((outWidth * 3) + 3) & ~3u;
+            const uint32_t imageBytes = rowBytes * outHeight;
+            const uint32_t fileBytes = 54 + imageBytes;
+            const uint8_t header[54] = {
+                'B', 'M',
+                uint8_t(fileBytes), uint8_t(fileBytes >> 8), uint8_t(fileBytes >> 16), uint8_t(fileBytes >> 24),
+                0, 0, 0, 0,
+                54, 0, 0, 0,
+                40, 0, 0, 0,
+                uint8_t(outWidth), uint8_t(outWidth >> 8), uint8_t(outWidth >> 16), 0,
+                uint8_t(outHeight), uint8_t(outHeight >> 8), uint8_t(outHeight >> 16), 0,
+                1, 0, 24, 0,
+                0, 0, 0, 0,
+                uint8_t(imageBytes), uint8_t(imageBytes >> 8), uint8_t(imageBytes >> 16), uint8_t(imageBytes >> 24),
+                0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
+            };
+            fwrite(header, 1, sizeof(header), f);
+
+            const bool sourceIsBGRA = (format == RenderFormat::B8G8R8A8_UNORM);
+            std::vector<uint8_t> row(rowBytes, 0);
+            for (int32_t y = int32_t(outHeight) - 1; y >= 0; y--) {
+                const uint8_t *src = pixels + uint64_t(y) * 2 * g_snapCapture.alignedWidth * 4;
+                for (uint32_t x = 0; x < outWidth; x++) {
+                    const uint8_t *p = src + uint64_t(x) * 2 * 4;
+                    if (sourceIsBGRA) {
+                        row[x * 3 + 0] = p[0];
+                        row[x * 3 + 1] = p[1];
+                        row[x * 3 + 2] = p[2];
+                    }
+                    else {
+                        row[x * 3 + 0] = p[2];
+                        row[x * 3 + 1] = p[1];
+                        row[x * 3 + 2] = p[0];
+                    }
+                }
+                fwrite(row.data(), 1, row.size(), f);
+            }
+            fclose(f);
+        }
+
+        g_snapCapture.buffer->unmap();
+        g_snapCapture.filesWritten++;
+        fprintf(stdout, "[SNAP-PCAP] wrote present %u\n", g_snapCapture.counter - 1);
+        fflush(stdout);
+    }
+}
+
     // PresentQueue
 
     PresentQueue::PresentQueue() {
@@ -371,6 +517,14 @@ namespace RT64 {
                 if (renderParams.texture != nullptr) {
                     commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(renderParams.texture, RenderTextureLayout::SHADER_READ));
                     viRenderer->render(renderParams);
+
+                    // Pokemon Snap port: while the game side is dumping its
+                    // framebuffers around a churn frame, also photograph the
+                    // image actually being presented, interpolation included.
+                    if (snap_frame_dump_pending > 0) {
+                        snapCaptureRecord(ext.device, commandList, renderParams.texture, renderParams.textureFormat,
+                            renderParams.textureWidth, renderParams.textureHeight);
+                    }
                 }
 
                 RenderHookDraw *drawHook = GetRenderHookDraw();
@@ -392,6 +546,10 @@ namespace RT64 {
                     ext.presentGraphicsWorker->commandQueue->executeCommandLists(&commandList, 1, &waitSemaphore, 1, &signalSemaphore, 1, ext.presentGraphicsWorker->commandFence.get());
                     ext.presentGraphicsWorker->wait();
                 }
+
+                // The wait above is the fence for the recorded copy, so the
+                // readback is safe to map and write out here.
+                snapCaptureFinish(renderParams.textureFormat);
             }
 
             if (lockedWorkloadMutex) {
