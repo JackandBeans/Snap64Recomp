@@ -388,8 +388,35 @@ namespace RT64 {
                 // frame of a scene, which has no previous frame to pair against.
                 const uint32_t unmatched = tagged - matched;
                 if ((unmatched > 0) && (matched > 0)) {
-                    fprintf(stdout, "[SNAP-MATCH] %u of %u tagged transforms did not pair\n",
-                        unmatched, tagged);
+                    // Serials are handed out monotonically, so any unpaired id
+                    // at or below the previous frame's highest is an object
+                    // that existed before and lost its identity anyway -- a
+                    // genuine failure. Ids above it are new allocations whose
+                    // first frame has nothing to pair with, which is not a
+                    // fault. The distinction decides whether the transition
+                    // glitch is a pairing bug or lives somewhere else.
+                    uint32_t prevMaxId = 0;
+                    for (const auto &entry : prevWorkload.transformIdMap) {
+                        prevMaxId = std::max(prevMaxId, entry.first);
+                    }
+                    uint32_t oldUnpaired = 0, newUnpaired = 0;
+                    uint32_t oldSample[4] = {};
+                    for (const auto &entry : curWorkload.transformIdMap) {
+                        if (!curWorkloadMap.transforms[entry.second].mapped) {
+                            if (entry.first <= prevMaxId) {
+                                if (oldUnpaired < 4) {
+                                    oldSample[oldUnpaired] = entry.first;
+                                }
+                                oldUnpaired++;
+                            }
+                            else {
+                                newUnpaired++;
+                            }
+                        }
+                    }
+                    fprintf(stdout, "[SNAP-MATCH] %u of %u tagged transforms did not pair (old %u: %u %u %u %u / new %u)\n",
+                        unmatched, tagged, oldUnpaired,
+                        oldSample[0], oldSample[1], oldSample[2], oldSample[3], newUnpaired);
                     fflush(stdout);
                 }
             }

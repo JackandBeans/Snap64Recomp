@@ -345,6 +345,25 @@ namespace RT64 {
             }
             fprintf(stdout, "[SNAP-VITAL] f%u matched %u xf %u paired %u fb %u calls %u\n",
                 vitalFrame, prevFrame.matched ? 1u : 0u, transformCount, mappedCount, fbPairs, calls);
+
+            // The framebuffer pair count spikes from four to eight or more on
+            // exactly the frames that flash. Whatever those extra passes are,
+            // they decide which image the frame presents, so on spike frames
+            // each pass prints what it drew and where.
+            if (fbPairs > 6) {
+                for (uint32_t w : curFrame.workloads) {
+                    const Workload &wl = workloads[w];
+                    for (uint32_t f = 0; f < wl.fbPairCount; f++) {
+                        const FramebufferPair &fp = wl.fbPairs[f];
+                        fprintf(stdout, "[SNAP-FBP] f%u pair %u color %08X w %u siz %u depth %08X reason %u projs %u calls %u rect (%d,%d)-(%d,%d)\n",
+                            vitalFrame, f, fp.colorImage.address, fp.colorImage.width, fp.colorImage.siz,
+                            fp.depthImage.address, uint32_t(fp.flushReason), fp.projectionCount,
+                            fp.gameCallCount, fp.drawColorRect.ulx, fp.drawColorRect.uly,
+                            fp.drawColorRect.lrx, fp.drawColorRect.lry);
+                    }
+                }
+                fflush(stdout);
+            }
             if ((vitalFrame % 32) == 0) {
                 fflush(stdout);
             }
