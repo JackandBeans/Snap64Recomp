@@ -529,19 +529,26 @@ namespace RT64 {
         // objects and blend fine.
         if (snapRebaseFrame) {
             uint32_t lost = 0;
+            uint32_t curCalls = 0, prevCalls = 0;
             for (uint32_t w : workloads) {
                 const GameFrameMap::WorkloadMap &wm = frameMap.workloads[w];
+                curCalls += workloadQueue.workloads[w].gameCallCount;
                 if (!wm.mapped) {
                     continue;
                 }
+                prevCalls += workloadQueue.workloads[wm.prevWorkloadIndex].gameCallCount;
                 for (size_t p = 0; p < wm.prevTransformsMapped.size(); p++) {
                     if (!wm.prevTransformsMapped[p]) {
                         lost++;
                     }
                 }
             }
-            snapContentLost = (lost >= 8);
-            fprintf(stdout, "[SNAP-CUT] transition lost %u -> %s\n", lost, snapContentLost ? "cut" : "blend");
+            // Transform loss proved blind to what actually disappears (the
+            // wedge returned on a lost-1 transition), so every transition
+            // cuts; the counts stay to characterize what the display list
+            // loses call-wise for the follow-up fix that keeps it drawn.
+            snapContentLost = true;
+            fprintf(stdout, "[SNAP-CUT] transition lost %u xf, calls %u -> %u\n", lost, prevCalls, curCalls);
             fflush(stdout);
         }
     }

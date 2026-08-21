@@ -1214,12 +1214,14 @@ namespace RT64 {
                         // image is the real frame: content and pose agree, and
                         // the cost is a single native-rate step of motion.
                         //
-                        // Only transitions that removed drawn geometry need
-                        // it. A transition that only added content -- a block
-                        // or a Pokemon turning visible ahead -- blends safely,
-                        // with the new geometry appearing a fraction of a
-                        // frame early instead of the motion holding a beat.
-                        if (curFrame.snapRebaseFrame && curFrame.snapContentLost) {
+                        // Judging by transform loss was tried and failed: the
+                        // wedge returned on a transition that lost a single
+                        // transform, because what disappears is geometry
+                        // inside a surviving object's display list, culled
+                        // segment by segment. Until the removed geometry can
+                        // be kept drawn for the one extra frame blending needs,
+                        // every transition cuts.
+                        if (curFrame.snapRebaseFrame) {
                             prevFrameWeight = 0.0f;
                             curFrameWeight = 1.0f;
                         }
