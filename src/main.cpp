@@ -255,6 +255,23 @@ int main(int argc, char* argv[]) {
 
 #if defined(_WIN32)
     AddVectoredExceptionHandler(1, snap_veh);
+
+    // Declare per-monitor DPI awareness before any window exists. Without
+    // this, a display scaled above 100% -- most laptops -- makes Windows
+    // treat the process as DPI-unaware and bitmap-stretch its output: the
+    // picture blurs, sits off center, and shows stretched garbage at the
+    // edges, none of which the renderer ever drew. A 100% display shows
+    // nothing, which is why it survived every capture on the dev machine
+    // while being plainly visible on a scaled one.
+    {
+        typedef BOOL(WINAPI *SetDpiCtxFn)(HANDLE);
+        HMODULE user32 = GetModuleHandleW(L"user32.dll");
+        SetDpiCtxFn setCtx = user32 ? (SetDpiCtxFn)GetProcAddress(user32, "SetProcessDpiAwarenessContext") : nullptr;
+        // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 == (HANDLE)-4.
+        if ((setCtx == nullptr) || !setCtx((HANDLE)-4)) {
+            SetProcessDPIAware();
+        }
+    }
 #endif
     printf("[SNAP] Pokemon Snap PC Recompilation v0.1.0\n");
 
