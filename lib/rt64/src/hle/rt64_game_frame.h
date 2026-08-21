@@ -146,6 +146,16 @@ namespace RT64 {
         // same way.
         bool snapViewCut = false;
 
+        // Set when most of the previous frame's transforms went unclaimed by
+        // this one: the scene's content was swapped wholesale. The intro does
+        // this one frame BEFORE it moves the camera, so the camera witness
+        // fires a frame late and the swap frame blended -- the glitch seen
+        // "before the next scene". Wholesale loss is deliberately crude:
+        // subtle per-segment losses fooled a finer version of this signal,
+        // but a total swap cannot hide, and ordinary spawn frames lose almost
+        // nothing and keep blending.
+        bool snapSceneSwap = false;
+
         // True when the origin moved this frame and the distance it moved by is
         // known, which is when the previous frame can be read in this one's
         // terms. Without a usable distance the camera falls back to declining

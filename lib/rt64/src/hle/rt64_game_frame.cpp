@@ -281,6 +281,7 @@ namespace RT64 {
         // component that cannot be meaningfully interpolated is held.
         snapRebaseFrame = false;
         snapViewCut = false;
+        snapSceneSwap = false;
         snapOriginDelta = hlslpp::float3(0.0f, 0.0f, 0.0f);
         for (uint32_t w : workloads) {
             Workload &rebaseWorkload = workloadQueue.workloads[w];
@@ -491,6 +492,30 @@ namespace RT64 {
         }
         else {
             velocityUploaderUsed = false;
+        }
+
+        // Pokemon Snap port: detect a wholesale content swap. Runs ungated --
+        // it feeds the cut decision, not a log -- and the walk is a bit test
+        // per previous transform.
+        {
+            uint32_t prevTotal = 0, prevLost = 0;
+            for (uint32_t w : workloads) {
+                const GameFrameMap::WorkloadMap &wm = frameMap.workloads[w];
+                if (!wm.mapped) {
+                    continue;
+                }
+                prevTotal += uint32_t(wm.prevTransformsMapped.size());
+                for (size_t p = 0; p < wm.prevTransformsMapped.size(); p++) {
+                    if (!wm.prevTransformsMapped[p]) {
+                        prevLost++;
+                    }
+                }
+            }
+            snapSceneSwap = (prevTotal >= 8) && (prevLost * 2 > prevTotal);
+            if (snapSceneSwap && snapdiag::diagEnabled()) {
+                fprintf(stdout, "[SNAP-CUT] scene swap lost %u of %u -> cut\n", prevLost, prevTotal);
+                fflush(stdout);
+            }
         }
 
         // Pokemon Snap port, diagnostic: on a rebase frame, how far the origin

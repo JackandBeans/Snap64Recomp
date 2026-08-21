@@ -1289,7 +1289,7 @@ namespace RT64 {
                         // verdict from a different witness: a scripted camera
                         // cut, like the intro movie's scene changes, which
                         // never crosses a world block.
-                        if (curFrame.snapRebaseFrame || curFrame.snapViewCut) {
+                        if (curFrame.snapRebaseFrame || curFrame.snapViewCut || curFrame.snapSceneSwap) {
                             prevFrameWeight = 0.0f;
                             curFrameWeight = 1.0f;
                         }
@@ -1334,7 +1334,7 @@ namespace RT64 {
                     // repeat the full workload displayFrames times on exactly
                     // the frames that are already the heaviest. Frame zero
                     // renders; the rest are a texture copy of its target.
-                    const bool snapCutCopy = generateInterpolatedFrames && (curFrame.snapRebaseFrame || curFrame.snapViewCut) &&
+                    const bool snapCutCopy = generateInterpolatedFrames && (curFrame.snapRebaseFrame || curFrame.snapViewCut || curFrame.snapSceneSwap) &&
                         !usingMSAA && (overrideTarget != nullptr);
                     if (!snapCutCopy || !threadCopyOverrideTarget(interpolationTargetKey, overrideTarget)) {
                         // A frame whose weights were forced to the raw pose is
