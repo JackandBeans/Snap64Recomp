@@ -10,6 +10,10 @@
 
 #define ENABLE_HIGH_RESOLUTION_RENDERER 1
 
+// Pokemon Snap port: defined in src/frame_dump.cpp on the game side. Setting
+// it asks the game to save the next few frames' framebuffers as images.
+extern "C" volatile int32_t snap_frame_dump_pending;
+
 namespace RT64 {
     // WorkloadQueue
 
@@ -345,6 +349,15 @@ namespace RT64 {
             }
             fprintf(stdout, "[SNAP-VITAL] f%u matched %u xf %u paired %u fb %u calls %u\n",
                 vitalFrame, prevFrame.matched ? 1u : 0u, transformCount, mappedCount, fbPairs, calls);
+
+            // Pokemon Snap port: on the frames where most of the scene's
+            // transform identities change at once -- the block-transition and
+            // spawn frames the flash is reported on -- ask the game side to
+            // dump the framebuffers around this moment (src/frame_dump.cpp),
+            // so the artifact itself lands on disk as images.
+            if (prevFrame.matched && (transformCount >= 10) && (mappedCount * 5 < transformCount * 3)) {
+                snap_frame_dump_pending = 6;
+            }
 
             // The framebuffer pair count spikes from four to eight or more on
             // exactly the frames that flash. Whatever those extra passes are,

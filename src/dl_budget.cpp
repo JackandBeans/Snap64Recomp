@@ -81,6 +81,8 @@ bool     g_heap_overflowed = false;
 
 // Defined below, called from the per-frame check.
 void watch_blobs(uint8_t* rdram);
+// Defined in frame_dump.cpp: saves the framebuffers around churn frames.
+void frame_dump_tick(uint8_t* rdram);
 } // namespace snap
 
 extern "C" void gtlCheckBuffers(uint8_t* rdram, recomp_context* ctx) {
@@ -141,6 +143,7 @@ extern "C" void gtlCheckBuffers(uint8_t* rdram, recomp_context* ctx) {
     }
 
     snap::watch_blobs(rdram);
+    snap::frame_dump_tick(rdram);
 
     __real_gtlCheckBuffers(rdram, ctx);
 }

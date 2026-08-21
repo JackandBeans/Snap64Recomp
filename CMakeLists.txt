@@ -118,6 +118,7 @@ set(SNAP_SOURCES
     src/matrix_tags.cpp
     src/focus_dot.cpp
     src/dl_budget.cpp
+    src/frame_dump.cpp
     src/fx_probe.cpp
     src/patch_shims.cpp
     src/settings.cpp
