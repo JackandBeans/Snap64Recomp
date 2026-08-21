@@ -43,6 +43,9 @@ uint32_t g_effect_empty = 0;
 uint32_t g_particle_calls = 0;
 uint32_t g_particle_empty = 0;
 
+void cast_note(uint32_t gobj, uint32_t id);
+void cast_frame_tick(uint32_t frame);
+
 float read_f32(uint8_t* rdram, uint32_t addr) {
     const uint32_t bits = (uint32_t)MEM_W(0, (gpr)(int32_t)addr);
     float f;
@@ -106,6 +109,8 @@ extern "C" void fx_draw(uint8_t* rdram, recomp_context* ctx) {
             p = (uint32_t)MEM_W(0x00, (gpr)(int32_t)p);
         }
     }
+
+    cast_frame_tick(frame);
 
     if (interesting || ((frame % 900) == 0)) {
         printf("[SNAP-FXPOOL] f%u bank0 %u -- effects %u/%u lost, particles %u/%u lost\n",
@@ -191,4 +196,66 @@ extern "C" void renLoadTextures(uint8_t* rdram, recomp_context* ctx) {
     if ((builds % 64) == 0) {
         fflush(stdout);
     }
+}
+
+// The sleep symbols stopped being submitted about twenty seconds after they
+// appeared, and the probe that saw it only covers model parts that carry
+// materials -- the body parts are invisible to it. Whether the game retired
+// the whole Pokemon (a scene transition doing its job) or just those parts
+// (an animation or a fault) is the difference between authentic behavior and
+// a bug, and it is decided by watching every model draw. renRenderModelTypeA
+// runs once per model per frame, so the set of models drawn between two
+// effect-camera frames is the frame's cast; printing only the changes keeps
+// a ride's log to a few dozen lines.
+namespace {
+
+constexpr int MaxCast = 128;
+uint32_t g_cast_prev[MaxCast]; uint32_t g_cast_prev_ids[MaxCast]; int g_cast_prev_n = 0;
+uint32_t g_cast_cur[MaxCast];  uint32_t g_cast_cur_ids[MaxCast];  int g_cast_cur_n = 0;
+
+void cast_note(uint32_t gobj, uint32_t id) {
+    for (int i = 0; i < g_cast_cur_n; i++) {
+        if (g_cast_cur[i] == gobj) {
+            return;
+        }
+    }
+    if (g_cast_cur_n < MaxCast) {
+        g_cast_cur[g_cast_cur_n] = gobj;
+        g_cast_cur_ids[g_cast_cur_n] = id;
+        g_cast_cur_n++;
+    }
+}
+
+void cast_frame_tick(uint32_t frame) {
+    for (int i = 0; i < g_cast_cur_n; i++) {
+        bool seen = false;
+        for (int j = 0; j < g_cast_prev_n; j++) {
+            if (g_cast_prev[j] == g_cast_cur[i]) { seen = true; break; }
+        }
+        if (!seen) {
+            printf("[SNAP-CAST] f%u + gobj %08X id %u\n", frame, g_cast_cur[i], g_cast_cur_ids[i]);
+        }
+    }
+    for (int j = 0; j < g_cast_prev_n; j++) {
+        bool seen = false;
+        for (int i = 0; i < g_cast_cur_n; i++) {
+            if (g_cast_cur[i] == g_cast_prev[j]) { seen = true; break; }
+        }
+        if (!seen) {
+            printf("[SNAP-CAST] f%u - gobj %08X id %u\n", frame, g_cast_prev[j], g_cast_prev_ids[j]);
+        }
+    }
+    std::memcpy(g_cast_prev, g_cast_cur, sizeof(uint32_t) * g_cast_cur_n);
+    std::memcpy(g_cast_prev_ids, g_cast_cur_ids, sizeof(uint32_t) * g_cast_cur_n);
+    g_cast_prev_n = g_cast_cur_n;
+    g_cast_cur_n = 0;
+    fflush(stdout);
+}
+
+}  // namespace
+
+extern "C" void renRenderModelTypeACommon(uint8_t* rdram, recomp_context* ctx) {
+    const uint32_t gobj = (uint32_t)ctx->r4;
+    cast_note(gobj, (uint32_t)MEM_W(0x00, (gpr)(int32_t)gobj));
+    __real_renRenderModelTypeACommon(rdram, ctx);
 }

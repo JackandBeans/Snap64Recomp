@@ -319,6 +319,37 @@ namespace RT64 {
             uploadProjections = true;
         }
 
+        // Pokemon Snap port, diagnostic: the one-frame flash at spawn points
+        // has outlived every subsystem it was blamed on. Whatever it is, it
+        // must show up as an anomaly in the frame's own vital signs, so every
+        // game frame prints one line of them: whether it matched the previous
+        // frame, how many transforms paired, and how much was drawn. The
+        // glitched frame identifies itself as the line that differs.
+        {
+            static uint32_t vitalFrame = 0;
+            vitalFrame++;
+            uint32_t transformCount = 0, mappedCount = 0, fbPairs = 0, calls = 0;
+            for (uint32_t w : curFrame.workloads) {
+                const Workload &wl = workloads[w];
+                transformCount += uint32_t(wl.drawData.worldTransforms.size());
+                fbPairs += wl.fbPairCount;
+                calls += wl.gameCallCount;
+                const GameFrameMap::WorkloadMap &wm = curFrame.frameMap.workloads[w];
+                if (wm.mapped) {
+                    for (const auto &tm : wm.transforms) {
+                        if (tm.mapped) {
+                            mappedCount++;
+                        }
+                    }
+                }
+            }
+            fprintf(stdout, "[SNAP-VITAL] f%u matched %u xf %u paired %u fb %u calls %u\n",
+                vitalFrame, prevFrame.matched ? 1u : 0u, transformCount, mappedCount, fbPairs, calls);
+            if ((vitalFrame % 32) == 0) {
+                fflush(stdout);
+            }
+        }
+
         const bool processTransforms = prevFrame.matched;
         bool uploadTransforms = false;
         if (processTransforms) {
