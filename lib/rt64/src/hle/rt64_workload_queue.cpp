@@ -10,9 +10,15 @@
 
 #define ENABLE_HIGH_RESOLUTION_RENDERER 1
 
+#include "rt64_snap_diag.h"
+
+#include <atomic>
+
 // Pokemon Snap port: defined in src/frame_dump.cpp on the game side. Setting
 // it asks the game to save the next few frames' framebuffers as images.
-extern "C" volatile int32_t snap_frame_dump_pending;
+// Atomic: armed here on the render thread, consumed on the game thread, read
+// by the present queue.
+extern "C" std::atomic<int32_t> snap_frame_dump_pending;
 
 namespace RT64 {
     // WorkloadQueue
@@ -293,6 +299,48 @@ namespace RT64 {
         }
     }
     
+    // Pokemon Snap port: fills an interpolated target with a copy of the raw
+    // frame the transition cut already rendered. The cut makes every image of
+    // its interval identical, and a texture copy is a fraction of the cost of
+    // replaying the whole workload on frames that are already the heaviest of
+    // the ride.
+    void WorkloadQueue::threadCopyOverrideTarget(const RenderTargetKey &srcKey, RenderTarget *dstTarget) {
+        std::scoped_lock<std::mutex> managerLock(ext.sharedResources->workloadMutex);
+        RenderTargetManager &targetManager = ext.sharedResources->renderTargetManager;
+        RenderTarget &src = targetManager.get(srcKey);
+        if (src.isEmpty()) {
+            return;
+        }
+
+        workerMutex.lock();
+        RenderWorker *worker = ext.workloadGraphicsWorker;
+        worker->commandList->begin();
+        dstTarget->resize(worker, src.width, src.height);
+
+        RenderTextureBarrier copyBarriers[] = {
+            RenderTextureBarrier(src.texture.get(), RenderTextureLayout::COPY_SOURCE),
+            RenderTextureBarrier(dstTarget->texture.get(), RenderTextureLayout::COPY_DEST),
+        };
+        worker->commandList->barriers(RenderBarrierStage::COPY, copyBarriers, uint32_t(std::size(copyBarriers)));
+
+        const RenderBox srcBox(0, 0, int32_t(src.width), int32_t(src.height));
+        worker->commandList->copyTextureRegion(
+            RenderTextureCopyLocation::Subresource(dstTarget->texture.get()),
+            RenderTextureCopyLocation::Subresource(src.texture.get()),
+            0, 0, 0, &srcBox);
+        worker->commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(dstTarget->texture.get(), RenderTextureLayout::SHADER_READ));
+        worker->commandList->end();
+        worker->execute();
+        worker->wait();
+        workerMutex.unlock();
+
+        // The present queue reads these from the target it shows.
+        dstTarget->resolutionScale = src.resolutionScale;
+        dstTarget->downsampleMultiplier = src.downsampleMultiplier;
+        dstTarget->misalignX = src.misalignX;
+        dstTarget->invMisalignX = src.invMisalignX;
+    }
+
     void WorkloadQueue::threadRenderFrame(GameFrame &curFrame, const GameFrame &prevFrame, const WorkloadConfiguration &workloadConfig,
         const DebuggerRenderer &debuggerRenderer, const DebuggerCamera &debuggerCamera, float curFrameWeight, float prevFrameWeight,
         float deltaTimeMs, RenderTargetKey overrideTargetKey, int32_t overrideTargetFbPairIndex, RenderTarget *overrideTarget,
@@ -324,13 +372,13 @@ namespace RT64 {
             uploadProjections = true;
         }
 
-        // Pokemon Snap port, diagnostic: the one-frame flash at spawn points
-        // has outlived every subsystem it was blamed on. Whatever it is, it
-        // must show up as an anomaly in the frame's own vital signs, so every
-        // game frame prints one line of them: whether it matched the previous
-        // frame, how many transforms paired, and how much was drawn. The
-        // glitched frame identifies itself as the line that differs.
-        {
+        // Pokemon Snap port, diagnostic: one line of the frame's vital signs
+        // per rendered display frame -- matching state, pairing counts, how
+        // much was drawn. An anomalous frame identifies itself as the line
+        // that differs. Behind the diagnostics gate along with everything
+        // that exists only to feed it: the walk over the frame map is not
+        // free, and neither is stdout in a render loop.
+        if (snapdiag::diagEnabled() || snapdiag::captureEnabled()) {
             static uint32_t vitalFrame = 0;
             vitalFrame++;
             uint32_t transformCount = 0, mappedCount = 0, fbPairs = 0, calls = 0;
@@ -348,26 +396,26 @@ namespace RT64 {
                     }
                 }
             }
-            fprintf(stdout, "[SNAP-VITAL] f%u matched %u xf %u paired %u fb %u calls %u\n",
-                vitalFrame, prevFrame.matched ? 1u : 0u, transformCount, mappedCount, fbPairs, calls);
+            if (snapdiag::diagEnabled()) {
+                fprintf(stdout, "[SNAP-VITAL] f%u matched %u xf %u paired %u fb %u calls %u\n",
+                    vitalFrame, prevFrame.matched ? 1u : 0u, transformCount, mappedCount, fbPairs, calls);
+            }
 
             // Pokemon Snap port: on the frames where most of the scene's
             // transform identities change at once -- the block-transition and
-            // spawn frames the flash is reported on -- ask the game side to
-            // dump the framebuffers around this moment (src/frame_dump.cpp),
-            // so the artifact itself lands on disk as images.
-            // Off unless asked for: the readbacks and file writes stall the
-            // present thread enough to feel like the stutter being studied.
-            static const bool snapCaptureEnabled = (std::getenv("SNAP_CAPTURE") != nullptr);
-            if (snapCaptureEnabled && prevFrame.matched && (transformCount >= 10) && (mappedCount * 5 < transformCount * 3)) {
-                snap_frame_dump_pending = 6;
+            // spawn frames -- ask the game side to dump the framebuffers
+            // around this moment (src/frame_dump.cpp), so the artifact itself
+            // lands on disk as images. store() rather than read-modify-write:
+            // the game thread decrements this concurrently.
+            if (snapdiag::captureEnabled() && prevFrame.matched && (transformCount >= 10) && (mappedCount * 5 < transformCount * 3)) {
+                snap_frame_dump_pending.store(6);
             }
 
             // The framebuffer pair count spikes from four to eight or more on
             // exactly the frames that flash. Whatever those extra passes are,
             // they decide which image the frame presents, so on spike frames
             // each pass prints what it drew and where.
-            if (fbPairs > 6) {
+            if (snapdiag::diagEnabled() && (fbPairs > 6)) {
                 for (uint32_t w : curFrame.workloads) {
                     const Workload &wl = workloads[w];
                     for (uint32_t f = 0; f < wl.fbPairCount; f++) {
@@ -890,16 +938,19 @@ namespace RT64 {
                             depthFb->readHeight = 0;
                         }
 
-                        if (depthFb->height > depthFb->readHeight) {
-                            if (!interpolationSubFrame) {
-                                uint32_t readRowCount = depthFb->height - depthFb->readHeight;
-                                FramebufferChange *depthFbChange = depthFb->readChangeFromStorage(ext.workloadGraphicsWorker, workload.fbStorage, scratchFbChangePool, Framebuffer::Type::Depth,
-                                    G_IM_FMT_DEPTH, f, depthFb->readHeight, readRowCount, ext.shaderLibrary);
+                        // The watermark only advances when the reload actually
+                        // ran. A skipped reload that still marked the rows
+                        // consumed would leave the depth target permanently
+                        // unseeded: once readHeight equals height nothing ever
+                        // re-arms it, not even a later non-interpolated frame.
+                        if ((depthFb->height > depthFb->readHeight) && !interpolationSubFrame) {
+                            uint32_t readRowCount = depthFb->height - depthFb->readHeight;
+                            FramebufferChange *depthFbChange = depthFb->readChangeFromStorage(ext.workloadGraphicsWorker, workload.fbStorage, scratchFbChangePool, Framebuffer::Type::Depth,
+                                G_IM_FMT_DEPTH, f, depthFb->readHeight, readRowCount, ext.shaderLibrary);
 
-                                if (depthFbChange != nullptr) {
-                                    depthTarget->copyFromChanges(ext.workloadGraphicsWorker, *depthFbChange, depthFb->width, readRowCount, depthFb->readHeight, ext.shaderLibrary);
-                                    depthFbChanged = true;
-                                }
+                            if (depthFbChange != nullptr) {
+                                depthTarget->copyFromChanges(ext.workloadGraphicsWorker, *depthFbChange, depthFb->width, readRowCount, depthFb->readHeight, ext.shaderLibrary);
+                                depthFbChanged = true;
                             }
 
                             depthFb->readHeight = depthFb->height;
@@ -1260,9 +1311,27 @@ namespace RT64 {
                     }
 
                     int64_t renderTimeMicro = workloadTimer.elapsedMicroseconds();
-                    threadRenderFrame(curFrame, prevFrame, workloadConfig, workload.debuggerRenderer, workload.debuggerCamera, curFrameWeight, prevFrameWeight, deltaTimeMs,
-                        interpolationTargetKey, interpolationTargetFbPairIndex, overrideTarget, overrideModifier, velocityUploaderUsed, uploadExtras, tileInterpolationUsed, lookAtInterpolationUsed,
-                        generateInterpolatedFrames);
+
+                    // The transition cut makes every image of this interval
+                    // identical to the raw frame, so rendering each one would
+                    // repeat the full workload displayFrames times on exactly
+                    // the frames that are already the heaviest. Frame zero
+                    // renders; the rest are a texture copy of its target.
+                    const bool snapCutCopy = generateInterpolatedFrames && curFrame.snapRebaseFrame &&
+                        !usingMSAA && (overrideTarget != nullptr);
+                    if (snapCutCopy) {
+                        threadCopyOverrideTarget(interpolationTargetKey, overrideTarget);
+                    }
+                    else {
+                        // A frame whose weights were forced to the raw pose is
+                        // not an interpolated replay: its pose matches its
+                        // content, so the RDRAM depth coherence machinery may
+                        // run on it like on any native frame.
+                        const bool interpolationSubFrame = generateInterpolatedFrames && (curFrameWeight < 1.0f);
+                        threadRenderFrame(curFrame, prevFrame, workloadConfig, workload.debuggerRenderer, workload.debuggerCamera, curFrameWeight, prevFrameWeight, deltaTimeMs,
+                            interpolationTargetKey, interpolationTargetFbPairIndex, overrideTarget, overrideModifier, velocityUploaderUsed, uploadExtras, tileInterpolationUsed, lookAtInterpolationUsed,
+                            interpolationSubFrame);
+                    }
 
                     // Add total time the frame took to render.
                     renderTimeTotalMicro += workloadTimer.elapsedMicroseconds() - renderTimeMicro;

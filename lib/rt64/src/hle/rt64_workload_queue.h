@@ -119,6 +119,7 @@ namespace RT64 {
         void updateMultisampling();
         void threadConfigurationUpdate(hlslpp::uint2 viFbSize, WorkloadConfiguration &workloadConfig);
         void threadConfigurationValidate();
+        void threadCopyOverrideTarget(const RenderTargetKey &srcKey, RenderTarget *dstTarget);
         void threadRenderFrame(GameFrame &curFrame, const GameFrame &prevFrame, const WorkloadConfiguration &workloadConfig,
             const DebuggerRenderer &debuggerRenderer, const DebuggerCamera &debuggerCamera, float curFrameWeight, float prevFrameWeight,
             float deltaTimeMs, RenderTargetKey overrideTargetKey, int32_t overrideTargetFbPairIndex, RenderTarget *overrideTarget,

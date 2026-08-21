@@ -13,6 +13,7 @@
 #include "shared/rt64_rsp_fog.h"
 
 #include "rt64_interpreter.h"
+#include "rt64_snap_diag.h"
 #include "rt64_state.h"
 
 //#define LOG_SPECIAL_MATRIX_OPERATIONS
@@ -841,16 +842,26 @@ namespace RT64 {
         const uint32_t globalIndex = indices[vtxIndex];
         const float screenZ = workload.drawData.posScreen[globalIndex][2] * DepthRange;
         const float zValueFloat = zValue / 65536.0f;
-        const bool taken = forceBranch || (screenZ < zValueFloat);
 
-        // Pokemon Snap port, diagnostic: every model part in this game sits
-        // behind a pair of these branches -- take the near model, else the far
-        // model, else draw nothing at all. A part that fails both tests
-        // vanishes while everything the game computes for it stays healthy,
-        // which is exactly the shape of the missing sleep symbols. A taken
-        // branch is routine and stays quiet; the interesting event is the
-        // refusal, and refusals are rare enough to print whole.
-        if (!taken) {
+        // Pokemon Snap port: this comparison decides whether a model part is
+        // drawn at all -- every part in this game sits behind a near-else-far
+        // pair of these branches, and one that fails both tests vanishes.
+        // The RSP computes the vertex's screen z through its fixed-point
+        // pipeline; this float reconstruction lands close but not identically,
+        // and a part sitting at the limit resolves the tie differently than
+        // the hardware did: measured on the beach, a model at z 1020.5
+        // against a limit of 1020.11 stayed refused for 27 straight frames
+        // that the console drew, holding it invisible until the cart got
+        // close enough to pop it into view. The margin biases the tie toward
+        // drawing -- one depth unit out of a thousand, far below any LOD
+        // boundary the game authors placed deliberately -- so the port errs
+        // the way the player can never see.
+        constexpr float SnapBranchZMargin = 1.0f;
+        const bool taken = forceBranch || (screenZ < zValueFloat + SnapBranchZMargin);
+
+        // The refusal probe: a taken branch is routine, a refusal is the
+        // interesting event.
+        if (!taken && snapdiag::diagEnabled()) {
             static uint32_t refusals = 0;
             refusals++;
             if ((refusals <= 2000) || ((refusals % 100) == 0)) {

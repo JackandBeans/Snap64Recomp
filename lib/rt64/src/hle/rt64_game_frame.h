@@ -129,17 +129,13 @@ namespace RT64 {
         bool areFramebufferPairsCompatible(const WorkloadQueue &workloadQueue, const GameIndices::FramebufferPair &first, const GameIndices::FramebufferPair &second);
         bool isSceneCompatible(const WorkloadQueue &workloadQueue, const GameScene &scene, const GameIndices::Projection &proj);
         void set(WorkloadQueue &workloadQueue, const uint32_t *workloadIndices, uint32_t indicesCount);
-        // Pokemon Snap port: set for the frame the game moves its world origin on.
+        // Pokemon Snap port: set for the frame the game moves its world origin
+        // on -- every block transition, whatever the delta. The workload queue
+        // presents these frames as themselves instead of blending them,
+        // because the transition changes what the display list draws and a
+        // pose aimed between two draw sets shows holes.
         bool snapRebaseFrame = false;
         hlslpp::float3 snapOriginDelta = {};
-
-        // True when a block-transition frame removed a meaningful amount of
-        // geometry that was drawn the frame before. Synthesized frames blend
-        // poses backward toward where that geometry was, and nothing is there
-        // to draw any more, so these frames are presented as themselves. A
-        // transition that only added content blends safely: the new geometry
-        // simply appears a fraction of a frame early.
-        bool snapContentLost = false;
 
         // True when the origin moved this frame and the distance it moved by is
         // known, which is when the previous frame can be read in this one's

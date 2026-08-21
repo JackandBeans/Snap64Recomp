@@ -5,6 +5,7 @@
 #include "common/rt64_math.h"
 
 #include "rt64_game_frame.h"
+#include "rt64_snap_diag.h"
 #include "rt64_workload_queue.h"
 
 #include <cstdio>
@@ -279,7 +280,6 @@ namespace RT64 {
         // interpolates, so a pan through a corner stays smooth, and only the
         // component that cannot be meaningfully interpolated is held.
         snapRebaseFrame = false;
-        snapContentLost = false;
         snapOriginDelta = hlslpp::float3(0.0f, 0.0f, 0.0f);
         for (uint32_t w : workloads) {
             Workload &rebaseWorkload = workloadQueue.workloads[w];
@@ -373,7 +373,7 @@ namespace RT64 {
             // the lower body is going missing because of pairing, unmatched
             // spikes while the camera pans; if it stays at zero through a pan,
             // the geometry is being lost somewhere after matching instead.
-            {
+            if (snapdiag::diagEnabled()) {
                 uint32_t tagged = 0;
                 uint32_t matched = 0;
                 for (const auto &entry : curWorkload.transformIdMap) {
@@ -492,15 +492,11 @@ namespace RT64 {
             velocityUploaderUsed = false;
         }
 
-        // Pokemon Snap port, diagnostic: the flash the player sees lives on
-        // the block transition frame, and both compensations for the origin
-        // rebase sit behind a take-only-if-nearer guard. This says whether
-        // they actually fired: on a rebase frame, how far the origin moved,
-        // how many paired transforms accepted the moved previous frame versus
-        // kept the raw one, and the same for the matched cameras. A guard
-        // that refused is a smoking gun; a rebase frame that never printed
-        // means the flag never reached the renderer at all.
-        if (snapRebaseUsable()) {
+        // Pokemon Snap port, diagnostic: on a rebase frame, how far the origin
+        // moved and how many paired transforms and cameras accepted the moved
+        // previous frame versus kept the raw one. Behind the diagnostics gate:
+        // the walk over the frame map exists only to feed the line.
+        if (snapdiag::diagEnabled() && snapRebaseUsable()) {
             uint32_t xfRebased = 0, xfRaw = 0, viewRebased = 0, viewRaw = 0;
             for (uint32_t w : workloads) {
                 const GameFrameMap::WorkloadMap &wm = frameMap.workloads[w];
@@ -521,13 +517,14 @@ namespace RT64 {
             fflush(stdout);
         }
 
-        // On a block-transition frame, count how much of the previous frame's
-        // geometry nothing claimed: those transforms were drawn last frame and
-        // are gone from this one. Losing several at once is the block cull
-        // that opens holes under blended poses, so only those frames cut.
-        // Small counts are the ordinary flicker of intermittently drawn
-        // objects and blend fine.
-        if (snapRebaseFrame) {
+        // Pokemon Snap port, diagnostic: characterizes what a transition
+        // frame loses. Transform loss proved blind to what actually
+        // disappears (the flash returned on a transition that lost a single
+        // transform -- the geometry vanishes inside surviving objects'
+        // display lists), so this no longer decides anything; the counts
+        // exist for the follow-up fix that will keep the removed geometry
+        // drawn for the one extra frame blending needs.
+        if (snapdiag::diagEnabled() && snapRebaseFrame) {
             uint32_t lost = 0;
             uint32_t curCalls = 0, prevCalls = 0;
             for (uint32_t w : workloads) {
@@ -543,11 +540,6 @@ namespace RT64 {
                     }
                 }
             }
-            // Transform loss proved blind to what actually disappears (the
-            // wedge returned on a lost-1 transition), so every transition
-            // cuts; the counts stay to characterize what the display list
-            // loses call-wise for the follow-up fix that keeps it drawn.
-            snapContentLost = true;
             fprintf(stdout, "[SNAP-CUT] transition lost %u xf, calls %u -> %u\n", lost, prevCalls, curCalls);
             fflush(stdout);
         }
@@ -1057,11 +1049,13 @@ namespace RT64 {
             else if (group.ordering == G_EX_ORDER_LINEAR) {
                 // One-shot: are the ids the serials the port stamps, or still
                 // raw OMMtx addresses? Serials are small; addresses are 0x80xxxxxx.
-                static int sampled = 0;
-                if (sampled < 12) {
-                    sampled++;
-                    fprintf(stdout, "[SNAP-ID] matrixId 0x%08X\n", group.matrixId);
-                    fflush(stdout);
+                if (snapdiag::diagEnabled()) {
+                    static int sampled = 0;
+                    if (sampled < 12) {
+                        sampled++;
+                        fprintf(stdout, "[SNAP-ID] matrixId 0x%08X\n", group.matrixId);
+                        fflush(stdout);
+                    }
                 }
                 idMap.emplace(group.matrixId, i);
             }

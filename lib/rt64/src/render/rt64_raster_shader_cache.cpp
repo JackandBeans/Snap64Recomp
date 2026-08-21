@@ -5,6 +5,7 @@
 #include "rt64_raster_shader_cache.h"
 
 #include "common/rt64_thread.h"
+#include "hle/rt64_snap_diag.h"
 
 #define ENABLE_OPTIMIZED_SHADER_GENERATION
 
@@ -68,8 +69,10 @@ namespace RT64 {
                 }
 
                 // The moment the specialised pipeline replaces the ubershader.
-                fprintf(stdout, "[SNAP-SHADER] ready  %016llX\n", (unsigned long long)shaderDesc.hash());
-                fflush(stdout);
+                if (snapdiag::diagEnabled()) {
+                    fprintf(stdout, "[SNAP-SHADER] ready  %016llX\n", (unsigned long long)shaderDesc.hash());
+                    fflush(stdout);
+                }
             }
         }
     }
@@ -134,13 +137,15 @@ namespace RT64 {
             // equality and blending. An object that is visible exactly once,
             // at first sight, and never again would look like this handoff.
             // The submission and the completion below bracket the window.
-            fprintf(stdout, "[SNAP-SHADER] submit %016llX om %08X %08X cc %08X %08X cyc %u zc %u zu %u zm %u\n",
-                (unsigned long long)shaderHash, desc.otherMode.H, desc.otherMode.L,
-                desc.colorCombiner.H, desc.colorCombiner.L,
-                desc.otherMode.cycleType() >> G_MDSFT_CYCLETYPE,
-                desc.otherMode.zCmp() ? 1u : 0u, desc.otherMode.zUpd() ? 1u : 0u,
-                desc.otherMode.zMode() >> 10);
-            fflush(stdout);
+            if (snapdiag::diagEnabled()) {
+                fprintf(stdout, "[SNAP-SHADER] submit %016llX om %08X %08X cc %08X %08X cyc %u zc %u zu %u zm %u\n",
+                    (unsigned long long)shaderHash, desc.otherMode.H, desc.otherMode.L,
+                    desc.colorCombiner.H, desc.colorCombiner.L,
+                    desc.otherMode.cycleType() >> G_MDSFT_CYCLETYPE,
+                    desc.otherMode.zCmp() ? 1u : 0u, desc.otherMode.zUpd() ? 1u : 0u,
+                    desc.otherMode.zMode() >> 10);
+                fflush(stdout);
+            }
         }
 
         // Push a new shader compilation to the queue.

@@ -7,6 +7,8 @@
 #include <cassert>
 #include <cinttypes>
 
+#include "rt64_snap_diag.h"
+
 #include "im3d/im3d.h"
 #include "im3d/im3d_math.h"
 #include "imgui/imgui.h"
@@ -689,7 +691,7 @@ namespace RT64 {
                     // indices with an all zero palette mean the TLUT is the
                     // problem. Both good means the fault is downstream, in the
                     // upload or the sampler.
-                    if ((callTile.loadTile.fmt == G_IM_FMT_CI) && (callTile.loadTile.siz == G_IM_SIZ_4b)) {
+                    if (snapdiag::diagEnabled() && (callTile.loadTile.fmt == G_IM_FMT_CI) && (callTile.loadTile.siz == G_IM_SIZ_4b)) {
                         static uint32_t ciTiles = 0;
                         ciTiles++;
                         if ((ciTiles <= 4) || ((ciTiles % 500) == 0)) {
@@ -1033,7 +1035,7 @@ namespace RT64 {
                                 const auto &lt = workload.drawData.callTiles[callDesc.tileIndex].loadTile;
                                 i4Texture = (lt.fmt == G_IM_FMT_I) && (lt.siz == G_IM_SIZ_4b);
                             }
-                            if (i4Texture && (callDesc.triangleCount > 0)) {
+                            if (snapdiag::diagEnabled() && i4Texture && (callDesc.triangleCount > 0)) {
                                 static uint32_t zCalls = 0;
                                 zCalls++;
                                 if ((zCalls <= 120) || ((zCalls % 25) == 0)) {
@@ -1630,9 +1632,21 @@ namespace RT64 {
             // Pokemon Snap port, diagnostic: every synchronized pair below is
             // a GPU submit and wait taken on the game thread, and the frames
             // the player feels a hitch on are the ones with many of them. Per
-            // frame this reports how many fired and what they cost.
+            // frame this reports how many fired and what they cost. Behind
+            // the diagnostics gate, clocks included: quiet builds pay nothing.
+            const bool snapSyncDiag = snapdiag::diagEnabled();
             int64_t snapSyncMicro = 0;
             uint32_t snapSyncCount = 0;
+            const auto snapSyncTimed = [&](uint32_t maxFramebufferPair) {
+                if (snapSyncDiag) {
+                    const auto snapSyncStart = std::chrono::steady_clock::now();
+                    renderAndSynchronize(maxFramebufferPair);
+                    snapSyncMicro += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - snapSyncStart).count();
+                }
+                else {
+                    renderAndSynchronize(maxFramebufferPair);
+                }
+            };
 
             // Start loading tiles, sampling tiles and drawing the framebuffer pairs as required.
             for (uint32_t f = 0; f < workload.fbPairCount; f++) {
@@ -1646,10 +1660,8 @@ namespace RT64 {
                 }
 
                 if (fbPair.syncRequired) {
-                    const auto snapSyncStart = std::chrono::steady_clock::now();
-                    renderAndSynchronize(f);
+                    snapSyncTimed(f);
                     renderSetup();
-                    snapSyncMicro += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - snapSyncStart).count();
                     snapSyncCount++;
                 }
 
@@ -1657,13 +1669,9 @@ namespace RT64 {
             }
 
             // Render any remaining batches of framebuffers.
-            {
-                const auto snapSyncStart = std::chrono::steady_clock::now();
-                renderAndSynchronize(workload.fbPairCount);
-                snapSyncMicro += std::chrono::duration_cast<std::chrono::microseconds>(std::chrono::steady_clock::now() - snapSyncStart).count();
-            }
+            snapSyncTimed(workload.fbPairCount);
 
-            if (snapSyncMicro > 5000) {
+            if (snapSyncDiag && (snapSyncMicro > 5000)) {
                 fprintf(stdout, "[SNAP-SYNC] pairs %u midframe syncs %u total %lld us\n",
                     workload.fbPairCount, snapSyncCount, (long long)snapSyncMicro);
                 fflush(stdout);

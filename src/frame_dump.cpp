@@ -2,39 +2,38 @@
  * @file frame_dump.cpp
  * @brief Saves the framebuffers around a churn frame as images.
  *
- * Every measured suspect for the one-frame flash at block transitions has been
- * acquitted by its own probe: the rebase compensations fire, the scenes and
- * transforms pair correctly, per-vertex velocities are disabled, the presents
- * are all interpolated. What has never been examined is the artifact itself.
- * This puts the pixels on disk.
- *
- * It can, because the port runs with render to RAM on: RT64 copies each
- * finished frame back over the framebuffer in RDRAM (that is what the Pokemon
- * detector and the focus dot read), and send_dl blocks until the render is
- * done. So by the time the game checks its buffers for the next frame, the
- * previous frame's final pixels are sitting in memory, and dumping them is a
- * memcpy, not a GPU readback.
- *
  * The renderer arms the dump: on the frames where most of the scene's
- * transforms change identity at once -- the block-transition and spawn frames
- * the flash is reported on -- rt64_workload_queue.cpp sets the pending counter.
- * The game side keeps a short ring of the frames just before, and writes ring
- * plus the following frames as BMPs. If the artifact is in the rendered frame,
- * it will be in the images; if the images are clean, the artifact lives only in
- * the interpolated presents, which is just as decisive.
+ * transforms change identity at once, rt64_workload_queue.cpp raises the
+ * pending counter, and this side keeps a short ring of the frames just before
+ * so the moment is bracketed. The port runs with render to RAM on, so the
+ * previous frame's final pixels are sitting in RDRAM by the time the game
+ * checks its buffers; dumping them is a memcpy, not a GPU readback.
+ *
+ * Everything here is inert unless SNAP_CAPTURE is set: the review measured
+ * the ring copies at ~307KB per game frame, which nobody should pay for a
+ * diagnostic that cannot fire. The pending counter is atomic because three
+ * threads touch it (the render thread arms it, this game-thread side consumes
+ * it, the present queue reads it), and a torn read-modify-write here was
+ * shown to be able to cancel the very burst being captured. Files are
+ * written through the shared writer in rt64_snap_diag.h, which reports
+ * failure instead of counting it as success, and every name carries the
+ * run token so consecutive runs never overwrite each other's evidence.
  */
 
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
-#include <direct.h>
+
+#include "hle/rt64_snap_diag.h"
 
 namespace snap {
 namespace {
 
 // Beach course, from the [SNAP-FBP] logs: the two color buffers the game
-// alternates between. A course with different addresses dumps black frames,
-// which is itself the answer to whether the addresses were right.
+// alternates between. The same addresses are used across the retail courses'
+// display lists; a course that deviates dumps stale memory, which is itself
+// visible in the images.
 constexpr uint32_t FramebufferAddresses[2] = { 0x803B5000u, 0x803DA800u };
 constexpr uint32_t FbWidth = 320;
 constexpr uint32_t FbHeight = 240;
@@ -54,7 +53,6 @@ uint32_t g_ring_next = 0;
 uint32_t g_frame = 0;
 uint32_t g_files_written = 0;
 int32_t g_last_pending = 0;
-bool g_dir_made = false;
 
 // The recompiled memory image stores 32-bit words natively, so a 16-bit read
 // at an N64 address lands at the address XOR 2 (the MEM_HU rule). The raw
@@ -66,64 +64,46 @@ uint16_t pixel_at(const uint8_t* raw, uint32_t index) {
     return value;
 }
 
-void write_bmp(const char* path, const uint8_t* raw) {
-    FILE* f = fopen(path, "wb");
-    if (f == nullptr) {
-        return;
-    }
-
-    const uint32_t rowBytes = FbWidth * 3;
-    const uint32_t imageBytes = rowBytes * FbHeight;
-    const uint32_t fileBytes = 14 + 40 + imageBytes;
-    const uint8_t header[54] = {
-        'B', 'M',
-        (uint8_t)fileBytes, (uint8_t)(fileBytes >> 8), (uint8_t)(fileBytes >> 16), (uint8_t)(fileBytes >> 24),
-        0, 0, 0, 0,
-        54, 0, 0, 0,
-        40, 0, 0, 0,
-        (uint8_t)FbWidth, (uint8_t)(FbWidth >> 8), 0, 0,
-        (uint8_t)FbHeight, (uint8_t)(FbHeight >> 8), 0, 0,
-        1, 0, 24, 0,
-        0, 0, 0, 0,
-        (uint8_t)imageBytes, (uint8_t)(imageBytes >> 8), (uint8_t)(imageBytes >> 16), (uint8_t)(imageBytes >> 24),
-        0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0
-    };
-    fwrite(header, 1, sizeof(header), f);
-
-    // BMP rows run bottom-up. N64 RGBA16 is 5-5-5-1, red in the top bits.
-    static uint8_t row[FbWidth * 3];
-    for (int32_t y = FbHeight - 1; y >= 0; y--) {
+// N64 RGBA16 is 5-5-5-1, red in the top bits; the shared writer wants a
+// top-down packed BGR buffer.
+bool write_frame(const char* path, const uint8_t* raw) {
+    static uint8_t bgr[FbWidth * FbHeight * 3];
+    for (uint32_t y = 0; y < FbHeight; y++) {
         for (uint32_t x = 0; x < FbWidth; x++) {
-            const uint16_t p = pixel_at(raw, (uint32_t)y * FbWidth + x);
+            const uint16_t p = pixel_at(raw, y * FbWidth + x);
             const uint32_t r = (p >> 11) & 31;
             const uint32_t g = (p >> 6) & 31;
             const uint32_t b = (p >> 1) & 31;
-            row[x * 3 + 0] = (uint8_t)((b * 255) / 31);
-            row[x * 3 + 1] = (uint8_t)((g * 255) / 31);
-            row[x * 3 + 2] = (uint8_t)((r * 255) / 31);
+            uint8_t* out = &bgr[(y * FbWidth + x) * 3];
+            out[0] = (uint8_t)((b * 255) / 31);
+            out[1] = (uint8_t)((g * 255) / 31);
+            out[2] = (uint8_t)((r * 255) / 31);
         }
-        fwrite(row, 1, sizeof(row), f);
     }
-    fclose(f);
+    return snapdiag::writeBMP24(path, FbWidth, FbHeight, bgr);
 }
 
 void dump_slot(const RingSlot& slot, const char* tag) {
-    if (!g_dir_made) {
-        _mkdir("snap_frame_dumps");
-        g_dir_made = true;
+    if (!snapdiag::ensureDumpDir()) {
+        return;
     }
+    uint32_t wrote = 0;
     for (uint32_t b = 0; b < 2; b++) {
         if (g_files_written >= MaxFilesWritten) {
             return;
         }
-        char path[128];
-        snprintf(path, sizeof(path), "snap_frame_dumps/f%06u_%08X_%s.bmp",
-                 slot.frame, FramebufferAddresses[b], tag);
-        write_bmp(path, slot.pixels[b]);
-        g_files_written++;
+        char path[160];
+        snprintf(path, sizeof(path), "snap_frame_dumps/r%05u_f%06u_%08X_%s.bmp",
+                 snapdiag::runToken(), slot.frame, FramebufferAddresses[b], tag);
+        if (write_frame(path, slot.pixels[b])) {
+            g_files_written++;
+            wrote++;
+        }
     }
-    printf("[SNAP-DUMP] wrote frame %u (%s)\n", slot.frame, tag);
-    fflush(stdout);
+    if (wrote > 0) {
+        printf("[SNAP-DUMP] wrote frame %u (%s, %u files)\n", slot.frame, tag, wrote);
+        fflush(stdout);
+    }
 }
 
 } // namespace
@@ -131,8 +111,9 @@ void dump_slot(const RingSlot& slot, const char* tag) {
 
 // Armed by the renderer (rt64_workload_queue.cpp) on the frames where most of
 // the scene's transform identities change at once. Each game frame dumped
-// consumes one count.
-extern "C" volatile int32_t snap_frame_dump_pending = 0;
+// consumes one count. Atomic: the render thread stores fresh arms while this
+// side decrements, and the present queue polls it for its own captures.
+extern "C" std::atomic<int32_t> snap_frame_dump_pending{0};
 
 namespace snap {
 
@@ -140,6 +121,10 @@ namespace snap {
 // at that point is the last one the renderer finished, because send_dl waits
 // for the workload before returning.
 void frame_dump_tick(uint8_t* rdram) {
+    if (!snapdiag::captureEnabled()) {
+        return;
+    }
+
     g_frame++;
 
     RingSlot& slot = g_ring[g_ring_next];
@@ -149,7 +134,7 @@ void frame_dump_tick(uint8_t* rdram) {
         std::memcpy(slot.pixels[b], rdram + (FramebufferAddresses[b] - 0x80000000u), FbBytes);
     }
 
-    const int32_t pending = snap_frame_dump_pending;
+    const int32_t pending = snap_frame_dump_pending.load();
     if (pending > 0) {
         // First frame of a burst: flush the frames that came before it.
         if (g_last_pending <= 0) {
@@ -161,7 +146,9 @@ void frame_dump_tick(uint8_t* rdram) {
             }
         }
         dump_slot(slot, "at");
-        snap_frame_dump_pending = pending - 1;
+        // fetch_sub instead of a stored 'pending - 1': a fresh arm landing
+        // between the load above and this line must not be clobbered to zero.
+        snap_frame_dump_pending.fetch_sub(1);
     }
     g_last_pending = pending;
 

@@ -6,6 +6,8 @@
 
 #include <cassert>
 
+#include "rt64_snap_diag.h"
+
 #include "../include/rt64_extended_gbi.h"
 
 #include "common/rt64_math.h"
@@ -543,7 +545,7 @@ namespace RT64 {
             // the source memory holds at the moment the game submits the frame
             // versus where that memory is. Sampled on the 4-bit and 8-bit
             // loads, which is what the effect sprites use.
-            {
+            if (snapdiag::diagEnabled()) {
                 // 4-bit textures load as 16-bit blocks, so the size cannot
                 // identify the sprites; a zero-content load can. Print every
                 // load whose first bytes are all zero (capped), plus a sparse
@@ -1403,7 +1405,7 @@ namespace RT64 {
         // operation and the contents are not materialised until the workload
         // is replayed at full sync. Reading it here reports stale bytes that
         // have nothing to do with the sprite being drawn.
-        if (otherMode.zSource() != 0) {
+        if (snapdiag::diagEnabled() && (otherMode.zSource() != 0)) {
             static uint32_t primRectCount = 0;
             primRectCount++;
             // Depth-tested ones are the effect sprites and they are rare, so

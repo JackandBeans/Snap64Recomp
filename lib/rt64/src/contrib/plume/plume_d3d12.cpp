@@ -2484,8 +2484,12 @@ namespace plume {
         // A texture copy can have a buffer as its destination, in which case
         // the location's texture is null and there are no sample positions to
         // set. The assert this replaces was compiled out in release, and the
-        // dereference below read a null pointer instead.
+        // dereference below read a null pointer instead. Custom positions
+        // still have to be reset before the copy executes -- a non-MSAA
+        // destination would have taken the else branch below and reset them,
+        // and a buffer destination needs the same treatment.
         if (texture == nullptr) {
+            resetSamplePositions();
             return;
         }
 

@@ -27,6 +27,7 @@
 #include <cstdio>
 #include <cstring>
 
+#include "hle/rt64_snap_diag.h"
 #include "recomp.h"
 
 extern "C" {
@@ -74,6 +75,14 @@ extern "C" void fx_draw(uint8_t* rdram, recomp_context* ctx) {
             fflush(stdout);
         }
         last = now;
+    }
+
+    // Everything below is census diagnostics; the heartbeat above stays on
+    // because a stall message is worth having in any log and costs a clock
+    // read, but the list walks and prints only run when asked for.
+    if (!snapdiag::diagEnabled()) {
+        __real_fx_draw(rdram, ctx);
+        return;
     }
 
     // --- Effects: everything not in bank 0 is printed whole. ---
@@ -149,7 +158,7 @@ extern "C" void fx_createEffect(uint8_t* rdram, recomp_context* ctx) {
     static uint32_t spawns = 0;
     spawns++;
     const bool failed = ((uint32_t)ctx->r2 == 0);
-    if (failed || ((bank & 7) != 0) || (spawns <= 20) || ((spawns % 50) == 0)) {
+    if (snapdiag::diagEnabled() && (failed || ((bank & 7) != 0) || (spawns <= 20) || ((spawns % 50) == 0))) {
         printf("[SNAP-FXSPAWN] #%u bank %u script %u -> %08X%s\n",
                spawns, bank, script, (uint32_t)ctx->r2, failed ? "  REFUSED" : "");
         fflush(stdout);
@@ -185,7 +194,7 @@ extern "C" void renLoadTextures(uint8_t* rdram, recomp_context* ctx) {
     __real_renLoadTextures(rdram, ctx);
 
     const uint32_t mobjHead = (uint32_t)MEM_W(0x80, (gpr)(int32_t)dobj);
-    if (mobjHead == 0) {
+    if ((mobjHead == 0) || !snapdiag::diagEnabled()) {
         return;
     }
 
@@ -272,7 +281,9 @@ void cast_frame_tick(uint32_t frame) {
 }  // namespace
 
 extern "C" void renRenderModelTypeACommon(uint8_t* rdram, recomp_context* ctx) {
-    const uint32_t gobj = (uint32_t)ctx->r4;
-    cast_note(gobj, (uint32_t)MEM_W(0x00, (gpr)(int32_t)gobj));
+    if (snapdiag::diagEnabled()) {
+        const uint32_t gobj = (uint32_t)ctx->r4;
+        cast_note(gobj, (uint32_t)MEM_W(0x00, (gpr)(int32_t)gobj));
+    }
     __real_renRenderModelTypeACommon(rdram, ctx);
 }
