@@ -668,21 +668,37 @@ namespace RT64 {
                         }
                     }
 
-                    // A matched perspective camera whose eye jumped further in
-                    // one frame than any motion in this game carries it is a
-                    // scripted scene cut. The threshold is two orders of
-                    // magnitude above the cart's fastest real movement and
-                    // well under the smallest cut observed; block transitions
-                    // compare against the rebased eye above, so their known
-                    // origin shift does not trip this.
+                    // A matched perspective camera that jumped further in one
+                    // frame than any motion in this game carries it is a
+                    // scripted scene cut. Two witnesses, because film cuts
+                    // come in two kinds: the eye teleporting (threshold two
+                    // orders of magnitude above the cart's fastest movement,
+                    // under the smallest cut observed), and the view snapping
+                    // to a different angle with the eye nearly still, which
+                    // an eye test scores as zero. The angle threshold of 60
+                    // degrees per frame is beyond anything the aim stick can
+                    // do at native rate, so player aiming can never trip it.
+                    // Block transitions compare against the rebased eye above,
+                    // so their known origin shift does not trip this.
                     if (curProj.type == Projection::Type::Perspective) {
                         const hlslpp::float3 cutCurEye = hlslpp::inverse(curView)[3].xyz;
                         const hlslpp::float3 cutPrevEye = hlslpp::inverse(*effectivePrevView)[3].xyz;
                         const float eyeJump = float(hlslpp::length(cutCurEye - cutPrevEye));
-                        if (eyeJump > 250.0f) {
+
+                        // Two orthogonal camera axes, compared against their
+                        // previous selves: any large rotation about any axis
+                        // turns at least one of them well past the threshold.
+                        // Both matrices use the same convention, so which
+                        // physical axis each column is does not matter.
+                        const hlslpp::float3 cutCurA = hlslpp::normalize(hlslpp::float3(curView[0].z, curView[1].z, curView[2].z));
+                        const hlslpp::float3 cutPrevA = hlslpp::normalize(hlslpp::float3((*effectivePrevView)[0].z, (*effectivePrevView)[1].z, (*effectivePrevView)[2].z));
+                        const hlslpp::float3 cutCurB = hlslpp::normalize(hlslpp::float3(curView[0].y, curView[1].y, curView[2].y));
+                        const hlslpp::float3 cutPrevB = hlslpp::normalize(hlslpp::float3((*effectivePrevView)[0].y, (*effectivePrevView)[1].y, (*effectivePrevView)[2].y));
+                        const float axisDot = std::min(float(hlslpp::dot(cutCurA, cutPrevA)), float(hlslpp::dot(cutCurB, cutPrevB)));
+                        if ((eyeJump > 250.0f) || (axisDot < 0.5f)) {
                             snapViewCut = true;
                             if (snapdiag::diagEnabled()) {
-                                fprintf(stdout, "[SNAP-CUT] view jump %.0f -> cut\n", eyeJump);
+                                fprintf(stdout, "[SNAP-CUT] view jump %.0f axis dot %.2f -> cut\n", eyeJump, axisDot);
                                 fflush(stdout);
                             }
                         }
