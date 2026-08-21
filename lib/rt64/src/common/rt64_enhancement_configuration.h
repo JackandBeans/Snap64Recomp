@@ -21,6 +21,17 @@ namespace RT64 {
 
             Mode mode;
             bool removeBlackBorders;
+
+            // Pokemon Snap port: framebuffer pixels to hide per side, the way
+            // a CRT's overscan did. The game never draws its full buffer --
+            // gameplay leaves dead margins of up to 16 pixels and the intro's
+            // cinematics up to 30 on the left -- and its single VI mode makes
+            // no attempt to compensate, because in 1999 every television
+            // cropped the edges. Zero shows the raw buffer.
+            uint32_t cropLeft;
+            uint32_t cropRight;
+            uint32_t cropTop;
+            uint32_t cropBottom;
         };
         
         struct Rect {

@@ -29,11 +29,15 @@ namespace RT64 {
             UserConfiguration::Filtering filtering = UserConfiguration::Filtering::Linear;
             const VI *vi = nullptr;
             bool removeBlackBorders = false;
+
+            // Pokemon Snap port: framebuffer pixels hidden per side, the way
+            // a CRT's overscan hid them. Left, right, top, bottom.
+            uint32_t crop[4] = {};
         };
 
         VIRenderer();
         ~VIRenderer();
         void render(const RenderParams &p);
-        static void getViewportAndScissor(const RenderSwapChain *swapChain, const VI &vi, hlslpp::float2 resolutionScale, uint32_t downsamplingScale, bool removeBlackBorders, RenderViewport &viewport, RenderRect &scissor);
+        static void getViewportAndScissor(const RenderSwapChain *swapChain, const VI &vi, hlslpp::float2 resolutionScale, uint32_t downsamplingScale, bool removeBlackBorders, const uint32_t crop[4], RenderViewport &viewport, RenderRect &scissor);
     };
 };

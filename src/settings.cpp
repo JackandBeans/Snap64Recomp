@@ -42,6 +42,10 @@ void load_settings() {
         s_settings.interpolate_camera = j.value("interpolate_camera", s_settings.interpolate_camera);
         s_settings.render_to_ram      = j.value("render_to_ram", s_settings.render_to_ram);
         s_settings.ubershaders_only   = j.value("ubershaders_only", s_settings.ubershaders_only);
+        s_settings.crop_left          = j.value("crop_left", s_settings.crop_left);
+        s_settings.crop_right         = j.value("crop_right", s_settings.crop_right);
+        s_settings.crop_top           = j.value("crop_top", s_settings.crop_top);
+        s_settings.crop_bottom        = j.value("crop_bottom", s_settings.crop_bottom);
         printf("[SNAP-CFG] loaded %s\n", SETTINGS_FILE);
     } catch (const std::exception& e) {
         fprintf(stderr, "[SNAP-CFG] failed to parse %s: %s (using defaults)\n", SETTINGS_FILE, e.what());
@@ -61,6 +65,10 @@ void save_settings() {
         {"interpolate_camera",    s_settings.interpolate_camera},
         {"render_to_ram",         s_settings.render_to_ram},
         {"ubershaders_only",      s_settings.ubershaders_only},
+        {"crop_left",             s_settings.crop_left},
+        {"crop_right",            s_settings.crop_right},
+        {"crop_top",              s_settings.crop_top},
+        {"crop_bottom",           s_settings.crop_bottom},
     };
     std::ofstream f(SETTINGS_FILE);
     f << j.dump(2) << "\n";

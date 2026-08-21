@@ -226,6 +226,15 @@ public:
         app_->userConfig.validate();
         app_->updateUserConfig(true);
 
+        // Overscan crop: hide the dead margins the game leaves in its
+        // framebuffer, the way the CRTs it was authored for did. See
+        // settings.h for the measurements behind the defaults.
+        app_->enhancementConfig.presentation.cropLeft = uint32_t(std::max(0, snap::settings().crop_left));
+        app_->enhancementConfig.presentation.cropRight = uint32_t(std::max(0, snap::settings().crop_right));
+        app_->enhancementConfig.presentation.cropTop = uint32_t(std::max(0, snap::settings().crop_top));
+        app_->enhancementConfig.presentation.cropBottom = uint32_t(std::max(0, snap::settings().crop_bottom));
+        app_->updateEnhancementConfig();
+
         // Applied unconditionally: the first push after startup compares
         // equal to the defaults, so a saved fullscreen setting would never
         // reach the window otherwise.

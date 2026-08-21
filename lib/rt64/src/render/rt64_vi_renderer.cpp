@@ -69,7 +69,7 @@ namespace RT64 {
 
         RenderViewport viewport;
         RenderRect scissor;
-        getViewportAndScissor(p.swapChain, *p.vi, p.resolutionScale, p.downsamplingScale, p.removeBlackBorders, viewport, scissor);
+        getViewportAndScissor(p.swapChain, *p.vi, p.resolutionScale, p.downsamplingScale, p.removeBlackBorders, p.crop, viewport, scissor);
         p.commandList->setViewports(viewport);
         p.commandList->setScissors(scissor);
 
@@ -86,7 +86,7 @@ namespace RT64 {
         p.commandList->drawInstanced(3, 1, 0, 0);
     }
 
-    void VIRenderer::getViewportAndScissor(const RenderSwapChain *swapChain, const VI &vi, hlslpp::float2 resolutionScale, uint32_t downsamplingScale, bool removeBlackBorders, RenderViewport &viewport, RenderRect &scissor) {
+    void VIRenderer::getViewportAndScissor(const RenderSwapChain *swapChain, const VI &vi, hlslpp::float2 resolutionScale, uint32_t downsamplingScale, bool removeBlackBorders, const uint32_t crop[4], RenderViewport &viewport, RenderRect &scissor) {
         // We define three different coordinate spaces to work with to translate the VI parameters into the Window.
         //
         // VideoSD: This corresponds to the SD TV Scanline space, which is what the VI natively works on.
@@ -121,5 +121,31 @@ namespace RT64 {
 
         viewport = RenderViewport(topLeftViewport.x, topLeftViewport.y, bottomRightViewport.x - topLeftViewport.x, bottomRightViewport.y - topLeftViewport.y);
         scissor = RenderRect(lround(topLeftScissor.x), lround(topLeftScissor.y), lround(bottomRightScissor.x), lround(bottomRightScissor.y));
+
+        // Pokemon Snap port: overscan crop. The game leaves dead margins in
+        // its framebuffer -- black in scenes, stale bytes in menus -- and its
+        // one VI mode never compensates, because the CRTs it was authored for
+        // cropped the picture's edges on every set sold. Hiding a margin of
+        // the buffer the same way: the viewport grows so the cropped region
+        // fills the same fit area, and the scissor still clips to that area,
+        // so nothing outside the fit rectangle is touched.
+        if (crop != nullptr) {
+            const float cropL = float(crop[0]);
+            const float cropR = float(crop[1]);
+            const float cropT = float(crop[2]);
+            const float cropB = float(crop[3]);
+            const float keptW = float(sdSize.x) - cropL - cropR;
+            const float keptH = float(sdSize.y) - cropT - cropB;
+            if (((cropL + cropR + cropT + cropB) > 0.0f) && (keptW > 1.0f) && (keptH > 1.0f)) {
+                const float scaleX = float(sdSize.x) / keptW;
+                const float scaleY = float(sdSize.y) / keptH;
+                const float newWidth = viewport.width * scaleX;
+                const float newHeight = viewport.height * scaleY;
+                viewport.x -= (cropL / float(sdSize.x)) * newWidth;
+                viewport.y -= (cropT / float(sdSize.y)) * newHeight;
+                viewport.width = newWidth;
+                viewport.height = newHeight;
+            }
+        }
     }
 };

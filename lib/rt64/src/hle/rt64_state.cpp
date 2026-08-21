@@ -2183,7 +2183,7 @@ namespace RT64 {
             ext.sharedQueueResources->configurationMutex.unlock();
             RenderViewport viewport;
             RenderRect scissor;
-            VIRenderer::getViewportAndScissor(ext.swapChain, lastScreenVI, resolutionScale, downsampleMultiplier, removeBlackBorders, viewport, scissor);
+            VIRenderer::getViewportAndScissor(ext.swapChain, lastScreenVI, resolutionScale, downsampleMultiplier, removeBlackBorders, nullptr, viewport, scissor);
 
             // Convert the mouse coordinates to native coordinates.
             hlslpp::float2 screenCursorPos;

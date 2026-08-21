@@ -332,6 +332,7 @@ namespace {
         hlslpp::float2 resolutionScale;
         EnhancementConfiguration::Presentation::Mode presentationMode;
         bool removeBlackBorders;
+        uint32_t overscanCrop[4];
         UserConfiguration::RefreshRate refreshRate;
         UserConfiguration::Filtering filtering;
         uint32_t viOriginalRate;
@@ -341,6 +342,10 @@ namespace {
             resolutionScale = ext.sharedResources->resolutionScale;
             presentationMode = ext.sharedResources->enhancementConfig.presentation.mode;
             removeBlackBorders = ext.sharedResources->enhancementConfig.presentation.removeBlackBorders;
+            overscanCrop[0] = ext.sharedResources->enhancementConfig.presentation.cropLeft;
+            overscanCrop[1] = ext.sharedResources->enhancementConfig.presentation.cropRight;
+            overscanCrop[2] = ext.sharedResources->enhancementConfig.presentation.cropTop;
+            overscanCrop[3] = ext.sharedResources->enhancementConfig.presentation.cropBottom;
             refreshRate = ext.sharedResources->userConfig.refreshRate;
             filtering = ext.sharedResources->userConfig.filtering;
             viOriginalRate = ext.sharedResources->viOriginalRate;
@@ -434,6 +439,24 @@ namespace {
                 // is the flash; if the presented address is ever not one of
                 // the game's two display buffers, the wrong image is being
                 // shown outright.
+                // Pokemon Snap port, diagnostic: the game's framebuffer
+                // carries mode-specific dead margins (measured L14/R16/T12/B8
+                // in play, L30/T20/B20 in the intro's cinematics), and whether
+                // the VI compensates by shifting its scan window decides the
+                // correct presentation fix. Print the registers per change.
+                if (snapdiag::diagEnabled()) {
+                    static VI lastVI = {};
+                    const VI &svi = present.screenVI;
+                    if (svi != lastVI) {
+                        lastVI = svi;
+                        fprintf(stdout, "[SNAP-VI] w %u h %u,%u v %u,%u xs %u xo %u ys %u yo %u origin %08X\n",
+                            svi.width, svi.hRegion.hStart, svi.hRegion.hEnd, svi.vRegion.vStart, svi.vRegion.vEnd,
+                            svi.xTransform.xScale, svi.xTransform.xOffset, svi.yTransform.yScale, svi.yTransform.yOffset,
+                            svi.origin);
+                        fflush(stdout);
+                    }
+                }
+
                 if (snapdiag::diagEnabled()) {
                     static uint32_t rawPresents = 0;
                     static uint32_t lastAddress = 0;
@@ -581,6 +604,10 @@ namespace {
                     renderParams.filtering = filtering;
                     renderParams.vi = &present.screenVI;
                     renderParams.removeBlackBorders = removeBlackBorders;
+                    renderParams.crop[0] = overscanCrop[0];
+                    renderParams.crop[1] = overscanCrop[1];
+                    renderParams.crop[2] = overscanCrop[2];
+                    renderParams.crop[3] = overscanCrop[3];
 
                     const bool useDownsampling = (colorTarget->downsampleMultiplier > 1);
                     if (useDownsampling) {

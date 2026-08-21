@@ -41,6 +41,18 @@ struct Settings {
     // see it there because the rendered frame was copied back first. Turning
     // this off takes the indicator with it.
     bool  render_to_ram     = true;
+    // Overscan crop, in framebuffer pixels per side. The game never draws its
+    // full 320x240 buffer: gameplay leaves dead margins (measured left 14,
+    // right 16, top 12, bottom 8) and the intro's cinematics up to 30 on the
+    // left, black in scenes and stale bytes in menus. Its single VI mode
+    // never compensates, because every CRT it was authored for cropped the
+    // picture's edges. These defaults hide the gameplay margins completely,
+    // matching the classic 288x216 safe area; the intro's cinematic frame
+    // keeps a slim authored border, as it did on original hardware.
+    int   crop_left         = 16;
+    int   crop_right        = 16;
+    int   crop_top          = 12;
+    int   crop_bottom       = 12;
     // Interpolate the view and projection as well as object transforms.
     //
     // On, and it has to be: this game's camera lives in the projection stack,
