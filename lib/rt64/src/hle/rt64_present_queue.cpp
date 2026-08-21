@@ -144,17 +144,51 @@ namespace {
 
             const bool sourceIsBGRA = (format == RenderFormat::B8G8R8A8_UNORM);
             const uint32_t bytesPerPixel = snapCaptureBytesPerPixel(format);
+
+            // The scale the sixteen-bit channels actually use is not a given:
+            // full-scale unorm puts the image in the high bytes, but a target
+            // that stores eight-bit color directly leaves the high bytes near
+            // zero and the image in the low ones. Measure the frame and adapt.
+            uint32_t maxChannel = 0;
+            if (bytesPerPixel == 8) {
+                for (uint32_t y = 0; y < outHeight; y++) {
+                    const uint8_t *src = pixels + uint64_t(y) * 2 * g_snapCapture.rowPitchBytes;
+                    for (uint32_t x = 0; x < outWidth; x++) {
+                        const uint8_t *p = src + uint64_t(x) * 2 * bytesPerPixel;
+                        for (uint32_t c = 0; c < 3; c++) {
+                            uint16_t v;
+                            std::memcpy(&v, p + c * 2, sizeof(v));
+                            maxChannel = std::max<uint32_t>(maxChannel, v);
+                        }
+                    }
+                }
+            }
+            const bool lowByteScale = (bytesPerPixel == 8) && (maxChannel <= 0x1FF);
+            if (bytesPerPixel == 8) {
+                fprintf(stdout, "[SNAP-PCAP] max channel %04X, %s scale\n", maxChannel, lowByteScale ? "low byte" : "full");
+                fflush(stdout);
+            }
+
             std::vector<uint8_t> row(rowBytes, 0);
             for (int32_t y = int32_t(outHeight) - 1; y >= 0; y--) {
                 const uint8_t *src = pixels + uint64_t(y) * 2 * g_snapCapture.rowPitchBytes;
                 for (uint32_t x = 0; x < outWidth; x++) {
                     const uint8_t *p = src + uint64_t(x) * 2 * bytesPerPixel;
                     if (bytesPerPixel == 8) {
-                        // Sixteen bits per channel, little endian: the high
-                        // byte of each channel is the eight-bit value.
-                        row[x * 3 + 0] = p[5];
-                        row[x * 3 + 1] = p[3];
-                        row[x * 3 + 2] = p[1];
+                        if (lowByteScale) {
+                            uint16_t r16, g16, b16;
+                            std::memcpy(&r16, p + 0, sizeof(r16));
+                            std::memcpy(&g16, p + 2, sizeof(g16));
+                            std::memcpy(&b16, p + 4, sizeof(b16));
+                            row[x * 3 + 0] = uint8_t(std::min<uint32_t>(b16, 255));
+                            row[x * 3 + 1] = uint8_t(std::min<uint32_t>(g16, 255));
+                            row[x * 3 + 2] = uint8_t(std::min<uint32_t>(r16, 255));
+                        }
+                        else {
+                            row[x * 3 + 0] = p[5];
+                            row[x * 3 + 1] = p[3];
+                            row[x * 3 + 2] = p[1];
+                        }
                     }
                     else if (sourceIsBGRA) {
                         row[x * 3 + 0] = p[0];
