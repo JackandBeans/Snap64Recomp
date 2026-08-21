@@ -296,7 +296,8 @@ namespace RT64 {
     void WorkloadQueue::threadRenderFrame(GameFrame &curFrame, const GameFrame &prevFrame, const WorkloadConfiguration &workloadConfig,
         const DebuggerRenderer &debuggerRenderer, const DebuggerCamera &debuggerCamera, float curFrameWeight, float prevFrameWeight,
         float deltaTimeMs, RenderTargetKey overrideTargetKey, int32_t overrideTargetFbPairIndex, RenderTarget *overrideTarget,
-        uint32_t overrideTargetModifier, bool uploadVelocity, bool uploadExtras, bool interpolateTiles, bool interpolateLookAts)
+        uint32_t overrideTargetModifier, bool uploadVelocity, bool uploadExtras, bool interpolateTiles, bool interpolateLookAts,
+        bool interpolationSubFrame)
     {
 #   if ENABLE_HIGH_RESOLUTION_RENDERER
         std::scoped_lock<std::mutex> managerLock(ext.sharedResources->workloadMutex);
@@ -368,9 +369,10 @@ namespace RT64 {
                     const Workload &wl = workloads[w];
                     for (uint32_t f = 0; f < wl.fbPairCount; f++) {
                         const FramebufferPair &fp = wl.fbPairs[f];
-                        fprintf(stdout, "[SNAP-FBP] f%u pair %u color %08X w %u siz %u depth %08X reason %u projs %u calls %u rect (%d,%d)-(%d,%d)\n",
+                        fprintf(stdout, "[SNAP-FBP] f%u pair %u color %08X w %u siz %u depth %08X zr %u zw %u reason %u projs %u calls %u rect (%d,%d)-(%d,%d)\n",
                             vitalFrame, f, fp.colorImage.address, fp.colorImage.width, fp.colorImage.siz,
-                            fp.depthImage.address, uint32_t(fp.flushReason), fp.projectionCount,
+                            fp.depthImage.address, fp.depthRead ? 1u : 0u, fp.depthWrite ? 1u : 0u,
+                            uint32_t(fp.flushReason), fp.projectionCount,
                             fp.gameCallCount, fp.drawColorRect.ulx, fp.drawColorRect.uly,
                             fp.drawColorRect.lrx, fp.drawColorRect.lry);
                     }
@@ -868,19 +870,33 @@ namespace RT64 {
                             }
                         }
 
-                        if (imgFormatChanged) {
+                        // Pokemon Snap port: the clear and reload below keep the
+                        // depth target coherent with RDRAM, and they belong to the
+                        // raw render only. An interpolated sub-frame is a replay:
+                        // its depth continuity is its own passes, rendered at the
+                        // interpolated pose. On the frames where the game's 8x8
+                        // detector passes interleave with the scene, the shared
+                        // depth address flips width every boundary, readHeight
+                        // resets each time, and this reload would stomp the
+                        // sub-frame's depth with the raw render's final-pose
+                        // snapshot -- geometry then z-tests against a ghost of
+                        // where the world will be, which is the one-frame flash
+                        // at every block transition and spawn corner.
+                        if (imgFormatChanged && !interpolationSubFrame) {
                             depthTarget->clearDepthTarget(ext.workloadGraphicsWorker);
                             depthFb->readHeight = 0;
                         }
 
                         if (depthFb->height > depthFb->readHeight) {
-                            uint32_t readRowCount = depthFb->height - depthFb->readHeight;
-                            FramebufferChange *depthFbChange = depthFb->readChangeFromStorage(ext.workloadGraphicsWorker, workload.fbStorage, scratchFbChangePool, Framebuffer::Type::Depth,
-                                G_IM_FMT_DEPTH, f, depthFb->readHeight, readRowCount, ext.shaderLibrary);
+                            if (!interpolationSubFrame) {
+                                uint32_t readRowCount = depthFb->height - depthFb->readHeight;
+                                FramebufferChange *depthFbChange = depthFb->readChangeFromStorage(ext.workloadGraphicsWorker, workload.fbStorage, scratchFbChangePool, Framebuffer::Type::Depth,
+                                    G_IM_FMT_DEPTH, f, depthFb->readHeight, readRowCount, ext.shaderLibrary);
 
-                            if (depthFbChange != nullptr) {
-                                depthTarget->copyFromChanges(ext.workloadGraphicsWorker, *depthFbChange, depthFb->width, readRowCount, depthFb->readHeight, ext.shaderLibrary);
-                                depthFbChanged = true;
+                                if (depthFbChange != nullptr) {
+                                    depthTarget->copyFromChanges(ext.workloadGraphicsWorker, *depthFbChange, depthFb->width, readRowCount, depthFb->readHeight, ext.shaderLibrary);
+                                    depthFbChanged = true;
+                                }
                             }
 
                             depthFb->readHeight = depthFb->height;
@@ -1217,7 +1233,8 @@ namespace RT64 {
 
                     int64_t renderTimeMicro = workloadTimer.elapsedMicroseconds();
                     threadRenderFrame(curFrame, prevFrame, workloadConfig, workload.debuggerRenderer, workload.debuggerCamera, curFrameWeight, prevFrameWeight, deltaTimeMs,
-                        interpolationTargetKey, interpolationTargetFbPairIndex, overrideTarget, overrideModifier, velocityUploaderUsed, uploadExtras, tileInterpolationUsed, lookAtInterpolationUsed);
+                        interpolationTargetKey, interpolationTargetFbPairIndex, overrideTarget, overrideModifier, velocityUploaderUsed, uploadExtras, tileInterpolationUsed, lookAtInterpolationUsed,
+                        generateInterpolatedFrames);
 
                     // Add total time the frame took to render.
                     renderTimeTotalMicro += workloadTimer.elapsedMicroseconds() - renderTimeMicro;
