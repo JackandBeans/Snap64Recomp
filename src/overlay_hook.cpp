@@ -7,6 +7,7 @@
  * option routes all calls here; we run the real (recompiled) loader first,
  * then update librecomp's function tables for the newly resident code.
  */
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 
@@ -46,7 +47,17 @@ extern "C" void dmaLoadOverlay(uint8_t* rdram, recomp_context* ctx) {
     uint32_t rom_end    = read_u32(rdram, overlay_addr + 0x04);
     uint32_t vram_start = read_u32(rdram, overlay_addr + 0x08);
 
+    const auto dmaStart = std::chrono::steady_clock::now();
     __real_dmaLoadOverlay(rdram, ctx);
+    {
+        const int64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - dmaStart).count();
+        if (ms > 5) {
+            printf("[SNAP-DMASTALL] overlay rom %08X..%08X took %lld ms\n",
+                   rom_start, rom_end, (long long)ms);
+            fflush(stdout);
+        }
+    }
 
     if (rom_end > rom_start) {
         uint32_t size = rom_end - rom_start;

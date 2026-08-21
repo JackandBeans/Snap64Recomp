@@ -25,6 +25,7 @@
  */
 
 #include <cstdarg>
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 
@@ -176,7 +177,17 @@ extern "C" void func_800A73C0(uint8_t* rdram, recomp_context* ctx) {
     const uint32_t romStart = (uint32_t)ctx->r4;
     const uint32_t romEnd = (uint32_t)ctx->r5;
 
+    const auto dmaStart = std::chrono::steady_clock::now();
     __real_func_800A73C0(rdram, ctx);
+    {
+        const int64_t ms = std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now() - dmaStart).count();
+        if (ms > 5) {
+            printf("[SNAP-DMASTALL] blob rom %08X..%08X took %lld ms\n",
+                   romStart, romEnd, (long long)ms);
+            fflush(stdout);
+        }
+    }
 
     const uint32_t dst = (uint32_t)ctx->r2;
     if (dst != 0 && snap::g_blob_count < 8) {

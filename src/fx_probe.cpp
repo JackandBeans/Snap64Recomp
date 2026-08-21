@@ -22,6 +22,7 @@
  * where the sleep symbols and the tornado live -- is printed whole.
  */
 
+#include <chrono>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -58,6 +59,22 @@ float read_f32(uint8_t* rdram, uint32_t addr) {
 extern "C" void fx_draw(uint8_t* rdram, recomp_context* ctx) {
     static uint32_t frame = 0;
     frame++;
+
+    // The stutter is the game thread going silent for two to six frame
+    // periods. This is its heartbeat: any gap beyond a frame and a half
+    // prints, so the game-side stalls line up against the render-side ones
+    // and the guilty thread names itself.
+    {
+        using clock = std::chrono::steady_clock;
+        static clock::time_point last = clock::now();
+        const clock::time_point now = clock::now();
+        const int64_t gapMs = std::chrono::duration_cast<std::chrono::milliseconds>(now - last).count();
+        if (gapMs > 50) {
+            printf("[SNAP-GAMESTALL] f%u gap %lld ms\n", frame, (long long)gapMs);
+            fflush(stdout);
+        }
+        last = now;
+    }
 
     // --- Effects: everything not in bank 0 is printed whole. ---
     bool interesting = false;
