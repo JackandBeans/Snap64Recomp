@@ -639,6 +639,11 @@ namespace {
                     // framebuffers around a churn frame, also photograph the
                     // image actually being presented, interpolation included.
                     if (snap_frame_dump_pending.load() > 0) {
+                        if (snapdiag::diagEnabled()) {
+                            fprintf(stdout, "[SNAP-PTEX] presenting %p (raw %p)\n",
+                                (void *)renderParams.texture, (void *)colorTarget->texture.get());
+                            fflush(stdout);
+                        }
                         snapCaptureRecord(ext.device, commandList, renderParams.texture, renderParams.textureFormat,
                             renderParams.textureWidth, renderParams.textureHeight);
                     }

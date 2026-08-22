@@ -284,7 +284,9 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                     fflush(stdout);
                 }
                 if (snapdiag::captureEnabled()) {
-                    snap_frame_dump_pending.store(8);
+                    // Wide enough to photograph the whole transition: the
+                    // held ticks and the dissolve tail after them.
+                    snap_frame_dump_pending.store(24);
                 }
             }
             else if (track->holdTicks > 0) {

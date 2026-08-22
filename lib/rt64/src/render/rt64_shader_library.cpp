@@ -567,6 +567,18 @@ namespace RT64 {
             pipelineDesc.vertexShader = fullScreenVertexShader.get();
             pipelineDesc.pixelShader = pixelShader.get();
             textureCopy.pipeline = device->createGraphicsPipeline(pipelineDesc);
+
+            // The blended variant shares the shaders and layout shape; only
+            // the blend state differs, with the alpha supplied per draw
+            // through the push constants.
+            layoutBuilder.begin();
+            layoutBuilder.addPushConstant(0, 0, sizeof(interop::TextureCopyCB), RenderShaderStageFlag::PIXEL);
+            layoutBuilder.addDescriptorSet(descriptorSet);
+            layoutBuilder.end();
+            textureCopyBlend.pipelineLayout = layoutBuilder.create(device);
+            pipelineDesc.pipelineLayout = textureCopyBlend.pipelineLayout.get();
+            pipelineDesc.renderTargetBlend[0] = RenderBlendDesc::AlphaBlend();
+            textureCopyBlend.pipeline = device->createGraphicsPipeline(pipelineDesc);
         }
 
         // Texture Decode.

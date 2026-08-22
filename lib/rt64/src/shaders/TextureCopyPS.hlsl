@@ -10,5 +10,9 @@ Texture2D<float4> gInput : register(t1);
 
 float4 PSMain(in float4 pos : SV_Position, in float2 uv : TEXCOORD0) : SV_TARGET {
     uint2 pixelPos = gConstants.uvScroll + uv.xy * gConstants.uvScale;
-    return gInput.Load(uint3(pixelPos, 0));
+    float4 color = gInput.Load(uint3(pixelPos, 0));
+    if (gConstants.alpha >= 0.0f) {
+        color.a = gConstants.alpha;
+    }
+    return color;
 }
