@@ -31,10 +31,18 @@ namespace RT64 {
             curVelMag /= dotCurVel;
             lerpTranslation = (curVelMag < VelocityTolerance) || (curVelMag / std::max(prevVelMag, Epsilon)) < MagnitudeThreshold;
             linearVelocity = curLinearVelocity;
+            // Pokemon Snap port: this rejection means the pair is not two
+            // poses of one motion -- a teleport, or a mispair. Blending any
+            // component of such a pair lerps between unrelated matrices;
+            // rotation rows blended that way collapse the geometry into the
+            // screen-covering smear the intro flashed for one frame.
+            // updateAngular and updatePerspective read this and decline too.
+            autoRejectedTranslation = !lerpTranslation;
         }
         else {
             lerpTranslation = (componentInterpolation == G_EX_COMPONENT_INTERPOLATE);
             linearVelocity = 0.0f;
+            autoRejectedTranslation = false;
         }
     }
 
@@ -68,11 +76,19 @@ namespace RT64 {
             lerpRotation = (rotInterpolation == G_EX_COMPONENT_INTERPOLATE);
             angularVelocity = 0.0f;
         }
+
+        // Pokemon Snap port: a pair whose translation was judged
+        // discontinuous is not one object in motion; see updateLinear.
+        if (autoRejectedTranslation) {
+            lerpRotation = false;
+            lerpScale = false;
+            lerpSkew = false;
+        }
     }
 
     void RigidBody::updatePerspective(const hlslpp::float4x4 &prevTransform, const hlslpp::float4x4 &curTransform, uint8_t perspInterpolation) {
         // TODO auto perspective interpolation.
-        lerpPerspective = (perspInterpolation == G_EX_COMPONENT_INTERPOLATE);
+        lerpPerspective = (perspInterpolation == G_EX_COMPONENT_INTERPOLATE) && !autoRejectedTranslation;
     }
 
     void RigidBody::updateDecomposition(const hlslpp::float4x4 &curTransform, bool decompose) {

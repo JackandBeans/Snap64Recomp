@@ -19,6 +19,10 @@ namespace RT64 {
         bool lerpSkew = false;
         bool lerpPerspective = false;
         bool lerpDecompose = true;
+        // Pokemon Snap port: set when automatic translation judged the pair
+        // discontinuous -- the two transforms are not the same object pose,
+        // so no other component of the pair should blend either.
+        bool autoRejectedTranslation = false;
 
         // Default constructor.
         RigidBody();
