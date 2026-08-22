@@ -172,6 +172,7 @@ uint32_t g_camera_seen_counter = 0;
 // frame needs its hold before any camera data has jumped. Counted in the
 // omGetMtx hook, read and reset by the first camera prep of the tick.
 uint32_t g_ommtx_allocs_since_prep = 0;
+uint32_t g_ommtx_frees_since_prep = 0;
 
 float read_cam_f32(uint8_t* rdram, uint32_t addr) {
     const uint32_t bits = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)addr));
@@ -204,11 +205,17 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
     // before it moves the camera, and the console held through that tick
     // too (the swap frame is the coldest, heaviest draw of all).
     const uint32_t allocBurst = snap::g_ommtx_allocs_since_prep;
+    const uint32_t freeBurst = snap::g_ommtx_frees_since_prep;
     snap::g_ommtx_allocs_since_prep = 0;
-    if (allocBurst >= 24) {
+    snap::g_ommtx_frees_since_prep = 0;
+    // A burst of frees is the tick BEFORE the swap: the outgoing scene tears
+    // down, its freed matrices are recycled immediately (LIFO allocator), and
+    // anything of the old scene still drawn this tick wears a stolen matrix
+    // -- the prop warping in the hand, then vanishing, right before the cut.
+    if ((allocBurst >= 24) || (freeBurst >= 16)) {
         holdFrame = true;
         if (snapdiag::diagEnabled()) {
-            printf("[SNAP-SWAPHOLD] %u matrices allocated this tick\n", allocBurst);
+            printf("[SNAP-SWAPHOLD] %u allocated, %u freed this tick\n", allocBurst, freeBurst);
             fflush(stdout);
         }
     }
@@ -268,8 +275,9 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                 holdFrame = true;
                 // The crossing to the new pose spans more than one tick;
                 // every tick of it holds, and the latch releases the moment
-                // the camera settles so sustained motion never chains.
-                track->holdTicks = 3;
+                // the camera settles so sustained motion never chains. Five
+                // covers the longest observed load transition.
+                track->holdTicks = 5;
                 if (snapdiag::diagEnabled()) {
                     printf("[SNAP-CAMCUT] cam %08X eye moved %.1f at moved %.1f\n", cam, eyeD, atD);
                     fflush(stdout);
@@ -309,7 +317,16 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
 
     // The hold request travels through send_dl onto this frame's workload.
     // Block transitions never hold: their motion is continuous once read in
-    // the new origin, and the renderer blends it.
+    // the new origin, and the renderer blends it. The consecutive cap is a
+    // release valve -- if triggers ever chained pathologically the screen
+    // must not freeze, so after eight straight holds frames show again.
+    {
+        static uint32_t consecutiveHolds = 0;
+        if (holdFrame && (consecutiveHolds >= 8)) {
+            holdFrame = false;
+        }
+        consecutiveHolds = holdFrame ? (consecutiveHolds + 1) : 0;
+    }
     if (holdFrame && !snap::g_world_rebased) {
         snap::g_camera_cut_hold = true;
     }
@@ -398,6 +415,11 @@ extern "C" void omGetMtx(uint8_t* rdram, recomp_context* ctx) {
     } while ((serial == snap::IdIgnore) || (serial == snap::IdAuto));
 
     MEM_W(0x0, (gpr)(int32_t)mtx) = serial;
+}
+
+extern "C" void omFreeMtx(uint8_t* rdram, recomp_context* ctx) {
+    snap::g_ommtx_frees_since_prep++;
+    __real_omFreeMtx(rdram, ctx);
 }
 
 // Set when the game crosses into the next world block. enterNextBlock rebases
