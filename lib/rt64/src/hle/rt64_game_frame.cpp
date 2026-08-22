@@ -663,6 +663,44 @@ namespace RT64 {
                         }
                     }
 
+                    // At a block transition the camera's own numbers jump by
+                    // the origin delta, so the game-side hook tags this frame
+                    // as a cut -- it cannot know the shift is a bookkeeping
+                    // move. Here the rebased previous view has already been
+                    // accepted as lining up with the current one, so the jump
+                    // the hook measured no longer exists in what
+                    // interpolation sees: blend, and the ride glides through
+                    // the corner. Genuine cuts never rebase, so their skip
+                    // stands.
+                    if (viewProjMap.snapRebasedPrev) {
+                        if (projectionLinearComponent == G_EX_COMPONENT_SKIP) {
+                            projectionLinearComponent = G_EX_COMPONENT_INTERPOLATE;
+                        }
+                        if (projectionAngularComponent == G_EX_COMPONENT_SKIP) {
+                            projectionAngularComponent = G_EX_COMPONENT_INTERPOLATE;
+                        }
+                    }
+
+                    // Attach diagnostics: the camera's group travelled the
+                    // display list and arrived here. VSKIP lines must pair
+                    // 1:1 with the game-side [SNAP-CAMCUT] verdicts on
+                    // non-rebase frames; their absence means the group is
+                    // not reaching the projection.
+                    if (snapdiag::diagEnabled() && (curProjGroup.matrixId != G_EX_ID_IGNORE) && (curProjGroup.matrixId != G_EX_ID_AUTO)) {
+                        static uint32_t lastGroupId = 0;
+                        if (curProjGroup.matrixId != lastGroupId) {
+                            lastGroupId = curProjGroup.matrixId;
+                            fprintf(stdout, "[SNAP-VGRP] camera group %08X attached, mapped %d\n",
+                                curProjGroup.matrixId, int(viewProjMap.mapped));
+                            fflush(stdout);
+                        }
+                        if (curProjGroup.positionInterpolation == G_EX_COMPONENT_SKIP) {
+                            fprintf(stdout, "[SNAP-VSKIP] camera group %08X cut frame, rebased %d\n",
+                                curProjGroup.matrixId, int(viewProjMap.snapRebasedPrev));
+                            fflush(stdout);
+                        }
+                    }
+
                     viewProjMap.rigidBody.updateLinear(*effectivePrevView, curView, projectionLinearComponent);
                     viewProjMap.rigidBody.updateAngular(*effectivePrevView, curView, projectionAngularComponent, projectionScaleComponent, projectionSkewComponent);
                     viewProjMap.rigidBody.updateDecomposition(curView, projectionDecompose);
@@ -670,6 +708,12 @@ namespace RT64 {
                 }
                 else {
                     viewProjMap.rigidBody = RigidBody();
+                    if (snapdiag::diagEnabled() && (curProjGroup.matrixId != G_EX_ID_IGNORE) && (curProjGroup.matrixId != G_EX_ID_AUTO) &&
+                        (curProjGroup.matrixId != prevProjGroup.matrixId)) {
+                        fprintf(stdout, "[SNAP-VGRP] camera group %08X unmapped (prev %08X): snap\n",
+                            curProjGroup.matrixId, prevProjGroup.matrixId);
+                        fflush(stdout);
+                    }
                 }
 
                 if (viewProjMap.mapped) {
