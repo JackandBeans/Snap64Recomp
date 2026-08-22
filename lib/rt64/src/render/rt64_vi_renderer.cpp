@@ -4,6 +4,8 @@
 
 #include "rt64_vi_renderer.h"
 
+#include <algorithm>
+
 #include "shared/rt64_hlsl.h"
 #include "shared/rt64_video_interface.h"
 
@@ -130,19 +132,41 @@ namespace RT64 {
         // fills the same fit area, and the scissor still clips to that area,
         // so nothing outside the fit rectangle is touched.
         if (crop != nullptr) {
-            const float cropL = float(crop[0]);
-            const float cropR = float(crop[1]);
+            float cropL = float(crop[0]);
+            float cropR = float(crop[1]);
             const float cropT = float(crop[2]);
             const float cropB = float(crop[3]);
+
+            // Under the widescreen expansion the horizontal edges of the
+            // image are newly rendered extra field of view, not the game's
+            // authored dead columns, so a horizontal crop would trim real
+            // picture. The expansion widens only X of the resolution scale,
+            // which is how it announces itself here. The vertical margins
+            // are untouched by the expansion and still deserve the crop.
+            if (float(resolutionScale.x) > float(resolutionScale.y) * 1.001f) {
+                cropL = 0.0f;
+                cropR = 0.0f;
+            }
+
             const float keptW = float(sdSize.x) - cropL - cropR;
             const float keptH = float(sdSize.y) - cropT - cropB;
-            if (((cropL + cropR + cropT + cropB) > 0.0f) && (keptW > 1.0f) && (keptH > 1.0f)) {
-                const float scaleX = float(sdSize.x) / keptW;
-                const float scaleY = float(sdSize.y) / keptH;
-                const float newWidth = viewport.width * scaleX;
-                const float newHeight = viewport.height * scaleY;
-                viewport.x -= (cropL / float(sdSize.x)) * newWidth;
-                viewport.y -= (cropT / float(sdSize.y)) * newHeight;
+
+            // The quarter-size floor bounds the zoom at 4x, which keeps the
+            // scaled viewport far inside the API's coordinate limits no
+            // matter what a hand-edited config asks for.
+            if (((cropL + cropR + cropT + cropB) > 0.0f) &&
+                (keptW >= float(sdSize.x) * 0.25f) && (keptH >= float(sdSize.y) * 0.25f)) {
+                // One uniform scale for both axes: the kept region keeps its
+                // proportions and is centered, with the smaller axis
+                // letterboxed inside the fit area, instead of unequal crops
+                // stretching the picture.
+                const float scale = std::min(float(sdSize.x) / keptW, float(sdSize.y) / keptH);
+                const float newWidth = viewport.width * scale;
+                const float newHeight = viewport.height * scale;
+                const float keptScreenW = (keptW / float(sdSize.x)) * newWidth;
+                const float keptScreenH = (keptH / float(sdSize.y)) * newHeight;
+                viewport.x += (viewport.width - keptScreenW) * 0.5f - (cropL / float(sdSize.x)) * newWidth;
+                viewport.y += (viewport.height - keptScreenH) * 0.5f - (cropT / float(sdSize.y)) * newHeight;
                 viewport.width = newWidth;
                 viewport.height = newHeight;
             }

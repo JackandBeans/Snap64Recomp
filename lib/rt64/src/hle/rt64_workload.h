@@ -218,9 +218,6 @@ namespace RT64 {
         // happens to be current when it gets there.
         bool snapOriginRebased = false;
         hlslpp::float3 snapOriginDelta = {};
-        // Set when the game's own camera data jumped this frame: the
-        // authoritative cut witness from src/matrix_tags.cpp.
-        bool snapCameraCut = false;
         DrawData drawData;
         DrawRanges drawRanges;
         DrawBuffers drawBuffers;

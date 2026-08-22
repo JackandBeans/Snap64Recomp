@@ -1,5 +1,6 @@
 ﻿#include "settings.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <fstream>
 
@@ -42,10 +43,13 @@ void load_settings() {
         s_settings.interpolate_camera = j.value("interpolate_camera", s_settings.interpolate_camera);
         s_settings.render_to_ram      = j.value("render_to_ram", s_settings.render_to_ram);
         s_settings.ubershaders_only   = j.value("ubershaders_only", s_settings.ubershaders_only);
-        s_settings.crop_left          = j.value("crop_left", s_settings.crop_left);
-        s_settings.crop_right         = j.value("crop_right", s_settings.crop_right);
-        s_settings.crop_top           = j.value("crop_top", s_settings.crop_top);
-        s_settings.crop_bottom        = j.value("crop_bottom", s_settings.crop_bottom);
+        s_settings.crop_enabled       = j.value("crop_enabled", s_settings.crop_enabled);
+        // Bounded here as well as at the consumer: half of each axis always
+        // survives, whatever the file says.
+        s_settings.crop_left          = std::clamp(j.value("crop_left", s_settings.crop_left), 0, 80);
+        s_settings.crop_right         = std::clamp(j.value("crop_right", s_settings.crop_right), 0, 80);
+        s_settings.crop_top           = std::clamp(j.value("crop_top", s_settings.crop_top), 0, 60);
+        s_settings.crop_bottom        = std::clamp(j.value("crop_bottom", s_settings.crop_bottom), 0, 60);
         printf("[SNAP-CFG] loaded %s\n", SETTINGS_FILE);
     } catch (const std::exception& e) {
         fprintf(stderr, "[SNAP-CFG] failed to parse %s: %s (using defaults)\n", SETTINGS_FILE, e.what());
@@ -65,6 +69,7 @@ void save_settings() {
         {"interpolate_camera",    s_settings.interpolate_camera},
         {"render_to_ram",         s_settings.render_to_ram},
         {"ubershaders_only",      s_settings.ubershaders_only},
+        {"crop_enabled",          s_settings.crop_enabled},
         {"crop_left",             s_settings.crop_left},
         {"crop_right",            s_settings.crop_right},
         {"crop_top",              s_settings.crop_top},
@@ -150,6 +155,10 @@ bool handle_settings_hotkey(int scancode) {
             return true;
         case SDL_SCANCODE_F5:
             save_settings();
+            return true;
+        case SDL_SCANCODE_F2:
+            s_settings.crop_enabled = !s_settings.crop_enabled;
+            printf("[SNAP-CFG] overscan crop: %s\n", s_settings.crop_enabled ? "on" : "off");
             return true;
         default:
             return false;

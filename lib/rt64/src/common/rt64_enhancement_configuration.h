@@ -27,11 +27,9 @@ namespace RT64 {
             // gameplay leaves dead margins of up to 16 pixels and the intro's
             // cinematics up to 30 on the left -- and its single VI mode makes
             // no attempt to compensate, because in 1999 every television
-            // cropped the edges. Zero shows the raw buffer.
-            uint32_t cropLeft;
-            uint32_t cropRight;
-            uint32_t cropTop;
-            uint32_t cropBottom;
+            // cropped the edges. Zero shows the raw buffer. One shape from
+            // here to the shader parameters: left, right, top, bottom.
+            uint32_t crop[4];
         };
         
         struct Rect {

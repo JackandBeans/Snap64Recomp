@@ -62,7 +62,6 @@ extern bool g_app_level_resident;                            // overlay_hook.cpp
 extern bool g_focus_dot_visible;                             // focus_dot.cpp
 extern bool g_world_rebased;                                 // matrix_tags.cpp
 extern float g_world_rebase_delta[3];                        // matrix_tags.cpp
-extern bool g_camera_cut;                                    // matrix_tags.cpp
 
 class RT64Context : public ultramodern::renderer::RendererContext {
 public:
@@ -229,11 +228,18 @@ public:
 
         // Overscan crop: hide the dead margins the game leaves in its
         // framebuffer, the way the CRTs it was authored for did. See
-        // settings.h for the measurements behind the defaults.
-        app_->enhancementConfig.presentation.cropLeft = uint32_t(std::max(0, snap::settings().crop_left));
-        app_->enhancementConfig.presentation.cropRight = uint32_t(std::max(0, snap::settings().crop_right));
-        app_->enhancementConfig.presentation.cropTop = uint32_t(std::max(0, snap::settings().crop_top));
-        app_->enhancementConfig.presentation.cropBottom = uint32_t(std::max(0, snap::settings().crop_bottom));
+        // settings.h for the measurements behind the defaults. Bounded so a
+        // hand-edited config cannot zoom the picture into nonsense: half the
+        // axis stays, which also keeps the scaled viewport far inside the
+        // graphics API's coordinate limits.
+        const bool cropOn = snap::settings().crop_enabled;
+        const auto boundedCrop = [cropOn](int value, int limit) {
+            return cropOn ? uint32_t(std::clamp(value, 0, limit)) : 0u;
+        };
+        app_->enhancementConfig.presentation.crop[0] = boundedCrop(snap::settings().crop_left, 80);
+        app_->enhancementConfig.presentation.crop[1] = boundedCrop(snap::settings().crop_right, 80);
+        app_->enhancementConfig.presentation.crop[2] = boundedCrop(snap::settings().crop_top, 60);
+        app_->enhancementConfig.presentation.crop[3] = boundedCrop(snap::settings().crop_bottom, 60);
         app_->updateEnhancementConfig();
 
         // Applied unconditionally: the first push after startup compares
@@ -271,6 +277,30 @@ public:
         app_->state->setRenderToRAM(snap::settings().render_to_ram ? 1 : 0);
         app_->workloadQueue->snapInterpolateCamera = snap::settings().interpolate_camera;
         app_->workloadQueue->ubershadersOnly = snap::settings().ubershaders_only;
+
+        // The crop follows edits to the settings file like the toggles above
+        // do, instead of waiting for an unrelated graphics-config change to
+        // re-run update_config. Pushed only when it actually changed; the
+        // push is a mutex and a struct copy.
+        {
+            const bool cropOn = snap::settings().crop_enabled;
+            const auto boundedCrop = [cropOn](int value, int limit) {
+                return cropOn ? uint32_t(std::clamp(value, 0, limit)) : 0u;
+            };
+            const uint32_t crop[4] = {
+                boundedCrop(snap::settings().crop_left, 80),
+                boundedCrop(snap::settings().crop_right, 80),
+                boundedCrop(snap::settings().crop_top, 60),
+                boundedCrop(snap::settings().crop_bottom, 60),
+            };
+            uint32_t (&applied)[4] = app_->enhancementConfig.presentation.crop;
+            if ((crop[0] != applied[0]) || (crop[1] != applied[1]) || (crop[2] != applied[2]) || (crop[3] != applied[3])) {
+                for (uint32_t i = 0; i < 4; i++) {
+                    applied[i] = crop[i];
+                }
+                app_->updateEnhancementConfig();
+            }
+        }
 
         app_->state->rsp->reset();
 
@@ -317,15 +347,6 @@ public:
                 snap::g_world_rebase_delta[0],
                 snap::g_world_rebase_delta[1],
                 snap::g_world_rebase_delta[2]);
-        }
-
-        // The game's own camera jumped this frame: the authoritative cut
-        // witness (src/matrix_tags.cpp), consumed onto the same workload the
-        // display list fills.
-        if (snap::g_camera_cut) {
-            snap::g_camera_cut = false;
-            RT64::Workload &workload = app_->workloadQueue->workloads[app_->workloadQueue->writeCursor];
-            workload.snapCameraCut = true;
         }
 
         // Consumed, so the next frame has to be established by the game again.

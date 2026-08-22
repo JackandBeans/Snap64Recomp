@@ -23,6 +23,7 @@
  * processed relative to when it was built.
  */
 
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -54,66 +55,53 @@ constexpr uint32_t HookOpEnable = 0x1;
 constexpr uint32_t ExtendedOpcode = 0x64;
 constexpr uint32_t MatrixGroupV1 = 0x00000C;
 
-constexpr uint32_t ComponentAuto = 0x2;   // G_EX_COMPONENT_AUTO
-constexpr uint32_t ComponentSkip = 0x0;   // G_EX_COMPONENT_SKIP
-constexpr uint32_t OrderLinear = 0x0;     // G_EX_ORDER_LINEAR
-constexpr uint32_t EditAllow = 0x1;       // G_EX_EDIT_ALLOW
-constexpr uint32_t InterpolateDecompose = 0x1;
+constexpr uint32_t ComponentInterpolate = 0x1;  // G_EX_COMPONENT_INTERPOLATE
+constexpr uint32_t ComponentSkip = 0x0;         // G_EX_COMPONENT_SKIP
+constexpr uint32_t OrderLinear = 0x0;           // G_EX_ORDER_LINEAR
 constexpr uint32_t NoPush = 0x0;
 
 constexpr uint32_t EnableWord0 = Param(HookOpcode, 8, 24) | Param(HookMagicNumber, 24, 0);
 constexpr uint32_t EnableWord1 = Param(HookOpEnable, 4, 28) | Param(ExtendedOpcode, 8, 0);
 
+// A matrix group is a two-command (four-word) extended packet: word0 the
+// opcode, word1 the group id, word2 the component modes, word3 zero.
 constexpr uint32_t MatrixGroupWord0 = Param(ExtendedOpcode, 8, 24) | Param(MatrixGroupV1, 24, 0);
 
-// Matches gEXMatrixGroupDecomposed: no push, modelview rather than
-// projection, every component automatic, and linear ordering, which pairs an
-// object's nth matrix with its own nth matrix from the previous frame.
-//
-// Decomposed rather than simple interpolation, which matters more here than in
-// most games. Simple mode lerps the matrix element by element, and the result
-// of blending two rotations that way is not a rotation: it skews and shrinks,
-// the more so the larger the angle between them. Snap keeps the camera in the
-// modelview matrices, so pitching the camera down rotates *every* object's
-// matrix at once, and a fast look turns that error into visible warping.
-// Decomposing into position, rotation and scale interpolates the rotation as a
-// rotation, which is what RT64 recommends and what other ports tag actors with.
-constexpr uint32_t MatrixGroupWord2 =
+// The camera's group, on the projection side: Snap's cameras multiply the
+// look-at into the projection stack (render.c: G_MTX_MUL | G_MTX_PROJECTION),
+// so a projection-side group emitted before the camera's matrices names the
+// view transform the renderer interpolates. Simple rather than decomposed
+// interpolation, matching what the renderer already defaulted the camera to.
+// Everything derived from per-vertex or per-tile data is skipped: this game
+// rebuilds those every frame, so ranges routinely describe different data and
+// the derived velocities are meaningless.
+constexpr uint32_t CameraGroupCommon =
     Param(NoPush, 1, 0) |
-    Param(0, 1, 1) |                        // proj: modelview
-    Param(InterpolateDecompose, 1, 2) |
-    Param(ComponentAuto, 2, 3) |            // position
-    Param(ComponentAuto, 2, 5) |            // rotation
-    Param(ComponentAuto, 2, 7) |            // scale
-    Param(ComponentAuto, 2, 9) |            // skew
-    Param(ComponentAuto, 2, 11) |           // perspective
-    //
-    // Everything below is interpolated from per-vertex and per-tile data
-    // rather than from the matrix, and all of it is skipped here.
-    //
-    // Vertex interpolation derives a velocity per vertex by comparing this
-    // frame's vertex data with the previous frame's over the matched
-    // transform's vertex range. That assumes a vertex keeps its position in
-    // the range between frames, which does not hold in this game: the vertex
-    // heap is rebuilt every frame, so equally sized ranges routinely describe
-    // different geometry and the velocities become meaningless. Applied to a
-    // close, animated model it tears the model apart. Texture coordinate,
-    // tile and lookAt interpolation are derived the same way, from data this
-    // game also rebuilds, so they are skipped for the same reason.
-    //
-    // The transform itself still interpolates, which is where the smoothness
-    // comes from.
+    Param(1, 1, 1) |                        // projection side
+    Param(0, 1, 2) |                        // simple interpolation
+    Param(ComponentInterpolate, 2, 11) |    // perspective
     Param(ComponentSkip, 2, 13) |           // vertices
     Param(ComponentSkip, 2, 15) |           // tiles
-    // Linear ordering. Automatic ordering was tried and stopped transforms
-    // pairing at all (matched fell to zero while tagging stayed at 3891 of
-    // 3951), so identity by id plus position in the object's list is what
-    // actually matches here.
     Param(OrderLinear, 2, 17) |
-    Param(EditAllow, 1, 19) |
+    Param(0, 1, 19) |                       // edit: none
     Param(0, 2, 20) |                       // aspect: automatic
     Param(ComponentSkip, 2, 22) |           // texture coordinates
     Param(ComponentSkip, 2, 24);            // lookAt
+
+// An ordinary frame: the view blends between its previous and current pose
+// like any moving object.
+constexpr uint32_t CameraGroupInterpolate = CameraGroupCommon |
+    Param(ComponentInterpolate, 2, 3) |     // position
+    Param(ComponentInterpolate, 2, 5);      // rotation
+
+// A cut frame: the view snaps to its new pose while everything else keeps
+// interpolating. This is the Zelda64Recomp camera pattern -- their camera
+// patch emits exactly this group with skip components when the game skipped
+// its camera -- and it is what makes a cut cost one native-rate step of the
+// camera instead of a whole frame of frozen motion.
+constexpr uint32_t CameraGroupSkip = CameraGroupCommon |
+    Param(ComponentSkip, 2, 3) |            // position
+    Param(ComponentSkip, 2, 5);             // rotation
 
 // A Gfx command is two 32-bit words.
 constexpr uint32_t GfxCommandSize = 8;
@@ -134,21 +122,35 @@ bool valid_ram_address(uint32_t address) {
 // Camera cut detection, the way the shipped recomps do it: the game's own
 // camera data says when a cut happened, in the game's own numbers, before
 // any float reconstruction. Each camera's eye and look-at are compared with
-// their previous frame's values; a jump beyond anything continuous motion
-// produces -- the cart glides at about three units a frame, cutscene dollies
-// a handful -- is a cut, whoever authored it: the intro's shot changes, a
-// scene transition, a mode switch. The renderer-side heuristics stay as a
-// fallback, but this is the authoritative witness.
+// their values from the previous call for that camera; a jump beyond anything
+// continuous motion produces -- the cart glides at about three units a frame,
+// cutscene dollies a handful -- is a cut, whoever authored it: the intro's
+// shot changes, a scene transition, a block-transition origin move.
+//
+// The verdict travels inside the display list as the camera's matrix group
+// (skip components on a cut frame), which is what makes it correct: it lands
+// on exactly the frame it was computed for, on the same thread that computed
+// it, with no shared flag whose consumption depends on renderer timing. A
+// camera the table has never seen needs no verdict at all -- its group id has
+// no previous frame to pair with, so the renderer draws it snapped anyway.
 namespace snap {
-bool g_camera_cut = false;
 namespace {
 struct CameraTrack {
     uint32_t address = 0;
+    uint32_t lastSeen = 0;
     float eye[3] = {};
     float at[3] = {};
+    // Last call's per-call motion, for the velocity-continuity test.
+    float eyeDelta = 0.0f;
+    float atDelta = 0.0f;
     bool valid = false;
 };
-CameraTrack g_camera_tracks[4];
+// Eight slots outlast any set of cameras alive at once (main view, the item
+// camera, photo passes); when the game has cycled through more addresses than
+// that, the least recently seen is evicted rather than the table going blind.
+// An evicted camera that comes back simply starts a fresh baseline.
+CameraTrack g_camera_tracks[8];
+uint32_t g_camera_seen_counter = 0;
 
 float read_cam_f32(uint8_t* rdram, uint32_t addr) {
     const uint32_t bits = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)addr));
@@ -159,17 +161,21 @@ float read_cam_f32(uint8_t* rdram, uint32_t addr) {
 } // namespace
 } // namespace snap
 
-// Object identity itself now comes from patches/src/render_patch.c, which
-// tags each matrix with the OMMtx it belongs to from inside the game. All
-// that is left here is switching the extended commands on.
-// Camera setup runs ahead of object rendering each frame, so this is where the
-// extension gets turned on. RT64 keeps the state, and re-enabling is harmless.
+// Object identity comes from patches/src/render_patch.c, which tags each
+// matrix with the OMMtx it belongs to from inside the game. This hook does
+// the same for the camera: it names the view transform with the OMCamera it
+// came from, and on the frame that camera's own data jumped it emits the
+// group with skip components so the view snaps while everything else keeps
+// interpolating. Camera setup runs ahead of object rendering each frame, so
+// this is also where the extension gets turned on; RT64 keeps the state, and
+// re-enabling is harmless.
 extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
     const uint32_t gfxPtrAddress = static_cast<uint32_t>(ctx->r4);
 
     // a1 is the OMCamera. Both view kinds keep eye at +0x3C and the look-at
     // target at +0x48 (sys/om.h: MtxCameraLookAt/LookAtRoll share the layout).
     const uint32_t cam = static_cast<uint32_t>(ctx->r5);
+    bool cameraCut = false;
     if (snap::valid_ram_address(cam)) {
         snap::CameraTrack* track = nullptr;
         for (auto& t : snap::g_camera_tracks) {
@@ -180,56 +186,103 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                 if (t.address == 0) { track = &t; break; }
             }
         }
-        if (track != nullptr) {
-            float eye[3], at[3];
-            for (int i = 0; i < 3; i++) {
-                eye[i] = snap::read_cam_f32(rdram, cam + 0x3C + i * 4);
-                at[i] = snap::read_cam_f32(rdram, cam + 0x48 + i * 4);
+        if (track == nullptr) {
+            for (auto& t : snap::g_camera_tracks) {
+                if ((track == nullptr) || (t.lastSeen < track->lastSeen)) { track = &t; }
             }
-            if (track->valid && (track->address == cam)) {
-                float eyeD2 = 0.0f, atD2 = 0.0f;
-                for (int i = 0; i < 3; i++) {
-                    const float de = eye[i] - track->eye[i];
-                    const float da = at[i] - track->at[i];
-                    eyeD2 += de * de;
-                    atD2 += da * da;
-                }
-                constexpr float CutDistance = 25.0f;
-                if ((eyeD2 > CutDistance * CutDistance) || (atD2 > CutDistance * CutDistance)) {
-                    snap::g_camera_cut = true;
-                    if (snapdiag::diagEnabled()) {
-                        printf("[SNAP-CAMCUT] cam %08X eye moved %.1f at moved %.1f\n",
-                               cam, sqrtf(eyeD2), sqrtf(atD2));
-                        fflush(stdout);
-                    }
-                }
-                else if (snapdiag::diagEnabled() && ((eyeD2 > 100.0f) || (atD2 > 100.0f))) {
-                    // Motion distribution for threshold tuning: anything over
-                    // ten units that did not cut.
-                    printf("[SNAP-CAMMOVE] cam %08X eye %.1f at %.1f\n", cam, sqrtf(eyeD2), sqrtf(atD2));
-                }
-            }
-            track->address = cam;
-            std::memcpy(track->eye, eye, sizeof(eye));
-            std::memcpy(track->at, at, sizeof(at));
-            track->valid = true;
+            track->valid = false;
         }
+
+        float eye[3], at[3];
+        for (int i = 0; i < 3; i++) {
+            eye[i] = snap::read_cam_f32(rdram, cam + 0x3C + i * 4);
+            at[i] = snap::read_cam_f32(rdram, cam + 0x48 + i * 4);
+        }
+        float eyeD = 0.0f, atD = 0.0f;
+        if (track->valid && (track->address == cam)) {
+            float eyeD2 = 0.0f, atD2 = 0.0f;
+            for (int i = 0; i < 3; i++) {
+                const float de = eye[i] - track->eye[i];
+                const float da = at[i] - track->at[i];
+                eyeD2 += de * de;
+                atD2 += da * da;
+            }
+            eyeD = sqrtf(eyeD2);
+            atD = sqrtf(atD2);
+
+            // A cut is a jump that BREAKS from the camera's own motion, not
+            // merely a large one. The floor comes from measurement: the
+            // fastest legitimate per-frame ride motion was 10.4 units, the
+            // smallest genuine cut 29.5. But a scripted flyby moves 85+
+            // units every frame with the delta gliding smoothly -- sustained
+            // speed is motion, and blending motion is correct however fast
+            // it is. So a delta only cuts when it is both past the floor and
+            // discontinuous with the previous delta; the first frame of a
+            // discontinuity always is, and the frames of a smooth sweep
+            // never are. A false fire costs one native-rate camera step.
+            constexpr float CutDistance = 25.0f;
+            const auto discontinuous = [](float d, float prevD) {
+                return fabsf(d - prevD) > std::max(6.0f, 0.3f * prevD);
+            };
+            const bool eyeCut = (eyeD > CutDistance) && discontinuous(eyeD, track->eyeDelta);
+            const bool atCut = (atD > CutDistance) && discontinuous(atD, track->atDelta);
+            if (eyeCut || atCut) {
+                cameraCut = true;
+                if (snapdiag::diagEnabled()) {
+                    printf("[SNAP-CAMCUT] cam %08X eye moved %.1f at moved %.1f\n", cam, eyeD, atD);
+                    fflush(stdout);
+                }
+            }
+            else if (snapdiag::diagEnabled() && ((eyeD > 10.0f) || (atD > 10.0f))) {
+                // Motion distribution for threshold tuning: anything over
+                // ten units that did not cut.
+                printf("[SNAP-CAMMOVE] cam %08X eye %.1f at %.1f\n", cam, eyeD, atD);
+                fflush(stdout);
+            }
+        }
+        track->address = cam;
+        track->lastSeen = ++snap::g_camera_seen_counter;
+        track->eyeDelta = eyeD;
+        track->atDelta = atD;
+        std::memcpy(track->eye, eye, sizeof(eye));
+        std::memcpy(track->at, at, sizeof(at));
+        track->valid = true;
     }
 
-    // Unconditional: the game patches emit extended commands whether or not
-    // interpolation is on -- the matrix tags and the widescreen border fills
-    // both ride in the display list -- and an extension that is never enabled
-    // leaves them as unknown opcodes. Enabling costs nothing when unused.
+    // Enable the extension, then name this camera's view transform before the
+    // original emits its matrices. The group id is the OMCamera itself, which
+    // is stable for as long as the camera exists; a different camera is a
+    // different id, so switching cameras never pairs two unrelated views.
+    // Enabling is unconditional: the game patches emit extended commands
+    // whether or not interpolation is on -- the matrix tags and the
+    // widescreen border fills both ride in the display list -- and an
+    // extension that is never enabled leaves them as unknown opcodes.
     if (snap::valid_ram_address(gfxPtrAddress)) {
         const uint32_t gfx = MEM_W(0, (gpr)(int32_t)gfxPtrAddress);
         if (snap::valid_ram_address(gfx)) {
             MEM_W(0x0, (gpr)(int32_t)gfx) = snap::EnableWord0;
             MEM_W(0x4, (gpr)(int32_t)gfx) = snap::EnableWord1;
-            MEM_W(0, (gpr)(int32_t)gfxPtrAddress) = gfx + snap::GfxCommandSize;
+            uint32_t cursor = gfx + snap::GfxCommandSize;
+            if (snap::valid_ram_address(cam)) {
+                MEM_W(0x0, (gpr)(int32_t)cursor) = snap::MatrixGroupWord0;
+                MEM_W(0x4, (gpr)(int32_t)cursor) = cam;
+                MEM_W(0x8, (gpr)(int32_t)cursor) = cameraCut ? snap::CameraGroupSkip : snap::CameraGroupInterpolate;
+                MEM_W(0xC, (gpr)(int32_t)cursor) = 0;
+                cursor += 2 * snap::GfxCommandSize;
+            }
+            MEM_W(0, (gpr)(int32_t)gfxPtrAddress) = cursor;
         }
     }
 
     __real_renPrepareCameraMatrix(rdram, ctx);
+
+    // The group deliberately stays current after this returns. The renderer
+    // binds a group to a projection at the projection's first draw, not at
+    // the matrix load, so a reset emitted here would replace the camera's
+    // group before anything drew under it. The next camera's group replaces
+    // this one; a projection loaded with no camera of its own (the sprite
+    // pass) inherits the last camera's group, which for its static view
+    // changes nothing.
 }
 
 // Object identity for interpolation is the OMMtx a matrix belongs to, and its

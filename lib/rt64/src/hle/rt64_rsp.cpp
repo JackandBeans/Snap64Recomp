@@ -854,19 +854,20 @@ namespace RT64 {
         // that the console drew, holding it invisible until the cart got
         // close enough to pop it into view.
         //
-        // The margin biases the tie toward drawing, and it scales with the
-        // limit because the drift does -- and because N64 depth is heavily
-        // nonlinear, a fraction of a depth unit near the far end is seconds
-        // of cart travel. It compensates only this port's float drift toward
-        // what the fixed-point hardware decided; a full ride's refusal log
-        // showed every refusal within eighteen units of a far-horizon limit
-        // around depth 1005 of 1023, so the appearance distance itself is
-        // authored, and the console showed the same appearance -- softened
-        // by fog, composite blur, and a CRT. Opening these gates further
-        // than the drift requires was tried and rejected: it would draw
-        // distant Pokemon the hardware never drew, a visible deviation.
-        const float snapBranchZMargin = zValueFloat * 0.005f + 0.5f;
-        const bool taken = forceBranch || (screenZ < zValueFloat + snapBranchZMargin);
+        // The margin biases the tie toward drawing, sized to the measurement:
+        // the one drift case ever captured was 0.39 units, so one full unit
+        // covers it with headroom while staying far below any authored gap. A
+        // scaled margin (0.5% of the limit, ~5.6 units at the far horizon)
+        // was tried and taken back out: it exceeded every measured drift by
+        // an order of magnitude, which crosses from correcting this port's
+        // arithmetic into drawing what the hardware never drew. The refusal
+        // log's wider spread (refusals up to eighteen units from the limit)
+        // is the authored appearance distance itself -- the console refused
+        // those too -- so no margin should reach it. Opening these gates
+        // outright was also tried and rejected for the same reason: it would
+        // draw distant Pokemon the hardware never drew, a visible deviation.
+        constexpr float SnapBranchZMargin = 1.0f;
+        const bool taken = forceBranch || (screenZ < zValueFloat + SnapBranchZMargin);
 
         // The refusal probe: a taken branch is routine, a refusal is the
         // interesting event.
@@ -894,12 +895,12 @@ namespace RT64 {
         const Workload &workload = state->ext.workloadQueue->workloads[workloadCursor];
         const uint32_t globalIndex = indices[vtxIndex];
         const float posW = workload.drawData.posTransformed[globalIndex][3];
-        // Pokemon Snap port: same draw-biased margin as branchZ above and for
-        // the same reason -- the float reconstruction of the RSP's fixed
-        // point pipeline resolves ties at the limit differently than the
-        // hardware, and refusing to draw is the error the player sees.
-        const float snapBranchWMargin = float(wValue) * 0.005f + 0.5f;
-        if (forceBranch || (posW < float(wValue) + snapBranchWMargin)) {
+        // No margin here, deliberately. This opcode is only mapped for the
+        // F3DZEX2 microcodes, which this game does not run, and no drift was
+        // ever measured on this path -- posW is linear clip-space W with
+        // float error orders of magnitude below one unit. A margin copied
+        // from branchZ by analogy would bias a comparison nothing calibrated.
+        if (forceBranch || (posW < float(wValue))) {
             const uint32_t rdramAddress = fromSegmentedMasked(branchDl);
             *dl = reinterpret_cast<DisplayList *>(state->fromRDRAM(rdramAddress)) - 1;
         }

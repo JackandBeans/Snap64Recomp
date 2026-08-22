@@ -130,31 +130,15 @@ namespace RT64 {
         bool isSceneCompatible(const WorkloadQueue &workloadQueue, const GameScene &scene, const GameIndices::Projection &proj);
         void set(WorkloadQueue &workloadQueue, const uint32_t *workloadIndices, uint32_t indicesCount);
         // Pokemon Snap port: set for the frame the game moves its world origin
-        // on -- every block transition, whatever the delta. The workload queue
-        // presents these frames as themselves instead of blending them,
-        // because the transition changes what the display list draws and a
-        // pose aimed between two draw sets shows holes.
+        // on -- every block transition, whatever the delta. Used to read the
+        // previous frame in this frame's origin so everything that survived
+        // the transition interpolates as it does on any other frame. Cuts
+        // themselves are not decided here: the game declares them per camera
+        // through the display list (src/matrix_tags.cpp emits the camera's
+        // matrix group with skip components on the frame its own data jumped),
+        // so only the view snaps while every object keeps interpolating.
         bool snapRebaseFrame = false;
         hlslpp::float3 snapOriginDelta = {};
-
-        // Set when the matched main camera's eye moved further in one frame
-        // than any legitimate motion carries it: a scripted scene cut, like
-        // the ones in the intro movie, which never cross a world block and so
-        // never raise snapRebaseFrame. A cut is a cut whatever raised it --
-        // blending across one sweeps the whole screen between two unrelated
-        // poses for a frame -- so the workload queue treats both flags the
-        // same way.
-        bool snapViewCut = false;
-
-        // Set when most of the previous frame's transforms went unclaimed by
-        // this one: the scene's content was swapped wholesale. The intro does
-        // this one frame BEFORE it moves the camera, so the camera witness
-        // fires a frame late and the swap frame blended -- the glitch seen
-        // "before the next scene". Wholesale loss is deliberately crude:
-        // subtle per-segment losses fooled a finer version of this signal,
-        // but a total swap cannot hide, and ordinary spawn frames lose almost
-        // nothing and keep blending.
-        bool snapSceneSwap = false;
 
         // True when the origin moved this frame and the distance it moved by is
         // known, which is when the previous frame can be read in this one's

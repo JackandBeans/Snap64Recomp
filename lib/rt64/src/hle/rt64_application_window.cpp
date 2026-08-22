@@ -90,7 +90,12 @@ namespace RT64 {
         } bounds{};
 
 #   if defined(_WIN32)
-        SetProcessDpiAwareness(PROCESS_PER_MONITOR_DPI_AWARE);
+        // Process DPI awareness is first-writer-wins and is asserted once, at
+        // the top of main() (src/main.cpp), before any code can create a
+        // window. Asserting a second, older tier here would silently win if a
+        // refactor ever reordered startup, which is exactly the trap that
+        // caused the scaled-display stretch bug -- so this call site stays
+        // empty on purpose.
 
         RECT rect;
         UINT dwStyle = WS_OVERLAPPEDWINDOW | WS_VISIBLE;

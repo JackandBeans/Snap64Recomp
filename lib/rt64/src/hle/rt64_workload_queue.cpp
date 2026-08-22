@@ -299,62 +299,6 @@ namespace RT64 {
         }
     }
     
-    // Pokemon Snap port: fills an interpolated target with a copy of the raw
-    // frame the transition cut already rendered. The cut makes every image of
-    // its interval identical, and a texture copy is a fraction of the cost of
-    // replaying the whole workload on frames that are already the heaviest of
-    // the ride. Returns whether the copy happened; the caller renders the
-    // frame normally when it did not.
-    bool WorkloadQueue::threadCopyOverrideTarget(const RenderTargetKey &srcKey, RenderTarget *dstTarget) {
-        std::scoped_lock<std::mutex> managerLock(ext.sharedResources->workloadMutex);
-        RenderTargetManager &targetManager = ext.sharedResources->renderTargetManager;
-        RenderTarget &src = targetManager.get(srcKey);
-        if (src.isEmpty()) {
-            return false;
-        }
-
-        // Targets only ever grow, so a destination left over from a larger
-        // scene stays larger than this frame -- and scene size changes land
-        // exactly on scripted cuts, the frames this path runs on. Presenting
-        // a small image copied into a big texture shows it shifted with a
-        // band of stale pixels at the edge. The copy is only an identity
-        // when the sizes agree; otherwise the frame renders normally.
-        const uint32_t grownWidth = std::max(dstTarget->width, src.width);
-        const uint32_t grownHeight = std::max(dstTarget->height, src.height);
-        if ((grownWidth != src.width) || (grownHeight != src.height)) {
-            return false;
-        }
-
-        workerMutex.lock();
-        RenderWorker *worker = ext.workloadGraphicsWorker;
-        worker->commandList->begin();
-        dstTarget->resize(worker, src.width, src.height);
-
-        RenderTextureBarrier copyBarriers[] = {
-            RenderTextureBarrier(src.texture.get(), RenderTextureLayout::COPY_SOURCE),
-            RenderTextureBarrier(dstTarget->texture.get(), RenderTextureLayout::COPY_DEST),
-        };
-        worker->commandList->barriers(RenderBarrierStage::COPY, copyBarriers, uint32_t(std::size(copyBarriers)));
-
-        const RenderBox srcBox(0, 0, int32_t(src.width), int32_t(src.height));
-        worker->commandList->copyTextureRegion(
-            RenderTextureCopyLocation::Subresource(dstTarget->texture.get()),
-            RenderTextureCopyLocation::Subresource(src.texture.get()),
-            0, 0, 0, &srcBox);
-        worker->commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(dstTarget->texture.get(), RenderTextureLayout::SHADER_READ));
-        worker->commandList->end();
-        worker->execute();
-        worker->wait();
-        workerMutex.unlock();
-
-        // The present queue reads these from the target it shows.
-        dstTarget->resolutionScale = src.resolutionScale;
-        dstTarget->downsampleMultiplier = src.downsampleMultiplier;
-        dstTarget->misalignX = src.misalignX;
-        dstTarget->invMisalignX = src.invMisalignX;
-        return true;
-    }
-
     void WorkloadQueue::threadRenderFrame(GameFrame &curFrame, const GameFrame &prevFrame, const WorkloadConfiguration &workloadConfig,
         const DebuggerRenderer &debuggerRenderer, const DebuggerCamera &debuggerCamera, float curFrameWeight, float prevFrameWeight,
         float deltaTimeMs, RenderTargetKey overrideTargetKey, int32_t overrideTargetFbPairIndex, RenderTarget *overrideTarget,
@@ -1266,34 +1210,20 @@ namespace RT64 {
                         displayTicks += workload.viOriginalRate;
                         curFrameWeight = std::clamp((workloadConfig.targetRate + displayTicks - logicalTicks) / float(workloadConfig.targetRate), 0.0f, 1.0f);
 
-                        // Pokemon Snap port: crossing a world block is a cut in
-                        // the draw set, not a step in a motion. The game stops
-                        // drawing the block it left in the same frame it starts
-                        // drawing the next one, and it builds that frame for the
-                        // camera's real pose. A synthesized frame between the
-                        // two poses aims the camera partway back at geometry
-                        // that is no longer in the display list, and the sky
-                        // shows through the gap as a hard-edged flash at every
-                        // corner with a transition on it. A cut cannot be
-                        // blended, so for this one frame every synthesized
-                        // image is the real frame: content and pose agree, and
-                        // the cost is a single native-rate step of motion.
-                        //
-                        // Judging by transform loss was tried and failed: the
-                        // wedge returned on a transition that lost a single
-                        // transform, because what disappears is geometry
-                        // inside a surviving object's display list, culled
-                        // segment by segment. Until the removed geometry can
-                        // be kept drawn for the one extra frame blending needs,
-                        // every transition cuts. snapViewCut is the same
-                        // verdict from a different witness: a scripted camera
-                        // cut, like the intro movie's scene changes, which
-                        // never crosses a world block.
-                        if (curFrame.snapRebaseFrame || curFrame.snapViewCut || curFrame.snapSceneSwap) {
-                            prevFrameWeight = 0.0f;
-                            curFrameWeight = 1.0f;
-                        }
-
+                        // Pokemon Snap port: no whole-frame cut handling here.
+                        // Cuts are declared per transform through the display
+                        // list -- the camera's matrix group skips its
+                        // components on the frame the game's own camera data
+                        // jumped (src/matrix_tags.cpp), covering scripted cuts
+                        // and block-transition origin moves alike, and
+                        // geometry that appears or disappears simply goes
+                        // unpaired and draws at its current pose. Only what
+                        // actually cut snaps; everything else keeps
+                        // interpolating, so a cut costs a single native-rate
+                        // step of the camera instead of a frame of frozen
+                        // motion. Forcing the whole interval's weights here
+                        // was the old mechanism, and its hold WAS the stutter
+                        // reported at every transition.
 
                         // Override the render target.
                         if (usingMSAA || (frame > 0)) {
@@ -1329,23 +1259,10 @@ namespace RT64 {
 
                     int64_t renderTimeMicro = workloadTimer.elapsedMicroseconds();
 
-                    // The transition cut makes every image of this interval
-                    // identical to the raw frame, so rendering each one would
-                    // repeat the full workload displayFrames times on exactly
-                    // the frames that are already the heaviest. Frame zero
-                    // renders; the rest are a texture copy of its target.
-                    const bool snapCutCopy = generateInterpolatedFrames && (curFrame.snapRebaseFrame || curFrame.snapViewCut || curFrame.snapSceneSwap) &&
-                        !usingMSAA && (overrideTarget != nullptr);
-                    if (!snapCutCopy || !threadCopyOverrideTarget(interpolationTargetKey, overrideTarget)) {
-                        // A frame whose weights were forced to the raw pose is
-                        // not an interpolated replay: its pose matches its
-                        // content, so the RDRAM depth coherence machinery may
-                        // run on it like on any native frame.
-                        const bool interpolationSubFrame = generateInterpolatedFrames && (curFrameWeight < 1.0f);
-                        threadRenderFrame(curFrame, prevFrame, workloadConfig, workload.debuggerRenderer, workload.debuggerCamera, curFrameWeight, prevFrameWeight, deltaTimeMs,
-                            interpolationTargetKey, interpolationTargetFbPairIndex, overrideTarget, overrideModifier, velocityUploaderUsed, uploadExtras, tileInterpolationUsed, lookAtInterpolationUsed,
-                            interpolationSubFrame);
-                    }
+                    const bool interpolationSubFrame = generateInterpolatedFrames && (curFrameWeight < 1.0f);
+                    threadRenderFrame(curFrame, prevFrame, workloadConfig, workload.debuggerRenderer, workload.debuggerCamera, curFrameWeight, prevFrameWeight, deltaTimeMs,
+                        interpolationTargetKey, interpolationTargetFbPairIndex, overrideTarget, overrideModifier, velocityUploaderUsed, uploadExtras, tileInterpolationUsed, lookAtInterpolationUsed,
+                        interpolationSubFrame);
 
                     // Add total time the frame took to render.
                     renderTimeTotalMicro += workloadTimer.elapsedMicroseconds() - renderTimeMicro;

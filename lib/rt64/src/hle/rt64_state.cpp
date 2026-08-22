@@ -2179,11 +2179,17 @@ namespace RT64 {
             ext.sharedQueueResources->configurationMutex.lock();
             const hlslpp::float2 resolutionScale = ext.sharedQueueResources->resolutionScale;
             bool removeBlackBorders = ext.sharedQueueResources->enhancementConfig.presentation.removeBlackBorders;
+            // The same crop presentation applies, or the cursor maps against a
+            // viewport the screen is not showing.
+            uint32_t pickCrop[4];
+            for (uint32_t i = 0; i < 4; i++) {
+                pickCrop[i] = ext.sharedQueueResources->enhancementConfig.presentation.crop[i];
+            }
             const uint32_t downsampleMultiplier = ext.userConfig->downsampleMultiplier;
             ext.sharedQueueResources->configurationMutex.unlock();
             RenderViewport viewport;
             RenderRect scissor;
-            VIRenderer::getViewportAndScissor(ext.swapChain, lastScreenVI, resolutionScale, downsampleMultiplier, removeBlackBorders, nullptr, viewport, scissor);
+            VIRenderer::getViewportAndScissor(ext.swapChain, lastScreenVI, resolutionScale, downsampleMultiplier, removeBlackBorders, pickCrop, viewport, scissor);
 
             // Convert the mouse coordinates to native coordinates.
             hlslpp::float2 screenCursorPos;

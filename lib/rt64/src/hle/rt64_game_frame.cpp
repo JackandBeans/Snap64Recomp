@@ -267,21 +267,13 @@ namespace RT64 {
         // describe the same scene; they are measured about different origins, so
         // there is no motion between them to interpolate.
         //
-        // The world side already copes. Snap's matrices are tagged with automatic
-        // components, so updateLinear compares the step against its velocity
-        // tolerance, sees a shift far beyond anything real, and declines to
-        // interpolate the translation. The camera is not tagged, so it keeps the
-        // defaults below, which force plain interpolation and lerp the view's
-        // translation whatever its size. One factor snaps and the other slides,
-        // and that mismatch is the sweep -- not the interpolation itself.
-        //
-        // So the camera is given the same treatment as everything else for this
-        // one frame, rather than the frame being dropped entirely. Rotation still
-        // interpolates, so a pan through a corner stays smooth, and only the
-        // component that cannot be meaningfully interpolated is held.
+        // With the distance recorded here, the previous frame's transforms and
+        // view can be read in the new origin, so everything that survived the
+        // transition interpolates as it does on any other frame. The camera is
+        // tagged with its own matrix group (src/matrix_tags.cpp), whose skip
+        // components already snap the view on the frame the game's camera data
+        // jumped -- which a rebase always is -- so nothing here decides cuts.
         snapRebaseFrame = false;
-        snapViewCut = false;
-        snapSceneSwap = false;
         snapOriginDelta = hlslpp::float3(0.0f, 0.0f, 0.0f);
         for (uint32_t w : workloads) {
             Workload &rebaseWorkload = workloadQueue.workloads[w];
@@ -289,12 +281,6 @@ namespace RT64 {
                 rebaseWorkload.snapOriginRebased = false;
                 snapRebaseFrame = true;
                 snapOriginDelta = rebaseWorkload.snapOriginDelta;
-            }
-            // The game-side camera witness: the authoritative source, ahead
-            // of the renderer-side heuristics that match() may still add.
-            if (rebaseWorkload.snapCameraCut) {
-                rebaseWorkload.snapCameraCut = false;
-                snapViewCut = true;
             }
         }
 
@@ -500,48 +486,6 @@ namespace RT64 {
             velocityUploaderUsed = false;
         }
 
-        // Pokemon Snap port: detect a wholesale content swap. Runs ungated --
-        // it feeds the cut decision, not a log -- and the walk is a bit test
-        // per transform.
-        //
-        // Two conditions, both required. Prev-side loss alone false-fired
-        // during rides: the Pokemon detector adds its render passes on
-        // alternating frames, so half the previous frame's transform
-        // instances legitimately vanish every other frame while the scene
-        // itself is continuous -- and each false fire held a frame, which
-        // was a player-visible stutter at exactly the spawn areas. A real
-        // swap breaks BOTH directions: the old content goes unclaimed and
-        // the new content finds nothing to pair with.
-        {
-            uint32_t prevTotal = 0, prevLost = 0;
-            uint32_t curTotal = 0, curPaired = 0;
-            for (uint32_t w : workloads) {
-                const GameFrameMap::WorkloadMap &wm = frameMap.workloads[w];
-                if (!wm.mapped) {
-                    continue;
-                }
-                prevTotal += uint32_t(wm.prevTransformsMapped.size());
-                for (size_t p = 0; p < wm.prevTransformsMapped.size(); p++) {
-                    if (!wm.prevTransformsMapped[p]) {
-                        prevLost++;
-                    }
-                }
-                curTotal += uint32_t(wm.transforms.size());
-                for (const auto &tm : wm.transforms) {
-                    if (tm.mapped) {
-                        curPaired++;
-                    }
-                }
-            }
-            snapSceneSwap = (prevTotal >= 8) && (prevLost * 2 > prevTotal) &&
-                (curTotal >= 8) && (curPaired * 2 < curTotal);
-            if (snapSceneSwap && snapdiag::diagEnabled()) {
-                fprintf(stdout, "[SNAP-CUT] scene swap lost %u of %u, paired %u of %u -> cut\n",
-                    prevLost, prevTotal, curPaired, curTotal);
-                fflush(stdout);
-            }
-        }
-
         // Pokemon Snap port, diagnostic: on a rebase frame, how far the origin
         // moved and how many paired transforms and cameras accepted the moved
         // previous frame versus kept the raw one. Behind the diagnostics gate:
@@ -664,13 +608,6 @@ namespace RT64 {
                 uint8_t projectionScaleComponent = G_EX_COMPONENT_INTERPOLATE;
                 uint8_t projectionSkewComponent = G_EX_COMPONENT_INTERPOLATE;
                 uint8_t projectionPerspectiveComponent = G_EX_COMPONENT_INTERPOLATE;
-                // On the frame the origin moves, let the camera's translation be
-                // judged the way every tagged matrix already judges its own, so it
-                // declines the shift instead of sliding across it.
-                if (snapRebaseFrame && !snapRebaseUsable()) {
-                    projectionLinearComponent = G_EX_COMPONENT_AUTO;
-                }
-
                 if ((curProjGroup.matrixId != G_EX_ID_IGNORE) && (curProjGroup.matrixId != G_EX_ID_AUTO)) {
                     projectionDecompose = curProjGroup.decompose;
                     projectionLinearComponent = curProjGroup.positionInterpolation;
@@ -682,6 +619,15 @@ namespace RT64 {
                 }
                 else {
                     viewProjMap.mapped = (curProjGroup.matrixId == G_EX_ID_AUTO);
+                }
+
+                // On the frame the origin moves without a usable delta, let the
+                // camera's translation be judged the way every tagged matrix
+                // already judges its own, so it declines the shift instead of
+                // sliding across it. Applied after the group modes: the camera
+                // is tagged now, and its group cannot know about the rebase.
+                if (snapRebaseFrame && !snapRebaseUsable()) {
+                    projectionLinearComponent = G_EX_COMPONENT_AUTO;
                 }
 
                 if (viewProjMap.mapped) {
@@ -714,42 +660,6 @@ namespace RT64 {
                             float(hlslpp::length(curEye - prevEye))) {
                             effectivePrevView = &rebasedPrevView;
                             viewProjMap.snapRebasedPrev = true;
-                        }
-                    }
-
-                    // A matched perspective camera that jumped further in one
-                    // frame than any motion in this game carries it is a
-                    // scripted scene cut. Two witnesses, because film cuts
-                    // come in two kinds: the eye teleporting (threshold two
-                    // orders of magnitude above the cart's fastest movement,
-                    // under the smallest cut observed), and the view snapping
-                    // to a different angle with the eye nearly still, which
-                    // an eye test scores as zero. The angle threshold of 60
-                    // degrees per frame is beyond anything the aim stick can
-                    // do at native rate, so player aiming can never trip it.
-                    // Block transitions compare against the rebased eye above,
-                    // so their known origin shift does not trip this.
-                    if (curProj.type == Projection::Type::Perspective) {
-                        const hlslpp::float3 cutCurEye = hlslpp::inverse(curView)[3].xyz;
-                        const hlslpp::float3 cutPrevEye = hlslpp::inverse(*effectivePrevView)[3].xyz;
-                        const float eyeJump = float(hlslpp::length(cutCurEye - cutPrevEye));
-
-                        // Two orthogonal camera axes, compared against their
-                        // previous selves: any large rotation about any axis
-                        // turns at least one of them well past the threshold.
-                        // Both matrices use the same convention, so which
-                        // physical axis each column is does not matter.
-                        const hlslpp::float3 cutCurA = hlslpp::normalize(hlslpp::float3(curView[0].z, curView[1].z, curView[2].z));
-                        const hlslpp::float3 cutPrevA = hlslpp::normalize(hlslpp::float3((*effectivePrevView)[0].z, (*effectivePrevView)[1].z, (*effectivePrevView)[2].z));
-                        const hlslpp::float3 cutCurB = hlslpp::normalize(hlslpp::float3(curView[0].y, curView[1].y, curView[2].y));
-                        const hlslpp::float3 cutPrevB = hlslpp::normalize(hlslpp::float3((*effectivePrevView)[0].y, (*effectivePrevView)[1].y, (*effectivePrevView)[2].y));
-                        const float axisDot = std::min(float(hlslpp::dot(cutCurA, cutPrevA)), float(hlslpp::dot(cutCurB, cutPrevB)));
-                        if ((eyeJump > 250.0f) || (axisDot < 0.5f)) {
-                            snapViewCut = true;
-                            if (snapdiag::diagEnabled()) {
-                                fprintf(stdout, "[SNAP-CUT] view jump %.0f axis dot %.2f -> cut\n", eyeJump, axisDot);
-                                fflush(stdout);
-                            }
                         }
                     }
 

@@ -342,10 +342,9 @@ namespace {
             resolutionScale = ext.sharedResources->resolutionScale;
             presentationMode = ext.sharedResources->enhancementConfig.presentation.mode;
             removeBlackBorders = ext.sharedResources->enhancementConfig.presentation.removeBlackBorders;
-            overscanCrop[0] = ext.sharedResources->enhancementConfig.presentation.cropLeft;
-            overscanCrop[1] = ext.sharedResources->enhancementConfig.presentation.cropRight;
-            overscanCrop[2] = ext.sharedResources->enhancementConfig.presentation.cropTop;
-            overscanCrop[3] = ext.sharedResources->enhancementConfig.presentation.cropBottom;
+            for (uint32_t i = 0; i < 4; i++) {
+                overscanCrop[i] = ext.sharedResources->enhancementConfig.presentation.crop[i];
+            }
             refreshRate = ext.sharedResources->userConfig.refreshRate;
             filtering = ext.sharedResources->userConfig.filtering;
             viOriginalRate = ext.sharedResources->viOriginalRate;
@@ -447,7 +446,12 @@ namespace {
                 if (snapdiag::diagEnabled()) {
                     static VI lastVI = {};
                     const VI &svi = present.screenVI;
-                    if (svi != lastVI) {
+                    // The origin alternates between the two display buffers
+                    // every present; a change log that includes it prints
+                    // every frame and buries the mode changes it exists for.
+                    VI originMasked = svi;
+                    originMasked.origin = lastVI.origin;
+                    if (originMasked != lastVI) {
                         lastVI = svi;
                         fprintf(stdout, "[SNAP-VI] w %u h %u,%u v %u,%u xs %u xo %u ys %u yo %u origin %08X\n",
                             svi.width, svi.hRegion.hStart, svi.hRegion.hEnd, svi.vRegion.vStart, svi.vRegion.vEnd,
@@ -604,10 +608,9 @@ namespace {
                     renderParams.filtering = filtering;
                     renderParams.vi = &present.screenVI;
                     renderParams.removeBlackBorders = removeBlackBorders;
-                    renderParams.crop[0] = overscanCrop[0];
-                    renderParams.crop[1] = overscanCrop[1];
-                    renderParams.crop[2] = overscanCrop[2];
-                    renderParams.crop[3] = overscanCrop[3];
+                    for (uint32_t i = 0; i < 4; i++) {
+                        renderParams.crop[i] = overscanCrop[i];
+                    }
 
                     const bool useDownsampling = (colorTarget->downsampleMultiplier > 1);
                     if (useDownsampling) {

@@ -49,6 +49,9 @@ struct Settings {
     // picture's edges. These defaults hide the gameplay margins completely,
     // matching the classic 288x216 safe area; the intro's cinematic frame
     // keeps a slim authored border, as it did on original hardware.
+    // F2 toggles the crop live; the per-side values stay in the file so a
+    // custom measurement survives turning it off and on.
+    bool  crop_enabled      = true;
     int   crop_left         = 16;
     int   crop_right        = 16;
     int   crop_top          = 12;
