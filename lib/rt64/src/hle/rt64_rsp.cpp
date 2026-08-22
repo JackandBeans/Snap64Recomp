@@ -852,12 +852,19 @@ namespace RT64 {
         // the hardware did: measured on the beach, a model at z 1020.5
         // against a limit of 1020.11 stayed refused for 27 straight frames
         // that the console drew, holding it invisible until the cart got
-        // close enough to pop it into view. The margin biases the tie toward
-        // drawing -- one depth unit out of a thousand, far below any LOD
-        // boundary the game authors placed deliberately -- so the port errs
-        // the way the player can never see.
-        constexpr float SnapBranchZMargin = 1.0f;
-        const bool taken = forceBranch || (screenZ < zValueFloat + SnapBranchZMargin);
+        // close enough to pop it into view.
+        //
+        // The margin biases the tie toward drawing, and it scales with the
+        // limit because the drift does -- and because N64 depth is heavily
+        // nonlinear, a fraction of a depth unit near the far end is seconds
+        // of cart travel. A pop the hardware hid deep in the fog lands
+        // mid-view when the gate opens late, which is a Pokemon visibly
+        // materializing; erring toward drawing moves the appearance farther
+        // out than hardware, into the fog, the direction the player cannot
+        // see. Half a percent of the limit shifts an authored LOD boundary
+        // imperceptibly.
+        const float snapBranchZMargin = zValueFloat * 0.005f + 0.5f;
+        const bool taken = forceBranch || (screenZ < zValueFloat + snapBranchZMargin);
 
         // The refusal probe: a taken branch is routine, a refusal is the
         // interesting event.
@@ -885,7 +892,12 @@ namespace RT64 {
         const Workload &workload = state->ext.workloadQueue->workloads[workloadCursor];
         const uint32_t globalIndex = indices[vtxIndex];
         const float posW = workload.drawData.posTransformed[globalIndex][3];
-        if (forceBranch || (posW < static_cast<float>(wValue))) {
+        // Pokemon Snap port: same draw-biased margin as branchZ above and for
+        // the same reason -- the float reconstruction of the RSP's fixed
+        // point pipeline resolves ties at the limit differently than the
+        // hardware, and refusing to draw is the error the player sees.
+        const float snapBranchWMargin = float(wValue) * 0.005f + 0.5f;
+        if (forceBranch || (posW < float(wValue) + snapBranchWMargin)) {
             const uint32_t rdramAddress = fromSegmentedMasked(branchDl);
             *dl = reinterpret_cast<DisplayList *>(state->fromRDRAM(rdramAddress)) - 1;
         }
