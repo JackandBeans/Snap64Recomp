@@ -299,6 +299,63 @@ namespace RT64 {
         }
     }
     
+    // Pokemon Snap port: overwrites a render target with the previous frame's
+    // presented image. The console never displayed a camera cut's transit
+    // frame -- the cut frame is the heaviest of the scene, the RCP overran,
+    // and gtl skipped the draw, holding the previous image for a tick -- so
+    // the port shows the same thing by copying the previous frame's image
+    // over everything the transit interval presents. The frame itself still
+    // renders first: the game reads its framebuffer back, so its state stays
+    // exactly what the game computed; only the screen holds. The copy is only
+    // an identity when the sizes agree; otherwise the hold is skipped and the
+    // frame shows as rendered, the port's pre-hold behavior.
+    bool WorkloadQueue::threadHoldPreviousTarget(const RenderTargetKey &srcKey, const RenderTargetKey &dstKey, RenderTarget *dstTarget) {
+        std::scoped_lock<std::mutex> managerLock(ext.sharedResources->workloadMutex);
+        RenderTargetManager &targetManager = ext.sharedResources->renderTargetManager;
+        RenderTarget &src = targetManager.get(srcKey);
+        if (dstTarget == nullptr) {
+            dstTarget = &targetManager.get(dstKey);
+        }
+        if (src.isEmpty() || (&src == dstTarget)) {
+            return false;
+        }
+
+        const uint32_t grownWidth = std::max(dstTarget->width, src.width);
+        const uint32_t grownHeight = std::max(dstTarget->height, src.height);
+        if ((grownWidth != src.width) || (grownHeight != src.height)) {
+            return false;
+        }
+
+        workerMutex.lock();
+        RenderWorker *worker = ext.workloadGraphicsWorker;
+        worker->commandList->begin();
+        dstTarget->resize(worker, src.width, src.height);
+
+        RenderTextureBarrier copyBarriers[] = {
+            RenderTextureBarrier(src.texture.get(), RenderTextureLayout::COPY_SOURCE),
+            RenderTextureBarrier(dstTarget->texture.get(), RenderTextureLayout::COPY_DEST),
+        };
+        worker->commandList->barriers(RenderBarrierStage::COPY, copyBarriers, uint32_t(std::size(copyBarriers)));
+
+        const RenderBox srcBox(0, 0, int32_t(src.width), int32_t(src.height));
+        worker->commandList->copyTextureRegion(
+            RenderTextureCopyLocation::Subresource(dstTarget->texture.get()),
+            RenderTextureCopyLocation::Subresource(src.texture.get()),
+            0, 0, 0, &srcBox);
+        worker->commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(dstTarget->texture.get(), RenderTextureLayout::SHADER_READ));
+        worker->commandList->end();
+        worker->execute();
+        worker->wait();
+        workerMutex.unlock();
+
+        // The present queue reads these from the target it shows.
+        dstTarget->resolutionScale = src.resolutionScale;
+        dstTarget->downsampleMultiplier = src.downsampleMultiplier;
+        dstTarget->misalignX = src.misalignX;
+        dstTarget->invMisalignX = src.invMisalignX;
+        return true;
+    }
+
     void WorkloadQueue::threadRenderFrame(GameFrame &curFrame, const GameFrame &prevFrame, const WorkloadConfiguration &workloadConfig,
         const DebuggerRenderer &debuggerRenderer, const DebuggerCamera &debuggerCamera, float curFrameWeight, float prevFrameWeight,
         float deltaTimeMs, RenderTargetKey overrideTargetKey, int32_t overrideTargetFbPairIndex, RenderTarget *overrideTarget,
@@ -1014,6 +1071,8 @@ namespace RT64 {
         uint32_t displayRateForTicks = 0;
         int processCursor = -1;
         bool frameReduction = false;
+        // The previous game frame's presented target, for the cut-transit hold.
+        RenderTargetKey snapPrevTargetKey;
         while (threadsRunning) {
             {
                 std::unique_lock<std::mutex> cursorLock(cursorMutex);
@@ -1181,6 +1240,19 @@ namespace RT64 {
                     }
                 }
                 
+                // The console never displayed a cut's transit frame: its draw
+                // overran and gtl held the previous image for a tick. Matched
+                // here by presenting the previous frame's image for this
+                // workload's whole interval, at native rate and interpolated
+                // alike. MSAA resolves through different targets; the hold
+                // stands down there rather than guess.
+                const bool snapCutHold = workload.snapCutHold && !workload.paused && !usingMSAA &&
+                    !interpolationTargetKey.isEmpty() && !snapPrevTargetKey.isEmpty();
+                if (snapCutHold && snapdiag::diagEnabled()) {
+                    fprintf(stdout, "[SNAP-HOLD] cut transit: presenting previous frame for one tick\n");
+                    fflush(stdout);
+                }
+
                 const int64_t originalTimeMicro = (workload.viOriginalRate > 0) ? (1000000 / workload.viOriginalRate) : 0;
                 const int64_t setupTimeMicro = workloadTimer.elapsedMicroseconds();
                 const int64_t adjustedTimeWindowMicro = originalTimeMicro - setupTimeMicro;
@@ -1259,10 +1331,24 @@ namespace RT64 {
 
                     int64_t renderTimeMicro = workloadTimer.elapsedMicroseconds();
 
-                    const bool interpolationSubFrame = generateInterpolatedFrames && (curFrameWeight < 1.0f);
-                    threadRenderFrame(curFrame, prevFrame, workloadConfig, workload.debuggerRenderer, workload.debuggerCamera, curFrameWeight, prevFrameWeight, deltaTimeMs,
-                        interpolationTargetKey, interpolationTargetFbPairIndex, overrideTarget, overrideModifier, velocityUploaderUsed, uploadExtras, tileInterpolationUsed, lookAtInterpolationUsed,
-                        interpolationSubFrame);
+                    // A held interval's extra images are the previous frame
+                    // repeated; only frame zero renders (the game reads its
+                    // framebuffer back, so the transit frame must exist in
+                    // RDRAM exactly as the game computed it), and its
+                    // presented image is then replaced with the previous
+                    // frame's before the present thread is told about it.
+                    const bool heldSubFrame = snapCutHold && (frame > 0) &&
+                        threadHoldPreviousTarget(snapPrevTargetKey, interpolationTargetKey, overrideTarget);
+                    if (!heldSubFrame) {
+                        const bool interpolationSubFrame = generateInterpolatedFrames && (curFrameWeight < 1.0f);
+                        threadRenderFrame(curFrame, prevFrame, workloadConfig, workload.debuggerRenderer, workload.debuggerCamera, curFrameWeight, prevFrameWeight, deltaTimeMs,
+                            interpolationTargetKey, interpolationTargetFbPairIndex, overrideTarget, overrideModifier, velocityUploaderUsed, uploadExtras, tileInterpolationUsed, lookAtInterpolationUsed,
+                            interpolationSubFrame);
+                    }
+
+                    if (snapCutHold && (frame == 0) && (overrideTarget == nullptr)) {
+                        threadHoldPreviousTarget(snapPrevTargetKey, interpolationTargetKey, nullptr);
+                    }
 
                     // Add total time the frame took to render.
                     renderTimeTotalMicro += workloadTimer.elapsedMicroseconds() - renderTimeMicro;
@@ -1307,6 +1393,15 @@ namespace RT64 {
                 }
 
                 threadConfigurationValidate();
+
+                // Remember which target this frame presented; a cut-transit
+                // hold on the next frame shows this image again. A held frame
+                // does not become the hold source itself -- its target shows
+                // the previous image, which is exactly what a second
+                // consecutive transit should keep showing.
+                if (!workload.paused && !interpolationTargetKey.isEmpty()) {
+                    snapPrevTargetKey = interpolationTargetKey;
+                }
 
                 if (!workload.paused) {
                     threadAdvanceBarrier();

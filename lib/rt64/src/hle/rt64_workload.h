@@ -218,6 +218,11 @@ namespace RT64 {
         // happens to be current when it gets there.
         bool snapOriginRebased = false;
         hlslpp::float3 snapOriginDelta = {};
+        // Set on the frame a camera cut transits. The console never displayed
+        // these frames (draw skipped on RCP overrun, previous image held);
+        // the queue presents the previous frame's image for this workload's
+        // interval to match.
+        bool snapCutHold = false;
         DrawData drawData;
         DrawRanges drawRanges;
         DrawBuffers drawBuffers;

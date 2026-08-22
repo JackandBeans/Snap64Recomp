@@ -62,6 +62,7 @@ extern bool g_app_level_resident;                            // overlay_hook.cpp
 extern bool g_focus_dot_visible;                             // focus_dot.cpp
 extern bool g_world_rebased;                                 // matrix_tags.cpp
 extern float g_world_rebase_delta[3];                        // matrix_tags.cpp
+extern bool g_camera_cut_hold;                               // matrix_tags.cpp
 
 class RT64Context : public ultramodern::renderer::RendererContext {
 public:
@@ -347,6 +348,15 @@ public:
                 snap::g_world_rebase_delta[0],
                 snap::g_world_rebase_delta[1],
                 snap::g_world_rebase_delta[2]);
+        }
+
+        // A camera cut transits this frame: the console skipped drawing it
+        // (RCP overrun at the heaviest frame of the scene) and held the
+        // previous image; the renderer reproduces that hold for this workload.
+        if (snap::g_camera_cut_hold) {
+            snap::g_camera_cut_hold = false;
+            RT64::Workload &workload = app_->workloadQueue->workloads[app_->workloadQueue->writeCursor];
+            workload.snapCutHold = true;
         }
 
         // Consumed, so the next frame has to be established by the game again.

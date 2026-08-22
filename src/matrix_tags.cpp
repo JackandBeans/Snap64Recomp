@@ -24,6 +24,7 @@
  */
 
 #include <algorithm>
+#include <atomic>
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
@@ -37,6 +38,12 @@
 extern "C" {
 #include "funcs.h"
 }
+
+// The frame dump rigs (src/frame_dump.cpp game side, present queue GPU side)
+// run while this counter is positive. Armed here on every camera cut so the
+// presented frames around a cut land on disk even when interpolation is off
+// -- the renderer-side arm only runs when frames are being matched.
+extern "C" std::atomic<int32_t> snap_frame_dump_pending;
 
 namespace snap {
 namespace {
@@ -134,6 +141,9 @@ bool valid_ram_address(uint32_t address) {
 // camera the table has never seen needs no verdict at all -- its group id has
 // no previous frame to pair with, so the renderer draws it snapped anyway.
 namespace snap {
+// Defined below with the block-transition hooks.
+extern bool g_world_rebased;
+extern bool g_camera_cut_hold;
 namespace {
 struct CameraTrack {
     uint32_t address = 0;
@@ -231,6 +241,12 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                 if (snapdiag::diagEnabled()) {
                     printf("[SNAP-CAMCUT] cam %08X eye moved %.1f at moved %.1f\n", cam, eyeD, atD);
                     fflush(stdout);
+                }
+                if (snapdiag::captureEnabled()) {
+                    snap_frame_dump_pending.store(8);
+                }
+                if (!snap::g_world_rebased) {
+                    snap::g_camera_cut_hold = true;
                 }
             }
             else if (snapdiag::diagEnabled() && ((eyeD > 10.0f) || (atD > 10.0f))) {
@@ -339,6 +355,17 @@ extern "C" void omGetMtx(uint8_t* rdram, recomp_context* ctx) {
 namespace snap {
 bool g_world_rebased = false;
 float g_world_rebase_delta[3] = {};
+
+// Set on the frame a camera cut transits: the console never displayed these
+// frames -- the cut frame is the heaviest of the scene, the RCP overran, and
+// gtl skipped the draw, holding the previous image for a tick (gtl.c:768).
+// The port renders fast enough to show the frame the console never finished,
+// which is the one-frame flash at every scene change, at native rate and
+// interpolated alike. Consumed by send_dl onto the workload; the renderer
+// then presents the previous frame's image for this one tick, the same
+// visible outcome the console produced. Rebase corners are excluded: those
+// are continuous motion the renderer blends through the origin shift.
+bool g_camera_cut_hold = false;
 }
 
 // enterNextBlock hands this the distance the origin is about to move, which is
