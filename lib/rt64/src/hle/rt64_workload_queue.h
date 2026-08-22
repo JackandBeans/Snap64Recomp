@@ -119,7 +119,12 @@ namespace RT64 {
         void updateMultisampling();
         void threadConfigurationUpdate(hlslpp::uint2 viFbSize, WorkloadConfiguration &workloadConfig);
         void threadConfigurationValidate();
-        bool threadHoldPreviousTarget(const RenderTargetKey &srcKey, const RenderTargetKey &dstKey, RenderTarget *dstTarget);
+        bool threadHoldCopy(RenderTarget *srcTarget, const RenderTargetKey &srcKey, RenderTarget *dstTarget, const RenderTargetKey &dstKey);
+        // Snapshot of the previous frame's presented image, taken BEFORE a
+        // cut-transit frame renders: the transit workload's own early passes
+        // (a scene-init clear) can dirty the previous frame's target, and a
+        // hold copied afterwards would present that half-wiped image.
+        std::unique_ptr<RenderTarget> snapHoldScratch;
         void threadRenderFrame(GameFrame &curFrame, const GameFrame &prevFrame, const WorkloadConfiguration &workloadConfig,
             const DebuggerRenderer &debuggerRenderer, const DebuggerCamera &debuggerCamera, float curFrameWeight, float prevFrameWeight,
             float deltaTimeMs, RenderTargetKey overrideTargetKey, int32_t overrideTargetFbPairIndex, RenderTarget *overrideTarget,

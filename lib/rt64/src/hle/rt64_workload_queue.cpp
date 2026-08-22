@@ -309,13 +309,17 @@ namespace RT64 {
     // exactly what the game computed; only the screen holds. The copy is only
     // an identity when the sizes agree; otherwise the hold is skipped and the
     // frame shows as rendered, the port's pre-hold behavior.
-    bool WorkloadQueue::threadHoldPreviousTarget(const RenderTargetKey &srcKey, const RenderTargetKey &dstKey, RenderTarget *dstTarget) {
+    bool WorkloadQueue::threadHoldCopy(RenderTarget *srcTarget, const RenderTargetKey &srcKey, RenderTarget *dstTarget, const RenderTargetKey &dstKey) {
         std::scoped_lock<std::mutex> managerLock(ext.sharedResources->workloadMutex);
         RenderTargetManager &targetManager = ext.sharedResources->renderTargetManager;
-        RenderTarget &src = targetManager.get(srcKey);
+        RenderTarget *srcPtr = (srcTarget != nullptr) ? srcTarget : &targetManager.get(srcKey);
         if (dstTarget == nullptr) {
+            if (dstKey.isEmpty()) {
+                return false;
+            }
             dstTarget = &targetManager.get(dstKey);
         }
+        RenderTarget &src = *srcPtr;
         if (src.isEmpty() || (&src == dstTarget)) {
             return false;
         }
@@ -1246,8 +1250,27 @@ namespace RT64 {
                 // workload's whole interval, at native rate and interpolated
                 // alike. MSAA resolves through different targets; the hold
                 // stands down there rather than guess.
-                const bool snapCutHold = workload.snapCutHold && !workload.paused && !usingMSAA &&
+                bool snapCutHold = workload.snapCutHold && !workload.paused && !usingMSAA &&
                     !interpolationTargetKey.isEmpty() && !snapPrevTargetKey.isEmpty();
+                if (snapCutHold) {
+                    // Snapshot the previous image before this frame renders a
+                    // single pass; the transit workload's scene-init clears
+                    // can reach into the previous frame's buffer, and a hold
+                    // copied after rendering presents that half-wiped image
+                    // -- the camera prop vanishing for a frame at the cut
+                    // out of the intro's close-up shot.
+                    {
+                        std::scoped_lock<std::mutex> managerLock(ext.sharedResources->workloadMutex);
+                        RenderTargetManager &targetManager = ext.sharedResources->renderTargetManager;
+                        const RenderTarget &holdSrc = targetManager.get(snapPrevTargetKey);
+                        const bool scratchMismatch = (snapHoldScratch != nullptr) && !snapHoldScratch->isEmpty() &&
+                            ((snapHoldScratch->width != holdSrc.width) || (snapHoldScratch->height != holdSrc.height));
+                        if ((snapHoldScratch == nullptr) || scratchMismatch) {
+                            snapHoldScratch = std::make_unique<RenderTarget>(snapPrevTargetKey.address, Framebuffer::Type::Color, RenderMultisampling(), usesHDR);
+                        }
+                    }
+                    snapCutHold = threadHoldCopy(nullptr, snapPrevTargetKey, snapHoldScratch.get(), RenderTargetKey());
+                }
                 if (snapCutHold && snapdiag::diagEnabled()) {
                     fprintf(stdout, "[SNAP-HOLD] cut transit: presenting previous frame for one tick\n");
                     fflush(stdout);
@@ -1338,7 +1361,7 @@ namespace RT64 {
                     // presented image is then replaced with the previous
                     // frame's before the present thread is told about it.
                     const bool heldSubFrame = snapCutHold && (frame > 0) &&
-                        threadHoldPreviousTarget(snapPrevTargetKey, interpolationTargetKey, overrideTarget);
+                        threadHoldCopy(snapHoldScratch.get(), RenderTargetKey(), overrideTarget, RenderTargetKey());
                     if (!heldSubFrame) {
                         const bool interpolationSubFrame = generateInterpolatedFrames && (curFrameWeight < 1.0f);
                         threadRenderFrame(curFrame, prevFrame, workloadConfig, workload.debuggerRenderer, workload.debuggerCamera, curFrameWeight, prevFrameWeight, deltaTimeMs,
@@ -1347,7 +1370,7 @@ namespace RT64 {
                     }
 
                     if (snapCutHold && (frame == 0) && (overrideTarget == nullptr)) {
-                        threadHoldPreviousTarget(snapPrevTargetKey, interpolationTargetKey, nullptr);
+                        threadHoldCopy(snapHoldScratch.get(), RenderTargetKey(), nullptr, interpolationTargetKey);
                     }
 
                     // Add total time the frame took to render.
