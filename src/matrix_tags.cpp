@@ -153,6 +153,10 @@ struct CameraTrack {
     // Last call's per-call motion, for the velocity-continuity test.
     float eyeDelta = 0.0f;
     float atDelta = 0.0f;
+    // Remaining ticks of an active cut transit: the camera crosses to its
+    // new pose over more than one tick, and every tick of the crossing must
+    // hold, not just the first.
+    uint32_t holdTicks = 0;
     bool valid = false;
 };
 // Eight slots outlast any set of cameras alive at once (main view, the item
@@ -161,6 +165,13 @@ struct CameraTrack {
 // An evicted camera that comes back simply starts a fresh baseline.
 CameraTrack g_camera_tracks[8];
 uint32_t g_camera_seen_counter = 0;
+
+// OMMtx allocations since the last camera prep. A scene swap rebuilds its
+// object set in one update tick -- a burst of dozens of allocations -- and
+// the intro swaps content one tick BEFORE it moves the camera, so the swap
+// frame needs its hold before any camera data has jumped. Counted in the
+// omGetMtx hook, read and reset by the first camera prep of the tick.
+uint32_t g_ommtx_allocs_since_prep = 0;
 
 float read_cam_f32(uint8_t* rdram, uint32_t addr) {
     const uint32_t bits = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)addr));
@@ -186,6 +197,22 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
     // target at +0x48 (sys/om.h: MtxCameraLookAt/LookAtRoll share the layout).
     const uint32_t cam = static_cast<uint32_t>(ctx->r5);
     bool cameraCut = false;
+    bool holdFrame = false;
+
+    // A burst of matrix allocations since the last camera prep is a scene
+    // rebuilding its object set this tick. The intro swaps content one tick
+    // before it moves the camera, and the console held through that tick
+    // too (the swap frame is the coldest, heaviest draw of all).
+    const uint32_t allocBurst = snap::g_ommtx_allocs_since_prep;
+    snap::g_ommtx_allocs_since_prep = 0;
+    if (allocBurst >= 24) {
+        holdFrame = true;
+        if (snapdiag::diagEnabled()) {
+            printf("[SNAP-SWAPHOLD] %u matrices allocated this tick\n", allocBurst);
+            fflush(stdout);
+        }
+    }
+
     if (snap::valid_ram_address(cam)) {
         snap::CameraTrack* track = nullptr;
         for (auto& t : snap::g_camera_tracks) {
@@ -238,6 +265,11 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
             const bool atCut = (atD > CutDistance) && discontinuous(atD, track->atDelta);
             if (eyeCut || atCut) {
                 cameraCut = true;
+                holdFrame = true;
+                // The crossing to the new pose spans more than one tick;
+                // every tick of it holds, and the latch releases the moment
+                // the camera settles so sustained motion never chains.
+                track->holdTicks = 3;
                 if (snapdiag::diagEnabled()) {
                     printf("[SNAP-CAMCUT] cam %08X eye moved %.1f at moved %.1f\n", cam, eyeD, atD);
                     fflush(stdout);
@@ -245,8 +277,18 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                 if (snapdiag::captureEnabled()) {
                     snap_frame_dump_pending.store(8);
                 }
-                if (!snap::g_world_rebased) {
-                    snap::g_camera_cut_hold = true;
+            }
+            else if (track->holdTicks > 0) {
+                if ((eyeD > CutDistance) || (atD > CutDistance)) {
+                    holdFrame = true;
+                    track->holdTicks--;
+                    if (snapdiag::diagEnabled()) {
+                        printf("[SNAP-TRANSIT] cam %08X still crossing, eye %.1f at %.1f\n", cam, eyeD, atD);
+                        fflush(stdout);
+                    }
+                }
+                else {
+                    track->holdTicks = 0;
                 }
             }
             else if (snapdiag::diagEnabled() && ((eyeD > 10.0f) || (atD > 10.0f))) {
@@ -263,6 +305,13 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
         std::memcpy(track->eye, eye, sizeof(eye));
         std::memcpy(track->at, at, sizeof(at));
         track->valid = true;
+    }
+
+    // The hold request travels through send_dl onto this frame's workload.
+    // Block transitions never hold: their motion is continuous once read in
+    // the new origin, and the renderer blends it.
+    if (holdFrame && !snap::g_world_rebased) {
+        snap::g_camera_cut_hold = true;
     }
 
     // Enable the extension, then name this camera's view transform before the
@@ -338,6 +387,8 @@ extern "C" void omGetMtx(uint8_t* rdram, recomp_context* ctx) {
     if (!snap::valid_ram_address(mtx)) {
         return;
     }
+
+    snap::g_ommtx_allocs_since_prep++;
 
     // Skips both values the extended commands reserve, so a serial can never be
     // read as "ignore this matrix" or "work the identity out yourself".
