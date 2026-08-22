@@ -23,9 +23,12 @@
  * processed relative to when it was built.
  */
 
+#include <cmath>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 
+#include "hle/rt64_snap_diag.h"
 #include "recomp.h"
 
 #include "settings.h"
@@ -128,6 +131,34 @@ bool valid_ram_address(uint32_t address) {
 } // namespace
 } // namespace snap
 
+// Camera cut detection, the way the shipped recomps do it: the game's own
+// camera data says when a cut happened, in the game's own numbers, before
+// any float reconstruction. Each camera's eye and look-at are compared with
+// their previous frame's values; a jump beyond anything continuous motion
+// produces -- the cart glides at about three units a frame, cutscene dollies
+// a handful -- is a cut, whoever authored it: the intro's shot changes, a
+// scene transition, a mode switch. The renderer-side heuristics stay as a
+// fallback, but this is the authoritative witness.
+namespace snap {
+bool g_camera_cut = false;
+namespace {
+struct CameraTrack {
+    uint32_t address = 0;
+    float eye[3] = {};
+    float at[3] = {};
+    bool valid = false;
+};
+CameraTrack g_camera_tracks[4];
+
+float read_cam_f32(uint8_t* rdram, uint32_t addr) {
+    const uint32_t bits = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)addr));
+    float f;
+    std::memcpy(&f, &bits, sizeof(f));
+    return f;
+}
+} // namespace
+} // namespace snap
+
 // Object identity itself now comes from patches/src/render_patch.c, which
 // tags each matrix with the OMMtx it belongs to from inside the game. All
 // that is left here is switching the extended commands on.
@@ -135,6 +166,55 @@ bool valid_ram_address(uint32_t address) {
 // extension gets turned on. RT64 keeps the state, and re-enabling is harmless.
 extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
     const uint32_t gfxPtrAddress = static_cast<uint32_t>(ctx->r4);
+
+    // a1 is the OMCamera. Both view kinds keep eye at +0x3C and the look-at
+    // target at +0x48 (sys/om.h: MtxCameraLookAt/LookAtRoll share the layout).
+    const uint32_t cam = static_cast<uint32_t>(ctx->r5);
+    if (snap::valid_ram_address(cam)) {
+        snap::CameraTrack* track = nullptr;
+        for (auto& t : snap::g_camera_tracks) {
+            if (t.address == cam) { track = &t; break; }
+        }
+        if (track == nullptr) {
+            for (auto& t : snap::g_camera_tracks) {
+                if (t.address == 0) { track = &t; break; }
+            }
+        }
+        if (track != nullptr) {
+            float eye[3], at[3];
+            for (int i = 0; i < 3; i++) {
+                eye[i] = snap::read_cam_f32(rdram, cam + 0x3C + i * 4);
+                at[i] = snap::read_cam_f32(rdram, cam + 0x48 + i * 4);
+            }
+            if (track->valid && (track->address == cam)) {
+                float eyeD2 = 0.0f, atD2 = 0.0f;
+                for (int i = 0; i < 3; i++) {
+                    const float de = eye[i] - track->eye[i];
+                    const float da = at[i] - track->at[i];
+                    eyeD2 += de * de;
+                    atD2 += da * da;
+                }
+                constexpr float CutDistance = 25.0f;
+                if ((eyeD2 > CutDistance * CutDistance) || (atD2 > CutDistance * CutDistance)) {
+                    snap::g_camera_cut = true;
+                    if (snapdiag::diagEnabled()) {
+                        printf("[SNAP-CAMCUT] cam %08X eye moved %.1f at moved %.1f\n",
+                               cam, sqrtf(eyeD2), sqrtf(atD2));
+                        fflush(stdout);
+                    }
+                }
+                else if (snapdiag::diagEnabled() && ((eyeD2 > 100.0f) || (atD2 > 100.0f))) {
+                    // Motion distribution for threshold tuning: anything over
+                    // ten units that did not cut.
+                    printf("[SNAP-CAMMOVE] cam %08X eye %.1f at %.1f\n", cam, sqrtf(eyeD2), sqrtf(atD2));
+                }
+            }
+            track->address = cam;
+            std::memcpy(track->eye, eye, sizeof(eye));
+            std::memcpy(track->at, at, sizeof(at));
+            track->valid = true;
+        }
+    }
 
     // Unconditional: the game patches emit extended commands whether or not
     // interpolation is on -- the matrix tags and the widescreen border fills

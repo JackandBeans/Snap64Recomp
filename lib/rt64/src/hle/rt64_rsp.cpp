@@ -857,12 +857,14 @@ namespace RT64 {
         // The margin biases the tie toward drawing, and it scales with the
         // limit because the drift does -- and because N64 depth is heavily
         // nonlinear, a fraction of a depth unit near the far end is seconds
-        // of cart travel. A pop the hardware hid deep in the fog lands
-        // mid-view when the gate opens late, which is a Pokemon visibly
-        // materializing; erring toward drawing moves the appearance farther
-        // out than hardware, into the fog, the direction the player cannot
-        // see. Half a percent of the limit shifts an authored LOD boundary
-        // imperceptibly.
+        // of cart travel. It compensates only this port's float drift toward
+        // what the fixed-point hardware decided; a full ride's refusal log
+        // showed every refusal within eighteen units of a far-horizon limit
+        // around depth 1005 of 1023, so the appearance distance itself is
+        // authored, and the console showed the same appearance -- softened
+        // by fog, composite blur, and a CRT. Opening these gates further
+        // than the drift requires was tried and rejected: it would draw
+        // distant Pokemon the hardware never drew, a visible deviation.
         const float snapBranchZMargin = zValueFloat * 0.005f + 0.5f;
         const bool taken = forceBranch || (screenZ < zValueFloat + snapBranchZMargin);
 

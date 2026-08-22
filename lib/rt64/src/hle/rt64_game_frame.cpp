@@ -290,6 +290,12 @@ namespace RT64 {
                 snapRebaseFrame = true;
                 snapOriginDelta = rebaseWorkload.snapOriginDelta;
             }
+            // The game-side camera witness: the authoritative source, ahead
+            // of the renderer-side heuristics that match() may still add.
+            if (rebaseWorkload.snapCameraCut) {
+                rebaseWorkload.snapCameraCut = false;
+                snapViewCut = true;
+            }
         }
 
         // With the distance known, the previous frame can be moved into this
@@ -496,9 +502,19 @@ namespace RT64 {
 
         // Pokemon Snap port: detect a wholesale content swap. Runs ungated --
         // it feeds the cut decision, not a log -- and the walk is a bit test
-        // per previous transform.
+        // per transform.
+        //
+        // Two conditions, both required. Prev-side loss alone false-fired
+        // during rides: the Pokemon detector adds its render passes on
+        // alternating frames, so half the previous frame's transform
+        // instances legitimately vanish every other frame while the scene
+        // itself is continuous -- and each false fire held a frame, which
+        // was a player-visible stutter at exactly the spawn areas. A real
+        // swap breaks BOTH directions: the old content goes unclaimed and
+        // the new content finds nothing to pair with.
         {
             uint32_t prevTotal = 0, prevLost = 0;
+            uint32_t curTotal = 0, curPaired = 0;
             for (uint32_t w : workloads) {
                 const GameFrameMap::WorkloadMap &wm = frameMap.workloads[w];
                 if (!wm.mapped) {
@@ -510,10 +526,18 @@ namespace RT64 {
                         prevLost++;
                     }
                 }
+                curTotal += uint32_t(wm.transforms.size());
+                for (const auto &tm : wm.transforms) {
+                    if (tm.mapped) {
+                        curPaired++;
+                    }
+                }
             }
-            snapSceneSwap = (prevTotal >= 8) && (prevLost * 2 > prevTotal);
+            snapSceneSwap = (prevTotal >= 8) && (prevLost * 2 > prevTotal) &&
+                (curTotal >= 8) && (curPaired * 2 < curTotal);
             if (snapSceneSwap && snapdiag::diagEnabled()) {
-                fprintf(stdout, "[SNAP-CUT] scene swap lost %u of %u -> cut\n", prevLost, prevTotal);
+                fprintf(stdout, "[SNAP-CUT] scene swap lost %u of %u, paired %u of %u -> cut\n",
+                    prevLost, prevTotal, curPaired, curTotal);
                 fflush(stdout);
             }
         }

@@ -62,6 +62,7 @@ extern bool g_app_level_resident;                            // overlay_hook.cpp
 extern bool g_focus_dot_visible;                             // focus_dot.cpp
 extern bool g_world_rebased;                                 // matrix_tags.cpp
 extern float g_world_rebase_delta[3];                        // matrix_tags.cpp
+extern bool g_camera_cut;                                    // matrix_tags.cpp
 
 class RT64Context : public ultramodern::renderer::RendererContext {
 public:
@@ -316,6 +317,15 @@ public:
                 snap::g_world_rebase_delta[0],
                 snap::g_world_rebase_delta[1],
                 snap::g_world_rebase_delta[2]);
+        }
+
+        // The game's own camera jumped this frame: the authoritative cut
+        // witness (src/matrix_tags.cpp), consumed onto the same workload the
+        // display list fills.
+        if (snap::g_camera_cut) {
+            snap::g_camera_cut = false;
+            RT64::Workload &workload = app_->workloadQueue->workloads[app_->workloadQueue->writeCursor];
+            workload.snapCameraCut = true;
         }
 
         // Consumed, so the next frame has to be established by the game again.
