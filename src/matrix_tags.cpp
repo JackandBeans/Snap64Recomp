@@ -212,7 +212,8 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
     // down, its freed matrices are recycled immediately (LIFO allocator), and
     // anything of the old scene still drawn this tick wears a stolen matrix
     // -- the prop warping in the hand, then vanishing, right before the cut.
-    if ((allocBurst >= 24) || (freeBurst >= 16)) {
+    const bool burstThisTick = (allocBurst >= 24) || (freeBurst >= 16);
+    if (burstThisTick) {
         holdFrame = true;
         if (snapdiag::diagEnabled()) {
             printf("[SNAP-SWAPHOLD] %u allocated, %u freed this tick\n", allocBurst, freeBurst);
@@ -287,8 +288,15 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                 }
             }
             else if (track->holdTicks > 0) {
+                // A transition in progress holds through its quiet ticks too:
+                // teardown, a gap tick, rebuild, then the camera move arrive
+                // on separate ticks, and the gap tick is where the prop
+                // popped to a between-pose one frame before the cut. Still
+                // crossing spends the latch a tick at a time; a quiet tick
+                // bridges at most one more before release, so sustained
+                // motion or a settled scene lets go almost immediately.
+                holdFrame = true;
                 if ((eyeD > CutDistance) || (atD > CutDistance)) {
-                    holdFrame = true;
                     track->holdTicks--;
                     if (snapdiag::diagEnabled()) {
                         printf("[SNAP-TRANSIT] cam %08X still crossing, eye %.1f at %.1f\n", cam, eyeD, atD);
@@ -296,7 +304,7 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                     }
                 }
                 else {
-                    track->holdTicks = 0;
+                    track->holdTicks = (track->holdTicks > 1) ? 1 : 0;
                 }
             }
             else if (snapdiag::diagEnabled() && ((eyeD > 10.0f) || (atD > 10.0f))) {
@@ -306,6 +314,12 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                 fflush(stdout);
             }
         }
+        // A burst arms this camera's latch as well, so the quiet ticks
+        // between teardown, rebuild, and the camera's own move stay held.
+        if (burstThisTick && (track->holdTicks < 3)) {
+            track->holdTicks = 3;
+        }
+
         track->address = cam;
         track->lastSeen = ++snap::g_camera_seen_counter;
         track->eyeDelta = eyeD;
