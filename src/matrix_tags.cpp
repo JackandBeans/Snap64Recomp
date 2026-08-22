@@ -366,7 +366,68 @@ extern "C" void bindCameraNextBlock(uint8_t* rdram, recomp_context* ctx) {
 extern "C" void enterNextBlock(uint8_t* rdram, recomp_context* ctx) {
     __real_enterNextBlock(rdram, ctx);
 
-    if (static_cast<uint32_t>(ctx->r2) != 0) {
+    const uint32_t block = static_cast<uint32_t>(ctx->r2);
+    if (block != 0) {
         snap::g_world_rebased = true;
+        if (snapdiag::diagEnabled() && snap::valid_ram_address(block)) {
+            printf("[SNAP-BLOCK] entered block %d\n",
+                   static_cast<int32_t>(MEM_W(0x0, (gpr)(int32_t)block)));
+            fflush(stdout);
+        }
     }
+}
+
+// Spawn-timing probes. The world creates a block's Pokemon one block before
+// the cart arrives (enterNextBlock adds next->next), so a Pokemon that
+// visibly pops into existence mid-ride either was created at that moment in
+// view -- the game's own authored timing, reproducible from this log -- or
+// existed for a block already and something on the draw side revealed it.
+// One ride with SNAP_DIAG answers which.
+namespace snap {
+namespace {
+void logSpawn(uint8_t* rdram, uint32_t spawn, int32_t blockIndex) {
+    const uint32_t id = static_cast<uint32_t>(MEM_W(0x0, (gpr)(int32_t)spawn));
+    float t[3];
+    for (int i = 0; i < 3; i++) {
+        t[i] = read_cam_f32(rdram, spawn + 0x08 + i * 4);
+    }
+    printf("[SNAP-SPAWN] block %d pokemon %u at (%.0f, %.0f, %.0f)\n",
+           blockIndex, id, t[0], t[1], t[2]);
+}
+} // namespace
+} // namespace snap
+
+extern "C" void pokemonAdd(uint8_t* rdram, recomp_context* ctx) {
+    if (snapdiag::diagEnabled()) {
+        const uint32_t block = static_cast<uint32_t>(ctx->r4);
+        if (snap::valid_ram_address(block)) {
+            const int32_t index = static_cast<int32_t>(MEM_W(0x0, (gpr)(int32_t)block));
+            const uint32_t desc = static_cast<uint32_t>(MEM_W(0x4, (gpr)(int32_t)block));
+            if (snap::valid_ram_address(desc)) {
+                uint32_t spawn = static_cast<uint32_t>(MEM_W(0x1C, (gpr)(int32_t)desc));
+                for (int n = 0; snap::valid_ram_address(spawn) && (n < 40); n++, spawn += 0x30) {
+                    if (static_cast<uint32_t>(MEM_W(0x0, (gpr)(int32_t)spawn)) == 0xFFFFFFFFu) {
+                        break;
+                    }
+                    snap::logSpawn(rdram, spawn, index);
+                }
+                fflush(stdout);
+            }
+        }
+    }
+
+    __real_pokemonAdd(rdram, ctx);
+}
+
+extern "C" void pokemonAddOne(uint8_t* rdram, recomp_context* ctx) {
+    if (snapdiag::diagEnabled()) {
+        const uint32_t block = static_cast<uint32_t>(ctx->r4);
+        const uint32_t spawn = static_cast<uint32_t>(ctx->r6);
+        if (snap::valid_ram_address(block) && snap::valid_ram_address(spawn)) {
+            snap::logSpawn(rdram, spawn, static_cast<int32_t>(MEM_W(0x0, (gpr)(int32_t)block)));
+            fflush(stdout);
+        }
+    }
+
+    __real_pokemonAddOne(rdram, ctx);
 }

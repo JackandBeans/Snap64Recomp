@@ -44,6 +44,11 @@ HOOKED = [
     # Stamps a serial into each matrix as it is handed out, so a recycled
     # address does not read as the same object it was last time.
     'omGetMtx',
+    # Spawn-timing probes: log every Pokemon the world creates, with its
+    # block and position, so a ride's log says whether one that visibly
+    # "appeared" was created at that moment or had existed for a block.
+    'pokemonAdd',
+    'pokemonAddOne',
     # Reports how full the game's display list buffers get. The port emits a
     # matrix group ahead of every matrix, which the original never did, and
     # these buffers are small and fixed.
