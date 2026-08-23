@@ -1507,6 +1507,7 @@ namespace RT64 {
                     }
 
                     int64_t renderTimeMicro = workloadTimer.elapsedMicroseconds();
+                    const uint32_t materialsBefore = snapdiag::shaderAskedCounter().load(std::memory_order_relaxed);
 
                     // A held interval's extra images are the previous frame
                     // repeated; only frame zero renders (the game reads its
@@ -1528,7 +1529,21 @@ namespace RT64 {
                     }
 
                     // Add total time the frame took to render.
-                    renderTimeTotalMicro += workloadTimer.elapsedMicroseconds() - renderTimeMicro;
+                    const int64_t frameRenderMicro = workloadTimer.elapsedMicroseconds() - renderTimeMicro;
+                    renderTimeTotalMicro += frameRenderMicro;
+
+                    // A single rendered frame taking several frames' worth of
+                    // time is where a hitch is actually spent. Reported with
+                    // how many materials this frame was the first to ask for,
+                    // which separates "the scene got heavier" from "the driver
+                    // was busy turning new materials into pipelines".
+                    if (snapdiag::statsEnabled() && (frameRenderMicro > 15000)) {
+                        fprintf(stdout, "[SNAP-SLOWFRAME] rendering one frame took %.1f ms, new materials first seen this frame %u, draws %u\n",
+                            double(frameRenderMicro) / 1000.0,
+                            snapdiag::shaderAskedCounter().load(std::memory_order_relaxed) - materialsBefore,
+                            workload.gameCallCount);
+                        fflush(stdout);
+                    }
 
                     // After one frame is rendered, we indicate the workload has been processed so the present thread can start presenting frames as soon as it can.
                     if (frame == 0) {

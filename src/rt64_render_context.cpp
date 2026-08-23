@@ -17,6 +17,8 @@
 #include "ultramodern/config.hpp"
 
 #include "settings.h"
+#include "hle/rt64_snap_diag.h"
+#include <chrono>
 
 #if defined(_WIN32)
 #include <unknwn.h>
@@ -385,7 +387,27 @@ public:
         // later workload can repaint the render target for a framebuffer while
         // the present thread is displaying it, which showed up as random black
         // frames and layer flicker in the intro forest and beach rock wall.
-        app_->workloadQueue->waitForWorkloadId(app_->state->workloadId);
+        // How much of a game frame is the game's own work and how much is this
+        // wait. The game thread is held here until its frame has been rendered,
+        // so a slow render shows up as a slow game frame, and a slow game frame
+        // starves the interpolation of anything new to show. Separating them
+        // says whether a hitch at a Pokemon spawn is the game doing the work
+        // the console also did, or the port charging it for rendering.
+        {
+            static std::chrono::steady_clock::time_point lastTickStart;
+            const auto waitStart = std::chrono::steady_clock::now();
+            app_->workloadQueue->waitForWorkloadId(app_->state->workloadId);
+            const auto waitEnd = std::chrono::steady_clock::now();
+            if (snapdiag::statsEnabled() && (lastTickStart.time_since_epoch().count() != 0)) {
+                const double tickMs = std::chrono::duration<double, std::milli>(waitEnd - lastTickStart).count();
+                const double waitMs = std::chrono::duration<double, std::milli>(waitEnd - waitStart).count();
+                if (tickMs > 45.0) {
+                    printf("[SNAP-SLOWTICK] game frame took %.1f ms, of which %.1f ms waiting for the renderer\n", tickMs, waitMs);
+                    fflush(stdout);
+                }
+            }
+            lastTickStart = waitEnd;
+        }
 
 
     }
