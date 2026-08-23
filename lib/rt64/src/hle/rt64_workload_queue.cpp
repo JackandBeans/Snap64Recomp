@@ -1271,6 +1271,13 @@ namespace RT64 {
                     lastTickTimestamp = tickNow;
                 }
 
+                // Pokemon Snap port: the moment this game frame's content became
+                // available to draw. The present side subtracts it to say how
+                // old the picture on screen is.
+                snapdiag::newestStateNanos().store(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(Timer::current().time_since_epoch()).count(),
+                    std::memory_order_relaxed);
+
                 snapdiag::subFrameAskedCounter().fetch_add(displayFrames, std::memory_order_relaxed);
                 ext.sharedResources->viOriginalRate = workload.viOriginalRate;
                 

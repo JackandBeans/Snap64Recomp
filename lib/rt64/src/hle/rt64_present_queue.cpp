@@ -744,6 +744,25 @@ namespace {
                     static uint32_t intervalLate = 0;
                     static double intervalPrevMs = 0.0;
                     static uint32_t intervalJudder = 0;
+                    static double ageTotalMs = 0.0;
+                    static double ageWorstMs = 0.0;
+                    static uint32_t ageCount = 0;
+                    const int64_t newestStateNanos = snapdiag::newestStateNanos().load(std::memory_order_relaxed);
+                    if (newestStateNanos != 0) {
+                        // How far behind the game the picture is at the instant
+                        // it goes out: the age of the newest state the game had
+                        // computed when this frame was presented. Interpolation
+                        // places frames between two game frames, so this cannot
+                        // reach zero -- what it can show is everything queued
+                        // on top of that, which is the part worth removing.
+                        const int64_t presentNanos = std::chrono::duration_cast<std::chrono::nanoseconds>(presentTimestamp.time_since_epoch()).count();
+                        const double ageMs = double(presentNanos - newestStateNanos) / 1'000'000.0;
+                        if ((ageMs >= 0.0) && (ageMs < 1000.0)) {
+                            ageTotalMs += ageMs;
+                            ageWorstMs = std::max(ageWorstMs, ageMs);
+                            ageCount++;
+                        }
+                    }
                     const double intervalMs = std::chrono::duration<double, std::milli>(presentTimestamp - previousPresentTimestamp).count();
                     intervalTotalMs += intervalMs;
                     intervalWorstMs = std::max(intervalWorstMs, intervalMs);
@@ -764,10 +783,14 @@ namespace {
                         const uint32_t asked = snapdiag::subFrameAskedCounter().exchange(0, std::memory_order_relaxed);
                         const uint32_t dropped = snapdiag::subFrameDroppedCounter().exchange(0, std::memory_order_relaxed) +
                             snapdiag::workloadDroppedCounter().exchange(0, std::memory_order_relaxed);
-                        fprintf(stdout, "[SNAP-PACE] %u presents, average %.2f ms (%.1f fps), worst %.2f ms, hitches %u, uneven pairs %u, frames held %u, interpolated frames asked %u dropped %u (%.1f%%)\n",
+                        fprintf(stdout, "[SNAP-PACE] %u presents, average %.2f ms (%.1f fps), worst %.2f ms, hitches %u, uneven pairs %u, frames held %u, interpolated frames asked %u dropped %u (%.1f%%), picture age average %.2f ms worst %.2f ms\n",
                             intervalCount, runningAverageMs, 1000.0 / runningAverageMs, intervalWorstMs, intervalLate, intervalJudder,
                             snapdiag::holdCounter().exchange(0, std::memory_order_relaxed),
-                            asked, dropped, (asked > 0) ? (100.0 * double(dropped) / double(asked)) : 0.0);
+                            asked, dropped, (asked > 0) ? (100.0 * double(dropped) / double(asked)) : 0.0,
+                            (ageCount > 0) ? (ageTotalMs / ageCount) : 0.0, ageWorstMs);
+                        ageTotalMs = 0.0;
+                        ageWorstMs = 0.0;
+                        ageCount = 0;
                         fflush(stdout);
                         intervalTotalMs = 0.0;
                         intervalWorstMs = 0.0;

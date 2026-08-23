@@ -84,6 +84,15 @@ inline std::atomic<uint32_t> &workloadDroppedCounter() {
     return counter;
 }
 
+// When the newest game state started being turned into pictures. Interpolation
+// places display frames between two game frames, so what is on screen is
+// always some distance behind the newest state the game has computed; this is
+// how that distance gets measured instead of assumed.
+inline std::atomic<int64_t> &newestStateNanos() {
+    static std::atomic<int64_t> nanos{0};
+    return nanos;
+}
+
 // Distinguishes this run's files from every other run's. Derived from the
 // launch time, so re-running an experiment adds files instead of replacing
 // the evidence the previous run produced.
