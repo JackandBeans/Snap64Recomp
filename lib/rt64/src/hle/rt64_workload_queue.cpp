@@ -1257,7 +1257,16 @@ namespace RT64 {
                     matchingProfiler.log();
 
                     const bool displayRateAboveOriginal = (workload.viOriginalRate > 0) && (workloadConfig.targetRate > workload.viOriginalRate);
-                    generateInterpolatedFrames = !workload.paused && displayRateAboveOriginal && !interpolationTargetKey.isEmpty();
+                    // Cutscenes present at their native cadence, exactly as
+                    // the console did. The intro is a hand-authored film of
+                    // staged teardowns, re-poses and cuts; every attempt to
+                    // interpolate it manufactures artifacts the hardware
+                    // never showed -- blended transits, wobbling props,
+                    // ghosted double-passes -- because the film was built to
+                    // step. Gameplay, which is continuous motion, keeps full
+                    // interpolation.
+                    generateInterpolatedFrames = !workload.paused && displayRateAboveOriginal && !interpolationTargetKey.isEmpty() &&
+                        !workload.snapCutscene;
 
                     const bool resetTicks = !generateInterpolatedFrames || (originalRateForTicks != workload.viOriginalRate) || (displayRateForTicks != workloadConfig.targetRate) || !displayRateAboveOriginal;
                     if (resetTicks) {
