@@ -30,13 +30,37 @@ namespace RT64 {
             float dotCurVel = std::max(hlslpp::dot(linearVelocity / std::max(prevVelMag, Epsilon), curLinearVelocity / std::max(curVelMag, Epsilon))[0], Epsilon);
             curVelMag /= dotCurVel;
             lerpTranslation = (curVelMag < VelocityTolerance) || (curVelMag / std::max(prevVelMag, Epsilon)) < MagnitudeThreshold;
+
+            // Pokemon Snap port: hysteresis. A fast authored move -- Todd
+            // lifting the camera at the end of the close-up -- steps 2 to 7
+            // units a tick, crossing these thresholds back and forth, and a
+            // mix of snapped and blended ticks wobbles visibly. Once a step
+            // is judged discontinuous, keep the pair snapped until its
+            // motion either stops or becomes continuous (velocity close to
+            // the previous tick's), so the whole move steps uniformly.
+            const float velDelta = float(hlslpp::length(curLinearVelocity - linearVelocity));
+            if (!lerpTranslation) {
+                snapDiscontinuityLatch = true;
+            }
+            else if (snapDiscontinuityLatch) {
+                const bool cameStill = (curVelMag < 1.0f);
+                const bool continuous = velDelta < std::max(1.0f, curVelMag * 0.3f);
+                if (cameStill || continuous) {
+                    snapDiscontinuityLatch = false;
+                }
+                else {
+                    lerpTranslation = false;
+                }
+            }
+
             linearVelocity = curLinearVelocity;
             // Pokemon Snap port: this rejection means the pair is not two
-            // poses of one motion -- a teleport, or a mispair. Blending any
-            // component of such a pair lerps between unrelated matrices;
-            // rotation rows blended that way collapse the geometry into the
-            // screen-covering smear the intro flashed for one frame.
-            // updateAngular and updatePerspective read this and decline too.
+            // poses of one motion -- a teleport, a mispair, or a latched
+            // fast move. Blending any component of such a pair lerps between
+            // unrelated matrices; rotation rows blended that way collapse
+            // the geometry into the screen-covering smear the intro flashed
+            // for one frame. updateAngular and updatePerspective read this
+            // and decline too.
             autoRejectedTranslation = !lerpTranslation;
         }
         else {

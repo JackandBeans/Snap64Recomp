@@ -23,6 +23,12 @@ namespace RT64 {
         // discontinuous -- the two transforms are not the same object pose,
         // so no other component of the pair should blend either.
         bool autoRejectedTranslation = false;
+        // Pokemon Snap port: a fast authored move crosses the guard's
+        // thresholds tick by tick -- some steps snap, some blend, and the
+        // mix is a visible wobble. Once judged discontinuous, the pair stays
+        // snapped until its motion is still or genuinely continuous, so the
+        // whole move steps uniformly, the way the console showed it.
+        bool snapDiscontinuityLatch = false;
 
         // Default constructor.
         RigidBody();
