@@ -57,6 +57,11 @@ namespace RT64 {
         Timestamp presentTimestamp;
         VIHistory viHistory;
         bool presentWaitEnabled = false;
+        // Pokemon Snap port: whether the swap chain is currently letting the
+        // display pace presents. Tracked so the mode is only pushed when it
+        // actually changes; on some backends setting it forces the swap chain
+        // to be rebuilt.
+        bool swapChainDisplayPaced = false;
 
         PresentQueue();
         ~PresentQueue();

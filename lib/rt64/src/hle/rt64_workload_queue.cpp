@@ -1220,6 +1220,58 @@ namespace RT64 {
                     deltaTimeMs = 1.0f / float(workload.viOriginalRate);
                 }
 
+
+                // Pokemon Snap port: the clock interpolation is built on. Every
+                // display frame between two game frames is placed by assuming
+                // the game ticks at a fixed rate, so if the ticks themselves
+                // arrive unevenly -- or the rate the renderer believes changes
+                // underneath it -- the frames still arrive on a perfect
+                // schedule while the motion inside them speeds up and slows
+                // down. That is stutter no amount of frame counting or present
+                // pacing can see, so it is measured here at its source.
+                if (snapdiag::statsEnabled()) {
+                    static Timestamp lastTickTimestamp;
+                    static double tickTotalMs = 0.0;
+                    static double tickWorstMs = 0.0;
+                    static double tickBestMs = 1e9;
+                    static uint32_t tickCount = 0;
+                    static uint32_t tickUneven = 0;
+                    static uint32_t tickRateChanges = 0;
+                    static uint32_t lastOriginalRate = 0;
+                    static uint32_t lastDisplayFrames = 0;
+                    static uint32_t displayFramesChanges = 0;
+                    if (workload.viOriginalRate != lastOriginalRate) {
+                        tickRateChanges++;
+                        lastOriginalRate = workload.viOriginalRate;
+                    }
+                    if (displayFrames != lastDisplayFrames) {
+                        displayFramesChanges++;
+                        lastDisplayFrames = displayFrames;
+                    }
+                    const Timestamp tickNow = Timer::current();
+                    if (lastTickTimestamp != Timestamp()) {
+                        const double tickMs = std::chrono::duration<double, std::milli>(tickNow - lastTickTimestamp).count();
+                        tickTotalMs += tickMs;
+                        tickWorstMs = std::max(tickWorstMs, tickMs);
+                        tickBestMs = std::min(tickBestMs, tickMs);
+                        tickCount++;
+                        const double tickAverageMs = tickTotalMs / tickCount;
+                        if (std::abs(tickMs - tickAverageMs) > (tickAverageMs * 0.25)) {
+                            tickUneven++;
+                        }
+                        if (tickCount >= 120) {
+                            fprintf(stdout, "[SNAP-TICK] %u game frames, average %.2f ms (%.1f fps), fastest %.2f, slowest %.2f, uneven %u, believed rate %u (changed %u), frames per tick %u (changed %u)\n",
+                                tickCount, tickAverageMs, 1000.0 / tickAverageMs, tickBestMs, tickWorstMs, tickUneven,
+                                workload.viOriginalRate, tickRateChanges, displayFrames, displayFramesChanges);
+                            fflush(stdout);
+                            tickTotalMs = 0.0; tickWorstMs = 0.0; tickBestMs = 1e9; tickCount = 0;
+                            tickUneven = 0; tickRateChanges = 0; displayFramesChanges = 0;
+                        }
+                    }
+                    lastTickTimestamp = tickNow;
+                }
+
+                snapdiag::subFrameAskedCounter().fetch_add(displayFrames, std::memory_order_relaxed);
                 ext.sharedResources->viOriginalRate = workload.viOriginalRate;
                 
                 // Get the current and previous set of frame counters. The other set can be in use by the present queue. Skip if no new present event has arrived before this workload event.
@@ -1332,6 +1384,7 @@ namespace RT64 {
                         if ((currentTimeMicro > expectedTimeMicro) || ((currentTimeMicro + measuredFrameMicro) > adjustedTimeWindowMicro)) {
                             displayTicks += workload.viOriginalRate;
                             skippedFrames = true;
+                            snapdiag::subFrameDroppedCounter().fetch_add(1, std::memory_order_relaxed);
                             continue;
                         }
                     }
@@ -1435,6 +1488,7 @@ namespace RT64 {
                         // Add the amount of display ticks that correspond to the remaining frames.
                         if (skipWorkloadNow) {
                             displayTicks += workload.viOriginalRate * (displayFrames - (frame + 1));
+                            snapdiag::workloadDroppedCounter().fetch_add(displayFrames - (frame + 1), std::memory_order_relaxed);
                         }
 
                         ext.sharedResources->interpolatedCondition.notify_all();

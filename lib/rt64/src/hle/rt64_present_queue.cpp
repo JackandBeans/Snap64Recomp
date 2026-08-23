@@ -695,7 +695,26 @@ namespace {
 
             if (presentFrame && swapChainValid) {
                 // Wait until the approximate time the next present should be at the current intended rate.
-                if ((presentTimestamp != Timestamp()) && (targetRate > 0) && (targetRate > viOriginalRate)) {
+                // Pokemon Snap port: when the port is interpolating to the
+                // display's own rate, the display sets the cadence. Pacing
+                // these presents from a software clock instead leaves two
+                // clocks running at almost the same speed and never in step,
+                // and they beat against each other: every few seconds a
+                // present lands twice inside one refresh and is never seen,
+                // or none lands and a refresh repeats. Frame after frame
+                // arrives exactly on time by every internal measure while the
+                // picture visibly stutters and doubles, worst during a smooth
+                // pan where the eye tracks the motion. Handing the wait to the
+                // display puts every frame on a refresh boundary, which is the
+                // only way this is smooth at any rate the display runs at.
+                const uint32_t displayRate = ext.sharedResources->swapChainRate;
+                const bool displayPaced = (targetRate > 0) && (displayRate > 0) && (targetRate >= displayRate);
+                if (displayPaced != swapChainDisplayPaced) {
+                    ext.swapChain->setVsyncEnabled(displayPaced);
+                    swapChainDisplayPaced = displayPaced;
+                }
+
+                if (!displayPaced && (presentTimestamp != Timestamp()) && (targetRate > 0) && (targetRate > viOriginalRate)) {
                     Timer::preciseSleepUntil(presentTimestamp + std::chrono::nanoseconds(1'000'000'000 / targetRate));
                 }
 
@@ -742,9 +761,13 @@ namespace {
                     }
                     intervalPrevMs = intervalMs;
                     if (intervalCount >= 600) {
-                        fprintf(stdout, "[SNAP-PACE] %u presents, average %.2f ms (%.1f fps), worst %.2f ms, hitches %u, uneven pairs %u, frames held %u\n",
+                        const uint32_t asked = snapdiag::subFrameAskedCounter().exchange(0, std::memory_order_relaxed);
+                        const uint32_t dropped = snapdiag::subFrameDroppedCounter().exchange(0, std::memory_order_relaxed) +
+                            snapdiag::workloadDroppedCounter().exchange(0, std::memory_order_relaxed);
+                        fprintf(stdout, "[SNAP-PACE] %u presents, average %.2f ms (%.1f fps), worst %.2f ms, hitches %u, uneven pairs %u, frames held %u, interpolated frames asked %u dropped %u (%.1f%%)\n",
                             intervalCount, runningAverageMs, 1000.0 / runningAverageMs, intervalWorstMs, intervalLate, intervalJudder,
-                            snapdiag::holdCounter().exchange(0, std::memory_order_relaxed));
+                            snapdiag::holdCounter().exchange(0, std::memory_order_relaxed),
+                            asked, dropped, (asked > 0) ? (100.0 * double(dropped) / double(asked)) : 0.0);
                         fflush(stdout);
                         intervalTotalMs = 0.0;
                         intervalWorstMs = 0.0;

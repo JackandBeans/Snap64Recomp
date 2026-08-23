@@ -63,6 +63,27 @@ inline std::atomic<uint32_t> &holdCounter() {
     return counter;
 }
 
+// What the renderer was asked for against what it managed. Interpolation is
+// asked for one fully rendered frame per display refresh, so a high refresh
+// display asks for a great many; when a frame cannot be finished in its slice
+// of the tick it is dropped, and the motion in the frames that do arrive
+// advances unevenly even though they arrive on a perfect schedule. Wall-clock
+// pacing cannot see that -- these can.
+inline std::atomic<uint32_t> &subFrameAskedCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
+inline std::atomic<uint32_t> &subFrameDroppedCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
+inline std::atomic<uint32_t> &workloadDroppedCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
 // Distinguishes this run's files from every other run's. Derived from the
 // launch time, so re-running an experiment adds files instead of replacing
 // the evidence the previous run produced.

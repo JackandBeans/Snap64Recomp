@@ -1389,9 +1389,16 @@ namespace plume {
     }
 
     bool D3D12SwapChain::present(uint32_t textureIndex, RenderCommandSemaphore **waitSemaphores, uint32_t waitSemaphoreCount) {
-        // If using present wait, we prefer using a SyncInterval of 0 even when Vsync is enabled. Tearing won't happen if DXGI_PRESENT_ALLOW_TEARING is not specified.
+        // Pokemon Snap port: vsync means vsync, present wait or not. Enabling
+        // present wait used to silently drop the sync interval to zero, which
+        // leaves the caller's own timer deciding when frames go out. Two
+        // clocks at almost the same rate and never in step beat against each
+        // other, so frames are periodically shown twice or not at all -- a
+        // stutter that no frame counter can see because every frame really was
+        // delivered on time. Present wait is a latency control and composes
+        // with the sync interval; it is not a substitute for it.
         const bool tearingAllowed = (swapChainFlags & DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING) != 0U;
-        UINT syncInterval = (vsyncEnabled && !desc.enablePresentWait) ? 1 : 0;
+        UINT syncInterval = vsyncEnabled ? 1 : 0;
         UINT flags = (!vsyncEnabled && tearingAllowed) ? DXGI_PRESENT_ALLOW_TEARING : 0;
         HRESULT res = d3d->Present(syncInterval, flags);
         return SUCCEEDED(res);
