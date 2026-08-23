@@ -53,9 +53,6 @@ namespace RT64 {
         ShaderRecord rtCopyDepthToColorMS;
         ShaderRecord textureDecode;
         ShaderRecord textureCopy;
-        // The same draw with alpha blending: one target faded over another,
-        // for the Pokemon Snap port's cut crossfade.
-        ShaderRecord textureCopyBlend;
         ShaderRecord textureResolve;
         ShaderRecord videoInterfaceLinear;
         ShaderRecord videoInterfaceNearest;

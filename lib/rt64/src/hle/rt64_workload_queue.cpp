@@ -360,80 +360,6 @@ namespace RT64 {
         return true;
     }
 
-    // Pokemon Snap port: draws the held snapshot over a just-rendered target
-    // with the given alpha -- the tail of a cut transition, where the old
-    // image dissolves into the new shot's live motion instead of releasing
-    // with a hard jump. The dissolve happens only after the transition's
-    // broken ticks have passed; they are held outright, never blended into.
-    void WorkloadQueue::threadFadeSnapshotOver(RenderTarget *dstTarget, const RenderTargetKey &dstKey, float alpha) {
-        std::scoped_lock<std::mutex> managerLock(ext.sharedResources->workloadMutex);
-        if ((snapHoldScratch == nullptr) || snapHoldScratch->isEmpty()) {
-            if (snapdiag::diagEnabled()) {
-                fprintf(stdout, "[SNAP-FADE] bail: no snapshot\n");
-                fflush(stdout);
-            }
-            return;
-        }
-        RenderTargetManager &targetManager = ext.sharedResources->renderTargetManager;
-        if (dstTarget == nullptr) {
-            if (dstKey.isEmpty()) {
-                return;
-            }
-            dstTarget = &targetManager.get(dstKey);
-        }
-        RenderTarget &src = *snapHoldScratch;
-        if (dstTarget->isEmpty() || (dstTarget->width != src.width) || (dstTarget->height != src.height)) {
-            if (snapdiag::diagEnabled()) {
-                fprintf(stdout, "[SNAP-FADE] bail: dst %ux%u vs snapshot %ux%u\n",
-                    dstTarget->width, dstTarget->height, src.width, src.height);
-                fflush(stdout);
-            }
-            return;
-        }
-        if (snapdiag::diagEnabled()) {
-            fprintf(stdout, "[SNAP-FADE] alpha %.2f dst %p\n", alpha, (void *)dstTarget->texture.get());
-            fflush(stdout);
-        }
-
-        workerMutex.lock();
-        RenderWorker *worker = ext.workloadGraphicsWorker;
-        if (src.textureCopyDescSet == nullptr) {
-            src.textureCopyDescSet = std::make_unique<TextureCopyDescriptorSet>(worker->device);
-            src.textureCopyDescSet->setTexture(src.textureCopyDescSet->gInput, src.texture.get(), RenderTextureLayout::SHADER_READ, src.textureView.get());
-        }
-
-        worker->commandList->begin();
-        RenderTextureBarrier drawBarriers[] = {
-            RenderTextureBarrier(src.texture.get(), RenderTextureLayout::SHADER_READ),
-            RenderTextureBarrier(dstTarget->texture.get(), RenderTextureLayout::COLOR_WRITE),
-        };
-        worker->commandList->barriers(RenderBarrierStage::GRAPHICS, drawBarriers, uint32_t(std::size(drawBarriers)));
-        dstTarget->setupColorFramebuffer(worker);
-        worker->commandList->setFramebuffer(dstTarget->textureFramebuffer.get());
-
-        interop::TextureCopyCB copyCB;
-        copyCB.uvScroll.x = 0.0f;
-        copyCB.uvScroll.y = 0.0f;
-        copyCB.uvScale.x = float(src.width);
-        copyCB.uvScale.y = float(src.height);
-        copyCB.alpha = alpha;
-
-        const ShaderRecord &blendRecord = ext.shaderLibrary->textureCopyBlend;
-        worker->commandList->setPipeline(blendRecord.pipeline.get());
-        worker->commandList->setGraphicsPipelineLayout(blendRecord.pipelineLayout.get());
-        worker->commandList->setVertexBuffers(0, nullptr, 0, nullptr);
-        worker->commandList->setViewports(RenderViewport(0.0f, 0.0f, float(dstTarget->width), float(dstTarget->height)));
-        worker->commandList->setScissors(RenderRect(0, 0, dstTarget->width, dstTarget->height));
-        worker->commandList->setGraphicsDescriptorSet(src.textureCopyDescSet->get(), 0);
-        worker->commandList->setGraphicsPushConstants(0, &copyCB);
-        worker->commandList->drawInstanced(3, 1, 0, 0);
-        worker->commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(dstTarget->texture.get(), RenderTextureLayout::SHADER_READ));
-        worker->commandList->end();
-        worker->execute();
-        worker->wait();
-        workerMutex.unlock();
-    }
-
     void WorkloadQueue::threadRenderFrame(GameFrame &curFrame, const GameFrame &prevFrame, const WorkloadConfiguration &workloadConfig,
         const DebuggerRenderer &debuggerRenderer, const DebuggerCamera &debuggerCamera, float curFrameWeight, float prevFrameWeight,
         float deltaTimeMs, RenderTargetKey overrideTargetKey, int32_t overrideTargetFbPairIndex, RenderTarget *overrideTarget,
@@ -581,6 +507,12 @@ namespace RT64 {
         for (uint32_t w = 0; w < curFrame.workloads.size(); w++) {
             Workload &workload = workloads[curFrame.workloads[w]];
 
+            // Pokemon Snap port: cutscene workloads pin content -- including
+            // per-vertex interpolation -- to the current frame; only the
+            // view interpolates there (see the transform processor).
+            const float workloadPrevWeight = workload.snapCutscene ? 1.0f : prevFrameWeight;
+            const float workloadCurWeight = workload.snapCutscene ? 1.0f : curFrameWeight;
+
             // There's no guarantee the RSP was processed if framebuffers were not rendered.
             const bool processRSP = true;
             if (processRSP) {
@@ -591,8 +523,8 @@ namespace RT64 {
                 rspParams.drawData = &workload.drawData;
                 rspParams.drawBuffers = &workload.drawBuffers;
                 rspParams.outputBuffers = &workload.outputBuffers;
-                rspParams.prevFrameWeight = prevFrameWeight;
-                rspParams.curFrameWeight = curFrameWeight;
+                rspParams.prevFrameWeight = workloadPrevWeight;
+                rspParams.curFrameWeight = workloadCurWeight;
                 rspProcessor->process(rspParams);
             }
 
@@ -605,8 +537,8 @@ namespace RT64 {
                 vertexParams.drawData = &workload.drawData;
                 vertexParams.drawBuffers = &workload.drawBuffers;
                 vertexParams.outputBuffers = &workload.outputBuffers;
-                vertexParams.curFrameWeight = curFrameWeight;
-                vertexParams.prevFrameWeight = prevFrameWeight;
+                vertexParams.curFrameWeight = workloadCurWeight;
+                vertexParams.prevFrameWeight = workloadPrevWeight;
                 vertexProcessor->process(vertexParams);
             }
 
@@ -1150,14 +1082,9 @@ namespace RT64 {
         int processCursor = -1;
         bool frameReduction = false;
         // The previous game frame's presented target, for the cut-transit hold.
+        // The game's cuts are hard cuts and release as hard cuts; a crossfade
+        // tail was tried here and read as a glitch on screen.
         RenderTargetKey snapPrevTargetKey;
-        // Crossfade tail after a held transition, disabled: a few frames of
-        // half-transparent old image over the new shot reads as a glitch,
-        // not a dissolve -- caught on screen as a ghosted logo card over the
-        // forest. The game's cuts are hard cuts; zero keeps them that way.
-        bool snapPrevHeld = false;
-        uint32_t snapFadeFramesLeft = 0;
-        const uint32_t SnapFadeFrames = 0;
         uint32_t snapConsecutiveHolds = 0;
         while (threadsRunning) {
             {
@@ -1257,16 +1184,18 @@ namespace RT64 {
                     matchingProfiler.log();
 
                     const bool displayRateAboveOriginal = (workload.viOriginalRate > 0) && (workloadConfig.targetRate > workload.viOriginalRate);
-                    // Cutscenes present at their native cadence, exactly as
-                    // the console did. The intro is a hand-authored film of
-                    // staged teardowns, re-poses and cuts; every attempt to
-                    // interpolate it manufactures artifacts the hardware
-                    // never showed -- blended transits, wobbling props,
-                    // ghosted double-passes -- because the film was built to
-                    // step. Gameplay, which is continuous motion, keeps full
-                    // interpolation.
-                    generateInterpolatedFrames = !workload.paused && displayRateAboveOriginal && !interpolationTargetKey.isEmpty() &&
-                        !workload.snapCutscene;
+                    // Cutscenes interpolate the VIEW only. The intro is a
+                    // hand-authored film of staged teardowns, re-poses and
+                    // cuts; blending its content manufactures artifacts the
+                    // hardware never showed, but stepping the camera at
+                    // native cadence reads as stutter on every pan. So
+                    // cutscene workloads render at the full display rate with
+                    // the camera gliding between its poses while the world's
+                    // transforms pin to the current frame (the processors
+                    // read workload.snapCutscene): content steps exactly as
+                    // it was authored, inside a smooth camera. Gameplay,
+                    // which is continuous motion, keeps full interpolation.
+                    generateInterpolatedFrames = !workload.paused && displayRateAboveOriginal && !interpolationTargetKey.isEmpty();
 
                     const bool resetTicks = !generateInterpolatedFrames || (originalRateForTicks != workload.viOriginalRate) || (displayRateForTicks != workloadConfig.targetRate) || !displayRateAboveOriginal;
                     if (resetTicks) {
@@ -1340,21 +1269,22 @@ namespace RT64 {
                 // here by presenting the previous frame's image for this
                 // workload's whole interval, at native rate and interpolated
                 // alike. MSAA resolves through different targets; the hold
-                // stands down there rather than guess.
-                bool snapCutHold = (workload.snapCutHold || curFrame.snapDiscontinuity) && !workload.paused && !usingMSAA &&
+                // stands down there rather than guess. The census verdict is
+                // only trusted when the frame matcher actually ran this
+                // workload -- with matching off it is whatever frame last
+                // computed it.
+                bool snapCutHold = (workload.snapCutHold || (requiresFrameMatching && curFrame.snapDiscontinuity)) &&
+                    !workload.paused && !usingMSAA &&
                     !interpolationTargetKey.isEmpty() && !snapPrevTargetKey.isEmpty();
 
                 // Release valve on the renderer-side verdict: a scene that
                 // churns endlessly must not freeze the screen. Sixteen frames
-                // outlasts every observed transition.
-                if (snapCutHold) {
+                // outlasts every observed transition; past it the valve stays
+                // open for as long as the verdict keeps firing, so endless
+                // churn shows continuously rather than freezing in bursts.
+                if (snapCutHold && (snapConsecutiveHolds >= 16)) {
+                    snapCutHold = false;
                     snapConsecutiveHolds++;
-                    if (snapConsecutiveHolds > 16) {
-                        snapCutHold = false;
-                    }
-                }
-                else {
-                    snapConsecutiveHolds = 0;
                 }
                 if (snapCutHold) {
                     // Snapshot the previous image before this frame renders a
@@ -1374,22 +1304,18 @@ namespace RT64 {
                         }
                     }
                     snapCutHold = threadHoldCopy(nullptr, snapPrevTargetKey, snapHoldScratch.get(), RenderTargetKey());
+                    // A hold that actually shows spends valve budget; a
+                    // failed snapshot copy shows the rendered frame instead
+                    // and must not.
+                    snapConsecutiveHolds = snapCutHold ? (snapConsecutiveHolds + 1) : 0;
+                }
+                else if (!workload.snapCutHold && !(requiresFrameMatching && curFrame.snapDiscontinuity)) {
+                    // Only a frame with no verdict at all closes the valve.
+                    snapConsecutiveHolds = 0;
                 }
                 if (snapCutHold && snapdiag::diagEnabled()) {
                     fprintf(stdout, "[SNAP-HOLD] cut transit: presenting previous frame for one tick\n");
                     fflush(stdout);
-                }
-
-                // The frame after the last held one starts the dissolve.
-                if (snapCutHold) {
-                    snapPrevHeld = true;
-                    snapFadeFramesLeft = 0;
-                }
-                else if (!workload.paused) {
-                    if (snapPrevHeld) {
-                        snapFadeFramesLeft = SnapFadeFrames;
-                    }
-                    snapPrevHeld = false;
                 }
 
                 const int64_t originalTimeMicro = (workload.viOriginalRate > 0) ? (1000000 / workload.viOriginalRate) : 0;
@@ -1489,16 +1415,6 @@ namespace RT64 {
                         threadHoldCopy(snapHoldScratch.get(), RenderTargetKey(), nullptr, interpolationTargetKey);
                     }
 
-                    if (!snapCutHold && (snapFadeFramesLeft > 0) && !workload.paused) {
-                        const float fadeAlpha = float(snapFadeFramesLeft) / float(SnapFadeFrames + 1);
-                        if (overrideTarget != nullptr) {
-                            threadFadeSnapshotOver(overrideTarget, RenderTargetKey(), fadeAlpha);
-                        }
-                        else if (frame == 0) {
-                            threadFadeSnapshotOver(nullptr, interpolationTargetKey, fadeAlpha);
-                        }
-                    }
-
                     // Add total time the frame took to render.
                     renderTimeTotalMicro += workloadTimer.elapsedMicroseconds() - renderTimeMicro;
 
@@ -1550,9 +1466,6 @@ namespace RT64 {
                 // consecutive transit should keep showing.
                 if (!workload.paused && !interpolationTargetKey.isEmpty()) {
                     snapPrevTargetKey = interpolationTargetKey;
-                }
-                if (!snapCutHold && !workload.paused && (snapFadeFramesLeft > 0)) {
-                    snapFadeFramesLeft--;
                 }
 
                 if (!workload.paused) {

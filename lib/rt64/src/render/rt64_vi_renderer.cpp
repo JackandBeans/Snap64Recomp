@@ -169,6 +169,21 @@ namespace RT64 {
                 viewport.y += (viewport.height - keptScreenH) * 0.5f - (cropT / float(sdSize.y)) * newHeight;
                 viewport.width = newWidth;
                 viewport.height = newHeight;
+
+                // Whatever the fit area shows outside the kept region is
+                // exactly the dead margin the crop exists to hide, and only
+                // the scissor blacks it out. Without this an unequal crop
+                // was a visible no-op: the uniform scale comes out at 1.0,
+                // the viewport merely re-centers, and the margins stay on
+                // screen inside the untouched scissor.
+                const int32_t keptLeft = int32_t(lround(viewport.x + (cropL / float(sdSize.x)) * newWidth));
+                const int32_t keptTop = int32_t(lround(viewport.y + (cropT / float(sdSize.y)) * newHeight));
+                const int32_t keptRight = int32_t(lround(viewport.x + ((cropL + keptW) / float(sdSize.x)) * newWidth));
+                const int32_t keptBottom = int32_t(lround(viewport.y + ((cropT + keptH) / float(sdSize.y)) * newHeight));
+                scissor.left = std::max(scissor.left, keptLeft);
+                scissor.top = std::max(scissor.top, keptTop);
+                scissor.right = std::min(scissor.right, keptRight);
+                scissor.bottom = std::min(scissor.bottom, keptBottom);
             }
         }
     }

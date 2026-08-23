@@ -2844,6 +2844,15 @@ namespace RT64 {
         extended.renderToRAM = renderToRAM;
     }
 
+    // Pokemon Snap port: the game-side camera hook marks a cut-transit frame
+    // in word3 of its matrix group packet. This lands the mark on the
+    // workload this display list is filling -- in-band with the exact frame
+    // the verdict was computed for, with no cross-frame global whose
+    // consumption could drift from its frame.
+    void State::snapCutHoldCommand() {
+        ext.workloadQueue->workloads[ext.workloadQueue->writeCursor].snapCutHold = true;
+    }
+
     void State::setDitherNoiseStrength(float noiseStrength) {
         extended.ditherNoiseStrength = noiseStrength;
     }

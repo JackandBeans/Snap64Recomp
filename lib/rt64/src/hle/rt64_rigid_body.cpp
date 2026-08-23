@@ -41,14 +41,22 @@ namespace RT64 {
             const float velDelta = float(hlslpp::length(curLinearVelocity - linearVelocity));
             if (!lerpTranslation) {
                 snapDiscontinuityLatch = true;
+                snapLatchAcceptStreak = 0;
             }
             else if (snapDiscontinuityLatch) {
                 const bool cameStill = (curVelMag < 1.0f);
                 const bool continuous = velDelta < std::max(1.0f, curVelMag * 0.3f);
-                if (cameStill || continuous) {
+                // Three straight guard-accepts also release: a slow mover
+                // whose velocity is noisy enough to fail the continuity test
+                // every tick would otherwise stay snapped forever off one
+                // rejection. A genuine fast move keeps re-tripping the guard
+                // itself, which resets the streak, so it stays uniform.
+                if (cameStill || continuous || (snapLatchAcceptStreak >= 3)) {
                     snapDiscontinuityLatch = false;
+                    snapLatchAcceptStreak = 0;
                 }
                 else {
+                    snapLatchAcceptStreak++;
                     lerpTranslation = false;
                 }
             }
@@ -67,6 +75,10 @@ namespace RT64 {
             lerpTranslation = (componentInterpolation == G_EX_COMPONENT_INTERPOLATE);
             linearVelocity = 0.0f;
             autoRejectedTranslation = false;
+            // Explicit modes overrule the guard entirely; its memory must
+            // not survive into a later automatic frame of the same pair.
+            snapDiscontinuityLatch = false;
+            snapLatchAcceptStreak = 0;
         }
     }
 

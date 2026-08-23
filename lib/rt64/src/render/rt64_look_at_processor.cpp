@@ -29,6 +29,9 @@ namespace RT64 {
                 auto &lerpRspLookAts = drawData.lerpRspLookAt;
                 lerpRspLookAts = curLookAts;
 
+                // Pokemon Snap port: cutscene workloads pin content to the
+                // current frame; only the view interpolates there.
+                const float curWeight = workload.snapCutscene ? 1.0f : p.curFrameWeight;
                 for (size_t l = 0; l < curLookAts.size(); l++) {
                     const GameFrameMap::LookAtMap &lookAtMap = workloadMap.lookAt[l];
                     if (!lookAtMap.mapped) {
@@ -37,8 +40,8 @@ namespace RT64 {
 
                     const interop::RSPLookAt &curLookAt = curLookAts[l];
                     interop::RSPLookAt &lerpLookAt = lerpRspLookAts[l];
-                    lerpLookAt.x = curLookAt.x - lookAtMap.deltaX * (1.0f - p.curFrameWeight);
-                    lerpLookAt.y = curLookAt.y - lookAtMap.deltaY * (1.0f - p.curFrameWeight);
+                    lerpLookAt.x = curLookAt.x - lookAtMap.deltaX * (1.0f - curWeight);
+                    lerpLookAt.y = curLookAt.y - lookAtMap.deltaY * (1.0f - curWeight);
                 }
             }
         }

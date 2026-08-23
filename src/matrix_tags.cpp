@@ -143,7 +143,6 @@ bool valid_ram_address(uint32_t address) {
 namespace snap {
 // Defined below with the block-transition hooks.
 extern bool g_world_rebased;
-extern bool g_camera_cut_hold;
 namespace {
 struct CameraTrack {
     uint32_t address = 0;
@@ -220,7 +219,18 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
             at[i] = snap::read_cam_f32(rdram, cam + 0x48 + i * 4);
         }
         float eyeD = 0.0f, atD = 0.0f;
-        if (track->valid && (track->address == cam)) {
+        if (snap::g_world_rebased) {
+            // A block-transition rebase moves the origin the camera's numbers
+            // are expressed in, so the raw jump this frame is the origin
+            // shift, not a cut: read in the new origin the motion is
+            // continuous, and the renderer blends it there by moving the
+            // previous view the same way (rt64_projection_processor.cpp).
+            // Firing here snapped the camera and armed the transit latch,
+            // which froze two frames at every corner of the ride. Any latch
+            // in flight releases too -- it belonged to the old origin.
+            track->holdTicks = 0;
+        }
+        else if (track->valid && (track->address == cam)) {
             float eyeD2 = 0.0f, atD2 = 0.0f;
             for (int i = 0; i < 3; i++) {
                 const float de = eye[i] - track->eye[i];
@@ -266,15 +276,17 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                 }
             }
             else if (track->holdTicks > 0) {
-                // A transition in progress holds through its quiet ticks too:
-                // teardown, a gap tick, rebuild, then the camera move arrive
-                // on separate ticks, and the gap tick is where the prop
-                // popped to a between-pose one frame before the cut. Still
-                // crossing spends the latch a tick at a time; a quiet tick
-                // bridges at most one more before release, so sustained
-                // motion or a settled scene lets go almost immediately.
-                holdFrame = true;
+                // A transition still crossing spends the latch a tick at a
+                // time. The moment the camera settles the latch releases
+                // outright: this hook's business is the camera's own motion,
+                // and a settled camera means the transit is over. The staged
+                // teardown ticks a transition schedules around the camera
+                // move are content discontinuities, and the renderer's frame
+                // census holds those on its own evidence
+                // (rt64_game_frame.cpp); bridging them here from the camera
+                // side held two extra frames after every clean cut.
                 if ((eyeD > CutDistance) || (atD > CutDistance)) {
+                    holdFrame = true;
                     track->holdTicks--;
                     if (snapdiag::diagEnabled()) {
                         printf("[SNAP-TRANSIT] cam %08X still crossing, eye %.1f at %.1f\n", cam, eyeD, atD);
@@ -282,7 +294,7 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                     }
                 }
                 else {
-                    track->holdTicks = (track->holdTicks > 1) ? 1 : 0;
+                    track->holdTicks = 0;
                 }
             }
             else if (snapdiag::diagEnabled() && ((eyeD > 10.0f) || (atD > 10.0f))) {
@@ -301,20 +313,18 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
         track->valid = true;
     }
 
-    // The hold request travels through send_dl onto this frame's workload.
-    // Block transitions never hold: their motion is continuous once read in
-    // the new origin, and the renderer blends it. The consecutive cap is a
-    // release valve -- if triggers ever chained pathologically the screen
-    // must not freeze, so after eight straight holds frames show again.
+    // The hold verdict travels in word3 of the camera's matrix group packet,
+    // the same way the cut verdict travels in the component modes: in-band,
+    // inside the display list, landing on exactly the workload this list
+    // fills. The consecutive cap is a release valve -- if triggers ever
+    // chained pathologically the screen must not freeze, so after eight
+    // straight holds frames show again.
     {
         static uint32_t consecutiveHolds = 0;
         if (holdFrame && (consecutiveHolds >= 8)) {
             holdFrame = false;
         }
         consecutiveHolds = holdFrame ? (consecutiveHolds + 1) : 0;
-    }
-    if (holdFrame && !snap::g_world_rebased) {
-        snap::g_camera_cut_hold = true;
     }
 
     // Enable the extension, then name this camera's view transform before the
@@ -335,7 +345,10 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                 MEM_W(0x0, (gpr)(int32_t)cursor) = snap::MatrixGroupWord0;
                 MEM_W(0x4, (gpr)(int32_t)cursor) = cam;
                 MEM_W(0x8, (gpr)(int32_t)cursor) = cameraCut ? snap::CameraGroupSkip : snap::CameraGroupInterpolate;
-                MEM_W(0xC, (gpr)(int32_t)cursor) = 0;
+                // Word3 bit 0: this frame is a cut transit the console never
+                // displayed; the renderer holds the previous image over it
+                // (rt64_gbi_extended.cpp reads it onto the workload).
+                MEM_W(0xC, (gpr)(int32_t)cursor) = holdFrame ? 1u : 0u;
                 cursor += 2 * snap::GfxCommandSize;
             }
             MEM_W(0, (gpr)(int32_t)gfxPtrAddress) = cursor;
@@ -407,17 +420,6 @@ extern "C" void omGetMtx(uint8_t* rdram, recomp_context* ctx) {
 namespace snap {
 bool g_world_rebased = false;
 float g_world_rebase_delta[3] = {};
-
-// Set on the frame a camera cut transits: the console never displayed these
-// frames -- the cut frame is the heaviest of the scene, the RCP overran, and
-// gtl skipped the draw, holding the previous image for a tick (gtl.c:768).
-// The port renders fast enough to show the frame the console never finished,
-// which is the one-frame flash at every scene change, at native rate and
-// interpolated alike. Consumed by send_dl onto the workload; the renderer
-// then presents the previous frame's image for this one tick, the same
-// visible outcome the console produced. Rebase corners are excluded: those
-// are continuous motion the renderer blends through the origin shift.
-bool g_camera_cut_hold = false;
 }
 
 // enterNextBlock hands this the distance the origin is about to move, which is

@@ -147,6 +147,14 @@ namespace RT64 {
             const uint8_t editable = (*dl)->p0(19, 1);
             const uint8_t aspect = (*dl)->p0(20, 2);
             const uint8_t lookat = (*dl)->p0(24, 2);
+
+            // Word3 was reserved as zero. The Pokemon Snap port carries its
+            // cut-transit hold verdict in bit 0 (src/matrix_tags.cpp), so the
+            // verdict arrives in-band with the frame it belongs to.
+            if ((*dl)->w1 & 0x1) {
+                state->snapCutHoldCommand();
+            }
+
             state->rsp->matrixId(id, push, proj, mode, pos, rot, scale, skew, persp, vpos, vtc, tile, lookat, order, aspect, editable, idIsAddress, editGroup);
         }
 

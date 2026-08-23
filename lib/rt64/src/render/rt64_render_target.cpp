@@ -452,7 +452,6 @@ namespace RT64 {
         textureCopyCB.uvScroll.y = float(y);
         textureCopyCB.uvScale.x = float(width);
         textureCopyCB.uvScale.y = float(height);
-        textureCopyCB.alpha = -1.0f;
 
         const ShaderRecord &textureResolve = shaderLibrary->textureResolve;
         worker->commandList->setPipeline(textureResolve.pipeline.get());

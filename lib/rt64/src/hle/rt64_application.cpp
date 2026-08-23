@@ -645,16 +645,26 @@ namespace RT64 {
 
             break;
         }
+        // Pokemon Snap port: gated like the inspector. These shortcuts share
+        // F2-F4 with the port's own settings hotkeys, and outside developer
+        // mode a player toggling a port setting must not also flip debug
+        // state -- F3 was presenting the raw RDRAM view.
         case DeveloperShortcut::RayTracing: {
-            workloadQueue->rtEnabled = !workloadQueue->rtEnabled;
+            if (userConfig.developerMode) {
+                workloadQueue->rtEnabled = !workloadQueue->rtEnabled;
+            }
             break;
         }
         case DeveloperShortcut::ViewRDRAM: {
-            presentQueue->viewRDRAM = !presentQueue->viewRDRAM;
+            if (userConfig.developerMode) {
+                presentQueue->viewRDRAM = !presentQueue->viewRDRAM;
+            }
             break;
         }
         case DeveloperShortcut::Replacements: {
-            textureCache->textureMap.replacementMapEnabled = !textureCache->textureMap.replacementMapEnabled;
+            if (userConfig.developerMode) {
+                textureCache->textureMap.replacementMapEnabled = !textureCache->textureMap.replacementMapEnabled;
+            }
             break;
         }
         default:

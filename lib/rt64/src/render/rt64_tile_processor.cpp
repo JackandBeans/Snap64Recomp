@@ -29,6 +29,9 @@ namespace RT64 {
                 auto &lerpRdpTiles = drawData.lerpRdpTiles;
                 lerpRdpTiles = curRdpTiles;
 
+                // Pokemon Snap port: cutscene workloads pin content to the
+                // current frame; only the view interpolates there.
+                const float curWeight = workload.snapCutscene ? 1.0f : p.curFrameWeight;
                 for (size_t t = 0; t < curRdpTiles.size(); t++) {
                     const GameFrameMap::TileMap &tileMap = workloadMap.tiles[t];
                     if (!tileMap.mapped) {
@@ -37,10 +40,10 @@ namespace RT64 {
 
                     const interop::RDPTile &curTile = curRdpTiles[t];
                     interop::RDPTile &lerpTile = lerpRdpTiles[t];
-                    lerpTile.uls = tileMap.prevUls + (curTile.uls - tileMap.prevUls) * p.curFrameWeight;
-                    lerpTile.ult = tileMap.prevUlt + (curTile.ult - tileMap.prevUlt) * p.curFrameWeight;
-                    lerpTile.lrs = tileMap.prevLrs + (curTile.lrs - tileMap.prevLrs) * p.curFrameWeight;
-                    lerpTile.lrt = tileMap.prevLrt + (curTile.lrt - tileMap.prevLrt) * p.curFrameWeight;
+                    lerpTile.uls = tileMap.prevUls + (curTile.uls - tileMap.prevUls) * curWeight;
+                    lerpTile.ult = tileMap.prevUlt + (curTile.ult - tileMap.prevUlt) * curWeight;
+                    lerpTile.lrs = tileMap.prevLrs + (curTile.lrs - tileMap.prevLrs) * curWeight;
+                    lerpTile.lrt = tileMap.prevLrt + (curTile.lrt - tileMap.prevLrt) * curWeight;
                 }
             }
         }

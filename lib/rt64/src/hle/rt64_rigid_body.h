@@ -29,6 +29,10 @@ namespace RT64 {
         // snapped until its motion is still or genuinely continuous, so the
         // whole move steps uniformly, the way the console showed it.
         bool snapDiscontinuityLatch = false;
+        // Consecutive ticks the guard itself accepted while the latch held;
+        // a short run of accepts releases the latch so it can never lock a
+        // slow, noisy mover out of blending permanently.
+        uint8_t snapLatchAcceptStreak = 0;
 
         // Default constructor.
         RigidBody();

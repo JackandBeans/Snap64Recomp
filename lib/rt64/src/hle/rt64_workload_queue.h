@@ -120,7 +120,6 @@ namespace RT64 {
         void threadConfigurationUpdate(hlslpp::uint2 viFbSize, WorkloadConfiguration &workloadConfig);
         void threadConfigurationValidate();
         bool threadHoldCopy(RenderTarget *srcTarget, const RenderTargetKey &srcKey, RenderTarget *dstTarget, const RenderTargetKey &dstKey);
-        void threadFadeSnapshotOver(RenderTarget *dstTarget, const RenderTargetKey &dstKey, float alpha);
         // Snapshot of the previous frame's presented image, taken BEFORE a
         // cut-transit frame renders: the transit workload's own early passes
         // (a scene-init clear) can dirty the previous frame's target, and a

@@ -62,7 +62,6 @@ extern bool g_app_level_resident;                            // overlay_hook.cpp
 extern bool g_focus_dot_visible;                             // focus_dot.cpp
 extern bool g_world_rebased;                                 // matrix_tags.cpp
 extern float g_world_rebase_delta[3];                        // matrix_tags.cpp
-extern bool g_camera_cut_hold;                               // matrix_tags.cpp
 
 class RT64Context : public ultramodern::renderer::RendererContext {
 public:
@@ -350,14 +349,9 @@ public:
                 snap::g_world_rebase_delta[2]);
         }
 
-        // A camera cut transits this frame: the console skipped drawing it
-        // (RCP overrun at the heaviest frame of the scene) and held the
-        // previous image; the renderer reproduces that hold for this workload.
-        if (snap::g_camera_cut_hold) {
-            snap::g_camera_cut_hold = false;
-            RT64::Workload &workload = app_->workloadQueue->workloads[app_->workloadQueue->writeCursor];
-            workload.snapCutHold = true;
-        }
+        // The camera cut-transit hold travels in-band instead: word3 of the
+        // camera's matrix group packet, read onto the workload while the
+        // display list below is processed (rt64_gbi_extended.cpp).
 
         // Menus, cards and the intro movie run without the level overlay.
         // In those scenes the renderer holds any frame whose content is

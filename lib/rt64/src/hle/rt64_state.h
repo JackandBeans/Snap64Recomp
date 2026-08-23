@@ -168,6 +168,7 @@ namespace RT64 {
         DisplayList *popReturnAddress();
         void setRefreshRate(uint16_t refreshRate);
         void setRenderToRAM(uint8_t renderToRAM);
+        void snapCutHoldCommand();
         void setDitherNoiseStrength(float noiseStrength);
         void setExtendedRDRAM(bool isExtended);
         void setTexcoordWrapPoint(int16_t wrapU, int16_t wrapV);
