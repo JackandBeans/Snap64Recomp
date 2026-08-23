@@ -316,10 +316,13 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                 fflush(stdout);
             }
         }
-        // A burst arms this camera's latch as well, so the quiet ticks
-        // between teardown, rebuild, and the camera's own move stay held.
-        if (burstThisTick && (track->holdTicks < 3)) {
-            track->holdTicks = 3;
+        // A burst arms this camera's latch for one further tick. Any longer
+        // and a plain card swap -- teardown burst, rebuild burst, no camera
+        // motion at all -- pauses visibly; the movie's real cuts follow
+        // their bursts with a camera jump within a tick, which re-arms the
+        // full crossing latch above.
+        if (burstThisTick && (track->holdTicks < 1)) {
+            track->holdTicks = 1;
         }
 
         track->address = cam;
