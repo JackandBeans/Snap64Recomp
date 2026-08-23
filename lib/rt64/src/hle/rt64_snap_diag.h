@@ -38,6 +38,15 @@ inline bool diagEnabled() {
     return enabled;
 }
 
+// Low-overhead measurement: the census line alone, no per-frame walks, no
+// flushes, no captures. The heavy probes perturb frame pacing enough to
+// change the very timing-sensitive behavior they are measuring, so numbers
+// meant to describe how the game actually runs are gathered under this.
+inline bool statsEnabled() {
+    static const bool enabled = (std::getenv("SNAP_STATS") != nullptr);
+    return enabled;
+}
+
 // One switch for both frame-capture rigs.
 inline bool captureEnabled() {
     static const bool enabled = (std::getenv("SNAP_CAPTURE") != nullptr);

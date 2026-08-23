@@ -19,8 +19,21 @@ namespace RT64 {
     void RigidBody::updateLinear(const hlslpp::float4x4 &prevTransform, const hlslpp::float4x4 &curTransform, uint8_t componentInterpolation) {
         if (componentInterpolation == G_EX_COMPONENT_AUTO) {
             const float Epsilon = 1e-6f;
-            const float VelocityTolerance = 5.0f; // TODO: Make configurable.
+            // Pokemon Snap port: both numbers are in the game's world units,
+            // and this world is large -- the cart glides at three units a
+            // tick, a ride's fastest legitimate motion measured 10.4, a
+            // scripted flyby 85, while the smallest genuine teleport measured
+            // 29.5. At the stock tolerance of five, ordinary authored motion
+            // reads as a teleport several times a second.
+            const float VelocityTolerance = 12.0f;
             const float MagnitudeThreshold = 10.0f; // TODO: Make configurable.
+            // The ratio test asks whether this step is wildly faster than the
+            // last one, which is meaningless when the last one was a standstill:
+            // divided by an epsilon, anything over zero is wildly faster, so
+            // every object that started moving at all was called a teleport.
+            // A floor of one unit makes the question the intended one -- did
+            // this object jump, or did it simply start moving.
+            const float PreviousVelocityFloor = 1.0f;
             hlslpp::float3 prevPosition = prevTransform[3].xyz;
             hlslpp::float3 curPosition = curTransform[3].xyz;
             hlslpp::float3 curLinearVelocity = curPosition - prevPosition;
@@ -29,7 +42,7 @@ namespace RT64 {
             float curVelMag = hlslpp::length(curLinearVelocity);
             float dotCurVel = std::max(hlslpp::dot(linearVelocity / std::max(prevVelMag, Epsilon), curLinearVelocity / std::max(curVelMag, Epsilon))[0], Epsilon);
             curVelMag /= dotCurVel;
-            lerpTranslation = (curVelMag < VelocityTolerance) || (curVelMag / std::max(prevVelMag, Epsilon)) < MagnitudeThreshold;
+            lerpTranslation = (curVelMag < VelocityTolerance) || (curVelMag / std::max(prevVelMag, PreviousVelocityFloor)) < MagnitudeThreshold;
 
             // Pokemon Snap port: hysteresis. A fast authored move -- Todd
             // lifting the camera at the end of the close-up -- steps 2 to 7

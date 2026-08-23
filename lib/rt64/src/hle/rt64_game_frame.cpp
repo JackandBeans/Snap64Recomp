@@ -494,14 +494,16 @@ namespace RT64 {
         // Gameplay workloads are exempt: there, appearing and vanishing
         // things are the game's own authored behavior.
         {
-            uint32_t lost = 0, fresh = 0, rejected = 0;
+            uint32_t lost = 0, fresh = 0, rejected = 0, paired = 0;
             bool anyCutscene = false;
+            bool cutHeld = false;
             for (uint32_t w : workloads) {
                 Workload &cutsceneWorkload = workloadQueue.workloads[w];
                 if (!cutsceneWorkload.snapCutscene) {
                     continue;
                 }
                 anyCutscene = true;
+                cutHeld = cutHeld || cutsceneWorkload.snapCutHold;
                 const GameFrameMap::WorkloadMap &wm = frameMap.workloads[w];
                 if (!wm.mapped) {
                     continue;
@@ -515,10 +517,21 @@ namespace RT64 {
                     if (!tm.mapped) {
                         fresh++;
                     }
-                    else if (tm.rigidBody.autoRejectedTranslation) {
-                        rejected++;
+                    else {
+                        paired++;
+                        if (tm.rigidBody.autoRejectedTranslation) {
+                            rejected++;
+                        }
                     }
                 }
+            }
+            // Diagnostic: the raw census inputs of every cutscene frame with
+            // any activity, fired or not. The verdict thresholds are set from
+            // these measurements, and the un-fired ticks are exactly the ones
+            // the fired lines cannot show.
+            if (anyCutscene && (snapdiag::diagEnabled() || snapdiag::statsEnabled()) && ((lost + fresh + rejected) > 0)) {
+                fprintf(stdout, "[SNAP-CENSUS] lost %u new %u rej %u paired %u cut %u\n",
+                    lost, fresh, rejected, paired, cutHeld ? 1u : 0u);
             }
             // Every shot has a steady baseline of churn: an object that
             // reallocates its matrix each tick, fast scenery whose motion
@@ -596,6 +609,124 @@ namespace RT64 {
             if (snapDiscontinuity && snapdiag::diagEnabled()) {
                 fprintf(stdout, "[SNAP-DISCONT] lost %u new %u rejected %u\n", lost, fresh, rejected);
                 fflush(stdout);
+            }
+        }
+
+        // Pokemon Snap port: an object is judged as an object. The automatic
+        // pose guard judges each matrix alone, on its own velocity, and a
+        // model's matrices never move alike -- a limb swinging up from rest
+        // crosses the guard's threshold on a tick the torso carrying it does
+        // not. The guard then snaps that one matrix to its new pose while the
+        // rest of the model blends towards it, and the model comes apart for
+        // the frame: the camera prop rising out of Todd's hand, a walking
+        // model ghosting against itself. Measured, this is the common case,
+        // not the rare one -- a handful of matrices out of a hundred and
+        // fifty, several times a second.
+        //
+        // A matrix cannot be judged alone because it is not alone: it is one
+        // joint of one object, and the object either jumped or it did not.
+        // The game names the object each matrix belongs to
+        // (patches/src/render_patch.c) and the verdict is taken across it:
+        // when most of an object's matrices call it a teleport the object
+        // really did move somewhere else and all of it snaps, and when only a
+        // few do they are the guard misreading fast animation, so all of it
+        // blends. Either way every part of the object agrees, which is the
+        // only way it can look like one object.
+        {
+            struct CoherenceTally {
+                uint32_t total = 0;
+                uint32_t rejected = 0;
+                bool snap = false;
+            };
+            thread_local std::unordered_map<uint32_t, CoherenceTally> coherenceTallies;
+            for (uint32_t w : workloads) {
+                Workload &workload = workloadQueue.workloads[w];
+                GameFrameMap::WorkloadMap &wm = frameMap.workloads[w];
+                if (!wm.mapped) {
+                    continue;
+                }
+                const auto &groupIndices = workload.drawData.worldTransformGroups;
+                const size_t transformCount = std::min(wm.transforms.size(), groupIndices.size());
+                coherenceTallies.clear();
+                for (size_t t = 0; t < transformCount; t++) {
+                    const uint32_t coherenceId = workload.drawData.transformGroups[groupIndices[t]].coherenceId;
+                    const GameFrameMap::TransformMap &tm = wm.transforms[t];
+                    if ((coherenceId == 0) || !tm.mapped) {
+                        continue;
+                    }
+                    CoherenceTally &tally = coherenceTallies[coherenceId];
+                    tally.total++;
+                    if (tm.rigidBody.autoRejectedTranslation) {
+                        tally.rejected++;
+                    }
+                }
+                uint32_t snappedObjects = 0, freedObjects = 0, freedMatrices = 0;
+                for (auto &it : coherenceTallies) {
+                    // A third is the line between "this object moved" and "the
+                    // guard misread a limb": the measured staging ticks reject
+                    // most of an object's matrices at once (a hundred and
+                    // twenty to a hundred and seventy of a hundred and fifty),
+                    // while fast animation rejects a handful.
+                    it.second.snap = (it.second.rejected * 3) >= it.second.total;
+                    if (it.second.rejected == 0) {
+                        continue;
+                    }
+                    if (it.second.snap) {
+                        snappedObjects++;
+                    }
+                    else {
+                        freedObjects++;
+                        freedMatrices += it.second.rejected;
+                    }
+                }
+                if ((snappedObjects == 0) && (freedObjects == 0)) {
+                    continue;
+                }
+                for (size_t t = 0; t < transformCount; t++) {
+                    const uint32_t curGroupIndex = groupIndices[t];
+                    const TransformGroup &curGroup = workload.drawData.transformGroups[curGroupIndex];
+                    if (curGroup.coherenceId == 0) {
+                        continue;
+                    }
+                    GameFrameMap::TransformMap &tm = wm.transforms[t];
+                    if (!tm.mapped) {
+                        continue;
+                    }
+                    const auto tallyIt = coherenceTallies.find(curGroup.coherenceId);
+                    if (tallyIt == coherenceTallies.end()) {
+                        continue;
+                    }
+                    RigidBody &rigidBody = tm.rigidBody;
+                    if (tallyIt->second.snap) {
+                        rigidBody.autoRejectedTranslation = true;
+                        rigidBody.lerpTranslation = false;
+                        rigidBody.lerpRotation = false;
+                        rigidBody.lerpScale = false;
+                        rigidBody.lerpSkew = false;
+                        rigidBody.lerpPerspective = false;
+                    }
+                    else if (rigidBody.autoRejectedTranslation) {
+                        // Restores exactly what the component modes ask for
+                        // with the rejection lifted, which for this game's
+                        // model tags (automatic position and rotation, scale
+                        // and skew following rotation) is a plain blend.
+                        const auto blends = [](uint8_t mode) {
+                            return (mode == G_EX_COMPONENT_INTERPOLATE) || (mode == G_EX_COMPONENT_AUTO);
+                        };
+                        rigidBody.autoRejectedTranslation = false;
+                        rigidBody.snapDiscontinuityLatch = false;
+                        rigidBody.snapLatchAcceptStreak = 0;
+                        rigidBody.lerpTranslation = blends(curGroup.positionInterpolation);
+                        rigidBody.lerpRotation = blends(curGroup.rotationInterpolation);
+                        rigidBody.lerpScale = blends(curGroup.scaleInterpolation);
+                        rigidBody.lerpSkew = blends(curGroup.skewInterpolation);
+                        rigidBody.lerpPerspective = (curGroup.perspectiveInterpolation == G_EX_COMPONENT_INTERPOLATE);
+                    }
+                }
+                if ((snapdiag::diagEnabled() || snapdiag::statsEnabled()) && ((snappedObjects + freedObjects) > 0)) {
+                    fprintf(stdout, "[SNAP-COH] objects snapped whole %u, misread rejections lifted %u across %u objects\n",
+                        snappedObjects, freedMatrices, freedObjects);
+                }
             }
         }
 

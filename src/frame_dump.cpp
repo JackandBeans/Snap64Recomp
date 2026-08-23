@@ -39,8 +39,8 @@ constexpr uint32_t FbWidth = 320;
 constexpr uint32_t FbHeight = 240;
 constexpr uint32_t FbBytes = FbWidth * FbHeight * 2;
 
-constexpr uint32_t RingSlots = 3;
-constexpr uint32_t MaxFilesWritten = 160;
+constexpr uint32_t RingSlots = 90;
+constexpr uint32_t MaxFilesWritten = 1200;
 
 struct RingSlot {
     uint32_t frame = 0;

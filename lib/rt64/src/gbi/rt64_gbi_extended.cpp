@@ -148,14 +148,25 @@ namespace RT64 {
             const uint8_t aspect = (*dl)->p0(20, 2);
             const uint8_t lookat = (*dl)->p0(24, 2);
 
-            // Word3 was reserved as zero. The Pokemon Snap port carries its
-            // cut-transit hold verdict in bit 0 (src/matrix_tags.cpp), so the
-            // verdict arrives in-band with the frame it belongs to.
-            if ((*dl)->w1 & 0x1) {
-                state->snapCutHoldCommand();
+            // Word3 was reserved as zero. The Pokemon Snap port uses it two
+            // ways, told apart by which stack the group is for. On the
+            // projection side (the camera's group, src/matrix_tags.cpp) bit 0
+            // is the cut-transit hold verdict, arriving in-band with the frame
+            // it belongs to. On the model side (patches/src/render_patch.c) the
+            // whole word names the game object the matrix belongs to, so the
+            // renderer can keep one object's matrices deciding together.
+            const uint32_t word3 = (*dl)->w1;
+            uint32_t coherenceId = 0;
+            if (proj) {
+                if (word3 & 0x1) {
+                    state->snapCutHoldCommand();
+                }
+            }
+            else {
+                coherenceId = word3;
             }
 
-            state->rsp->matrixId(id, push, proj, mode, pos, rot, scale, skew, persp, vpos, vtc, tile, lookat, order, aspect, editable, idIsAddress, editGroup);
+            state->rsp->matrixId(id, push, proj, mode, pos, rot, scale, skew, persp, vpos, vtc, tile, lookat, order, aspect, editable, idIsAddress, editGroup, coherenceId);
         }
 
         void matrixGroupV1(State *state, DisplayList **dl) {

@@ -80,7 +80,22 @@ static u32 renEXPassSalt = 0;
 
 #define OM_MTX_TAG(m) ((*(u32*) (m)) | renEXPassSalt)
 
-#define renEXTagModelMatrix(gfx, ommtx)                                            gEXMatrixGroupDecomposed((gfx), OM_MTX_TAG(ommtx), G_EX_NOPUSH, 0,         G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO,                 G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO, G_EX_COMPONENT_SKIP,                 G_EX_COMPONENT_SKIP, G_EX_ORDER_LINEAR, G_EX_EDIT_ALLOW,                       G_EX_COMPONENT_SKIP, G_EX_COMPONENT_SKIP)
+/* The object every tagged matrix belongs to, carried in the packet's spare
+   word. One matrix of a model can look like a teleport to the renderer's
+   automatic pose guard while its neighbours look continuous -- a limb swinging
+   up from rest crosses the guard's velocity threshold, the torso holding it
+   does not. The renderer then snaps that one matrix to its new pose while the
+   rest of the model blends towards it, and the parts come apart for a frame:
+   the camera prop rising out of Todd's hand, a walking model ghosting against
+   itself. A matrix cannot be judged on its own, because it is not on its own:
+   it is one joint of one object, and the object either moved as a whole or it
+   did not. Naming the object here lets the renderer decide once per object and
+   apply it to every matrix underneath. */
+static u32 renEXCoherence = 0;
+
+#define renEXTagCoherent(gfx, id, mode, pos, rot, scale, skew, persp)                                                     G_EX_COMMAND2((gfx),                                                                                                     PARAM(RT64_EXTENDED_OPCODE, 8, 24) | PARAM(G_EX_MATRIXGROUP_V1, 24, 0),                                              (id),                                                                                                                PARAM(G_EX_NOPUSH, 1, 0) | PARAM(0, 1, 1) | PARAM(mode, 1, 2) | PARAM(pos, 2, 3) |                                        PARAM(rot, 2, 5) | PARAM(scale, 2, 7) | PARAM(skew, 2, 9) | PARAM(persp, 2, 11) |                                     PARAM(G_EX_COMPONENT_SKIP, 2, 13) | PARAM(G_EX_COMPONENT_SKIP, 2, 15) |                                              PARAM(G_EX_ORDER_LINEAR, 2, 17) | PARAM(G_EX_EDIT_ALLOW, 1, 19) |                                                    PARAM(G_EX_ASPECT_AUTO, 2, 20) | PARAM(G_EX_COMPONENT_SKIP, 2, 22) |                                                 PARAM(G_EX_COMPONENT_SKIP, 2, 24),                                                                               renEXCoherence)
+
+#define renEXTagModelMatrix(gfx, ommtx)                                            renEXTagCoherent((gfx), OM_MTX_TAG(ommtx), G_EX_INTERPOLATE_DECOMPOSE,     G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO,                 G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO)
 
 /* The billboard kinds do not produce a rigid matrix. The renderer
    reconstructs their overwritten combined matrix as an equivalent world
@@ -91,7 +106,7 @@ static u32 renEXPassSalt = 0;
    the matrix component-wise instead, which for two consecutive billboard
    matrices -- always near each other -- is the correct blend, with no
    decomposition to go wrong. */
-#define renEXTagBillboardMatrix(gfx, ommtx)                                        gEXMatrixGroupSimple((gfx), OM_MTX_TAG(ommtx), G_EX_NOPUSH, 0,                 G_EX_COMPONENT_AUTO, G_EX_COMPONENT_INTERPOLATE, G_EX_COMPONENT_INTERPOLATE,   G_EX_COMPONENT_SKIP, G_EX_COMPONENT_SKIP, G_EX_ORDER_LINEAR, G_EX_EDIT_ALLOW,  G_EX_COMPONENT_SKIP, G_EX_COMPONENT_SKIP)
+#define renEXTagBillboardMatrix(gfx, ommtx)                                        renEXTagCoherent((gfx), OM_MTX_TAG(ommtx), G_EX_INTERPOLATE_SIMPLE,        G_EX_COMPONENT_AUTO, G_EX_COMPONENT_INTERPOLATE, G_EX_COMPONENT_SKIP,          G_EX_COMPONENT_SKIP, G_EX_COMPONENT_INTERPOLATE)
 
 s32 renPrepareModelMatrix(Gfx** gfxPtr, DObj* dobj) {
     Gfx* sp2DC;
@@ -107,6 +122,7 @@ s32 renPrepareModelMatrix(Gfx** gfxPtr, DObj* dobj) {
     s32 (*func)(Mtx*, void*, Gfx**);
 
     renEXPassSalt = (dobj->obj->lastDrawFrame == (u8) gtlDrawnFrameCounter) ? 0x40000000 : 0;
+    renEXCoherence = (u32) dobj->obj;
     sp2DC = *gfxPtr;
     sp2D4 = 0;
 
@@ -752,6 +768,7 @@ s32 ren_func_80013C5C(Gfx** gfxPtr, DObj* dobj) {
     s32 mtxCount = 0;
 
     renEXPassSalt = (dobj->obj->lastDrawFrame == (u8) gtlDrawnFrameCounter) ? 0x40000000 : 0;
+    renEXCoherence = (u32) dobj->obj;
     for (i = 0; i < dobj->numMatrices; i++) {
         OMMtx* ommtx = dobj->matrices[i];
         if (ommtx != NULL) {

@@ -24,5 +24,9 @@ namespace RT64 {
         uint8_t ordering = G_EX_ORDER_AUTO;
         uint8_t aspectMode = G_EX_ASPECT_AUTO;
         uint8_t editable = G_EX_EDIT_NONE;
+        // Pokemon Snap port: names the game object this matrix belongs to, so
+        // one object's matrices always share a blend-or-snap decision. Zero
+        // means unnamed, which keeps every decision per matrix as before.
+        uint32_t coherenceId = 0;
     };
 };

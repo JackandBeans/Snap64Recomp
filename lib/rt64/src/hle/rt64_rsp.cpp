@@ -1239,7 +1239,7 @@ namespace RT64 {
         state->updateDrawStatusAttribute(DrawAttribute::ExtendedType);
     }
 
-    void RSP::matrixId(uint32_t id, bool push, bool proj, bool decompose, uint8_t pos, uint8_t rot, uint8_t scale, uint8_t skew, uint8_t persp, uint8_t vpos, uint8_t vtc, uint8_t tile, uint8_t lookat, uint8_t order, uint8_t aspect, uint8_t editable, bool idIsAddress, bool editGroup) {
+    void RSP::matrixId(uint32_t id, bool push, bool proj, bool decompose, uint8_t pos, uint8_t rot, uint8_t scale, uint8_t skew, uint8_t persp, uint8_t vpos, uint8_t vtc, uint8_t tile, uint8_t lookat, uint8_t order, uint8_t aspect, uint8_t editable, bool idIsAddress, bool editGroup, uint32_t coherenceId) {
         assert((idIsAddress == editGroup) && "This case is not supported yet.");
 
         auto setGroupProperties = [=](TransformGroup* dstGroup, bool newGroup) {
@@ -1257,6 +1257,7 @@ namespace RT64 {
                 dstGroup->ordering = order;
                 dstGroup->aspectMode = aspect;
                 dstGroup->editable = editable;
+                dstGroup->coherenceId = coherenceId;
             }
         };
 
