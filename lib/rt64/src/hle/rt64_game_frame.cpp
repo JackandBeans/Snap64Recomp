@@ -532,17 +532,13 @@ namespace RT64 {
             // against itself.
             static float avgLost = 0.0f;
             static float avgFresh = 0.0f;
-            static uint32_t zeroRejectedStreak = 0;
-            static uint32_t rejectedHoldBudget = 0;
-            static uint32_t rejectedQuietGap = 0;
+            static uint32_t rejectedMassTail = 0;
             static bool prevAnyCutscene = false;
             snapDiscontinuity = false;
             if (anyCutscene && !prevAnyCutscene) {
                 avgLost = float(lost);
                 avgFresh = float(fresh);
-                zeroRejectedStreak = 0;
-                rejectedHoldBudget = 0;
-                rejectedQuietGap = 0;
+                rejectedMassTail = 0;
             }
             else if (anyCutscene) {
                 // The floor is structural: a transition tears down dozens of
@@ -556,40 +552,32 @@ namespace RT64 {
                 const auto spikes = [](uint32_t count, float avg) {
                     return (count >= 4) && (float(count) > (avg * 2.0f + 0.5f));
                 };
-                // A staged re-pose rejects a whole object's transforms at
-                // once -- the measured staging ticks reject 28 to 148 pairs
-                // -- while a shot's idle noise (a blinking limb, a billboard)
-                // rejects 1 to 7. So a hold window OPENS only on a mass
-                // rejection breaking a genuine quiet streak, where quiet
-                // means free of mass rejections: sub-floor noise neither
-                // opens a window nor spends the stillness the next real move
-                // needs. Once a window is open the move holds as one piece,
-                // the way the console skipped it as one piece: any rejected
-                // tick spends the budget (limbs settle progressively through
-                // sub-floor counts), and a gap of up to two accepted ticks
-                // rides along before the window closes. Twelve outlasts the
-                // longest observed move and stays under the workload queue's
-                // sixteen-frame release valve.
-                constexpr uint32_t RejectedOpenFloor = 8;
+                // A staged re-pose teleports a whole object's transforms at
+                // once: the measured staging ticks reject 28 to 158 pairs.
+                // Everything that is ordinary authored life stays well
+                // below -- idle noise (a blinking limb, a billboard) rejects
+                // 1 to 7, and a walking character's rhythmic limb swings
+                // peak at 16 -- so the magnitude alone separates the frame
+                // classes, and every stateful refinement tried on top of it
+                // made things worse: a stillness-gated window held Todd's
+                // walk as ghosting, and a twelve-tick budget froze the first
+                // fifth of every montage shot after its cut. So the verdict
+                // is stateless: a mass-teleport tick holds, with a two-tick
+                // tail for the pose to settle, and nothing else does. The
+                // lift's staging ticks all clear the floor, so its coverage
+                // chains; a montage shot loses three frames to its opening
+                // teleport, about what the console's overrun skipped; and a
+                // scene that somehow mass-rejects endlessly is released by
+                // the workload queue's sixteen-frame valve.
+                constexpr uint32_t RejectedMassFloor = 24;
                 bool rejectedHold = false;
-                if ((rejected >= RejectedOpenFloor) && (zeroRejectedStreak >= 8) && (rejectedHoldBudget == 0)) {
-                    rejectedHoldBudget = 12;
-                    rejectedQuietGap = 0;
+                if (rejected >= RejectedMassFloor) {
+                    rejectedHold = true;
+                    rejectedMassTail = 2;
                 }
-                zeroRejectedStreak = (rejected >= RejectedOpenFloor) ? 0 : (zeroRejectedStreak + 1);
-                if (rejectedHoldBudget > 0) {
-                    if (rejected > 0) {
-                        rejectedQuietGap = 0;
-                        rejectedHold = true;
-                        rejectedHoldBudget--;
-                    }
-                    else if (++rejectedQuietGap <= 2) {
-                        rejectedHold = true;
-                        rejectedHoldBudget--;
-                    }
-                    else {
-                        rejectedHoldBudget = 0;
-                    }
+                else if (rejectedMassTail > 0) {
+                    rejectedMassTail--;
+                    rejectedHold = true;
                 }
                 snapDiscontinuity = spikes(lost, avgLost) || spikes(fresh, avgFresh) || rejectedHold;
 

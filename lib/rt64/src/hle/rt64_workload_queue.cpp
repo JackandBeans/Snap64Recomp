@@ -507,12 +507,6 @@ namespace RT64 {
         for (uint32_t w = 0; w < curFrame.workloads.size(); w++) {
             Workload &workload = workloads[curFrame.workloads[w]];
 
-            // Pokemon Snap port: cutscene workloads pin content -- including
-            // per-vertex interpolation -- to the current frame; only the
-            // view interpolates there (see the transform processor).
-            const float workloadPrevWeight = workload.snapCutscene ? 1.0f : prevFrameWeight;
-            const float workloadCurWeight = workload.snapCutscene ? 1.0f : curFrameWeight;
-
             // There's no guarantee the RSP was processed if framebuffers were not rendered.
             const bool processRSP = true;
             if (processRSP) {
@@ -523,8 +517,8 @@ namespace RT64 {
                 rspParams.drawData = &workload.drawData;
                 rspParams.drawBuffers = &workload.drawBuffers;
                 rspParams.outputBuffers = &workload.outputBuffers;
-                rspParams.prevFrameWeight = workloadPrevWeight;
-                rspParams.curFrameWeight = workloadCurWeight;
+                rspParams.prevFrameWeight = prevFrameWeight;
+                rspParams.curFrameWeight = curFrameWeight;
                 rspProcessor->process(rspParams);
             }
 
@@ -537,8 +531,8 @@ namespace RT64 {
                 vertexParams.drawData = &workload.drawData;
                 vertexParams.drawBuffers = &workload.drawBuffers;
                 vertexParams.outputBuffers = &workload.outputBuffers;
-                vertexParams.curFrameWeight = workloadCurWeight;
-                vertexParams.prevFrameWeight = workloadPrevWeight;
+                vertexParams.curFrameWeight = curFrameWeight;
+                vertexParams.prevFrameWeight = prevFrameWeight;
                 vertexProcessor->process(vertexParams);
             }
 
@@ -1184,17 +1178,16 @@ namespace RT64 {
                     matchingProfiler.log();
 
                     const bool displayRateAboveOriginal = (workload.viOriginalRate > 0) && (workloadConfig.targetRate > workload.viOriginalRate);
-                    // Cutscenes interpolate the VIEW only. The intro is a
-                    // hand-authored film of staged teardowns, re-poses and
-                    // cuts; blending its content manufactures artifacts the
-                    // hardware never showed, but stepping the camera at
-                    // native cadence reads as stutter on every pan. So
-                    // cutscene workloads render at the full display rate with
-                    // the camera gliding between its poses while the world's
-                    // transforms pin to the current frame (the processors
-                    // read workload.snapCutscene): content steps exactly as
-                    // it was authored, inside a smooth camera. Gameplay,
-                    // which is continuous motion, keeps full interpolation.
+                    // Cutscenes interpolate fully, like gameplay. Both
+                    // partial modes were tried and read wrong: native
+                    // cadence stutters on every pan, and view-only (content
+                    // pinned to the current frame) runs the whole intro at
+                    // half rate. What the film's staged ticks actually need
+                    // is to not be shown at all, and that is handled by
+                    // verdicts, not weights: the census holds staging off
+                    // screen (rt64_game_frame.cpp), camera cuts snap through
+                    // their matrix group, and the pose guard keeps shown
+                    // pairs from blending across a re-pose.
                     generateInterpolatedFrames = !workload.paused && displayRateAboveOriginal && !interpolationTargetKey.isEmpty();
 
                     const bool resetTicks = !generateInterpolatedFrames || (originalRateForTicks != workload.viOriginalRate) || (displayRateForTicks != workloadConfig.targetRate) || !displayRateAboveOriginal;

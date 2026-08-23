@@ -33,18 +33,13 @@ namespace RT64 {
 
             hlslpp::float4x4 prevMatrix, curMatrix, invMatrix, invTMatrix;
 
-            // Pokemon Snap port: cutscene workloads pin the world to the
-            // current frame. The intro is authored as stepped film -- staged
-            // teardowns, re-poses, hard cuts -- and blending its content
-            // between frames manufactures motion the hardware never showed.
-            // Only the view interpolates in those scenes (the projection
-            // processor, which does not read this flag), so the camera
-            // glides over content stepping exactly as authored.
-            const bool snapPinToCurrent = workload.snapCutscene;
-            const float prevWeight = snapPinToCurrent ? 1.0f : p.prevFrameWeight;
-            const float curWeight = snapPinToCurrent ? 1.0f : p.curFrameWeight;
-
             // Match with the previous frame and interpolate the transforms.
+            // Cutscene content interpolates like everything else: pinning it
+            // to the current frame was tried and reads as the whole intro
+            // running at half rate. What the film's staged ticks need is not
+            // stepping but absence -- the frame census holds them off screen
+            // entirely (rt64_game_frame.cpp), and the pose guard plus its
+            // hysteresis keep any shown pair from blending across a re-pose.
             if (prevFrameValid) {
                 const GameFrameMap::WorkloadMap &workloadMap = p.curFrame->frameMap.workloads[w];
                 const DrawData &prevDrawData = p.workloadQueue->workloads[workloadMap.prevWorkloadIndex].drawData;
@@ -60,8 +55,8 @@ namespace RT64 {
                         if (transformMap.snapRebasedPrev) {
                             prevTransform[3].xyz = prevTransform[3].xyz + p.curFrame->snapOriginDelta;
                         }
-                        prevMatrix = transformMap.rigidBody.lerp(prevWeight, prevTransform, curTransform, true);
-                        curMatrix = transformMap.rigidBody.lerp(curWeight, prevTransform, curTransform, true);
+                        prevMatrix = transformMap.rigidBody.lerp(p.prevFrameWeight, prevTransform, curTransform, true);
+                        curMatrix = transformMap.rigidBody.lerp(p.curFrameWeight, prevTransform, curTransform, true);
                         invMatrix = hlslpp::inverse(curMatrix);
                         invTMatrix = hlslpp::transpose(invMatrix);
                         lerpWorldTransforms.emplace_back(curMatrix);
