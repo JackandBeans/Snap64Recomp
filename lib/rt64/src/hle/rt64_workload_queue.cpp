@@ -1151,12 +1151,13 @@ namespace RT64 {
         bool frameReduction = false;
         // The previous game frame's presented target, for the cut-transit hold.
         RenderTargetKey snapPrevTargetKey;
-        // Crossfade tail after a held transition: the snapshot dissolves into
-        // the new shot's live motion over a few frames instead of releasing
-        // with a hard jump.
+        // Crossfade tail after a held transition, disabled: a few frames of
+        // half-transparent old image over the new shot reads as a glitch,
+        // not a dissolve -- caught on screen as a ghosted logo card over the
+        // forest. The game's cuts are hard cuts; zero keeps them that way.
         bool snapPrevHeld = false;
         uint32_t snapFadeFramesLeft = 0;
-        const uint32_t SnapFadeFrames = 4;
+        const uint32_t SnapFadeFrames = 0;
         while (threadsRunning) {
             {
                 std::unique_lock<std::mutex> cursorLock(cursorMutex);
