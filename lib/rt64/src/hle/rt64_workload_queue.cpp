@@ -1080,6 +1080,9 @@ namespace RT64 {
         // tail was tried here and read as a glitch on screen.
         RenderTargetKey snapPrevTargetKey;
         uint32_t snapConsecutiveHolds = 0;
+        // How many interpolated targets the last shown frame filled; its final
+        // one is the last picture the screen actually displayed.
+        uint32_t snapPrevInterpolatedIndex = 0;
         while (threadsRunning) {
             {
                 std::unique_lock<std::mutex> cursorLock(cursorMutex);
@@ -1367,7 +1370,25 @@ namespace RT64 {
                             snapHoldScratch = std::make_unique<RenderTarget>(snapPrevTargetKey.address, Framebuffer::Type::Color, RenderMultisampling(), usesHDR);
                         }
                     }
-                    snapCutHold = threadHoldCopy(nullptr, snapPrevTargetKey, snapHoldScratch.get(), RenderTargetKey());
+                    // Hold the last picture the screen actually showed, not
+                    // the first one of the previous game frame. The main
+                    // target carries that frame's opening pose; everything
+                    // after it was drawn into the interpolated targets, so
+                    // holding the main target does not stop the picture -- it
+                    // steps it backwards by most of a game frame, keeps it
+                    // there for a frame, and then jumps forwards by two. Two
+                    // poses of the same motion reach the eye a few
+                    // milliseconds apart, which is seen as two of everything
+                    // rather than as a pause.
+                    RenderTarget *lastShownTarget = ((snapPrevInterpolatedIndex > 0) &&
+                        (size_t(snapPrevInterpolatedIndex) <= interpolatedTargets.size())) ?
+                        interpolatedTargets[snapPrevInterpolatedIndex - 1].get() : nullptr;
+                    if ((lastShownTarget != nullptr) && !lastShownTarget->isEmpty()) {
+                        snapCutHold = threadHoldCopy(lastShownTarget, RenderTargetKey(), snapHoldScratch.get(), RenderTargetKey());
+                    }
+                    else {
+                        snapCutHold = threadHoldCopy(nullptr, snapPrevTargetKey, snapHoldScratch.get(), RenderTargetKey());
+                    }
                     // A hold that actually shows spends valve budget; a
                     // failed snapshot copy shows the rendered frame instead
                     // and must not.
@@ -1558,6 +1579,15 @@ namespace RT64 {
                 // consecutive transit should keep showing.
                 if (!workload.paused && !interpolationTargetKey.isEmpty()) {
                     snapPrevTargetKey = interpolationTargetKey;
+                    // How many interpolated targets this frame filled, so a
+                    // hold on the next one can take the last picture shown
+                    // rather than this frame's opening pose. A held frame does
+                    // not become a source itself: its targets carry the image
+                    // it was holding, which is what a second consecutive held
+                    // frame should keep showing.
+                    if (!snapCutHold) {
+                        snapPrevInterpolatedIndex = targetIndex;
+                    }
                 }
 
                 if (!workload.paused) {

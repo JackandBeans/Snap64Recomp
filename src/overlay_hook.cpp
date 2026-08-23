@@ -80,13 +80,26 @@ extern "C" void dmaLoadOverlay(uint8_t* rdram, recomp_context* ctx) {
         // picture again and again -- the doubled image and the hitching on
         // turns. A load only evicts the level now if it lands on the level's
         // own entry, which is what being replaced actually means.
-        static uint32_t levelVramStart = 0;
-        if (rom_start == 0x46270u) {
-            levelVramStart = vram_start;
+        // Watch the overlay a ride actually runs from. This tracked the
+        // rendering group (ROM 0x46270) instead, which loads once at boot and
+        // is evicted by the very next load, so the answer was "not in a level"
+        // from the first seconds of the process onwards -- including all the
+        // way around a course. Everything gated on it was therefore gated on
+        // nothing: the renderer's transition holds, built for the intro's
+        // staged frames, ran during ordinary play and held one game frame in
+        // eight, which is the doubled picture and the hitching on turns.
+        //
+        // The level's own code lives in ROM 0x4F0610 at 0x80350200 -- the
+        // course update and both camera routines are inside it -- so its
+        // arrival is the game entering a level and something loading over it
+        // is the game leaving one. The gate it feeds reads level state, so
+        // this is also the overlay it always meant.
+        constexpr uint32_t LevelCodeStart = 0x80350200u;
+        constexpr uint32_t LevelCodeEnd = 0x803AB1C0u;
+        if (rom_start == 0x4F0610u) {
             snap::g_app_level_resident = true;
         }
-        else if (snap::g_app_level_resident && (levelVramStart != 0) &&
-                 (vram_start <= levelVramStart) && ((vram_start + size) > levelVramStart)) {
+        else if ((vram_start < LevelCodeEnd) && ((vram_start + size) > LevelCodeStart)) {
             snap::g_app_level_resident = false;
         }
         fprintf(stderr, "[SNAP] overlay: rom %06X..%06X -> %08X (%u bytes)\n",
