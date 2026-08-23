@@ -11,6 +11,8 @@
 
 #include <cstdio>
 #include <cstring>
+#include <cstdlib>
+#include <algorithm>
 #include <atomic>
 #include <mutex>
 #include <vector>
@@ -113,6 +115,16 @@ void audio_queue_samples(int16_t* samples, size_t count) {
 
     if (count & 1) {
         swap_buffer[count - 1] = samples[count - 1];
+    }
+
+    // Silence on request, without changing anything else about the audio path.
+    // The samples are still submitted at their normal rate and the backlog the
+    // game reads is still the real one, so muting cannot alter the timing the
+    // game sees -- which matters when the thing being measured is a stutter.
+    // Set SNAP_MUTE to run the game silently.
+    static const bool muted = (std::getenv("SNAP_MUTE") != nullptr);
+    if (muted) {
+        std::fill(swap_buffer.begin(), swap_buffer.end(), int16_t(0));
     }
 
     const size_t byte_count = count * sizeof(int16_t);

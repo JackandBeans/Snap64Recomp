@@ -140,12 +140,24 @@ namespace RT64 {
         lerpPerspective = (perspInterpolation == G_EX_COMPONENT_INTERPOLATE) && !autoRejectedTranslation;
     }
 
-    void RigidBody::updateDecomposition(const hlslpp::float4x4 &curTransform, bool decompose) {
+    void RigidBody::updateDecomposition(const hlslpp::float4x4 &prevTransform, const hlslpp::float4x4 &curTransform, bool decompose) {
+        // Pokemon Snap port: both halves of the pair the caller actually
+        // matched. Only the current transform used to be decomposed, and the
+        // blend took its previous half from whatever this body decomposed a
+        // frame ago -- so the previous matrix handed in here was ignored
+        // entirely whenever decomposition was on. Any caller that supplies a
+        // previous transform other than last frame's own was silently
+        // overruled: crossing into the next world block re-expresses the
+        // previous pose in the new origin precisely so the two can be blended,
+        // and that correction reached this body and was dropped, leaving every
+        // corner of a ride blending from a pose a block away.
         uint8_t newTransformIndex = transformIndex ^ 1;
         if (decompose) {
             transforms[newTransformIndex] = DecomposedTransform(curTransform);
+            transforms[transformIndex] = DecomposedTransform(prevTransform);
         } else {
             transforms[newTransformIndex] = DecomposedTransform();
+            transforms[transformIndex] = DecomposedTransform();
         }
         transformIndex = newTransformIndex;
         lerpDecompose = decompose;

@@ -951,7 +951,7 @@ namespace RT64 {
 
                     viewProjMap.rigidBody.updateLinear(*effectivePrevView, curView, projectionLinearComponent);
                     viewProjMap.rigidBody.updateAngular(*effectivePrevView, curView, projectionAngularComponent, projectionScaleComponent, projectionSkewComponent);
-                    viewProjMap.rigidBody.updateDecomposition(curView, projectionDecompose);
+                    viewProjMap.rigidBody.updateDecomposition(*effectivePrevView, curView, projectionDecompose);
                     viewProjMap.prevTransformIndex = prevProj.transformsIndex;
                 }
                 else {
@@ -1228,7 +1228,7 @@ namespace RT64 {
         curTransformMap.rigidBody.updateLinear(prevTransform, curTransform, curGroup.positionInterpolation);
         curTransformMap.rigidBody.updateAngular(prevTransform, curTransform, curGroup.rotationInterpolation, curGroup.scaleInterpolation, curGroup.skewInterpolation);
         curTransformMap.rigidBody.updatePerspective(prevTransform, curTransform, curGroup.perspectiveInterpolation);
-        curTransformMap.rigidBody.updateDecomposition(curTransform, curGroup.decompose);
+        curTransformMap.rigidBody.updateDecomposition(prevTransform, curTransform, curGroup.decompose);
         curTransformMap.prevTransformIndex = prevTransformIndex;
         curTransformMap.mapped = true;
         curWorkloadMap.prevTransformsMapped[prevTransformIndex] = true;

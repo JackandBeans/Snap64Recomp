@@ -1324,6 +1324,17 @@ namespace RT64 {
                 const bool usesHDR = ext.sharedResources->renderTargetManager.usesHDR;
                 uint32_t requiredFrames = (usingMSAA && generateInterpolatedFrames) ? displayFrames : (displayFrames - 1);
                 if ((requiredFrames > 0) && (interpolatedTargets.size() < requiredFrames)) {
+                    // Pokemon Snap port: the present thread indexes this same
+                    // vector while showing the frames of the tick before this
+                    // one. Growing it here without the lock can move every
+                    // element while that is happening, which hands the screen
+                    // a pointer into freed memory -- rare, silent, and
+                    // catastrophic when it lands. The number of frames a tick
+                    // needs changes whenever the display or the game's rate
+                    // does, so this is not a startup-only path. The targets
+                    // themselves allocate nothing here; they are sized later,
+                    // so the lock is held only for the bookkeeping.
+                    std::scoped_lock<std::mutex> interpolatedLock(ext.sharedResources->interpolatedMutex);
                     uint32_t previousSize = uint32_t(interpolatedTargets.size());
                     interpolatedTargets.resize(requiredFrames);
                     for (uint32_t i = previousSize; i < requiredFrames; i++) {
