@@ -93,6 +93,46 @@ inline std::atomic<int64_t> &newestStateNanos() {
     return nanos;
 }
 
+// Specialised shaders asked for and finished. Turning the camera reveals
+// materials the renderer has never drawn before, and each one is compiled and
+// turned into a graphics pipeline while the game runs. Pipeline creation goes
+// through the driver, which can hold the same locks the drawing thread needs,
+// so a burst of new materials is a plausible source of a long freeze -- these
+// let a stall be attributed instead of guessed at.
+inline std::atomic<uint32_t> &shaderAskedCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
+inline std::atomic<uint32_t> &shaderReadyCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
+// Game frames that were interpolated but then presented as a single image
+// because the presented buffer could not be matched to what the renderer had
+// drawn. Nine frames of smooth motion collapse into one, which on screen is a
+// whole game frame where nothing moves.
+inline std::atomic<uint32_t> &interpolationUnusedCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
+// Ticks that produced a single image instead of a full set of interpolated
+// ones, and interpolated frames whose weight did not advance forwards. The
+// first is a game frame where the picture stands still; the second puts two
+// different poses of the same motion on screen close enough together to be
+// seen as two of everything.
+inline std::atomic<uint32_t> &singleFrameTickCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
+inline std::atomic<uint32_t> &weightWentBackwardsCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
 // Distinguishes this run's files from every other run's. Derived from the
 // launch time, so re-running an experiment adds files instead of replacing
 // the evidence the previous run produced.

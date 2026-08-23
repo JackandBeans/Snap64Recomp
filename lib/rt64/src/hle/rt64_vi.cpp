@@ -164,10 +164,29 @@ namespace RT64 {
     uint32_t VIHistory::logicalRateFromFactors() {
         if ((factors[0] != 0) && std::all_of(factors.begin(), factors.end(), [&](uint32_t factor) { return factor == factors[0]; })) {
             const uint32_t FullRate = 60; // TODO: PAL support.
-            return FullRate / factors[0];
+            lastLogicalRate = FullRate / factors[0];
+            return lastLogicalRate;
         }
         else {
-            return 0;
+            // Pokemon Snap port: a run of frames that did not all take the same
+            // number of refreshes means this measurement cannot say what the
+            // rate is -- not that the game has no rate. Answering zero is taken
+            // downstream as "slower than any display", which switches
+            // interpolation off for that frame, and one game frame without
+            // interpolation is one game frame in which the picture cannot
+            // change at all: a hard hitch, measured at a third of a second's
+            // worth of stillness every time it happens.
+            //
+            // This game wobbles for exactly the reasons that matter most. Its
+            // scheduler drops a frame when the scene gets heavy, which is what
+            // happens while the camera sweeps new scenery into view, so the
+            // hitch landed precisely on the turns it was supposed to smooth.
+            // A game's logical rate does not change from one frame to the next;
+            // a mixed history is a gap in the measurement, so the last rate
+            // actually measured is carried across it. A genuine rate change
+            // settles into a new run of matching factors within a few frames
+            // and is picked up then.
+            return lastLogicalRate;
         }
     }
 

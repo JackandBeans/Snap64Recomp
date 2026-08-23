@@ -427,6 +427,14 @@ namespace {
                     framesToPresent = frameCounters.count;
                 }
                 else {
+                    // The renderer produced a whole tick of interpolated
+                    // frames and none of them can be shown, because the buffer
+                    // being presented could not be matched to the one drawn
+                    // into. The tick presents a single image instead, and the
+                    // picture stands still for its whole duration.
+                    if (frameCounters.count > 1) {
+                        snapdiag::interpolationUnusedCounter().fetch_add(1, std::memory_order_relaxed);
+                    }
                     lockedWorkloadMutex = true;
                     ext.sharedResources->workloadMutex.lock();
                 }
@@ -764,6 +772,42 @@ namespace {
                         }
                     }
                     const double intervalMs = std::chrono::duration<double, std::milli>(presentTimestamp - previousPresentTimestamp).count();
+
+                    // A freeze long enough to be called a freeze reports
+                    // itself the moment it happens, with what the renderer was
+                    // busy with while the screen stood still. A summary every
+                    // few hundred frames can say a stall happened; only this
+                    // can say what caused it.
+                    {
+                        static uint32_t lastShaderAsked = 0;
+                        static uint32_t lastShaderReady = 0;
+                        const uint32_t shaderAsked = snapdiag::shaderAskedCounter().load(std::memory_order_relaxed);
+                        const uint32_t shaderReady = snapdiag::shaderReadyCounter().load(std::memory_order_relaxed);
+                        // A hiccup is a frame that took several frames' worth
+                        // of time. At this display rate that is tens of
+                        // milliseconds, not hundreds, and it is reported with
+                        // what the renderer was doing and how old the newest
+                        // game state was -- an old state means the game itself
+                        // arrived late and nothing downstream could have
+                        // helped, a fresh one means the delay was here.
+                        if (intervalMs > 25.0) {
+                            const int64_t stallStateNanos = snapdiag::newestStateNanos().load(std::memory_order_relaxed);
+                            const int64_t presentNanos = std::chrono::duration_cast<std::chrono::nanoseconds>(presentTimestamp.time_since_epoch()).count();
+                            const double stateAgeMs = (stallStateNanos != 0) ? (double(presentNanos - stallStateNanos) / 1'000'000.0) : -1.0;
+                            fprintf(stdout, "[SNAP-STALL] %.1f ms gap; newest game state was %.1f ms old (%s), new materials asked %u compiled %u\n",
+                                intervalMs, stateAgeMs,
+                                (stateAgeMs > intervalMs * 0.75) ? "game thread was late" : "delay was in the renderer",
+                                shaderAsked - lastShaderAsked, shaderReady - lastShaderReady);
+                            fprintf(stdout, "[SNAP-STALL]   so far: interpolation not presentable %u, single-image ticks %u, weights out of order %u\n",
+                                snapdiag::interpolationUnusedCounter().load(std::memory_order_relaxed),
+                                snapdiag::singleFrameTickCounter().load(std::memory_order_relaxed),
+                                snapdiag::weightWentBackwardsCounter().load(std::memory_order_relaxed));
+                            fflush(stdout);
+                        }
+                        lastShaderAsked = shaderAsked;
+                        lastShaderReady = shaderReady;
+                    }
+
                     intervalTotalMs += intervalMs;
                     intervalWorstMs = std::max(intervalWorstMs, intervalMs);
                     intervalCount++;

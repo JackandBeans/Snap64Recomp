@@ -68,6 +68,8 @@ namespace RT64 {
                     shaderCache->GPUShaders[shaderDesc.hash()] = std::move(newShader);
                 }
 
+                snapdiag::shaderReadyCounter().fetch_add(1, std::memory_order_relaxed);
+
                 // The moment the specialised pipeline replaces the ubershader.
                 if (snapdiag::diagEnabled()) {
                     fprintf(stdout, "[SNAP-SHADER] ready  %016llX\n", (unsigned long long)shaderDesc.hash());
@@ -130,6 +132,7 @@ namespace RT64 {
             }
 
             found = true;
+            snapdiag::shaderAskedCounter().fetch_add(1, std::memory_order_relaxed);
 
             // Pokemon Snap port, diagnostic: every draw whose specialised
             // pipeline is still compiling renders through the ubershader,

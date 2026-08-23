@@ -1278,6 +1278,18 @@ namespace RT64 {
                     std::chrono::duration_cast<std::chrono::nanoseconds>(Timer::current().time_since_epoch()).count(),
                     std::memory_order_relaxed);
 
+                // A tick that yields one image is a whole game frame in which
+                // the picture cannot change, however smoothly it is delivered.
+                if ((displayFrames <= 1) && requiresFrameMatching && !workload.paused) {
+                    snapdiag::singleFrameTickCounter().fetch_add(1, std::memory_order_relaxed);
+                    if (snapdiag::statsEnabled()) {
+                        fprintf(stdout, "[SNAP-ONEFRAME] tick produced a single image: game rate %u, target rate %u, interpolation target %s, frames %u\n",
+                            workload.viOriginalRate, workloadConfig.targetRate,
+                            interpolationTargetKey.isEmpty() ? "missing" : "present", displayFrames);
+                        fflush(stdout);
+                    }
+                }
+
                 snapdiag::subFrameAskedCounter().fetch_add(displayFrames, std::memory_order_relaxed);
                 ext.sharedResources->viOriginalRate = workload.viOriginalRate;
                 
@@ -1402,6 +1414,20 @@ namespace RT64 {
                         prevFrameWeight = std::clamp((workloadConfig.targetRate + displayTicks - logicalTicks) / float(workloadConfig.targetRate), 0.0f, 1.0f);
                         displayTicks += workload.viOriginalRate;
                         curFrameWeight = std::clamp((workloadConfig.targetRate + displayTicks - logicalTicks) / float(workloadConfig.targetRate), 0.0f, 1.0f);
+
+                        // Every interpolated frame of a tick must sit further
+                        // along the motion than the one before it. If a weight
+                        // ever moves backwards, two poses of the same motion
+                        // reach the screen out of order and are seen as two of
+                        // everything.
+                        if (snapdiag::statsEnabled()) {
+                            static float lastPresentedWeight = 0.0f;
+                            if ((frame > 0) && (curFrameWeight < lastPresentedWeight - 1e-4f)) {
+                                snapdiag::weightWentBackwardsCounter().fetch_add(1, std::memory_order_relaxed);
+                            }
+                            lastPresentedWeight = curFrameWeight;
+                        }
+
 
                         // Pokemon Snap port: no whole-frame cut handling here.
                         // Cuts are declared per transform through the display

@@ -163,6 +163,9 @@ namespace RT64 {
         std::array<uint32_t, 3> factors;
         int historyCursor;
         int factorCursor;
+        // Pokemon Snap port: the last rate this history could actually measure,
+        // carried across the frames where it cannot. See logicalRateFromFactors.
+        uint32_t lastLogicalRate = 0;
 
         VIHistory();
         void pushVI(const VI &vi, uint32_t fbWidth);
