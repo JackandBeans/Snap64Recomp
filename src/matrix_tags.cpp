@@ -82,10 +82,22 @@ constexpr uint32_t MatrixGroupWord0 = Param(ExtendedOpcode, 8, 24) | Param(Matri
 // Everything derived from per-vertex or per-tile data is skipped: this game
 // rebuilds those every frame, so ranges routinely describe different data and
 // the derived velocities are meaningless.
+// Decomposed rather than simple interpolation, which for the camera is the
+// difference between turning and appearing to turn. Simple interpolation
+// blends the two view matrices element by element, and a rotation blended
+// that way cuts across the arc instead of following it: the angle advances
+// unevenly through each tick and the matrix loses a little of its length in
+// the middle, which for a view transform is a slight pull towards the centre
+// of the screen. Standing still it is unnoticeable. Spinning, it repeats
+// thirty times a second and reads as choppiness that no amount of frame
+// pacing can fix, because every frame is arriving perfectly on time carrying
+// a slightly wrong angle. Decomposing the transform lets the renderer turn
+// the camera along the arc at a constant rate, which is what the game's own
+// numbers describe.
 constexpr uint32_t CameraGroupCommon =
     Param(NoPush, 1, 0) |
     Param(1, 1, 1) |                        // projection side
-    Param(0, 1, 2) |                        // simple interpolation
+    Param(1, 1, 2) |                        // decomposed interpolation
     Param(ComponentInterpolate, 2, 11) |    // perspective
     Param(ComponentSkip, 2, 13) |           // vertices
     Param(ComponentSkip, 2, 15) |           // tiles
