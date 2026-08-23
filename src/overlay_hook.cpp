@@ -67,11 +67,26 @@ extern "C" void dmaLoadOverlay(uint8_t* rdram, recomp_context* ctx) {
         load_overlays(rom_start, static_cast<int32_t>(vram_start), size);
         snap_record_overlay_load(rom_start, static_cast<int32_t>(vram_start), size);
 
+        // Whether the in-level code is still the code that is loaded. The test
+        // used to call the level evicted whenever any load overlapped a wide
+        // span of the level's region, and the game loads into that span
+        // constantly while playing -- Pokemon, effects, the courses' own
+        // pieces. So the level read as evicted within a frame or two of every
+        // ride starting, and everything gated on "is this a cutscene" ran
+        // during ordinary play: measured at sixty-four of every sixty-five
+        // game frames. The renderer's transition holds are gated on exactly
+        // that, so a system built to hide the intro's staged frames was
+        // holding frames all the way around a course, showing the previous
+        // picture again and again -- the doubled image and the hitching on
+        // turns. A load only evicts the level now if it lands on the level's
+        // own entry, which is what being replaced actually means.
+        static uint32_t levelVramStart = 0;
         if (rom_start == 0x46270u) {
+            levelVramStart = vram_start;
             snap::g_app_level_resident = true;
         }
-        else if (vram_start < 0x801DC8C0u && (vram_start + size) > 0x8009A8C0u) {
-            // Another overlay took over (part of) the in-level code region.
+        else if (snap::g_app_level_resident && (levelVramStart != 0) &&
+                 (vram_start <= levelVramStart) && ((vram_start + size) > levelVramStart)) {
             snap::g_app_level_resident = false;
         }
         fprintf(stderr, "[SNAP] overlay: rom %06X..%06X -> %08X (%u bytes)\n",

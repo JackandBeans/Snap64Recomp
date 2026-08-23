@@ -268,7 +268,43 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                 return fabsf(d - prevD) > std::max(6.0f, 0.3f * prevD);
             };
             const bool eyeCut = (eyeD > CutDistance) && discontinuous(eyeD, track->eyeDelta);
-            const bool atCut = (atD > CutDistance) && discontinuous(atD, track->atDelta);
+
+            // Where the camera LOOKS is judged as an angle, not as a distance.
+            // The look-at target is a point out in the world, so turning the
+            // view swings it along a circle whose radius is however far away
+            // the game put it -- hundreds of units on a course. Measured as a
+            // distance, an ordinary turn of a few degrees moves that point
+            // much further than any cut threshold, and a turn that speeds up
+            // from rest breaks continuity as well, so simply looking around
+            // was read as a scene change: three hundred frames of a two
+            // minute ride were held, showing the previous picture again. That
+            // is what doubled the image and hitched the turns. An angle
+            // between the two look directions asks the question that was
+            // always meant -- did the view jump somewhere else, or did the
+            // player turn -- and it asks it in units that do not depend on
+            // how far away the game happens to place the target. Cuts in this
+            // game swing the view tens of degrees in a tick; a player turns a
+            // few.
+            constexpr float CutCosine = 0.866f;   // thirty degrees
+            float lookNow[3], lookPrev[3];
+            float lenNow2 = 0.0f, lenPrev2 = 0.0f, dot = 0.0f;
+            for (int i = 0; i < 3; i++) {
+                lookNow[i] = at[i] - eye[i];
+                lookPrev[i] = track->at[i] - track->eye[i];
+                lenNow2 += lookNow[i] * lookNow[i];
+                lenPrev2 += lookPrev[i] * lookPrev[i];
+            }
+            const float lenNow = sqrtf(lenNow2);
+            const float lenPrev = sqrtf(lenPrev2);
+            if ((lenNow > 1e-3f) && (lenPrev > 1e-3f)) {
+                for (int i = 0; i < 3; i++) {
+                    dot += (lookNow[i] / lenNow) * (lookPrev[i] / lenPrev);
+                }
+            }
+            else {
+                dot = 1.0f;
+            }
+            const bool atCut = (dot < CutCosine) && discontinuous(atD, track->atDelta);
             if (eyeCut || atCut) {
                 cameraCut = true;
                 holdFrame = true;
@@ -277,8 +313,10 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                 // the camera settles so sustained motion never chains. Five
                 // covers the longest observed load transition.
                 track->holdTicks = 5;
-                if (snapdiag::diagEnabled()) {
-                    printf("[SNAP-CAMCUT] cam %08X eye moved %.1f at moved %.1f\n", cam, eyeD, atD);
+                if (snapdiag::diagEnabled() || snapdiag::statsEnabled()) {
+                    const float clamped = (dot < -1.0f) ? -1.0f : ((dot > 1.0f) ? 1.0f : dot);
+                    printf("[SNAP-CAMCUT] cam %08X eye moved %.1f, look-at point moved %.1f, view turned %.1f degrees\n",
+                           cam, eyeD, atD, acosf(clamped) * 57.29578f);
                     fflush(stdout);
                 }
                 if (snapdiag::captureEnabled()) {
@@ -297,7 +335,7 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                 // census holds those on its own evidence
                 // (rt64_game_frame.cpp); bridging them here from the camera
                 // side held two extra frames after every clean cut.
-                if ((eyeD > CutDistance) || (atD > CutDistance)) {
+                if ((eyeD > CutDistance) || (dot < CutCosine)) {
                     holdFrame = true;
                     track->holdTicks--;
                     if (snapdiag::diagEnabled()) {

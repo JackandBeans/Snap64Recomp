@@ -1379,6 +1379,15 @@ namespace RT64 {
                 }
                 if (snapCutHold) {
                     snapdiag::holdCounter().fetch_add(1, std::memory_order_relaxed);
+                    if (workload.snapCutHold) {
+                        snapdiag::holdFromCameraCounter().fetch_add(1, std::memory_order_relaxed);
+                    }
+                    if (curFrame.snapDiscontinuity) {
+                        snapdiag::holdFromCensusCounter().fetch_add(1, std::memory_order_relaxed);
+                    }
+                }
+                if (workload.snapCutscene) {
+                    snapdiag::cutsceneTickCounter().fetch_add(1, std::memory_order_relaxed);
                 }
                 if (snapCutHold && snapdiag::diagEnabled()) {
                     fprintf(stdout, "[SNAP-HOLD] cut transit: presenting previous frame for one tick\n");

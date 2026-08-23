@@ -133,6 +133,25 @@ inline std::atomic<uint32_t> &weightWentBackwardsCounter() {
     return counter;
 }
 
+// Which verdict asked for each held frame, and how many frames the port
+// believed were part of a cutscene. A hold during ordinary play is a frame the
+// console would have drawn, so knowing which mechanism asked for it is the
+// difference between fixing the right one and tuning the wrong one.
+inline std::atomic<uint32_t> &holdFromCameraCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
+inline std::atomic<uint32_t> &holdFromCensusCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
+inline std::atomic<uint32_t> &cutsceneTickCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
 // Distinguishes this run's files from every other run's. Derived from the
 // launch time, so re-running an experiment adds files instead of replacing
 // the evidence the previous run produced.

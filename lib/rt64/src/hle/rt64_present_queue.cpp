@@ -832,6 +832,10 @@ namespace {
                             snapdiag::holdCounter().exchange(0, std::memory_order_relaxed),
                             asked, dropped, (asked > 0) ? (100.0 * double(dropped) / double(asked)) : 0.0,
                             (ageCount > 0) ? (ageTotalMs / ageCount) : 0.0, ageWorstMs);
+                        fprintf(stdout, "[SNAP-PACE]   holds asked by camera %u, by content census %u; frames the port thought were cutscene %u\n",
+                            snapdiag::holdFromCameraCounter().exchange(0, std::memory_order_relaxed),
+                            snapdiag::holdFromCensusCounter().exchange(0, std::memory_order_relaxed),
+                            snapdiag::cutsceneTickCounter().exchange(0, std::memory_order_relaxed));
                         ageTotalMs = 0.0;
                         ageWorstMs = 0.0;
                         ageCount = 0;
