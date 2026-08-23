@@ -499,6 +499,11 @@ extern "C" void enterNextBlock(uint8_t* rdram, recomp_context* ctx) {
 
     const uint32_t block = static_cast<uint32_t>(ctx->r2);
     if (block != 0) {
+        // Photograph the screen across a block boundary: the moment a course's
+        // next Pokemon are created, which is where they are reported appearing.
+        if (snapdiag::captureEnabled()) {
+            snap_frame_dump_pending.store(30);
+        }
         snap::g_world_rebased = true;
         if (snapdiag::diagEnabled() && snap::valid_ram_address(block)) {
             printf("[SNAP-BLOCK] entered block %d\n",

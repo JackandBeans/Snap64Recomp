@@ -121,6 +121,14 @@ namespace snap {
 // at that point is the last one the renderer finished, because send_dl waits
 // for the workload before returning.
 void frame_dump_tick(uint8_t* rdram) {
+    // Disabled: this rig converts framebuffers and writes them synchronously on
+    // the game thread, which freezes the game for as long as it takes at
+    // precisely the moment being photographed. The present-queue capture in
+    // rt64_present_queue.cpp records what actually reached the screen and
+    // encodes it on a worker thread, so it can run while the game does not
+    // notice. Kept for the case where RDRAM contents specifically are wanted.
+    return;
+
     if (!snapdiag::captureEnabled()) {
         return;
     }
