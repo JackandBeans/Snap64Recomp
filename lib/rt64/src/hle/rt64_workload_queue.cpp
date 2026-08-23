@@ -1158,6 +1158,7 @@ namespace RT64 {
         bool snapPrevHeld = false;
         uint32_t snapFadeFramesLeft = 0;
         const uint32_t SnapFadeFrames = 0;
+        uint32_t snapConsecutiveHolds = 0;
         while (threadsRunning) {
             {
                 std::unique_lock<std::mutex> cursorLock(cursorMutex);
@@ -1331,8 +1332,21 @@ namespace RT64 {
                 // workload's whole interval, at native rate and interpolated
                 // alike. MSAA resolves through different targets; the hold
                 // stands down there rather than guess.
-                bool snapCutHold = workload.snapCutHold && !workload.paused && !usingMSAA &&
+                bool snapCutHold = (workload.snapCutHold || curFrame.snapDiscontinuity) && !workload.paused && !usingMSAA &&
                     !interpolationTargetKey.isEmpty() && !snapPrevTargetKey.isEmpty();
+
+                // Release valve on the renderer-side verdict: a scene that
+                // churns endlessly must not freeze the screen. Sixteen frames
+                // outlasts every observed transition.
+                if (snapCutHold) {
+                    snapConsecutiveHolds++;
+                    if (snapConsecutiveHolds > 16) {
+                        snapCutHold = false;
+                    }
+                }
+                else {
+                    snapConsecutiveHolds = 0;
+                }
                 if (snapCutHold) {
                     // Snapshot the previous image before this frame renders a
                     // single pass; the transit workload's scene-init clears

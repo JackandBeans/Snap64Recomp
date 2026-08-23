@@ -44,10 +44,6 @@ HOOKED = [
     # Stamps a serial into each matrix as it is handed out, so a recycled
     # address does not read as the same object it was last time.
     'omGetMtx',
-    # Counted per tick alongside omGetMtx: a burst of frees is a scene tearing
-    # itself down, the tick where outgoing objects draw with recycled
-    # matrices; those frames hold like every other transition tick.
-    'omFreeMtx',
     # Spawn-timing probes: log every Pokemon the world creates, with its
     # block and position, so a ride's log says whether one that visibly
     # "appeared" was created at that moment or had existed for a block.

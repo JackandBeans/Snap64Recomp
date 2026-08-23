@@ -274,6 +274,7 @@ namespace RT64 {
         // components already snap the view on the frame the game's camera data
         // jumped -- which a rebase always is -- so nothing here decides cuts.
         snapRebaseFrame = false;
+        snapDiscontinuity = false;
         snapOriginDelta = hlslpp::float3(0.0f, 0.0f, 0.0f);
         for (uint32_t w : workloads) {
             Workload &rebaseWorkload = workloadQueue.workloads[w];
@@ -484,6 +485,87 @@ namespace RT64 {
         }
         else {
             velocityUploaderUsed = false;
+        }
+
+        // Pokemon Snap port: in cutscene workloads, judge whether this
+        // frame's content is structurally continuous with the previous one.
+        // Anything lost, anything new, or any pair whose pose was judged a
+        // teleport marks a staged transition tick the console never showed.
+        // Gameplay workloads are exempt: there, appearing and vanishing
+        // things are the game's own authored behavior.
+        {
+            uint32_t lost = 0, fresh = 0, rejected = 0;
+            bool anyCutscene = false;
+            for (uint32_t w : workloads) {
+                Workload &cutsceneWorkload = workloadQueue.workloads[w];
+                if (!cutsceneWorkload.snapCutscene) {
+                    continue;
+                }
+                anyCutscene = true;
+                const GameFrameMap::WorkloadMap &wm = frameMap.workloads[w];
+                if (!wm.mapped) {
+                    continue;
+                }
+                for (size_t p = 0; p < wm.prevTransformsMapped.size(); p++) {
+                    if (!wm.prevTransformsMapped[p]) {
+                        lost++;
+                    }
+                }
+                for (const auto &tm : wm.transforms) {
+                    if (!tm.mapped) {
+                        fresh++;
+                    }
+                    else if (tm.rigidBody.autoRejectedTranslation) {
+                        rejected++;
+                    }
+                }
+            }
+            // Every shot has a steady baseline of churn: an object that
+            // reallocates its matrix each tick, fast scenery whose motion
+            // trips the pose guard every frame. A transition is a SPIKE
+            // above the shot's own baseline, tracked as a slow average that
+            // freezes while firing so a transition cannot become its own
+            // baseline. In the still close-up the baseline sits at zero and
+            // the prop's single pose jump fires; in the streaking fly-through
+            // a dozen steady rejections stay quiet.
+            static float avgLost = 0.0f;
+            static float avgFresh = 0.0f;
+            static float avgRejected = 0.0f;
+            const auto spikes = [](uint32_t count, float avg) {
+                return float(count) > (avg * 2.0f + 0.5f);
+            };
+            // Pose rejections are meaningful only when they break a real
+            // quiet streak: fast scenery trips the pose guard by the dozen
+            // every frame, and some shots carry one intermittent rejection
+            // every few frames -- both are that shot's normal life. A shot
+            // that has been perfectly still for a while and then rejects is
+            // the prop jumping to its next-scene pose.
+            static uint32_t zeroRejectedStreak = 0;
+            bool rejectedAfterStillness = false;
+            if (rejected == 0) {
+                zeroRejectedStreak++;
+            }
+            else {
+                rejectedAfterStillness = (zeroRejectedStreak >= 8);
+                zeroRejectedStreak = 0;
+            }
+            snapDiscontinuity = anyCutscene &&
+                (spikes(lost, avgLost) || spikes(fresh, avgFresh) || rejectedAfterStillness);
+
+            // The averages always adapt -- frozen-while-firing deadlocks at
+            // zero on the very first churn frame -- but each sample's growth
+            // is capped, so a short transition spike cannot become baseline
+            // while steady churn converges within a few frames.
+            const auto adapt = [](float avg, uint32_t count) {
+                return avg * 0.75f + std::min(float(count), avg + 2.0f) * 0.25f;
+            };
+            avgLost = adapt(avgLost, lost);
+            avgFresh = adapt(avgFresh, fresh);
+            avgRejected = adapt(avgRejected, rejected);
+            if (snapDiscontinuity && snapdiag::diagEnabled()) {
+                fprintf(stdout, "[SNAP-DISCONT] lost %u new %u rejected %u\n", lost, fresh, rejected);
+                fflush(stdout);
+            }
         }
 
         // Pokemon Snap port, diagnostic: on a rebase frame, how far the origin

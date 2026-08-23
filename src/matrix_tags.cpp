@@ -166,14 +166,6 @@ struct CameraTrack {
 CameraTrack g_camera_tracks[8];
 uint32_t g_camera_seen_counter = 0;
 
-// OMMtx allocations since the last camera prep. A scene swap rebuilds its
-// object set in one update tick -- a burst of dozens of allocations -- and
-// the intro swaps content one tick BEFORE it moves the camera, so the swap
-// frame needs its hold before any camera data has jumped. Counted in the
-// omGetMtx hook, read and reset by the first camera prep of the tick.
-uint32_t g_ommtx_allocs_since_prep = 0;
-uint32_t g_ommtx_frees_since_prep = 0;
-
 float read_cam_f32(uint8_t* rdram, uint32_t addr) {
     const uint32_t bits = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)addr));
     float f;
@@ -200,26 +192,10 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
     bool cameraCut = false;
     bool holdFrame = false;
 
-    // A burst of matrix allocations since the last camera prep is a scene
-    // rebuilding its object set this tick. The intro swaps content one tick
-    // before it moves the camera, and the console held through that tick
-    // too (the swap frame is the coldest, heaviest draw of all).
-    const uint32_t allocBurst = snap::g_ommtx_allocs_since_prep;
-    const uint32_t freeBurst = snap::g_ommtx_frees_since_prep;
-    snap::g_ommtx_allocs_since_prep = 0;
-    snap::g_ommtx_frees_since_prep = 0;
-    // A burst of frees is the tick BEFORE the swap: the outgoing scene tears
-    // down, its freed matrices are recycled immediately (LIFO allocator), and
-    // anything of the old scene still drawn this tick wears a stolen matrix
-    // -- the prop warping in the hand, then vanishing, right before the cut.
-    const bool burstThisTick = (allocBurst >= 24) || (freeBurst >= 16);
-    if (burstThisTick) {
-        holdFrame = true;
-        if (snapdiag::diagEnabled()) {
-            printf("[SNAP-SWAPHOLD] %u allocated, %u freed this tick\n", allocBurst, freeBurst);
-            fflush(stdout);
-        }
-    }
+    // Content-side staging is judged by the renderer now: the frame matcher
+    // holds any cutscene frame whose transforms were lost, appeared, or
+    // pose-jumped (rt64_game_frame.cpp). This hook contributes only what the
+    // matcher cannot see: the camera's own numbers jumping.
 
     if (snap::valid_ram_address(cam)) {
         snap::CameraTrack* track = nullptr;
@@ -316,15 +292,6 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                 fflush(stdout);
             }
         }
-        // A burst arms this camera's latch for one further tick. Any longer
-        // and a plain card swap -- teardown burst, rebuild burst, no camera
-        // motion at all -- pauses visibly; the movie's real cuts follow
-        // their bursts with a camera jump within a tick, which re-arms the
-        // full crossing latch above.
-        if (burstThisTick && (track->holdTicks < 1)) {
-            track->holdTicks = 1;
-        }
-
         track->address = cam;
         track->lastSeen = ++snap::g_camera_seen_counter;
         track->eyeDelta = eyeD;
@@ -424,8 +391,6 @@ extern "C" void omGetMtx(uint8_t* rdram, recomp_context* ctx) {
         return;
     }
 
-    snap::g_ommtx_allocs_since_prep++;
-
     // Skips both values the extended commands reserve, so a serial can never be
     // read as "ignore this matrix" or "work the identity out yourself".
     static uint32_t serial = 0;
@@ -434,11 +399,6 @@ extern "C" void omGetMtx(uint8_t* rdram, recomp_context* ctx) {
     } while ((serial == snap::IdIgnore) || (serial == snap::IdAuto));
 
     MEM_W(0x0, (gpr)(int32_t)mtx) = serial;
-}
-
-extern "C" void omFreeMtx(uint8_t* rdram, recomp_context* ctx) {
-    snap::g_ommtx_frees_since_prep++;
-    __real_omFreeMtx(rdram, ctx);
 }
 
 // Set when the game crosses into the next world block. enterNextBlock rebases

@@ -359,6 +359,16 @@ public:
             workload.snapCutHold = true;
         }
 
+        // Menus, cards and the intro movie run without the level overlay.
+        // In those scenes the renderer holds any frame whose content is
+        // structurally discontinuous with the last one -- transition staging
+        // the console never displayed. Gameplay is exempt: spawns and
+        // despawns there are the game's own behavior and present normally.
+        {
+            RT64::Workload &workload = app_->workloadQueue->workloads[app_->workloadQueue->writeCursor];
+            workload.snapCutscene = !snap::g_app_level_resident;
+        }
+
         // Consumed, so the next frame has to be established by the game again.
         // Without this the indicator latches on: with render to RAM enabled the
         // frame RT64 drew, dot included, is copied back over the framebuffer in
