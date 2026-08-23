@@ -662,12 +662,16 @@ namespace RT64 {
                 }
                 uint32_t snappedObjects = 0, freedObjects = 0, freedMatrices = 0;
                 for (auto &it : coherenceTallies) {
-                    // A third is the line between "this object moved" and "the
-                    // guard misread a limb": the measured staging ticks reject
-                    // most of an object's matrices at once (a hundred and
-                    // twenty to a hundred and seventy of a hundred and fifty),
-                    // while fast animation rejects a handful.
-                    it.second.snap = (it.second.rejected * 3) >= it.second.total;
+                    // The line sits high on purpose. A world transform is
+                    // composed down the object's hierarchy, so an object that
+                    // truly moved elsewhere carries the jump into every matrix
+                    // beneath the one that moved -- a real teleport rejects
+                    // nearly all of them, and the measured staging ticks do
+                    // (a hundred and twenty to a hundred and seventy of a
+                    // hundred and fifty). Anything short of that is the guard
+                    // misreading animation, and snapping a whole object on a
+                    // minority of votes would step objects that never moved.
+                    it.second.snap = (it.second.rejected * 4) >= (it.second.total * 3);
                     if (it.second.rejected == 0) {
                         continue;
                     }

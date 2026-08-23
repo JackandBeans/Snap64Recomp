@@ -23,6 +23,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <cerrno>
 #include <cstdint>
 #include <cstdio>
@@ -51,6 +52,15 @@ inline bool statsEnabled() {
 inline bool captureEnabled() {
     static const bool enabled = (std::getenv("SNAP_CAPTURE") != nullptr);
     return enabled;
+}
+
+// Counts frames the renderer held instead of showing, so the pacing meter can
+// say whether a stutter is the hold system's own doing. A hold copies a whole
+// render target and waits for the GPU to finish, which is real time spent on
+// exactly the frames that are already the heaviest in the scene.
+inline std::atomic<uint32_t> &holdCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
 }
 
 // Distinguishes this run's files from every other run's. Derived from the

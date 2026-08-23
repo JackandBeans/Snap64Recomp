@@ -704,9 +704,55 @@ namespace {
                 }
 
                 RenderCommandSemaphore *waitSemaphore = drawSemaphores[swapChainIndex].get();
+                const Timestamp previousPresentTimestamp = presentTimestamp;
                 presentTimestamp = Timer::current();
                 swapChainValid = ext.swapChain->present(swapChainIndex, &waitSemaphore, 1);
                 presentProfiler.logAndRestart();
+
+                // Pokemon Snap port: how evenly frames actually reach the
+                // screen, which is what stutter is. Judged here rather than
+                // from frame counts, because a run can produce every frame it
+                // owes and still look choppy if the intervals between them are
+                // uneven. Accumulated in memory and summarised every few
+                // hundred presents, so measuring costs nothing that could
+                // itself cause the unevenness being measured -- the earlier
+                // rigs disturbed the pacing far more than the faults they were
+                // looking for.
+                if (snapdiag::statsEnabled() && (previousPresentTimestamp != Timestamp())) {
+                    static double intervalTotalMs = 0.0;
+                    static double intervalWorstMs = 0.0;
+                    static uint32_t intervalCount = 0;
+                    static uint32_t intervalLate = 0;
+                    static double intervalPrevMs = 0.0;
+                    static uint32_t intervalJudder = 0;
+                    const double intervalMs = std::chrono::duration<double, std::milli>(presentTimestamp - previousPresentTimestamp).count();
+                    intervalTotalMs += intervalMs;
+                    intervalWorstMs = std::max(intervalWorstMs, intervalMs);
+                    intervalCount++;
+                    // A present that took more than twice the run's own average
+                    // is a visible hitch; one that differs sharply from the
+                    // present before it is the alternation the eye reads as
+                    // judder even when the average looks healthy.
+                    const double runningAverageMs = intervalTotalMs / intervalCount;
+                    if (intervalMs > (runningAverageMs * 2.0)) {
+                        intervalLate++;
+                    }
+                    if ((intervalPrevMs > 0.0) && (std::abs(intervalMs - intervalPrevMs) > (runningAverageMs * 0.5))) {
+                        intervalJudder++;
+                    }
+                    intervalPrevMs = intervalMs;
+                    if (intervalCount >= 600) {
+                        fprintf(stdout, "[SNAP-PACE] %u presents, average %.2f ms (%.1f fps), worst %.2f ms, hitches %u, uneven pairs %u, frames held %u\n",
+                            intervalCount, runningAverageMs, 1000.0 / runningAverageMs, intervalWorstMs, intervalLate, intervalJudder,
+                            snapdiag::holdCounter().exchange(0, std::memory_order_relaxed));
+                        fflush(stdout);
+                        intervalTotalMs = 0.0;
+                        intervalWorstMs = 0.0;
+                        intervalCount = 0;
+                        intervalLate = 0;
+                        intervalJudder = 0;
+                    }
+                }
             }
         }
     }

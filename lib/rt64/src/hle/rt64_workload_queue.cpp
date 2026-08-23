@@ -1306,6 +1306,9 @@ namespace RT64 {
                     // Only a frame with no verdict at all closes the valve.
                     snapConsecutiveHolds = 0;
                 }
+                if (snapCutHold) {
+                    snapdiag::holdCounter().fetch_add(1, std::memory_order_relaxed);
+                }
                 if (snapCutHold && snapdiag::diagEnabled()) {
                     fprintf(stdout, "[SNAP-HOLD] cut transit: presenting previous frame for one tick\n");
                     fflush(stdout);
