@@ -661,6 +661,7 @@ namespace RT64 {
                     }
                 }
                 uint32_t snappedObjects = 0, freedObjects = 0, freedMatrices = 0;
+                float coherenceLiftedWorst = 0.0f;
                 for (auto &it : coherenceTallies) {
                     // The line sits high on purpose. A world transform is
                     // composed down the object's hierarchy, so an object that
@@ -710,6 +711,23 @@ namespace RT64 {
                         rigidBody.lerpPerspective = false;
                     }
                     else if (rigidBody.autoRejectedTranslation) {
+                        // Lifting a rejection asserts that the guard misread
+                        // fast animation, and that only holds for a pair that
+                        // is a plausible step of one object. A pair further
+                        // apart than anything this game animates in a tick is
+                        // not that: it is a matrix reissued to a new object,
+                        // or two objects taken for each other. Blending such a
+                        // pair draws the new arrival sliding in from wherever
+                        // its predecessor stood -- a Pokemon visibly
+                        // travelling to its spawn point, seen only with
+                        // interpolation on, because only then is anything
+                        // blended at all. Those stay snapped, which is what
+                        // an object with no previous pose should do.
+                        const float stepDistance = float(hlslpp::length(rigidBody.linearVelocity));
+                        coherenceLiftedWorst = std::max(coherenceLiftedWorst, stepDistance);
+                        if (stepDistance > 60.0f) {
+                            continue;
+                        }
                         // Restores exactly what the component modes ask for
                         // with the rejection lifted, which for this game's
                         // model tags (automatic position and rotation, scale
@@ -728,8 +746,8 @@ namespace RT64 {
                     }
                 }
                 if ((snapdiag::diagEnabled() || snapdiag::statsEnabled()) && ((snappedObjects + freedObjects) > 0)) {
-                    fprintf(stdout, "[SNAP-COH] objects snapped whole %u, misread rejections lifted %u across %u objects\n",
-                        snappedObjects, freedMatrices, freedObjects);
+                    fprintf(stdout, "[SNAP-COH] objects snapped whole %u, misread rejections lifted %u across %u objects, furthest lifted step %.1f\n",
+                        snappedObjects, freedMatrices, freedObjects, coherenceLiftedWorst);
                 }
             }
         }
