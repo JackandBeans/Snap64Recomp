@@ -1536,7 +1536,22 @@ namespace RT64 {
                     }
 
                     if (snapCutHold && (frame == 0) && (overrideTarget == nullptr)) {
-                        threadHoldCopy(snapHoldScratch.get(), RenderTargetKey(), nullptr, interpolationTargetKey);
+                        // If the first image of a held tick cannot be replaced,
+                        // the tick shows one fresh picture followed by a run of
+                        // stale ones -- a step forward, then backwards, which
+                        // is worse than not holding at all. The copy can fail
+                        // for real reasons (a target that has not been sized
+                        // yet, a size that no longer matches), so its answer is
+                        // read rather than assumed, and a hold that cannot be
+                        // delivered whole is abandoned.
+                        if (!threadHoldCopy(snapHoldScratch.get(), RenderTargetKey(), nullptr, interpolationTargetKey)) {
+                            snapCutHold = false;
+                            snapConsecutiveHolds = 0;
+                            if (snapdiag::statsEnabled()) {
+                                fprintf(stdout, "[SNAP-HOLDFAIL] a held frame could not be delivered; showing the frame as rendered\n");
+                                fflush(stdout);
+                            }
+                        }
                     }
 
                     // Add total time the frame took to render.
