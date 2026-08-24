@@ -16,6 +16,11 @@ HOOKED = [
     'dmaLoadOverlay',
     'check_sp_imem',
     'check_sp_dmem',
+    # Reads the animation system's own verdict about which poses are steps
+    # rather than motion, so the renderer can snap those instead of drawing the
+    # positions between. Read-only: the wrapper looks at the tree before and
+    # after the real call and never writes to game memory.
+    'animUpdateModelTreeAnimation',
     # Turns RT64's extended commands on through the display list write pointer
     # it receives. Object identity is a game patch now, not a hook.
     'renPrepareCameraMatrix',

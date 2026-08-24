@@ -169,6 +169,13 @@ namespace RT64 {
             state->rsp->matrixId(id, push, proj, mode, pos, rot, scale, skew, persp, vpos, vtc, tile, lookat, order, aspect, editable, idIsAddress, editGroup, coherenceId);
         }
 
+        // Pokemon Snap port: names an object whose animation stepped to a new
+        // pose this frame instead of moving to it, so the renderer snaps it
+        // rather than drawing the positions between.
+        void authoredStepV1(State *state, DisplayList **dl) {
+            state->snapAuthoredStepCommand((*dl)->w1);
+        }
+
         void matrixGroupV1(State *state, DisplayList **dl) {
             matrixGroupCommand(state, dl, false, false);
         }
@@ -418,6 +425,7 @@ namespace RT64 {
             Map[G_EX_SETREFRESHRATE_V1] = &setRefreshRateV1;
             Map[G_EX_VERTEXZTEST_V1] = &vertexZTestV1;
             Map[G_EX_ENDVERTEXZTEST_V1] = &endVertexZTestV1;
+            Map[G_EX_AUTHOREDSTEP_V1] = &authoredStepV1;
             Map[G_EX_MATRIXGROUP_V1] = &matrixGroupV1;
             Map[G_EX_POPMATRIXGROUP_V1] = &popMatrixGroupV1;
             Map[G_EX_FORCEUPSCALE2D_V1] = &forceUpscale2DV1;

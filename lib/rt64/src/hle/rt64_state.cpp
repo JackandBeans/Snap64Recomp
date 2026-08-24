@@ -2849,6 +2849,13 @@ namespace RT64 {
     // workload this display list is filling -- in-band with the exact frame
     // the verdict was computed for, with no cross-frame global whose
     // consumption could drift from its frame.
+    // Pokemon Snap port: records an object the game's animation data says
+    // stepped this frame. In-band with the display list, so it lands on the
+    // workload it was computed for.
+    void State::snapAuthoredStepCommand(uint32_t id) {
+        ext.workloadQueue->workloads[ext.workloadQueue->writeCursor].snapAddSteppedId(id);
+    }
+
     void State::snapCutHoldCommand() {
         ext.workloadQueue->workloads[ext.workloadQueue->writeCursor].snapCutHold = true;
     }

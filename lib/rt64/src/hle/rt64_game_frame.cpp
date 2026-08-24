@@ -662,6 +662,18 @@ namespace RT64 {
                 }
                 uint32_t snappedObjects = 0, freedObjects = 0, freedMatrices = 0;
                 float coherenceLiftedWorst = 0.0f;
+                // An object the game's own animation says stepped to this pose
+                // snaps whole, whatever the distance. The three defences below
+                // all ask how MUCH moved, and a step can be small: the camera
+                // in Todd's hand moves two and a half units and is unmistakable
+                // because it leaves his hand. Magnitude was never the question;
+                // the game already knows the answer and says so in the display
+                // list.
+                for (auto &it : coherenceTallies) {
+                    if (workload.snapHasSteppedId(it.first)) {
+                        it.second.rejected = it.second.total;
+                    }
+                }
                 for (auto &it : coherenceTallies) {
                     // The line sits high on purpose. A world transform is
                     // composed down the object's hierarchy, so an object that
@@ -746,8 +758,8 @@ namespace RT64 {
                     }
                 }
                 if ((snapdiag::diagEnabled() || snapdiag::statsEnabled()) && ((snappedObjects + freedObjects) > 0)) {
-                    fprintf(stdout, "[SNAP-COH] objects snapped whole %u, misread rejections lifted %u across %u objects, furthest lifted step %.1f\n",
-                        snappedObjects, freedMatrices, freedObjects, coherenceLiftedWorst);
+                    fprintf(stdout, "[SNAP-COH] objects snapped whole %u (game declared %u of them a step), rejections considered %u across %u objects, furthest %.1f\n",
+                        snappedObjects, workload.snapSteppedIdCount, freedMatrices, freedObjects, coherenceLiftedWorst);
                 }
             }
         }

@@ -19,6 +19,7 @@ namespace RT64 {
         snapOriginDelta = hlslpp::float3(0.0f, 0.0f, 0.0f);
         snapCutHold = false;
         snapCutscene = false;
+        snapSteppedIdCount = 0;
         fbPairCount = 0;
         fbPairSubmitted = 0;
         gameCallCount = 0;

@@ -74,6 +74,11 @@ constexpr uint32_t EnableWord1 = Param(HookOpEnable, 4, 28) | Param(ExtendedOpco
 // opcode, word1 the group id, word2 the component modes, word3 zero.
 constexpr uint32_t MatrixGroupWord0 = Param(ExtendedOpcode, 8, 24) | Param(MatrixGroupV1, 24, 0);
 
+// One command naming an object whose animation stepped to its pose this frame:
+// word0 the opcode, word1 the object.
+constexpr uint32_t AuthoredStepV1 = 0x000034;
+constexpr uint32_t AuthoredStepWord0 = Param(ExtendedOpcode, 8, 24) | Param(AuthoredStepV1, 24, 0);
+
 // The camera's group, on the projection side: Snap's cameras multiply the
 // look-at into the projection stack (render.c: G_MTX_MUL | G_MTX_PROJECTION),
 // so a projection-side group emitted before the camera's matrices names the
@@ -155,6 +160,10 @@ bool valid_ram_address(uint32_t address) {
 namespace snap {
 // Defined below with the block-transition hooks.
 extern bool g_world_rebased;
+// Objects whose animation stepped to a new pose this frame (anim_steps.cpp).
+uint32_t stepped_object_count();
+uint32_t stepped_object(uint32_t index);
+void clear_stepped_objects();
 namespace {
 struct CameraTrack {
     uint32_t address = 0;
@@ -391,6 +400,25 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
             MEM_W(0x0, (gpr)(int32_t)gfx) = snap::EnableWord0;
             MEM_W(0x4, (gpr)(int32_t)gfx) = snap::EnableWord1;
             uint32_t cursor = gfx + snap::GfxCommandSize;
+
+            // The objects whose animation stepped to a new pose this frame
+            // rather than moving to it (src/anim_steps.cpp reads the game's own
+            // animation data to find them). Naming them here puts the verdict
+            // in the same display list as the frame it describes, which is what
+            // makes it exact: no flag shared between threads, no dependence on
+            // when the list is processed. The renderer snaps those objects
+            // instead of drawing the positions between their two poses.
+            const uint32_t steppedCount = snap::stepped_object_count();
+            for (uint32_t i = 0; i < steppedCount; i++) {
+                const uint32_t stepped = snap::stepped_object(i);
+                if (stepped == 0) {
+                    continue;
+                }
+                MEM_W(0x0, (gpr)(int32_t)cursor) = snap::AuthoredStepWord0;
+                MEM_W(0x4, (gpr)(int32_t)cursor) = stepped;
+                cursor += snap::GfxCommandSize;
+            }
+            snap::clear_stepped_objects();
             if (snap::valid_ram_address(cam)) {
                 MEM_W(0x0, (gpr)(int32_t)cursor) = snap::MatrixGroupWord0;
                 MEM_W(0x4, (gpr)(int32_t)cursor) = cam;

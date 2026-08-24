@@ -228,6 +228,37 @@ namespace RT64 {
         // transition staging and the frame matcher's discontinuity verdict
         // may hold frames; during play it must not.
         bool snapCutscene = false;
+        // Pokemon Snap port: the objects whose animation stepped to a new pose
+        // this frame rather than moving to it. The game's own animation data
+        // says so (src/matrix_tags.cpp reads it and writes the verdict into
+        // this frame's display list), and blending such a pair draws the object
+        // at positions it was never in. Bounded and fixed size: a frame with
+        // more stepping objects than this loses the surplus, which costs the
+        // port nothing it did not already have.
+        static constexpr uint32_t SnapMaxSteppedIds = 16;
+        uint32_t snapSteppedIds[SnapMaxSteppedIds] = {};
+        uint32_t snapSteppedIdCount = 0;
+
+        void snapAddSteppedId(uint32_t id) {
+            if ((id == 0) || (snapSteppedIdCount >= SnapMaxSteppedIds)) {
+                return;
+            }
+            for (uint32_t i = 0; i < snapSteppedIdCount; i++) {
+                if (snapSteppedIds[i] == id) {
+                    return;
+                }
+            }
+            snapSteppedIds[snapSteppedIdCount++] = id;
+        }
+
+        bool snapHasSteppedId(uint32_t id) const {
+            for (uint32_t i = 0; i < snapSteppedIdCount; i++) {
+                if (snapSteppedIds[i] == id) {
+                    return true;
+                }
+            }
+            return false;
+        }
         DrawData drawData;
         DrawRanges drawRanges;
         DrawBuffers drawBuffers;

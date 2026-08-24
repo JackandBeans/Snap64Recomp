@@ -30,7 +30,7 @@ namespace RT64 {
 namespace {
     // Written at half resolution: the artifact is full-screen scale and half
     // res keeps a burst of captures in the tens of megabytes.
-    constexpr uint32_t SnapCaptureMaxFiles = 120;
+    constexpr uint32_t SnapCaptureMaxFiles = 400;
     constexpr size_t SnapCaptureMaxQueuedJobs = 4;
 
     // Encoding a capture is a full-image conversion plus a multi-megabyte
