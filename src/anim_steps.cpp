@@ -245,27 +245,38 @@ extern "C" void animUpdateModelTreeAnimation(uint8_t* rdram, recomp_context* ctx
         return;
     }
 
-    // A step counts only when its own value changed AND the object's transform
-    // changed with it.
+    // Matched by which object and which parameter, not by position. The two
+    // walks are not guaranteed to produce the same list: parsing the next
+    // animation command creates channels that did not exist a moment ago
+    // (omDObjAddAObj), and it does so on exactly the ticks worth catching --
+    // comparing the lists position by position gave up precisely when a key
+    // fired. A channel present in only one snapshot is not evidence either way
+    // and is passed over.
     bool stepped = false;
-    if ((beforeCount == afterCount) && (beforeTransformCount == afterTransformCount)) {
-        for (uint32_t i = 0; (i < beforeCount) && !stepped; i++) {
-            if ((beforeSamples[i].dobj == afterSamples[i].dobj) &&
-                (beforeSamples[i].paramID == afterSamples[i].paramID) &&
-                (beforeSamples[i].value != afterSamples[i].value)) {
-                stepped = true;
-            }
-        }
-        if (stepped) {
-            bool transformMoved = false;
-            const uint32_t floats = beforeTransformCount * snap::TransformFloats;
-            for (uint32_t i = 0; (i < floats) && !transformMoved; i++) {
-                if (beforeTransforms[i] != afterTransforms[i]) {
-                    transformMoved = true;
+    for (uint32_t i = 0; (i < beforeCount) && !stepped; i++) {
+        for (uint32_t j = 0; j < afterCount; j++) {
+            if ((beforeSamples[i].dobj == afterSamples[j].dobj) &&
+                (beforeSamples[i].paramID == afterSamples[j].paramID)) {
+                if (beforeSamples[i].value != afterSamples[j].value) {
+                    stepped = true;
                 }
+                break;
             }
-            stepped = transformMoved;
         }
+    }
+
+    // And the pose has to have actually moved with it, which ignores steps the
+    // game itself declined to apply without needing to know why it declined.
+    if (stepped) {
+        const uint32_t common = (beforeTransformCount < afterTransformCount) ?
+            beforeTransformCount : afterTransformCount;
+        bool transformMoved = false;
+        for (uint32_t i = 0; (i < common * snap::TransformFloats) && !transformMoved; i++) {
+            if (beforeTransforms[i] != afterTransforms[i]) {
+                transformMoved = true;
+            }
+        }
+        stepped = transformMoved;
     }
 
     if (stepped) {
