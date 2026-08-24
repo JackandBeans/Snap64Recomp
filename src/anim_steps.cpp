@@ -43,8 +43,13 @@
 #include <cstdio>
 #include <cstring>
 
+#include <atomic>
+
 #include "hle/rt64_snap_diag.h"
 #include "recomp.h"
+
+// The present-queue capture runs while this is positive (src/frame_dump.cpp).
+extern "C" std::atomic<int32_t> snap_frame_dump_pending;
 
 extern "C" {
 #include "funcs.h"
@@ -67,8 +72,12 @@ constexpr float AnimationDisabled = -3.4028235e38f;   // FLOAT_NEG_MAX
 // GObj: data.dobj 0x48 (0x3C is cmdList, which is not it).
 
 constexpr uint32_t MaxSteppedObjects = 16;   // matches the renderer's capacity
-constexpr uint32_t MaxStepSamples = 256;
-constexpr uint32_t MaxTrackedDObjs = 64;
+constexpr uint32_t MaxStepSamples = 1024;
+// The intro's scenery is a single object of 226 nodes, so a limit chosen for
+// a character silently excluded the very tree carrying the artifact: every
+// frame failed closed and the scene never received a verdict at all. Sized for
+// the largest tree the game builds, with room over it.
+constexpr uint32_t MaxTrackedDObjs = 384;
 constexpr uint32_t TransformFloats = 11;     // position 3, rotation 5, scale 3
 
 uint32_t g_stepped_objects[MaxSteppedObjects];
@@ -124,6 +133,14 @@ bool sample_steps(uint8_t* rdram, uint32_t rootDObj, StepSample* samples, uint32
         }
 
         if (transformCount >= MaxTrackedDObjs) {
+            if (snapdiag::diagEnabled() || snapdiag::statsEnabled()) {
+                static bool warned = false;
+                if (!warned) {
+                    warned = true;
+                    printf("[SNAP-STEP] a model tree is larger than the snapshot; its steps go unnoticed\n");
+                    fflush(stdout);
+                }
+            }
             return false;
         }
         read_transform(rdram, dobj, transforms + transformCount * TransformFloats);
@@ -183,6 +200,12 @@ void note_stepped_object(uint32_t gobj) {
         }
     }
     g_stepped_objects[g_stepped_object_count++] = gobj;
+    // Photograph what the screen actually shows across an authored step. The
+    // whole chain verifies in logs; only the pictures can say whether the
+    // object still travels between its two poses.
+    if (snapdiag::captureEnabled()) {
+        snap_frame_dump_pending.store(14);
+    }
     if (snapdiag::diagEnabled() || snapdiag::statsEnabled()) {
         printf("[SNAP-STEP] object %08X stepped to its pose this frame\n", gobj);
         fflush(stdout);
