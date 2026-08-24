@@ -669,10 +669,23 @@ namespace RT64 {
                 // because it leaves his hand. Magnitude was never the question;
                 // the game already knows the answer and says so in the display
                 // list.
+                uint32_t steppedMatched = 0;
+                uint32_t untaggedTransforms = 0;
                 for (auto &it : coherenceTallies) {
                     if (workload.snapHasSteppedId(it.first)) {
                         it.second.rejected = it.second.total;
+                        steppedMatched++;
                     }
+                }
+                if ((workload.snapSteppedIdCount > 0) && (steppedMatched == 0) &&
+                    (snapdiag::diagEnabled() || snapdiag::statsEnabled())) {
+                    // The game named an object that stepped and the renderer is
+                    // tracking no transform belonging to it. The verdict is
+                    // correct and lands on nothing, which is worth saying out
+                    // loud rather than looking like a fix that works.
+                    fprintf(stdout, "[SNAP-STEP] verdict for %u object(s) matched no tracked transform (%u groups tracked)\n",
+                        workload.snapSteppedIdCount, uint32_t(coherenceTallies.size()));
+                    fflush(stdout);
                 }
                 for (auto &it : coherenceTallies) {
                     // The line sits high on purpose. A world transform is
