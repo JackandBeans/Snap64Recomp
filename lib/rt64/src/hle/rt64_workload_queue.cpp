@@ -1351,7 +1351,21 @@ namespace RT64 {
                 // only trusted when the frame matcher actually ran this
                 // workload -- with matching off it is whatever frame last
                 // computed it.
-                bool snapCutHold = (workload.snapCutHold || (requiresFrameMatching && curFrame.snapDiscontinuity)) &&
+                // A frame carrying an authored step is held rather than shown.
+                // Snapping the blend was the wrong remedy and the proof is that
+                // the artifact looks identical with interpolation switched off,
+                // where nothing is blended at all: the fault was never in how
+                // the two poses were mixed, it is that this frame reaches the
+                // screen. On the console it did not. The scheduler skipped a
+                // tick's draw whenever the RCP was still busy (gtl.c), and a
+                // frame where the movie re-poses its cast is the heaviest of
+                // its scene, so the hardware showed the previous picture for
+                // another tick and the new pose arrived already in place. This
+                // reproduces that, from the game's own statement about which
+                // poses are steps.
+                const bool snapSteppedFrame = (workload.snapSteppedIdCount > 0);
+                bool snapCutHold = (workload.snapCutHold || snapSteppedFrame ||
+                    (requiresFrameMatching && curFrame.snapDiscontinuity)) &&
                     !workload.paused && !usingMSAA &&
                     !interpolationTargetKey.isEmpty() && !snapPrevTargetKey.isEmpty();
 
@@ -1416,6 +1430,9 @@ namespace RT64 {
                     }
                     if (curFrame.snapDiscontinuity) {
                         snapdiag::holdFromCensusCounter().fetch_add(1, std::memory_order_relaxed);
+                    }
+                    if (snapSteppedFrame) {
+                        snapdiag::holdFromStepCounter().fetch_add(1, std::memory_order_relaxed);
                     }
                 }
                 if (workload.snapCutscene) {

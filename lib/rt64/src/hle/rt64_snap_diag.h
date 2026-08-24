@@ -147,6 +147,11 @@ inline std::atomic<uint32_t> &holdFromCensusCounter() {
     return counter;
 }
 
+inline std::atomic<uint32_t> &holdFromStepCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
 inline std::atomic<uint32_t> &cutsceneTickCounter() {
     static std::atomic<uint32_t> counter{0};
     return counter;
