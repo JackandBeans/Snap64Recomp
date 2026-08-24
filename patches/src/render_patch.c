@@ -95,7 +95,17 @@ static u32 renEXCoherence = 0;
 
 #define renEXTagCoherent(gfx, id, mode, pos, rot, scale, skew, persp)                                                     G_EX_COMMAND2((gfx),                                                                                                     PARAM(RT64_EXTENDED_OPCODE, 8, 24) | PARAM(G_EX_MATRIXGROUP_V1, 24, 0),                                              (id),                                                                                                                PARAM(G_EX_NOPUSH, 1, 0) | PARAM(0, 1, 1) | PARAM(mode, 1, 2) | PARAM(pos, 2, 3) |                                        PARAM(rot, 2, 5) | PARAM(scale, 2, 7) | PARAM(skew, 2, 9) | PARAM(persp, 2, 11) |                                     PARAM(G_EX_COMPONENT_SKIP, 2, 13) | PARAM(G_EX_COMPONENT_SKIP, 2, 15) |                                              PARAM(G_EX_ORDER_LINEAR, 2, 17) | PARAM(G_EX_EDIT_ALLOW, 1, 19) |                                                    PARAM(G_EX_ASPECT_AUTO, 2, 20) | PARAM(G_EX_COMPONENT_SKIP, 2, 22) |                                                 PARAM(G_EX_COMPONENT_SKIP, 2, 24),                                                                               renEXCoherence)
 
-#define renEXTagModelMatrix(gfx, ommtx)                                            renEXTagCoherent((gfx), OM_MTX_TAG(ommtx), G_EX_INTERPOLATE_DECOMPOSE,     G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO,                 G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO)
+/* A pose the game stepped to rather than moved to. anim_patch.c raises this on
+   the tick an authored step key changes value, and it stands for that frame
+   only. Blending such a pair draws the object at positions it was never in --
+   the camera sliding out of Todd's hand, a leaf of scenery spending a frame
+   inside the intro's fog wall and reading as gone. Skipping the components is
+   what the renderer already does for a camera cut, and it makes the object
+   change pose in one frame, which is what the step says and what the console
+   showed. */
+#define renEXTagSteppedMatrix(gfx, ommtx)                                          renEXTagCoherent((gfx), OM_MTX_TAG(ommtx), G_EX_INTERPOLATE_DECOMPOSE,     G_EX_COMPONENT_SKIP, G_EX_COMPONENT_SKIP, G_EX_COMPONENT_SKIP,                 G_EX_COMPONENT_SKIP, G_EX_COMPONENT_SKIP)
+
+#define renEXTagModelMatrix(gfx, ommtx)                                            do {                                                                           Gfx* _tagAt = (gfx);                                                       if (dobj->unk_57 != 0) {                                                       renEXTagSteppedMatrix(_tagAt, (ommtx));                                } else {                                                                       renEXTagCoherent(_tagAt, OM_MTX_TAG(ommtx),                                                 G_EX_INTERPOLATE_DECOMPOSE,                                                    G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO,                                      G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO,                                      G_EX_COMPONENT_AUTO);                                          }                                                                      } while (0)
 
 /* The billboard kinds do not produce a rigid matrix. The renderer
    reconstructs their overwritten combined matrix as an equivalent world
