@@ -1372,8 +1372,29 @@ namespace RT64 {
                 // measured at fifteen held frames in sixty-five, a quarter of
                 // that passage standing still. Holding at most every other
                 // frame reproduces the hardware's own limit.
+                // Only an ISOLATED step is a frame the console skipped. Some
+                // of this game's animation is built out of steps and steps
+                // alone -- Mew turning into a ball of light and leaving is
+                // authored that way -- and it changes pose every tick or two
+                // for seconds at a time. The hardware drew all of that: it
+                // could only skip while the RCP was still busy, which a run of
+                // frames never sustains. Holding them instead took out every
+                // other frame of the sequence, which is the stutter.
+                //
+                // A re-pose that follows a stretch of no steps at all is the
+                // other thing entirely -- the movie changing what is on stage,
+                // the heaviest frame of its scene, the one the hardware missed.
+                // That is what gets held.
                 static bool snapPreviousFrameStepHeld = false;
-                const bool snapSteppedFrame = (workload.snapSteppedIdCount > 0) && !snapPreviousFrameStepHeld;
+                static uint32_t snapFramesSinceStep = 0;
+                const bool snapStepDeclared = (workload.snapSteppedIdCount > 0);
+                const bool snapStepIsolated = (snapFramesSinceStep >= 8);
+                const bool snapSteppedFrame = snapStepDeclared && snapStepIsolated && !snapPreviousFrameStepHeld;
+                if (snapStepDeclared && snapdiag::statsEnabled()) {
+                    fprintf(stdout, "[SNAP-STEPGAP] step after %u quiet frames\n", snapFramesSinceStep);
+                    fflush(stdout);
+                }
+                snapFramesSinceStep = snapStepDeclared ? 0 : (snapFramesSinceStep + 1);
                 // How costly this frame is against the scene's own recent cost.
                 // The console skipped a draw when the RCP was still busy, so a
                 // step frame it would have skipped is one that is heavy, not
@@ -1389,8 +1410,18 @@ namespace RT64 {
                     }
                     avgCalls = (avgCalls > 0.0) ? (avgCalls * 0.9 + calls * 0.1) : calls;
                 }
-                bool snapCutHold = (workload.snapCutHold || snapSteppedFrame ||
-                    (requiresFrameMatching && curFrame.snapDiscontinuity)) &&
+                // The content census is gone from this decision. It guessed at
+                // which frames were staged transitions by watching how much of
+                // the scene changed at once, and it was always a guess: the
+                // game now states which poses it stepped to, from its own
+                // animation data, which is the thing the census was trying to
+                // infer. Where the two disagree the census is the one that is
+                // wrong, and it disagrees loudly -- through the intro's closing
+                // sequence, where light effects churn transforms every frame,
+                // it asked to hold forty-four frames out of sixty-five. Two
+                // thirds of that passage stood still, which is the stutter
+                // reported there, and none of it was a transition.
+                bool snapCutHold = (workload.snapCutHold || snapSteppedFrame) &&
                     !workload.paused && !usingMSAA &&
                     !interpolationTargetKey.isEmpty() && !snapPrevTargetKey.isEmpty();
 
