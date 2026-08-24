@@ -677,51 +677,6 @@ namespace RT64 {
                     callTile.tmemHashOrID = textureManager.uploadTMEM(this, callTile.loadTile, ext.textureCache, workload.submissionFrame, 0, RDP_TMEM_BYTES, callTile.sampleWidth, callTile.sampleHeight, callTile.tlut);
                 }
                 else {
-                    // Pokemon Snap port, diagnostic: the game's effect sprites --
-                    // Snorlax's sleep symbols, Meowth's tornado -- are palette
-                    // indexed 4-bit rectangles that reach the renderer with the
-                    // right rectangle, the right primitive depth and full prim
-                    // alpha, and still show nothing. Their colour can only come
-                    // from a texel index and the palette entry it selects, and
-                    // this is the one place where both actually exist: texture
-                    // memory is filled by the deferred load replay just above,
-                    // not when the display list was parsed.
-                    //
-                    // All zero texels mean the sprite bitmap never arrived. Real
-                    // indices with an all zero palette mean the TLUT is the
-                    // problem. Both good means the fault is downstream, in the
-                    // upload or the sampler.
-                    if (snapdiag::diagEnabled() && (callTile.loadTile.fmt == G_IM_FMT_CI) && (callTile.loadTile.siz == G_IM_SIZ_4b)) {
-                        static uint32_t ciTiles = 0;
-                        ciTiles++;
-                        if ((ciTiles <= 4) || ((ciTiles % 500) == 0)) {
-                            const uint8_t *tmem8 = reinterpret_cast<const uint8_t *>(rdp->TMEM);
-                            const uint16_t *pal = reinterpret_cast<const uint16_t *>(tmem8 + (RDP_TMEM_BYTES / 2) + (callTile.loadTile.palette << 7));
-                            // Sampled from the middle row: these sprites keep
-                            // their art in the centre and their first rows
-                            // legitimately blank, so the top of the texture
-                            // cannot distinguish an intact sprite from a
-                            // missing one.
-                            const uint32_t rowStride = uint32_t(callTile.loadTile.line) << 3;
-                            const uint32_t midRow = (callTile.sampleHeight / 2) * rowStride;
-                            const uint32_t texelBase = ((callTile.loadTile.tmem << 3) + midRow) & RDP_TMEM_MASK16;
-                            fprintf(stdout, "[SNAP-CI4] #%u %ux%u line %u tmem %u pal %u tlut %u texels",
-                                ciTiles, callTile.sampleWidth, callTile.sampleHeight, callTile.loadTile.line,
-                                callTile.loadTile.tmem, callTile.loadTile.palette, callTile.tlut);
-                            for (int b = 0; b < 16; b++) {
-                                fprintf(stdout, " %02X", tmem8[(texelBase + b) & RDP_TMEM_MASK16]);
-                            }
-                            fprintf(stdout, " pal");
-                            // Each palette entry is replicated across its 64-bit
-                            // word, so stride 4 picks one copy of each of the 16.
-                            for (int e = 0; e < 16; e++) {
-                                fprintf(stdout, " %04X", pal[e * 4]);
-                            }
-                            fprintf(stdout, "\n");
-                            fflush(stdout);
-                        }
-                    }
-
                     callTile.tmemHashOrID = textureManager.uploadTexture(this, callTile.loadTile, ext.textureCache, workload.submissionFrame, callTile.sampleWidth, callTile.sampleHeight, callTile.tlut);
                 }
             }
@@ -1014,47 +969,6 @@ namespace RT64 {
                     if (proj.usesViewport()) {
                         meshDesc.faceIndicesStart = faceIndex;
                         faceIndex += callDesc.triangleCount * 3;
-
-                        // Pokemon Snap port, diagnostic: Snorlax's sleep
-                        // symbols -- a four bit intensity texture on a two
-                        // cycle translucent surface that tests depth without
-                        // writing it -- are submitted by the game every frame
-                        // and drawn by neither the ubershader nor the
-                        // specialised pipeline. Both consume the same geometry,
-                        // so the question is where that geometry lands. This
-                        // prints the screen bounds the renderer computed for
-                        // exactly these calls: on screen at sane depth means
-                        // the fragments die later, off screen or degenerate
-                        // means the transform stage ate them.
-                        {
-                            const bool xluNoWrite = callDesc.otherMode.zCmp() && !callDesc.otherMode.zUpd() &&
-                                (callDesc.otherMode.zMode() == ZMODE_XLU) &&
-                                (callDesc.otherMode.cycleType() == G_CYC_2CYCLE);
-                            bool i4Texture = false;
-                            if (xluNoWrite && (callDesc.tileCount > 0)) {
-                                const auto &lt = workload.drawData.callTiles[callDesc.tileIndex].loadTile;
-                                i4Texture = (lt.fmt == G_IM_FMT_I) && (lt.siz == G_IM_SIZ_4b);
-                            }
-                            if (snapdiag::diagEnabled() && i4Texture && (callDesc.triangleCount > 0)) {
-                                static uint32_t zCalls = 0;
-                                zCalls++;
-                                if ((zCalls <= 120) || ((zCalls % 25) == 0)) {
-                                    float minX = 1e9f, minY = 1e9f, minZ = 1e9f;
-                                    float maxX = -1e9f, maxY = -1e9f, maxZ = -1e9f;
-                                    const uint32_t indexCount = callDesc.triangleCount * 3;
-                                    for (uint32_t i = 0; i < indexCount; i++) {
-                                        const uint32_t v = faceIndices[meshDesc.faceIndicesStart + i];
-                                        const auto &ps = workload.drawData.posScreen[v];
-                                        minX = std::min(minX, float(ps[0])); maxX = std::max(maxX, float(ps[0]));
-                                        minY = std::min(minY, float(ps[1])); maxY = std::max(maxY, float(ps[1]));
-                                        minZ = std::min(minZ, float(ps[2])); maxZ = std::max(maxZ, float(ps[2]));
-                                    }
-                                    fprintf(stdout, "[SNAP-ZGEO] #%u tris %u x %.1f..%.1f y %.1f..%.1f z %.5f..%.5f\n",
-                                        zCalls, callDesc.triangleCount, minX, maxX, minY, maxY, minZ, maxZ);
-                                    fflush(stdout);
-                                }
-                            }
-                        }
                     }
                     else {
                         meshDesc.rawVertexStart = rawVertexIndex;

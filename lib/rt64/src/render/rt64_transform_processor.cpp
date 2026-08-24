@@ -37,8 +37,8 @@ namespace RT64 {
             // Cutscene content interpolates like everything else: pinning it
             // to the current frame was tried and reads as the whole intro
             // running at half rate. What the film's staged ticks need is not
-            // stepping but absence -- the frame census holds them off screen
-            // entirely (rt64_game_frame.cpp), and the pose guard plus its
+            // stepping but absence -- the workload queue holds them off
+            // screen entirely, and the pose guard plus its
             // hysteresis keep any shown pair from blending across a re-pose.
             if (prevFrameValid) {
                 const GameFrameMap::WorkloadMap &workloadMap = p.curFrame->frameMap.workloads[w];

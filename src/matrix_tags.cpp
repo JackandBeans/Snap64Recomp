@@ -340,10 +340,10 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                 // outright: this hook's business is the camera's own motion,
                 // and a settled camera means the transit is over. The staged
                 // teardown ticks a transition schedules around the camera
-                // move are content discontinuities, and the renderer's frame
-                // census holds those on its own evidence
-                // (rt64_game_frame.cpp); bridging them here from the camera
-                // side held two extra frames after every clean cut.
+                // move are the game's own authored steps, and the renderer
+                // holds those on the game's own verdict (src/anim_steps.cpp);
+                // bridging them here from the camera side held two extra
+                // frames after every clean cut.
                 if ((eyeD > CutDistance) || (dot < CutCosine)) {
                     holdFrame = true;
                     track->holdTicks--;

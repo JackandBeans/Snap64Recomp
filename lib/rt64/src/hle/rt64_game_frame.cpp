@@ -274,7 +274,6 @@ namespace RT64 {
         // components already snap the view on the frame the game's camera data
         // jumped -- which a rebase always is -- so nothing here decides cuts.
         snapRebaseFrame = false;
-        snapDiscontinuity = false;
         snapOriginDelta = hlslpp::float3(0.0f, 0.0f, 0.0f);
         for (uint32_t w : workloads) {
             Workload &rebaseWorkload = workloadQueue.workloads[w];
@@ -362,60 +361,6 @@ namespace RT64 {
                 curTransformMap.mapped = false;
             }
 
-            // Pokemon Snap port: how many tagged transforms actually paired.
-            // A limb that fails to pair renders at this frame's pose while its
-            // paired siblings render interpolated, so the model separates. If
-            // the lower body is going missing because of pairing, unmatched
-            // spikes while the camera pans; if it stays at zero through a pan,
-            // the geometry is being lost somewhere after matching instead.
-            if (snapdiag::diagEnabled()) {
-                uint32_t tagged = 0;
-                uint32_t matched = 0;
-                for (const auto &entry : curWorkload.transformIdMap) {
-                    tagged++;
-                    if (curWorkloadMap.transforms[entry.second].mapped) {
-                        matched++;
-                    }
-                }
-
-                // Only a partial failure is worth saying anything about. Some of
-                // an object's matrices pairing while their siblings do not is a
-                // model coming apart; nothing pairing at all is just the first
-                // frame of a scene, which has no previous frame to pair against.
-                const uint32_t unmatched = tagged - matched;
-                if ((unmatched > 0) && (matched > 0)) {
-                    // Serials are handed out monotonically, so any unpaired id
-                    // at or below the previous frame's highest is an object
-                    // that existed before and lost its identity anyway -- a
-                    // genuine failure. Ids above it are new allocations whose
-                    // first frame has nothing to pair with, which is not a
-                    // fault. The distinction decides whether the transition
-                    // glitch is a pairing bug or lives somewhere else.
-                    uint32_t prevMaxId = 0;
-                    for (const auto &entry : prevWorkload.transformIdMap) {
-                        prevMaxId = std::max(prevMaxId, entry.first);
-                    }
-                    uint32_t oldUnpaired = 0, newUnpaired = 0;
-                    uint32_t oldSample[4] = {};
-                    for (const auto &entry : curWorkload.transformIdMap) {
-                        if (!curWorkloadMap.transforms[entry.second].mapped) {
-                            if (entry.first <= prevMaxId) {
-                                if (oldUnpaired < 4) {
-                                    oldSample[oldUnpaired] = entry.first;
-                                }
-                                oldUnpaired++;
-                            }
-                            else {
-                                newUnpaired++;
-                            }
-                        }
-                    }
-                    fprintf(stdout, "[SNAP-MATCH] %u of %u tagged transforms did not pair (old %u: %u %u %u %u / new %u)\n",
-                        unmatched, tagged, oldUnpaired,
-                        oldSample[0], oldSample[1], oldSample[2], oldSample[3], newUnpaired);
-                    fflush(stdout);
-                }
-            }
         }
 
         thread_local std::vector<MatchCandidate> matchCandidates;
@@ -487,131 +432,6 @@ namespace RT64 {
             velocityUploaderUsed = false;
         }
 
-        // Pokemon Snap port: in cutscene workloads, judge whether this
-        // frame's content is structurally continuous with the previous one.
-        // Anything lost, anything new, or any pair whose pose was judged a
-        // teleport marks a staged transition tick the console never showed.
-        // Gameplay workloads are exempt: there, appearing and vanishing
-        // things are the game's own authored behavior.
-        {
-            uint32_t lost = 0, fresh = 0, rejected = 0, paired = 0;
-            bool anyCutscene = false;
-            bool cutHeld = false;
-            for (uint32_t w : workloads) {
-                Workload &cutsceneWorkload = workloadQueue.workloads[w];
-                if (!cutsceneWorkload.snapCutscene) {
-                    continue;
-                }
-                anyCutscene = true;
-                cutHeld = cutHeld || cutsceneWorkload.snapCutHold;
-                const GameFrameMap::WorkloadMap &wm = frameMap.workloads[w];
-                if (!wm.mapped) {
-                    continue;
-                }
-                for (size_t p = 0; p < wm.prevTransformsMapped.size(); p++) {
-                    if (!wm.prevTransformsMapped[p]) {
-                        lost++;
-                    }
-                }
-                for (const auto &tm : wm.transforms) {
-                    if (!tm.mapped) {
-                        fresh++;
-                    }
-                    else {
-                        paired++;
-                        if (tm.rigidBody.autoRejectedTranslation) {
-                            rejected++;
-                        }
-                    }
-                }
-            }
-            // Diagnostic: the raw census inputs of every cutscene frame with
-            // any activity, fired or not. The verdict thresholds are set from
-            // these measurements, and the un-fired ticks are exactly the ones
-            // the fired lines cannot show.
-            if (anyCutscene && (snapdiag::diagEnabled() || snapdiag::statsEnabled()) && ((lost + fresh + rejected) > 0)) {
-                fprintf(stdout, "[SNAP-CENSUS] lost %u new %u rej %u paired %u cut %u\n",
-                    lost, fresh, rejected, paired, cutHeld ? 1u : 0u);
-            }
-            // Every shot has a steady baseline of churn: an object that
-            // reallocates its matrix each tick, fast scenery whose motion
-            // trips the pose guard every frame. A transition is a SPIKE
-            // above the shot's own baseline. The baselines live only inside
-            // cutscene scenes: during gameplay the counts are zero by
-            // construction, and letting them decay there meant re-entering a
-            // cutscene judged its ordinary first-shot churn against a
-            // baseline of nothing. On entry the baselines seed from the
-            // entry frame instead, and the first frame is never judged
-            // against itself.
-            static float avgLost = 0.0f;
-            static float avgFresh = 0.0f;
-            static uint32_t rejectedMassTail = 0;
-            static bool prevAnyCutscene = false;
-            snapDiscontinuity = false;
-            if (anyCutscene && !prevAnyCutscene) {
-                avgLost = float(lost);
-                avgFresh = float(fresh);
-                rejectedMassTail = 0;
-            }
-            else if (anyCutscene) {
-                // The floor is structural: a transition tears down dozens of
-                // transforms at once (the measured stage ticks lose 30 to
-                // 220), while a single lost-plus-fresh pair is one object
-                // reallocating its matrix -- ordinary allocator churn. In a
-                // long still shot the averages decay to zero and, without
-                // the floor, that churn fired a hold every few frames: free
-                // of cost in a still shot, but a one-tick freeze inside
-                // every camera pan.
-                const auto spikes = [](uint32_t count, float avg) {
-                    return (count >= 4) && (float(count) > (avg * 2.0f + 0.5f));
-                };
-                // A staged re-pose teleports a whole object's transforms at
-                // once: the measured staging ticks reject 28 to 158 pairs.
-                // Everything that is ordinary authored life stays well
-                // below -- idle noise (a blinking limb, a billboard) rejects
-                // 1 to 7, and a walking character's rhythmic limb swings
-                // peak at 16 -- so the magnitude alone separates the frame
-                // classes, and every stateful refinement tried on top of it
-                // made things worse: a stillness-gated window held Todd's
-                // walk as ghosting, and a twelve-tick budget froze the first
-                // fifth of every montage shot after its cut. So the verdict
-                // is stateless: a mass-teleport tick holds, with a two-tick
-                // tail for the pose to settle, and nothing else does. The
-                // lift's staging ticks all clear the floor, so its coverage
-                // chains; a montage shot loses three frames to its opening
-                // teleport, about what the console's overrun skipped; and a
-                // scene that somehow mass-rejects endlessly is released by
-                // the workload queue's sixteen-frame valve.
-                constexpr uint32_t RejectedMassFloor = 24;
-                bool rejectedHold = false;
-                if (rejected >= RejectedMassFloor) {
-                    rejectedHold = true;
-                    rejectedMassTail = 2;
-                }
-                else if (rejectedMassTail > 0) {
-                    rejectedMassTail--;
-                    rejectedHold = true;
-                }
-                snapDiscontinuity = spikes(lost, avgLost) || spikes(fresh, avgFresh) || rejectedHold;
-
-                // The averages always adapt -- frozen-while-firing deadlocks
-                // at zero on the very first churn frame -- but each sample's
-                // growth is capped, so a short transition spike cannot
-                // become baseline while steady churn converges within a few
-                // frames.
-                const auto adapt = [](float avg, uint32_t count) {
-                    return avg * 0.75f + std::min(float(count), avg + 2.0f) * 0.25f;
-                };
-                avgLost = adapt(avgLost, lost);
-                avgFresh = adapt(avgFresh, fresh);
-            }
-            prevAnyCutscene = anyCutscene;
-            if (snapDiscontinuity && snapdiag::diagEnabled()) {
-                fprintf(stdout, "[SNAP-DISCONT] lost %u new %u rejected %u\n", lost, fresh, rejected);
-                fflush(stdout);
-            }
-        }
-
         // Pokemon Snap port: an object is judged as an object. The automatic
         // pose guard judges each matrix alone, on its own velocity, and a
         // model's matrices never move alike -- a limb swinging up from rest
@@ -670,7 +490,6 @@ namespace RT64 {
                 // the game already knows the answer and says so in the display
                 // list.
                 uint32_t steppedMatched = 0;
-                uint32_t untaggedTransforms = 0;
                 for (auto &it : coherenceTallies) {
                     if (workload.snapHasSteppedId(it.first)) {
                         it.second.rejected = it.second.total;
@@ -777,57 +596,7 @@ namespace RT64 {
             }
         }
 
-        // Pokemon Snap port, diagnostic: on a rebase frame, how far the origin
-        // moved and how many paired transforms and cameras accepted the moved
-        // previous frame versus kept the raw one. Behind the diagnostics gate:
-        // the walk over the frame map exists only to feed the line.
-        if (snapdiag::diagEnabled() && snapRebaseUsable()) {
-            uint32_t xfRebased = 0, xfRaw = 0, viewRebased = 0, viewRaw = 0;
-            for (uint32_t w : workloads) {
-                const GameFrameMap::WorkloadMap &wm = frameMap.workloads[w];
-                for (const auto &tm : wm.transforms) {
-                    if (tm.mapped) {
-                        if (tm.snapRebasedPrev) { xfRebased++; } else { xfRaw++; }
-                    }
-                }
-                for (const auto &vm : wm.viewProjections) {
-                    if (vm.mapped) {
-                        if (vm.snapRebasedPrev) { viewRebased++; } else { viewRaw++; }
-                    }
-                }
-            }
-            fprintf(stdout, "[SNAP-REBASE] delta (%.1f,%.1f,%.1f) xf rebased %u raw %u / views rebased %u raw %u\n",
-                float(snapOriginDelta.x), float(snapOriginDelta.y), float(snapOriginDelta.z),
-                xfRebased, xfRaw, viewRebased, viewRaw);
-            fflush(stdout);
-        }
 
-        // Pokemon Snap port, diagnostic: characterizes what a transition
-        // frame loses. Transform loss proved blind to what actually
-        // disappears (the flash returned on a transition that lost a single
-        // transform -- the geometry vanishes inside surviving objects'
-        // display lists), so this no longer decides anything; the counts
-        // exist for the follow-up fix that will keep the removed geometry
-        // drawn for the one extra frame blending needs.
-        if (snapdiag::diagEnabled() && snapRebaseFrame) {
-            uint32_t lost = 0;
-            uint32_t curCalls = 0, prevCalls = 0;
-            for (uint32_t w : workloads) {
-                const GameFrameMap::WorkloadMap &wm = frameMap.workloads[w];
-                curCalls += workloadQueue.workloads[w].gameCallCount;
-                if (!wm.mapped) {
-                    continue;
-                }
-                prevCalls += workloadQueue.workloads[wm.prevWorkloadIndex].gameCallCount;
-                for (size_t p = 0; p < wm.prevTransformsMapped.size(); p++) {
-                    if (!wm.prevTransformsMapped[p]) {
-                        lost++;
-                    }
-                }
-            }
-            fprintf(stdout, "[SNAP-CUT] transition lost %u xf, calls %u -> %u\n", lost, prevCalls, curCalls);
-            fflush(stdout);
-        }
     }
 
     void GameFrame::matchScene(WorkloadQueue &workloadQueue, const GameFrame &prevFrame, const GameScene &curScene, const GameScene &prevScene, std::unordered_map<uint32_t, ModifiedBuffers> &workloadsModified, bool &tileInterpolationUsed, bool &lookAtInterpolationUsed) {
@@ -972,25 +741,6 @@ namespace RT64 {
                         }
                     }
 
-                    // Attach diagnostics: the camera's group travelled the
-                    // display list and arrived here. VSKIP lines must pair
-                    // 1:1 with the game-side [SNAP-CAMCUT] verdicts on
-                    // non-rebase frames; their absence means the group is
-                    // not reaching the projection.
-                    if (snapdiag::diagEnabled() && (curProjGroup.matrixId != G_EX_ID_IGNORE) && (curProjGroup.matrixId != G_EX_ID_AUTO)) {
-                        static uint32_t lastGroupId = 0;
-                        if (curProjGroup.matrixId != lastGroupId) {
-                            lastGroupId = curProjGroup.matrixId;
-                            fprintf(stdout, "[SNAP-VGRP] camera group %08X attached, mapped %d\n",
-                                curProjGroup.matrixId, int(viewProjMap.mapped));
-                            fflush(stdout);
-                        }
-                        if (curProjGroup.positionInterpolation == G_EX_COMPONENT_SKIP) {
-                            fprintf(stdout, "[SNAP-VSKIP] camera group %08X cut frame, rebased %d\n",
-                                curProjGroup.matrixId, int(viewProjMap.snapRebasedPrev));
-                            fflush(stdout);
-                        }
-                    }
 
                     viewProjMap.rigidBody.updateLinear(*effectivePrevView, curView, projectionLinearComponent);
                     viewProjMap.rigidBody.updateAngular(*effectivePrevView, curView, projectionAngularComponent, projectionScaleComponent, projectionSkewComponent);
@@ -999,12 +749,6 @@ namespace RT64 {
                 }
                 else {
                     viewProjMap.rigidBody = RigidBody();
-                    if (snapdiag::diagEnabled() && (curProjGroup.matrixId != G_EX_ID_IGNORE) && (curProjGroup.matrixId != G_EX_ID_AUTO) &&
-                        (curProjGroup.matrixId != prevProjGroup.matrixId)) {
-                        fprintf(stdout, "[SNAP-VGRP] camera group %08X unmapped (prev %08X): snap\n",
-                            curProjGroup.matrixId, prevProjGroup.matrixId);
-                        fflush(stdout);
-                    }
                 }
 
                 if (viewProjMap.mapped) {
@@ -1378,16 +1122,6 @@ namespace RT64 {
                 ignoredIdVector.emplace_back(i);
             }
             else if (group.ordering == G_EX_ORDER_LINEAR) {
-                // One-shot: are the ids the serials the port stamps, or still
-                // raw OMMtx addresses? Serials are small; addresses are 0x80xxxxxx.
-                if (snapdiag::diagEnabled()) {
-                    static int sampled = 0;
-                    if (sampled < 12) {
-                        sampled++;
-                        fprintf(stdout, "[SNAP-ID] matrixId 0x%08X\n", group.matrixId);
-                        fflush(stdout);
-                    }
-                }
                 idMap.emplace(group.matrixId, i);
             }
         }

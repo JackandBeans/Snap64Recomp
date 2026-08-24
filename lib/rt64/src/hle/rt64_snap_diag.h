@@ -39,7 +39,7 @@ inline bool diagEnabled() {
     return enabled;
 }
 
-// Low-overhead measurement: the census line alone, no per-frame walks, no
+// Low-overhead measurement: the summary lines alone, no per-frame walks, no
 // flushes, no captures. The heavy probes perturb frame pacing enough to
 // change the very timing-sensitive behavior they are measuring, so numbers
 // meant to describe how the game actually runs are gathered under this.
@@ -133,26 +133,16 @@ inline std::atomic<uint32_t> &weightWentBackwardsCounter() {
     return counter;
 }
 
-// Which verdict asked for each held frame, and how many frames the port
-// believed were part of a cutscene. A hold during ordinary play is a frame the
-// console would have drawn, so knowing which mechanism asked for it is the
-// difference between fixing the right one and tuning the wrong one.
+// Which verdict asked for each held frame. A hold during ordinary play
+// is a frame the console would have drawn, so knowing which mechanism
+// asked for it is the difference between fixing the right one and
+// tuning the wrong one.
 inline std::atomic<uint32_t> &holdFromCameraCounter() {
     static std::atomic<uint32_t> counter{0};
     return counter;
 }
 
-inline std::atomic<uint32_t> &holdFromCensusCounter() {
-    static std::atomic<uint32_t> counter{0};
-    return counter;
-}
-
 inline std::atomic<uint32_t> &holdFromStepCounter() {
-    static std::atomic<uint32_t> counter{0};
-    return counter;
-}
-
-inline std::atomic<uint32_t> &cutsceneTickCounter() {
     static std::atomic<uint32_t> counter{0};
     return counter;
 }

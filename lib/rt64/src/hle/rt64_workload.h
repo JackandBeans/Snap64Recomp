@@ -223,11 +223,6 @@ namespace RT64 {
         // the queue presents the previous frame's image for this workload's
         // interval to match.
         bool snapCutHold = false;
-        // Set while the gameplay overlay is not resident: menus, cards, the
-        // intro movie. In these scenes structural content changes are
-        // transition staging and the frame matcher's discontinuity verdict
-        // may hold frames; during play it must not.
-        bool snapCutscene = false;
         // Pokemon Snap port: the objects whose animation stepped to a new pose
         // this frame rather than moving to it. The game's own animation data
         // says so (src/matrix_tags.cpp reads it and writes the verdict into

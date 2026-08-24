@@ -4,6 +4,7 @@
 
 #pragma once
 
+#include <atomic>
 #include <array>
 
 #include "common/rt64_enhancement_configuration.h"
@@ -66,7 +67,13 @@ namespace RT64 {
         // describe the same motion and blending them on separate schedules
         // makes geometry swim against the view. Toggled at runtime to test
         // that (F4).
-        bool snapInterpolateCamera = true;
+        //
+        // Atomic because the two sides genuinely overlap: the game thread is
+        // released once the first image of a tick is done, so it writes the next
+        // tick's value while the render thread is still reading this one for the
+        // remaining interpolated sub-frames. Without it a toggle mid-tick splits
+        // that tick between a blended and an unblended view.
+        std::atomic<bool> snapInterpolateCamera = true;
         std::array<Workload, WORKLOAD_QUEUE_SIZE> workloads;
         int threadCursor;
         int writeCursor;

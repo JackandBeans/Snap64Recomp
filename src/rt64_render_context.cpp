@@ -60,7 +60,6 @@ static void dummy_check_interrupts() {}
 
 namespace snap {
 
-extern bool g_app_level_resident;                            // overlay_hook.cpp
 extern bool g_focus_dot_visible;                             // focus_dot.cpp
 extern bool g_world_rebased;                                 // matrix_tags.cpp
 extern float g_world_rebase_delta[3];                        // matrix_tags.cpp
@@ -277,7 +276,7 @@ public:
         // NOT caused by this reset.
         // Kept in sync every list so F6 takes effect immediately.
         app_->state->setRenderToRAM(snap::settings().render_to_ram ? 1 : 0);
-        app_->workloadQueue->snapInterpolateCamera = snap::settings().interpolate_camera;
+        app_->workloadQueue->snapInterpolateCamera.store(snap::settings().interpolate_camera, std::memory_order_relaxed);
         app_->workloadQueue->ubershadersOnly = snap::settings().ubershaders_only;
 
         // The crop follows edits to the settings file like the toggles above
@@ -354,16 +353,6 @@ public:
         // The camera cut-transit hold travels in-band instead: word3 of the
         // camera's matrix group packet, read onto the workload while the
         // display list below is processed (rt64_gbi_extended.cpp).
-
-        // Menus, cards and the intro movie run without the level overlay.
-        // In those scenes the renderer holds any frame whose content is
-        // structurally discontinuous with the last one -- transition staging
-        // the console never displayed. Gameplay is exempt: spawns and
-        // despawns there are the game's own behavior and present normally.
-        {
-            RT64::Workload &workload = app_->workloadQueue->workloads[app_->workloadQueue->writeCursor];
-            workload.snapCutscene = !snap::g_app_level_resident;
-        }
 
         // Consumed, so the next frame has to be established by the game again.
         // Without this the indicator latches on: with render to RAM enabled the

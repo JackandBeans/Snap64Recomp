@@ -330,23 +330,46 @@ namespace RT64 {
             return false;
         }
 
+        // With antialiasing on, the two sides of this transfer are not the
+        // same kind of surface. The port owns single-sampled targets (the
+        // hold scratch, the interpolated targets) while the target manager
+        // hands out multisampled ones, and a plain copy is vkCmdCopyImage /
+        // CopyTextureRegion underneath, both of which require the sample
+        // counts to agree. Resizing cannot reconcile them: a target is
+        // rebuilt with its own sample count. Multisampled into
+        // single-sampled is exactly a resolve, so that direction is served.
+        // The reverse has no counterpart -- a resolved image cannot be
+        // un-resolved, and the one surface it could be written to is also
+        // what the framebuffer write-back reads, which this game reads back
+        // -- so it declines, and the caller shows the frame as rendered.
+        const bool srcUsesMSAA = (src.multisampling.sampleCount > 1);
+        if (dstTarget->multisampling.sampleCount > 1) {
+            return false;
+        }
+
         workerMutex.lock();
         RenderWorker *worker = ext.workloadGraphicsWorker;
         worker->commandList->begin();
         dstTarget->resize(worker, src.width, src.height);
 
-        RenderTextureBarrier copyBarriers[] = {
-            RenderTextureBarrier(src.texture.get(), RenderTextureLayout::COPY_SOURCE),
-            RenderTextureBarrier(dstTarget->texture.get(), RenderTextureLayout::COPY_DEST),
-        };
-        worker->commandList->barriers(RenderBarrierStage::COPY, copyBarriers, uint32_t(std::size(copyBarriers)));
+        if (srcUsesMSAA) {
+            dstTarget->resolveFromTarget(worker, &src, ext.shaderLibrary);
+            worker->commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(dstTarget->texture.get(), RenderTextureLayout::SHADER_READ));
+        }
+        else {
+            RenderTextureBarrier copyBarriers[] = {
+                RenderTextureBarrier(src.texture.get(), RenderTextureLayout::COPY_SOURCE),
+                RenderTextureBarrier(dstTarget->texture.get(), RenderTextureLayout::COPY_DEST),
+            };
+            worker->commandList->barriers(RenderBarrierStage::COPY, copyBarriers, uint32_t(std::size(copyBarriers)));
 
-        const RenderBox srcBox(0, 0, int32_t(src.width), int32_t(src.height));
-        worker->commandList->copyTextureRegion(
-            RenderTextureCopyLocation::Subresource(dstTarget->texture.get()),
-            RenderTextureCopyLocation::Subresource(src.texture.get()),
-            0, 0, 0, &srcBox);
-        worker->commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(dstTarget->texture.get(), RenderTextureLayout::SHADER_READ));
+            const RenderBox srcBox(0, 0, int32_t(src.width), int32_t(src.height));
+            worker->commandList->copyTextureRegion(
+                RenderTextureCopyLocation::Subresource(dstTarget->texture.get()),
+                RenderTextureCopyLocation::Subresource(src.texture.get()),
+                0, 0, 0, &srcBox);
+            worker->commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(dstTarget->texture.get(), RenderTextureLayout::SHADER_READ));
+        }
         worker->commandList->end();
         worker->execute();
         worker->wait();
@@ -391,21 +414,16 @@ namespace RT64 {
             uploadProjections = true;
         }
 
-        // Pokemon Snap port, diagnostic: one line of the frame's vital signs
-        // per rendered display frame -- matching state, pairing counts, how
-        // much was drawn. An anomalous frame identifies itself as the line
-        // that differs. Behind the diagnostics gate along with everything
-        // that exists only to feed it: the walk over the frame map is not
-        // free, and neither is stdout in a render loop.
-        if (snapdiag::diagEnabled() || snapdiag::captureEnabled()) {
-            static uint32_t vitalFrame = 0;
-            vitalFrame++;
-            uint32_t transformCount = 0, mappedCount = 0, fbPairs = 0, calls = 0;
+        // Pokemon Snap port: on the frames where most of the scene's transform
+        // identities change at once -- the block-transition and spawn frames --
+        // ask the present queue to photograph what is actually put on screen
+        // around this moment, so a reported artifact lands on disk as images
+        // instead of as a description. store() rather than read-modify-write:
+        // the present thread decrements this as it consumes the window.
+        if (snapdiag::captureEnabled() && prevFrame.matched) {
+            uint32_t transformCount = 0, mappedCount = 0;
             for (uint32_t w : curFrame.workloads) {
-                const Workload &wl = workloads[w];
-                transformCount += uint32_t(wl.drawData.worldTransforms.size());
-                fbPairs += wl.fbPairCount;
-                calls += wl.gameCallCount;
+                transformCount += uint32_t(workloads[w].drawData.worldTransforms.size());
                 const GameFrameMap::WorkloadMap &wm = curFrame.frameMap.workloads[w];
                 if (wm.mapped) {
                     for (const auto &tm : wm.transforms) {
@@ -415,42 +433,8 @@ namespace RT64 {
                     }
                 }
             }
-            if (snapdiag::diagEnabled()) {
-                fprintf(stdout, "[SNAP-VITAL] f%u matched %u xf %u paired %u fb %u calls %u\n",
-                    vitalFrame, prevFrame.matched ? 1u : 0u, transformCount, mappedCount, fbPairs, calls);
-            }
-
-            // Pokemon Snap port: on the frames where most of the scene's
-            // transform identities change at once -- the block-transition and
-            // spawn frames -- ask the game side to dump the framebuffers
-            // around this moment (src/frame_dump.cpp), so the artifact itself
-            // lands on disk as images. store() rather than read-modify-write:
-            // the game thread decrements this concurrently.
-            if (snapdiag::captureEnabled() && prevFrame.matched && (transformCount >= 10) && (mappedCount * 5 < transformCount * 3)) {
+            if ((transformCount >= 10) && (mappedCount * 5 < transformCount * 3)) {
                 snap_frame_dump_pending.store(6);
-            }
-
-            // The framebuffer pair count spikes from four to eight or more on
-            // exactly the frames that flash. Whatever those extra passes are,
-            // they decide which image the frame presents, so on spike frames
-            // each pass prints what it drew and where.
-            if (snapdiag::diagEnabled() && (fbPairs > 6)) {
-                for (uint32_t w : curFrame.workloads) {
-                    const Workload &wl = workloads[w];
-                    for (uint32_t f = 0; f < wl.fbPairCount; f++) {
-                        const FramebufferPair &fp = wl.fbPairs[f];
-                        fprintf(stdout, "[SNAP-FBP] f%u pair %u color %08X w %u siz %u depth %08X zr %u zw %u reason %u projs %u calls %u rect (%d,%d)-(%d,%d)\n",
-                            vitalFrame, f, fp.colorImage.address, fp.colorImage.width, fp.colorImage.siz,
-                            fp.depthImage.address, fp.depthRead ? 1u : 0u, fp.depthWrite ? 1u : 0u,
-                            uint32_t(fp.flushReason), fp.projectionCount,
-                            fp.gameCallCount, fp.drawColorRect.ulx, fp.drawColorRect.uly,
-                            fp.drawColorRect.lrx, fp.drawColorRect.lry);
-                    }
-                }
-                fflush(stdout);
-            }
-            if ((vitalFrame % 32) == 0) {
-                fflush(stdout);
             }
         }
 
@@ -1187,10 +1171,10 @@ namespace RT64 {
                     // pinned to the current frame) runs the whole intro at
                     // half rate. What the film's staged ticks actually need
                     // is to not be shown at all, and that is handled by
-                    // verdicts, not weights: the census holds staging off
-                    // screen (rt64_game_frame.cpp), camera cuts snap through
-                    // their matrix group, and the pose guard keeps shown
-                    // pairs from blending across a re-pose.
+                    // verdicts, not weights: a tick the game declares an
+                    // authored step is held rather than shown, camera cuts
+                    // snap through their matrix group, and the pose guard
+                    // keeps shown pairs from blending across a re-pose.
                     generateInterpolatedFrames = !workload.paused && displayRateAboveOriginal && !interpolationTargetKey.isEmpty();
 
                     const bool resetTicks = !generateInterpolatedFrames || (originalRateForTicks != workload.viOriginalRate) || (displayRateForTicks != workloadConfig.targetRate) || !displayRateAboveOriginal;
@@ -1277,15 +1261,17 @@ namespace RT64 {
                 // Pokemon Snap port: the moment this game frame's content became
                 // available to draw. The present side subtracts it to say how
                 // old the picture on screen is.
-                snapdiag::newestStateNanos().store(
-                    std::chrono::duration_cast<std::chrono::nanoseconds>(Timer::current().time_since_epoch()).count(),
-                    std::memory_order_relaxed);
+                if (snapdiag::statsEnabled()) {
+                    snapdiag::newestStateNanos().store(
+                        std::chrono::duration_cast<std::chrono::nanoseconds>(Timer::current().time_since_epoch()).count(),
+                        std::memory_order_relaxed);
+                }
 
                 // A tick that yields one image is a whole game frame in which
                 // the picture cannot change, however smoothly it is delivered.
                 if ((displayFrames <= 1) && requiresFrameMatching && !workload.paused) {
-                    snapdiag::singleFrameTickCounter().fetch_add(1, std::memory_order_relaxed);
                     if (snapdiag::statsEnabled()) {
+                        snapdiag::singleFrameTickCounter().fetch_add(1, std::memory_order_relaxed);
                         fprintf(stdout, "[SNAP-ONEFRAME] tick produced a single image: game rate %u, target rate %u, interpolation target %s, frames %u\n",
                             workload.viOriginalRate, workloadConfig.targetRate,
                             interpolationTargetKey.isEmpty() ? "missing" : "present", displayFrames);
@@ -1293,7 +1279,9 @@ namespace RT64 {
                     }
                 }
 
-                snapdiag::subFrameAskedCounter().fetch_add(displayFrames, std::memory_order_relaxed);
+                if (snapdiag::statsEnabled()) {
+                    snapdiag::subFrameAskedCounter().fetch_add(displayFrames, std::memory_order_relaxed);
+                }
                 ext.sharedResources->viOriginalRate = workload.viOriginalRate;
                 
                 // Get the current and previous set of frame counters. The other set can be in use by the present queue. Skip if no new present event has arrived before this workload event.
@@ -1347,10 +1335,7 @@ namespace RT64 {
                 // here by presenting the previous frame's image for this
                 // workload's whole interval, at native rate and interpolated
                 // alike. MSAA resolves through different targets; the hold
-                // stands down there rather than guess. The census verdict is
-                // only trusted when the frame matcher actually ran this
-                // workload -- with matching off it is whatever frame last
-                // computed it.
+                // stands down there rather than guess.
                 // A frame carrying an authored step is held rather than shown.
                 // Snapping the blend was the wrong remedy and the proof is that
                 // the artifact looks identical with interpolation switched off,
@@ -1390,39 +1375,9 @@ namespace RT64 {
                 const bool snapStepDeclared = (workload.snapSteppedIdCount > 0);
                 const bool snapStepIsolated = (snapFramesSinceStep >= 8);
                 const bool snapSteppedFrame = snapStepDeclared && snapStepIsolated && !snapPreviousFrameStepHeld;
-                if (snapStepDeclared && snapdiag::statsEnabled()) {
-                    fprintf(stdout, "[SNAP-STEPGAP] step after %u quiet frames\n", snapFramesSinceStep);
-                    fflush(stdout);
-                }
                 snapFramesSinceStep = snapStepDeclared ? 0 : (snapFramesSinceStep + 1);
-                // How costly this frame is against the scene's own recent cost.
-                // The console skipped a draw when the RCP was still busy, so a
-                // step frame it would have skipped is one that is heavy, not
-                // merely one that re-poses something. Measured here before
-                // being used to decide anything.
-                if (snapSteppedFrame && snapdiag::statsEnabled()) {
-                    static double avgCalls = 0.0;
-                    const double calls = double(workload.gameCallCount);
-                    if (avgCalls > 0.0) {
-                        fprintf(stdout, "[SNAP-STEPCOST] step frame draws %u against a recent average of %.0f (%.2fx)\n",
-                            workload.gameCallCount, avgCalls, calls / avgCalls);
-                        fflush(stdout);
-                    }
-                    avgCalls = (avgCalls > 0.0) ? (avgCalls * 0.9 + calls * 0.1) : calls;
-                }
-                // The content census is gone from this decision. It guessed at
-                // which frames were staged transitions by watching how much of
-                // the scene changed at once, and it was always a guess: the
-                // game now states which poses it stepped to, from its own
-                // animation data, which is the thing the census was trying to
-                // infer. Where the two disagree the census is the one that is
-                // wrong, and it disagrees loudly -- through the intro's closing
-                // sequence, where light effects churn transforms every frame,
-                // it asked to hold forty-four frames out of sixty-five. Two
-                // thirds of that passage stood still, which is the stutter
-                // reported there, and none of it was a transition.
                 bool snapCutHold = (workload.snapCutHold || snapSteppedFrame) &&
-                    !workload.paused && !usingMSAA &&
+                    !workload.paused && (!usingMSAA || generateInterpolatedFrames) &&
                     !interpolationTargetKey.isEmpty() && !snapPrevTargetKey.isEmpty();
 
                 // Release valve on the renderer-side verdict: a scene that
@@ -1476,24 +1431,18 @@ namespace RT64 {
                     snapConsecutiveHolds = snapCutHold ? (snapConsecutiveHolds + 1) : 0;
                     snapPreviousFrameStepHeld = snapCutHold && snapSteppedFrame;
                 }
-                else if (!workload.snapCutHold && !(requiresFrameMatching && curFrame.snapDiscontinuity)) {
+                else if (!workload.snapCutHold) {
                     // Only a frame with no verdict at all closes the valve.
                     snapConsecutiveHolds = 0;
                 }
-                if (snapCutHold) {
+                if (snapCutHold && snapdiag::statsEnabled()) {
                     snapdiag::holdCounter().fetch_add(1, std::memory_order_relaxed);
                     if (workload.snapCutHold) {
                         snapdiag::holdFromCameraCounter().fetch_add(1, std::memory_order_relaxed);
                     }
-                    if (curFrame.snapDiscontinuity) {
-                        snapdiag::holdFromCensusCounter().fetch_add(1, std::memory_order_relaxed);
-                    }
                     if (snapSteppedFrame) {
                         snapdiag::holdFromStepCounter().fetch_add(1, std::memory_order_relaxed);
                     }
-                }
-                if (workload.snapCutscene) {
-                    snapdiag::cutsceneTickCounter().fetch_add(1, std::memory_order_relaxed);
                 }
                 if (snapCutHold && snapdiag::diagEnabled()) {
                     fprintf(stdout, "[SNAP-HOLD] cut transit: presenting previous frame for one tick\n");
@@ -1592,7 +1541,8 @@ namespace RT64 {
                     }
 
                     int64_t renderTimeMicro = workloadTimer.elapsedMicroseconds();
-                    const uint32_t materialsBefore = snapdiag::shaderAskedCounter().load(std::memory_order_relaxed);
+                    const uint32_t materialsBefore = snapdiag::statsEnabled() ?
+                        snapdiag::shaderAskedCounter().load(std::memory_order_relaxed) : 0u;
 
                     // A held interval's extra images are the previous frame
                     // repeated; only frame zero renders (the game reads its
@@ -1609,7 +1559,7 @@ namespace RT64 {
                             interpolationSubFrame);
                     }
 
-                    if (snapCutHold && (frame == 0) && (overrideTarget == nullptr)) {
+                    if (snapCutHold && (frame == 0)) {
                         // If the first image of a held tick cannot be replaced,
                         // the tick shows one fresh picture followed by a run of
                         // stale ones -- a step forward, then backwards, which
@@ -1618,7 +1568,10 @@ namespace RT64 {
                         // yet, a size that no longer matches), so its answer is
                         // read rather than assumed, and a hold that cannot be
                         // delivered whole is abandoned.
-                        if (!threadHoldCopy(snapHoldScratch.get(), RenderTargetKey(), nullptr, interpolationTargetKey)) {
+                        const bool delivered = (overrideTarget != nullptr) ?
+                            threadHoldCopy(snapHoldScratch.get(), RenderTargetKey(), overrideTarget, RenderTargetKey()) :
+                            threadHoldCopy(snapHoldScratch.get(), RenderTargetKey(), nullptr, interpolationTargetKey);
+                        if (!delivered) {
                             snapCutHold = false;
                             snapConsecutiveHolds = 0;
                             if (snapdiag::statsEnabled()) {

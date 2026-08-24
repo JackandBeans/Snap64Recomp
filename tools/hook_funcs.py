@@ -24,22 +24,6 @@ HOOKED = [
     # Turns RT64's extended commands on through the display list write pointer
     # it receives. Object identity is a game patch now, not a hook.
     'renPrepareCameraMatrix',
-    # Watches the effect sprite blobs: logged at load, then re-read every
-    # frame to catch the moment something overwrites them.
-    'func_800A73C0',
-    # Say whether the effect system runs at all: the draw pass and the spawns.
-    'fx_draw',
-    'fx_createEffect',
-    # The two allocation choke points. Every effect in the game passes through
-    # them, and both hand back nothing when their pool is empty, silently.
-    'fx_getEffect',
-    'fx_createParticle',
-    # Builds the per-frame material display lists -- the animated flipbook
-    # textures that only Pokemon models carry. Snorlax's sleep symbols are one.
-    'renLoadTextures',
-    # Every model draw passes through here; the probe diffs the set per frame
-    # to say which models appeared or vanished.
-    'renRenderModelTypeACommon',
     # Carries the distance the world origin moved by, so the previous frame can
     # be expressed in the new one rather than skipped.
     'bindCameraNextBlock',

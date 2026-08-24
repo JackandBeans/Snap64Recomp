@@ -140,15 +140,6 @@ namespace RT64 {
         bool snapRebaseFrame = false;
         hlslpp::float3 snapOriginDelta = {};
 
-        // Set by match() in cutscene workloads whose content is structurally
-        // discontinuous with the previous frame: transforms lost, transforms
-        // appearing, or pairs whose pose jumped beyond continuity. Those are
-        // the staged ticks of a scene transition -- the grass layer deleted
-        // one tick early, the prop wearing its next-scene pose -- which the
-        // console never displayed because its renderer was still busy. The
-        // workload queue holds them the same way it holds camera transits.
-        bool snapDiscontinuity = false;
-
         // True when the origin moved this frame and the distance it moved by is
         // known, which is when the previous frame can be read in this one's
         // terms. Without a usable distance the camera falls back to declining

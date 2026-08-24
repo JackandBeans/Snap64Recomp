@@ -17,13 +17,13 @@
 #include <thread>
 #include <vector>
 
-// Pokemon Snap port: defined in src/frame_dump.cpp on the game side. While it
-// is positive the game is saving its framebuffers around a churn frame, and
-// this queue saves what is actually being presented over the same window. The
-// game-side images already proved every rendered frame is clean, so the flash
-// can only exist in the interpolated presents, which never touch RDRAM and can
-// only be photographed here. Atomic: three threads touch it.
-extern "C" std::atomic<int32_t> snap_frame_dump_pending;
+// Pokemon Snap port: how many more presented images to photograph. Armed from
+// the game side (src/matrix_tags.cpp, src/anim_steps.cpp) and from the workload
+// queue on churn frames, and counted down here as the window is consumed. What
+// reaches the screen is only ever assembled on this thread -- interpolated
+// frames never touch RDRAM -- so this is the only place the picture a player
+// actually saw can be captured. Atomic: several threads arm it.
+extern "C" std::atomic<int32_t> snap_frame_dump_pending{0};
 
 namespace RT64 {
 
@@ -432,7 +432,7 @@ namespace {
                     // being presented could not be matched to the one drawn
                     // into. The tick presents a single image instead, and the
                     // picture stands still for its whole duration.
-                    if (frameCounters.count > 1) {
+                    if ((frameCounters.count > 1) && snapdiag::statsEnabled()) {
                         snapdiag::interpolationUnusedCounter().fetch_add(1, std::memory_order_relaxed);
                     }
                     lockedWorkloadMutex = true;
@@ -469,23 +469,6 @@ namespace {
                     }
                 }
 
-                if (snapdiag::diagEnabled()) {
-                    static uint32_t rawPresents = 0;
-                    static uint32_t lastAddress = 0;
-                    const uint32_t addr = presentFb->addressStart;
-                    if (!presentFb->interpolationEnabled) {
-                        rawPresents++;
-                        if ((rawPresents <= 200) || ((rawPresents % 50) == 0)) {
-                            fprintf(stdout, "[SNAP-PRESENT] raw present #%u addr %08X\n", rawPresents, addr);
-                            fflush(stdout);
-                        }
-                    }
-                    else if ((addr != lastAddress) && (addr != 0x3B5000) && (addr != 0x3DA800)) {
-                        fprintf(stdout, "[SNAP-PRESENT] unusual address %08X\n", addr);
-                        fflush(stdout);
-                    }
-                    lastAddress = addr;
-                }
 
                 RenderTargetKey colorTargetKey(presentFb->addressStart, presentFb->width, presentFb->siz, Framebuffer::Type::Color);
                 colorTarget = &targetManager.get(colorTargetKey, true);
@@ -646,7 +629,11 @@ namespace {
                     // Pokemon Snap port: while the game side is dumping its
                     // framebuffers around a churn frame, also photograph the
                     // image actually being presented, interpolation included.
-                    if (snap_frame_dump_pending.load() > 0) {
+                    if (snapdiag::captureEnabled() && (snap_frame_dump_pending.load() > 0)) {
+                        // The window is consumed here. It used to be counted down by
+                        // the game-side dumper, which no longer exists, so an armed
+                        // capture never stopped until it hit the file cap.
+                        snap_frame_dump_pending.fetch_sub(1, std::memory_order_relaxed);
                         if (snapdiag::diagEnabled()) {
                             fprintf(stdout, "[SNAP-PTEX] presenting %p (raw %p)\n",
                                 (void *)renderParams.texture, (void *)colorTarget->texture.get());
@@ -679,7 +666,9 @@ namespace {
 
                 // The wait above is the fence for the recorded copy, so the
                 // readback is safe to map and write out here.
-                snapCaptureFinish(renderParams.textureFormat);
+                if (snapdiag::captureEnabled()) {
+                    snapCaptureFinish(renderParams.textureFormat);
+                }
             }
 
             if (lockedWorkloadMutex) {
@@ -832,11 +821,9 @@ namespace {
                             snapdiag::holdCounter().exchange(0, std::memory_order_relaxed),
                             asked, dropped, (asked > 0) ? (100.0 * double(dropped) / double(asked)) : 0.0,
                             (ageCount > 0) ? (ageTotalMs / ageCount) : 0.0, ageWorstMs);
-                        fprintf(stdout, "[SNAP-PACE]   holds asked by camera %u, by content census %u, by authored step %u; frames the port thought were cutscene %u\n",
+                        fprintf(stdout, "[SNAP-PACE]   holds asked by camera %u, by authored step %u\n",
                             snapdiag::holdFromCameraCounter().exchange(0, std::memory_order_relaxed),
-                            snapdiag::holdFromCensusCounter().exchange(0, std::memory_order_relaxed),
-                            snapdiag::holdFromStepCounter().exchange(0, std::memory_order_relaxed),
-                            snapdiag::cutsceneTickCounter().exchange(0, std::memory_order_relaxed));
+                            snapdiag::holdFromStepCounter().exchange(0, std::memory_order_relaxed));
                         ageTotalMs = 0.0;
                         ageWorstMs = 0.0;
                         ageCount = 0;
