@@ -1363,7 +1363,32 @@ namespace RT64 {
                 // another tick and the new pose arrived already in place. This
                 // reproduces that, from the game's own statement about which
                 // poses are steps.
-                const bool snapSteppedFrame = (workload.snapSteppedIdCount > 0);
+                // A skipped draw cannot repeat frame after frame. The console
+                // skipped a tick only while the RCP was still busy with the
+                // previous one, and skipping is what lets it catch up -- so the
+                // frame after a skip is always drawn. A run of re-poses held
+                // one after another is therefore not what the hardware did, and
+                // it is what the last stretch of the intro looked like:
+                // measured at fifteen held frames in sixty-five, a quarter of
+                // that passage standing still. Holding at most every other
+                // frame reproduces the hardware's own limit.
+                static bool snapPreviousFrameStepHeld = false;
+                const bool snapSteppedFrame = (workload.snapSteppedIdCount > 0) && !snapPreviousFrameStepHeld;
+                // How costly this frame is against the scene's own recent cost.
+                // The console skipped a draw when the RCP was still busy, so a
+                // step frame it would have skipped is one that is heavy, not
+                // merely one that re-poses something. Measured here before
+                // being used to decide anything.
+                if (snapSteppedFrame && snapdiag::statsEnabled()) {
+                    static double avgCalls = 0.0;
+                    const double calls = double(workload.gameCallCount);
+                    if (avgCalls > 0.0) {
+                        fprintf(stdout, "[SNAP-STEPCOST] step frame draws %u against a recent average of %.0f (%.2fx)\n",
+                            workload.gameCallCount, avgCalls, calls / avgCalls);
+                        fflush(stdout);
+                    }
+                    avgCalls = (avgCalls > 0.0) ? (avgCalls * 0.9 + calls * 0.1) : calls;
+                }
                 bool snapCutHold = (workload.snapCutHold || snapSteppedFrame ||
                     (requiresFrameMatching && curFrame.snapDiscontinuity)) &&
                     !workload.paused && !usingMSAA &&
@@ -1418,6 +1443,7 @@ namespace RT64 {
                     // failed snapshot copy shows the rendered frame instead
                     // and must not.
                     snapConsecutiveHolds = snapCutHold ? (snapConsecutiveHolds + 1) : 0;
+                    snapPreviousFrameStepHeld = snapCutHold && snapSteppedFrame;
                 }
                 else if (!workload.snapCutHold && !(requiresFrameMatching && curFrame.snapDiscontinuity)) {
                     // Only a frame with no verdict at all closes the valve.
