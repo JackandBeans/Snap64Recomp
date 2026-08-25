@@ -2,6 +2,7 @@
 // RT64
 //
 
+#include <unordered_map>
 #include "common/rt64_math.h"
 
 #include "rt64_game_frame.h"
@@ -262,29 +263,34 @@ namespace RT64 {
     // Nothing else in the renderer can do it for them. A rectangle draw carries
     // no transform -- RDP::drawRect pins its world matrix range to zero and
     // stores the finished screen box on the call -- so there is no identity to
-    // pair by and the scene matcher never even visits them. The game's particle
+    // pair by and the scene matcher never visits them. The game's particle
     // effects are all drawn this way, which is why sand kicked up by a Doduo and
-    // leaves out of the tall grass hold one screen position for a whole game
-    // frame while everything around them is interpolated.
+    // leaves out of the tall grass held one screen position for a whole game
+    // frame while everything around them was interpolated.
     //
-    // So they are paired by what they look like instead. Two rectangles are the
-    // same sprite when they were drawn with the same shader, are close to the
-    // same size, and are the nearest such pair to each other; the search runs in
-    // submission order and never crosses, because the game builds these from
-    // lists it only pushes onto, so survivors keep their relative order. A wrong
-    // pairing is not dangerous here -- it moves a sprite between two positions
-    // the game itself drew, over one game frame -- but the size and distance
-    // limits keep it from happening between two different effects.
+    // ORDER is the identity, not position. The first version of this picked the
+    // nearest previous rectangle of the same material, and that cannot survive a
+    // camera pan: when the whole field of sprites shifts one direction by more
+    // than half their spacing, every sprite's nearest neighbour becomes the
+    // sprite NEXT to the one it actually was. That is still a consistent
+    // one-to-one mapping, so neither a mutual-nearest test nor a
+    // motion-consensus test can detect it -- they all agree on the wrong answer.
+    // On screen each sprite then slides backwards by one spacing, which is the
+    // smearing reported when panning left to right.
     //
-    // Only the previous box is kept. That is the whole of what interpolation
-    // needs, and it leaves the drawing code free to ignore it, which is what
-    // makes the result identical to today's at full weight.
+    // The game emits these from lists it only ever pushes onto the head of, so
+    // between two frames the survivors keep their relative order and anything
+    // new appears at one end. Aligning the two sequences from the END therefore
+    // pairs like with like regardless of how far the camera moved, and position
+    // stops being the selector. It is still used, but only to VALIDATE: a pair
+    // whose size or distance is implausible is dropped rather than blended, and
+    // a dropped rectangle simply draws the way it did before any of this, which
+    // is the honest fallback.
     void GameFrame::matchRects(Workload &curWorkload, const Workload &prevWorkload) {
         struct RectRef {
             uint32_t callIndex = 0;
             FixedRect rect;
             uint64_t shaderHash = 0;
-            bool used = false;
         };
 
         thread_local std::vector<RectRef> curRects;
@@ -328,81 +334,102 @@ namespace RT64 {
             return;
         }
 
-        // A sprite may travel a good part of its own size in a frame, and two
-        // different sprites of the same material are usually further apart than
-        // that. Generous enough for fast particles, tight enough that a pair is
-        // recognisably the same thing.
-        constexpr float TravelLimit = 3.0f;
+        // A sprite grows and shrinks as it approaches but not by much in one
+        // frame, and it does not teleport. These are validators for a pairing
+        // that order already chose, not a search radius, so they can be strict
+        // without costing coverage.
         constexpr float SizeTolerance = 0.35f;
+        constexpr float TravelLimit = 4.0f;
 
-        size_t prevSearchStart = 0;
-        for (RectRef &cur : curRects) {
-            const float curWidth = float(cur.rect.lrx - cur.rect.ulx);
-            const float curHeight = float(cur.rect.lry - cur.rect.uly);
-            if ((curWidth <= 0.0f) || (curHeight <= 0.0f)) {
+        const auto plausible = [&](const FixedRect &from, const FixedRect &to) {
+            const float fromWidth = float(from.lrx - from.ulx);
+            const float fromHeight = float(from.lry - from.uly);
+            const float toWidth = float(to.lrx - to.ulx);
+            const float toHeight = float(to.lry - to.uly);
+            if ((fromWidth <= 0.0f) || (fromHeight <= 0.0f) || (toWidth <= 0.0f) || (toHeight <= 0.0f)) {
+                return false;
+            }
+
+            if ((std::abs(fromWidth - toWidth) > (toWidth * SizeTolerance)) ||
+                (std::abs(fromHeight - toHeight) > (toHeight * SizeTolerance))) {
+                return false;
+            }
+
+            const float dx = (float(from.ulx) + (fromWidth * 0.5f)) - (float(to.ulx) + (toWidth * 0.5f));
+            const float dy = (float(from.uly) + (fromHeight * 0.5f)) - (float(to.uly) + (toHeight * 0.5f));
+            const float limit = std::max(toWidth, toHeight) * TravelLimit;
+            return ((dx * dx) + (dy * dy)) <= (limit * limit);
+        };
+
+        // Grouped by material first: two different effects have nothing to say
+        // about each other's order, and grouping also keeps the alignment below
+        // linear rather than quadratic across the whole frame.
+        thread_local std::unordered_map<uint64_t, std::vector<uint32_t>> curByShader;
+        thread_local std::unordered_map<uint64_t, std::vector<uint32_t>> prevByShader;
+        curByShader.clear();
+        prevByShader.clear();
+        for (uint32_t i = 0; i < uint32_t(curRects.size()); i++) {
+            curByShader[curRects[i].shaderHash].push_back(i);
+        }
+
+        for (uint32_t i = 0; i < uint32_t(prevRects.size()); i++) {
+            prevByShader[prevRects[i].shaderHash].push_back(i);
+        }
+
+        uint32_t pairedCount = 0;
+        for (const auto &group : curByShader) {
+            const auto prevGroupIt = prevByShader.find(group.first);
+            if (prevGroupIt == prevByShader.end()) {
                 continue;
             }
 
-            const float curCenterX = float(cur.rect.ulx) + (curWidth * 0.5f);
-            const float curCenterY = float(cur.rect.uly) + (curHeight * 0.5f);
-            const float limit = std::max(curWidth, curHeight) * TravelLimit;
+            const std::vector<uint32_t> &curGroup = group.second;
+            const std::vector<uint32_t> &prevGroup = prevGroupIt->second;
 
-            size_t bestIndex = prevRects.size();
-            float bestDistance = limit;
-            for (size_t p = prevSearchStart; p < prevRects.size(); p++) {
-                RectRef &prev = prevRects[p];
-                if (prev.used || (prev.shaderHash != cur.shaderHash)) {
+            // Walk both from the end, where the stable survivors are. A
+            // rectangle that does not validate against its opposite number is
+            // treated as an insertion or a removal: step the longer side on and
+            // try again, so one new particle does not shift every pairing
+            // behind it. Bounded, because an unbounded search is how a
+            // mispairing becomes a smear.
+            constexpr uint32_t SkipBudget = 4;
+            size_t c = curGroup.size();
+            size_t p = prevGroup.size();
+            uint32_t skips = 0;
+            while ((c > 0) && (p > 0)) {
+                const RectRef &cur = curRects[curGroup[c - 1]];
+                const RectRef &prev = prevRects[prevGroup[p - 1]];
+                if (plausible(prev.rect, cur.rect)) {
+                    if (cur.callIndex < curWorkload.drawData.rectPairs.size()) {
+                        RectPair &pair = curWorkload.drawData.rectPairs[cur.callIndex];
+                        pair.prevRect = prev.rect;
+                        pair.paired = true;
+                        pairedCount++;
+                    }
+
+                    c--;
+                    p--;
+                    skips = 0;
                     continue;
                 }
 
-                const float prevWidth = float(prev.rect.lrx - prev.rect.ulx);
-                const float prevHeight = float(prev.rect.lry - prev.rect.uly);
-                if ((prevWidth <= 0.0f) || (prevHeight <= 0.0f)) {
-                    continue;
+                if (skips >= SkipBudget) {
+                    break;
                 }
 
-                // A sprite grows and shrinks as it approaches, but not by much
-                // in one frame. A large size jump is a different sprite.
-                if ((std::abs(prevWidth - curWidth) > (curWidth * SizeTolerance)) ||
-                    (std::abs(prevHeight - curHeight) > (curHeight * SizeTolerance))) {
-                    continue;
+                skips++;
+                if (curGroup.size() >= prevGroup.size()) {
+                    c--;
                 }
-
-                const float dx = (float(prev.rect.ulx) + (prevWidth * 0.5f)) - curCenterX;
-                const float dy = (float(prev.rect.uly) + (prevHeight * 0.5f)) - curCenterY;
-                const float distance = std::sqrt((dx * dx) + (dy * dy));
-                if (distance < bestDistance) {
-                    bestDistance = distance;
-                    bestIndex = p;
+                else {
+                    p--;
                 }
-            }
-
-            if (bestIndex >= prevRects.size()) {
-                continue;
-            }
-
-            prevRects[bestIndex].used = true;
-            while ((prevSearchStart < prevRects.size()) && prevRects[prevSearchStart].used) {
-                prevSearchStart++;
-            }
-
-            if (cur.callIndex < curWorkload.drawData.rectPairs.size()) {
-                RectPair &pair = curWorkload.drawData.rectPairs[cur.callIndex];
-                pair.prevRect = prevRects[bestIndex].rect;
-                pair.paired = true;
             }
         }
 
         if (snapdiag::statsEnabled()) {
-            uint32_t paired = 0;
-            for (const RectPair &pair : curWorkload.drawData.rectPairs) {
-                if (pair.paired) {
-                    paired++;
-                }
-            }
-
             snapdiag::rectDrawCounter().fetch_add(uint32_t(curRects.size()), std::memory_order_relaxed);
-            snapdiag::rectsPairedCounter().fetch_add(paired, std::memory_order_relaxed);
+            snapdiag::rectsPairedCounter().fetch_add(pairedCount, std::memory_order_relaxed);
         }
     }
 
