@@ -160,7 +160,6 @@ static void gfx_init_callback() {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
         std::u8string game_id = u8"pokemonsnap";
         if (recomp::is_rom_valid(game_id)) {
-            printf("[SNAP] ROM validated, starting game...\n");
             recomp::start_game(game_id);
         } else {
             fprintf(stderr, "[SNAP] ERROR: ROM not valid at startup (check pokemonsnap.z64 in CWD)\n");
@@ -370,7 +369,6 @@ int main(int argc, char* argv[]) {
         },
     };
 
-    printf("[SNAP] Starting recomp runtime...\n");
     // Anchor config path to CWD so saves, mods, and ROM cache resolve correctly.
     recomp::register_config_path(std::filesystem::current_path());
     recomp::start(config);
@@ -385,7 +383,6 @@ int main(int argc, char* argv[]) {
     }
     SDL_Quit();
 
-    printf("[SNAP] Exited cleanly.\n");
     return 0;
 }
 

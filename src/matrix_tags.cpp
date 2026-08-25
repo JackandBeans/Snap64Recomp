@@ -356,12 +356,6 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                     track->holdTicks = 0;
                 }
             }
-            else if (snapdiag::diagEnabled() && ((eyeD > 10.0f) || (atD > 10.0f))) {
-                // Motion distribution for threshold tuning: anything over
-                // ten units that did not cut.
-                printf("[SNAP-CAMMOVE] cam %08X eye %.1f at %.1f\n", cam, eyeD, atD);
-                fflush(stdout);
-            }
         }
         track->address = cam;
         track->lastSeen = ++snap::g_camera_seen_counter;

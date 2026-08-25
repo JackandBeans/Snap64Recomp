@@ -18,6 +18,8 @@
 #include <vector>
 #include <SDL2/SDL.h>
 
+#include "hle/rt64_snap_diag.h"
+
 namespace snap {
 
 // ---------------------------------------------------------------------------
@@ -84,9 +86,11 @@ static void ensure_audio_device(uint32_t freq) {
     // Unpause the device to start playback.
     SDL_PauseAudioDevice(audio_device, 0);
 
-fprintf(stderr, "[SNAP-Audio] requested freq=%u -> obtained freq=%d channels=%d samples=%d format=0x%X\n",
+    if (snapdiag::diagEnabled() || snapdiag::statsEnabled()) {
+        fprintf(stderr, "[SNAP-Audio] requested freq=%u -> obtained freq=%d channels=%d samples=%d format=0x%X\n",
             freq, obtained.freq, obtained.channels, obtained.samples, obtained.format);
-    fflush(stderr);
+        fflush(stderr);
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -129,7 +133,11 @@ void audio_queue_samples(int16_t* samples, size_t count) {
 
     const size_t byte_count = count * sizeof(int16_t);
     if (SDL_QueueAudio(audio_device, swap_buffer.data(), static_cast<uint32_t>(byte_count)) != 0) {
-        fprintf(stderr, "[SNAP-Audio] SDL_QueueAudio failed: %s\n", SDL_GetError());
+        static bool reported = false;
+        if (!reported) {
+            reported = true;
+            fprintf(stderr, "[SNAP-Audio] SDL_QueueAudio failed: %s\n", SDL_GetError());
+        }
     }
 }
 
