@@ -190,6 +190,32 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
     ax = std::fmax(-1.0f, std::fmin(1.0f, ax));
     ay = std::fmax(-1.0f, std::fmin(1.0f, ay));
 
+    // Hold the stick to what a real one reports. The runtime hands the game
+    // (int8_t)(127 * x) at full deflection, and this game divides by exactly
+    // eighty -- StickXValue = gContInputStickX / 80.0 -- then uses the
+    // quotient unclamped as a rate. So full deflection arrived as 1.5875
+    // instead of 1.0 and every analog rate in the game ran fifty-nine
+    // percent fast: how quickly the view turns, how quickly it pitches, how
+    // quickly the reticle moves. The controls simply were not the ones the
+    // game was tuned for.
+    //
+    // Limited as a vector rather than per axis. The stick moves in a round
+    // gate and cannot reach full deflection on both axes at once, so
+    // clamping them independently reports a diagonal no controller can
+    // produce -- and a diagonal is where the error was largest.
+    //
+    // The half unit absorbs the runtime's truncation to int8_t: 127 times
+    // 80/127 lands a hair under eighty in float and would arrive as 79.
+    constexpr float StickFullDeflection = 80.5f / 127.0f;
+    const float stickMagnitude = std::sqrt((ax * ax) + (ay * ay));
+    if (stickMagnitude > 1.0f) {
+        ax /= stickMagnitude;
+        ay /= stickMagnitude;
+    }
+
+    ax *= StickFullDeflection;
+    ay *= StickFullDeflection;
+
     *buttons = btn;
     *x = ax;
     *y = ay;
