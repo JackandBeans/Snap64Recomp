@@ -142,6 +142,24 @@ inline std::atomic<uint32_t> &holdFromCameraCounter() {
     return counter;
 }
 
+// What each verdict ASKED for, before the never-consecutive rule and the
+// other guards had their say. A verdict that fires often but holds rarely and
+// one that never fires at all are different faults with the same symptom.
+inline std::atomic<uint32_t> &stepDeclaredCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
+inline std::atomic<uint32_t> &stepIsolatedCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
+inline std::atomic<uint32_t> &cameraDeclaredCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
 inline std::atomic<uint32_t> &holdFromStepCounter() {
     static std::atomic<uint32_t> counter{0};
     return counter;
