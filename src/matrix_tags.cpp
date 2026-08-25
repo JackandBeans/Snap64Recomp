@@ -30,6 +30,8 @@
 #include <cstdio>
 #include <cstring>
 
+#include <chrono>
+
 #include "hle/rt64_snap_diag.h"
 #include "recomp.h"
 
@@ -519,8 +521,26 @@ extern "C" void bindCameraNextBlock(uint8_t* rdram, recomp_context* ctx) {
 
 // enterNextBlock returns the block moved into, or NULL when there was nowhere to
 // go, which is the case where nothing was rebased.
+// Published by src/frame_cost.cpp.
+extern "C" std::atomic<int64_t> snap_block_change_nanos;
+
 extern "C" void enterNextBlock(uint8_t* rdram, recomp_context* ctx) {
+    // The whole transition, timed: the camera rebase, the trailing block's
+    // objects being deleted, the next block's being created, and every
+    // Pokemon in the world being told the origin moved. It is nested inside
+    // the game's update, so it explains part of that figure rather than
+    // adding to it.
+    const bool timing = snapdiag::statsEnabled();
+    const auto blockStart = timing ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+
     __real_enterNextBlock(rdram, ctx);
+
+    if (timing) {
+        snap_block_change_nanos.fetch_add(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - blockStart).count(),
+            std::memory_order_relaxed);
+    }
 
     const uint32_t block = static_cast<uint32_t>(ctx->r2);
     if (block != 0) {

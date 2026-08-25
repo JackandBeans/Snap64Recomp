@@ -119,6 +119,7 @@ set(SNAP_SOURCES
     src/anim_steps.cpp
     src/focus_dot.cpp
     src/dl_budget.cpp
+    src/frame_cost.cpp
     src/patch_shims.cpp
     src/settings.cpp
     rsp/aspMain.cpp

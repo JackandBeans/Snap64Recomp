@@ -42,6 +42,17 @@ HOOKED = [
     # matrix group ahead of every matrix, which the original never did, and
     # these buffers are small and fixed.
     'gtlCheckBuffers',
+    # The two halves of the game's own frame, as its main loop names them:
+    # every object's update and every object's process, then the pass that
+    # builds the display list. Timed to say which half a slow frame is in,
+    # and to read the game thread's own parked time, which can only be taken
+    # on the thread that parked.
+    'gtlUpdate',
+    'gtlDraw',
+    # One Pokemon coming into existence. A course block boundary runs this
+    # once per Pokemon in the block being created, and that frame is the
+    # worst of a ride.
+    'Pokemon_SpawnOnGround',
     # The camera focus indicator: the game draws it into RDRAM, which HLE
     # presentation never shows, so the port observes it and redraws it.
     'PokemonDetector_PostProcessImage',

@@ -26,8 +26,20 @@ static int64_t snap_display_list_nanos = 0;
 
 // How long this thread was handed off to other guest threads, and how often
 // (ultramodern/src/threads.cpp).
-extern "C" int64_t snap_switch_take_nanos();
-extern "C" uint32_t snap_switch_take_count();
+// The game's own frame, split by src/frame_cost.cpp on the game's own
+// thread. The handoff counters those two halves report cannot be read from
+// here: they are thread_local, and this runs on a host thread the game's
+// scheduling never touches, so taking them here returned zero by
+// construction and refuted a hypothesis that had never been tested.
+extern "C" std::atomic<int64_t>  snap_game_update_nanos;
+extern "C" std::atomic<uint32_t> snap_game_update_count;
+extern "C" std::atomic<int64_t>  snap_game_parked_nanos;
+extern "C" std::atomic<uint32_t> snap_game_parked_count;
+extern "C" std::atomic<int64_t>  snap_game_draw_nanos;
+extern "C" std::atomic<uint32_t> snap_game_draw_count;
+extern "C" std::atomic<int64_t>  snap_block_change_nanos;
+extern "C" std::atomic<int64_t>  snap_spawn_nanos;
+extern "C" std::atomic<uint32_t> snap_spawn_count;
 
 // Time the game thread spent copying out of the ROM (librecomp/src/pi.cpp).
 extern "C" std::atomic<int64_t> snap_rom_read_nanos;
@@ -36,8 +48,6 @@ extern "C" std::atomic<uint32_t> snap_rom_read_count;
 
 // How long THIS thread was blocked waiting for a message, taken and reset
 // together (ultramodern/src/mesgqueue.cpp).
-extern "C" int64_t snap_recv_block_take_nanos();
-extern "C" uint32_t snap_recv_block_take_count();
 
 extern "C" std::atomic<int64_t> snap_thread_create_nanos;
 extern "C" std::atomic<uint32_t> snap_thread_create_count;
@@ -417,12 +427,6 @@ public:
             const auto waitEnd = std::chrono::steady_clock::now();
             const uint32_t gameFrame = snapdiag::gameFrameCounter().fetch_add(1, std::memory_order_relaxed);
 
-            // Taken every tick, slow or not: left to accumulate it would
-            // charge the next slow frame for every quiet one before it.
-            const double switchMs = double(snap_switch_take_nanos()) / 1.0e6;
-            const uint32_t switchCount = snap_switch_take_count();
-            const double recvMs = double(snap_recv_block_take_nanos()) / 1.0e6;
-            const uint32_t recvCount = snap_recv_block_take_count();
             if (snapdiag::statsEnabled() && (lastTickStart.time_since_epoch().count() != 0)) {
                 const double tickMs = std::chrono::duration<double, std::milli>(waitEnd - lastTickStart).count();
                 const double waitMs = std::chrono::duration<double, std::milli>(waitEnd - waitStart).count();
@@ -443,17 +447,40 @@ public:
                     const double romMs = double(snap_rom_read_nanos.load(std::memory_order_relaxed)) / 1.0e6;
                     const unsigned long long romKB = (unsigned long long)(snap_rom_read_bytes.load(std::memory_order_relaxed) / 1024);
                     const double animMs = double(snapdiag::animHookNanos().load(std::memory_order_relaxed)) / 1.0e6;
-                    printf("[SNAP-SLOWTICK]   host threads %.1f ms (%u), display list %.1f ms (fb %.1f/%u), rom %.1f ms (%llu KB), message wait %.1f ms (%u), guest switches %.1f ms (%u), step detector %.1f ms (%u trees), the game itself %.1f ms\n",
-                        threadMs, threadCount, dlMs, fbMs, fbUploads,
-                        romMs, romKB,
-                        recvMs, recvCount,
-                        switchMs, switchCount,
-                        animMs, snapdiag::animHookCounter().load(std::memory_order_relaxed),
-                        tickMs - waitMs - threadMs - dlMs - recvMs - romMs - switchMs - animMs);
+                    const double updateMs = double(snap_game_update_nanos.load(std::memory_order_relaxed)) / 1.0e6;
+                    const double parkedMs = double(snap_game_parked_nanos.load(std::memory_order_relaxed)) / 1.0e6;
+                    const double drawMs = double(snap_game_draw_nanos.load(std::memory_order_relaxed)) / 1.0e6;
+                    const double blockMs = double(snap_block_change_nanos.load(std::memory_order_relaxed)) / 1.0e6;
+                    const double spawnMs = double(snap_spawn_nanos.load(std::memory_order_relaxed)) / 1.0e6;
+                    printf("[SNAP-SLOWTICK]   port: host threads %.1f ms (%u), display list %.1f ms (fb %.1f/%u), rom %.1f ms (%llu KB), step detector %.1f ms (%u trees)\n",
+                        threadMs, threadCount, dlMs, fbMs, fbUploads, romMs, romKB,
+                        animMs, snapdiag::animHookCounter().load(std::memory_order_relaxed));
+                    // The game's own frame, split by its own main loop. Update
+                    // and draw are the two halves; parked is the part of the
+                    // update this thread spent waiting for another of the
+                    // game's threads rather than working, which is the port's
+                    // thread model rather than the game's cost. Block change
+                    // and spawning are nested inside update, not additional.
+                    printf("[SNAP-SLOWTICK]   game: update %.1f ms x%u (parked %.1f ms in %u handoffs), draw %.1f ms x%u, block change %.1f ms, spawned %u pokemon in %.1f ms, unaccounted %.1f ms\n",
+                        updateMs, snap_game_update_count.load(std::memory_order_relaxed),
+                        parkedMs, snap_game_parked_count.load(std::memory_order_relaxed),
+                        drawMs, snap_game_draw_count.load(std::memory_order_relaxed),
+                        blockMs,
+                        snap_spawn_count.load(std::memory_order_relaxed), spawnMs,
+                        tickMs - waitMs - threadMs - dlMs - romMs - animMs - updateMs - drawMs);
                     fflush(stdout);
                 }
             }
             // The totals describe one tick, slow or not.
+            snap_game_update_nanos.store(0, std::memory_order_relaxed);
+            snap_game_update_count.store(0, std::memory_order_relaxed);
+            snap_game_parked_nanos.store(0, std::memory_order_relaxed);
+            snap_game_parked_count.store(0, std::memory_order_relaxed);
+            snap_game_draw_nanos.store(0, std::memory_order_relaxed);
+            snap_game_draw_count.store(0, std::memory_order_relaxed);
+            snap_block_change_nanos.store(0, std::memory_order_relaxed);
+            snap_spawn_nanos.store(0, std::memory_order_relaxed);
+            snap_spawn_count.store(0, std::memory_order_relaxed);
             snap_thread_create_nanos.store(0, std::memory_order_relaxed);
             snap_thread_create_count.store(0, std::memory_order_relaxed);
             snapdiag::animHookNanos().store(0, std::memory_order_relaxed);
