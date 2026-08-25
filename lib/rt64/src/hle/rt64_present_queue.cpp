@@ -837,8 +837,11 @@ namespace {
                             // game's rate against smooth geometry looks like.
                             const uint32_t seen = snapdiag::transformsSeenCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t paired = snapdiag::transformsPairedCounter().exchange(0, std::memory_order_relaxed);
-                            fprintf(stdout, "[SNAP-PACE]   scene pairing: %u of %u transforms paired (%.1f%% interpolated, the rest step once per game frame)\n",
-                                paired, seen, (seen > 0) ? (100.0 * double(paired) / double(seen)) : 0.0);
+                            const uint32_t rects = snapdiag::rectDrawCounter().exchange(0, std::memory_order_relaxed);
+                            const uint32_t rectsPaired = snapdiag::rectsPairedCounter().exchange(0, std::memory_order_relaxed);
+                            fprintf(stdout, "[SNAP-PACE]   scene pairing: %u of %u transforms paired (%.1f%%), sprites %u of %u paired (%.1f%%)\n",
+                                paired, seen, (seen > 0) ? (100.0 * double(paired) / double(seen)) : 0.0,
+                                rectsPaired, rects, (rects > 0) ? (100.0 * double(rectsPaired) / double(rects)) : 0.0);
                         }
                         ageTotalMs = 0.0;
                         ageWorstMs = 0.0;

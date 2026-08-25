@@ -255,6 +255,157 @@ namespace RT64 {
         return matchResult;
     }
 
+
+    // Pokemon Snap port: pair this frame's screen-space rectangles with the
+    // previous frame's.
+    //
+    // Nothing else in the renderer can do it for them. A rectangle draw carries
+    // no transform -- RDP::drawRect pins its world matrix range to zero and
+    // stores the finished screen box on the call -- so there is no identity to
+    // pair by and the scene matcher never even visits them. The game's particle
+    // effects are all drawn this way, which is why sand kicked up by a Doduo and
+    // leaves out of the tall grass hold one screen position for a whole game
+    // frame while everything around them is interpolated.
+    //
+    // So they are paired by what they look like instead. Two rectangles are the
+    // same sprite when they were drawn with the same shader, are close to the
+    // same size, and are the nearest such pair to each other; the search runs in
+    // submission order and never crosses, because the game builds these from
+    // lists it only pushes onto, so survivors keep their relative order. A wrong
+    // pairing is not dangerous here -- it moves a sprite between two positions
+    // the game itself drew, over one game frame -- but the size and distance
+    // limits keep it from happening between two different effects.
+    //
+    // Only the previous box is kept. That is the whole of what interpolation
+    // needs, and it leaves the drawing code free to ignore it, which is what
+    // makes the result identical to today's at full weight.
+    void GameFrame::matchRects(Workload &curWorkload, const Workload &prevWorkload) {
+        struct RectRef {
+            uint32_t callIndex = 0;
+            FixedRect rect;
+            uint64_t shaderHash = 0;
+            bool used = false;
+        };
+
+        thread_local std::vector<RectRef> curRects;
+        thread_local std::vector<RectRef> prevRects;
+        curRects.clear();
+        prevRects.clear();
+
+        const auto gather = [](const Workload &workload, std::vector<RectRef> &rects) {
+            for (uint32_t f = 0; f < workload.fbPairCount; f++) {
+                const FramebufferPair &fbPair = workload.fbPairs[f];
+                for (uint32_t p = 0; p < fbPair.projectionCount; p++) {
+                    const Projection &proj = fbPair.projections[p];
+                    if (proj.type != Projection::Type::Rectangle) {
+                        continue;
+                    }
+
+                    for (uint32_t d = 0; d < proj.gameCallCount; d++) {
+                        const GameCall &call = proj.gameCalls[d];
+                        RectRef ref;
+                        ref.callIndex = call.callDesc.callIndex;
+                        ref.rect = call.callDesc.rect;
+                        ref.shaderHash = call.shaderDesc.hash();
+                        rects.emplace_back(ref);
+                    }
+                }
+            }
+        };
+
+        gather(curWorkload, curRects);
+
+        // Sized for every call in the frame and cleared each time, so a pairing
+        // can never outlive the frame that made it.
+        curWorkload.drawData.rectPairs.assign(curWorkload.gameCallCount, RectPair());
+
+        if (curRects.empty()) {
+            return;
+        }
+
+        gather(prevWorkload, prevRects);
+        if (prevRects.empty()) {
+            return;
+        }
+
+        // A sprite may travel a good part of its own size in a frame, and two
+        // different sprites of the same material are usually further apart than
+        // that. Generous enough for fast particles, tight enough that a pair is
+        // recognisably the same thing.
+        constexpr float TravelLimit = 3.0f;
+        constexpr float SizeTolerance = 0.35f;
+
+        size_t prevSearchStart = 0;
+        for (RectRef &cur : curRects) {
+            const float curWidth = float(cur.rect.lrx - cur.rect.ulx);
+            const float curHeight = float(cur.rect.lry - cur.rect.uly);
+            if ((curWidth <= 0.0f) || (curHeight <= 0.0f)) {
+                continue;
+            }
+
+            const float curCenterX = float(cur.rect.ulx) + (curWidth * 0.5f);
+            const float curCenterY = float(cur.rect.uly) + (curHeight * 0.5f);
+            const float limit = std::max(curWidth, curHeight) * TravelLimit;
+
+            size_t bestIndex = prevRects.size();
+            float bestDistance = limit;
+            for (size_t p = prevSearchStart; p < prevRects.size(); p++) {
+                RectRef &prev = prevRects[p];
+                if (prev.used || (prev.shaderHash != cur.shaderHash)) {
+                    continue;
+                }
+
+                const float prevWidth = float(prev.rect.lrx - prev.rect.ulx);
+                const float prevHeight = float(prev.rect.lry - prev.rect.uly);
+                if ((prevWidth <= 0.0f) || (prevHeight <= 0.0f)) {
+                    continue;
+                }
+
+                // A sprite grows and shrinks as it approaches, but not by much
+                // in one frame. A large size jump is a different sprite.
+                if ((std::abs(prevWidth - curWidth) > (curWidth * SizeTolerance)) ||
+                    (std::abs(prevHeight - curHeight) > (curHeight * SizeTolerance))) {
+                    continue;
+                }
+
+                const float dx = (float(prev.rect.ulx) + (prevWidth * 0.5f)) - curCenterX;
+                const float dy = (float(prev.rect.uly) + (prevHeight * 0.5f)) - curCenterY;
+                const float distance = std::sqrt((dx * dx) + (dy * dy));
+                if (distance < bestDistance) {
+                    bestDistance = distance;
+                    bestIndex = p;
+                }
+            }
+
+            if (bestIndex >= prevRects.size()) {
+                continue;
+            }
+
+            prevRects[bestIndex].used = true;
+            while ((prevSearchStart < prevRects.size()) && prevRects[prevSearchStart].used) {
+                prevSearchStart++;
+            }
+
+            if (cur.callIndex < curWorkload.drawData.rectPairs.size()) {
+                RectPair &pair = curWorkload.drawData.rectPairs[cur.callIndex];
+                pair.prevRect = prevRects[bestIndex].rect;
+                pair.paired = true;
+            }
+        }
+
+        if (snapdiag::statsEnabled()) {
+            uint32_t paired = 0;
+            for (const RectPair &pair : curWorkload.drawData.rectPairs) {
+                if (pair.paired) {
+                    paired++;
+                }
+            }
+
+            snapdiag::rectDrawCounter().fetch_add(uint32_t(curRects.size()), std::memory_order_relaxed);
+            snapdiag::rectsPairedCounter().fetch_add(paired, std::memory_order_relaxed);
+        }
+    }
+
     void GameFrame::match(RenderWorker *worker, WorkloadQueue &workloadQueue, const GameFrame &prevFrame, BufferUploader *velocityUploader, bool &velocityUploaderUsed, bool &tileInterpolationUsed, bool &lookAtInterpolationUsed) {
         tileInterpolationUsed = false;
         lookAtInterpolationUsed = false;
@@ -352,6 +503,8 @@ namespace RT64 {
             if (!modifiedBuffers.empty()) {
                 workloadsModified[workloads[w]].merge(modifiedBuffers);
             }
+
+            matchRects(curWorkload, prevWorkload);
 
             if (snapdiag::statsEnabled()) {
                 uint32_t seen = 0, paired = 0;

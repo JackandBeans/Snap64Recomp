@@ -175,6 +175,21 @@ inline std::atomic<uint32_t> &transformsPairedCounter() {
 // Draws with no transform of their own at all -- screen-space rectangles and
 // the like. They cannot be paired by identity because there is nothing to
 // identify, so they are counted separately rather than hidden in the miss rate.
+// ... and how many of those could be paired with the frame before. An unpaired
+// rectangle holds one screen position for the whole tick, which against
+// interpolated geometry is what an effect sprite stuttering looks like.
+inline std::atomic<uint32_t> &rectsPairedCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
+// Off switch, so a suspected regression can be separated from the change that
+// caused it without a rebuild.
+inline bool rectLerpDisabled() {
+    static const bool disabled = (std::getenv("SNAP_NO_RECT_LERP") != nullptr);
+    return disabled;
+}
+
 inline std::atomic<uint32_t> &rectDrawCounter() {
     static std::atomic<uint32_t> counter{0};
     return counter;

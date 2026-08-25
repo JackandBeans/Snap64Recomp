@@ -4,6 +4,8 @@
 
 #include "rt64_framebuffer_renderer.h"
 
+#include "hle/rt64_snap_diag.h"
+
 #include "../include/rt64_extended_gbi.h"
 
 #include "common/rt64_elapsed_timer.h"
@@ -1652,7 +1654,38 @@ namespace RT64 {
                                 horizontalMisalignment = p.horizontalMisalignment;
                             }
 
-                            RenderViewport viewportRect = convertViewportRect(call.callDesc.rect, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, horizontalMisalignment, call.callDesc.rectLeftOrigin, call.callDesc.rectRightOrigin);
+                            // Pokemon Snap port: a screen-space rectangle is the one
+                            // thing here with no transform to interpolate -- the box
+                            // was computed by the game, for the game's own camera, and
+                            // is re-emitted unchanged on every display frame of a tick.
+                            // The camera underneath it is being interpolated, so a
+                            // particle standing still in the world slides backwards
+                            // across the surface it sits on and snaps forward when the
+                            // next game frame arrives. Blending the box between the two
+                            // the game drew puts it back in step with everything else.
+                            //
+                            // Both endpoints are the game's own, so nothing is invented,
+                            // and at full weight this is the box that was drawn before.
+                            FixedRect drawnRect = call.callDesc.rect;
+                            if ((p.curFrameWeight < 1.0f) && !snapdiag::rectLerpDisabled()) {
+                                const std::vector<RectPair> &rectPairs = p.curWorkload->drawData.rectPairs;
+                                const uint32_t rectCallIndex = call.callDesc.callIndex;
+                                if ((rectCallIndex < rectPairs.size()) && rectPairs[rectCallIndex].paired) {
+                                    const FixedRect &fromRect = rectPairs[rectCallIndex].prevRect;
+                                    const float weight = p.curFrameWeight;
+                                    const auto blend = [weight](int32_t from, int32_t to) {
+                                        return int32_t(std::lround(float(from) + ((float(to) - float(from)) * weight)));
+                                    };
+
+                                    drawnRect = FixedRect(
+                                        blend(fromRect.ulx, call.callDesc.rect.ulx),
+                                        blend(fromRect.uly, call.callDesc.rect.uly),
+                                        blend(fromRect.lrx, call.callDesc.rect.lrx),
+                                        blend(fromRect.lry, call.callDesc.rect.lry));
+                                }
+                            }
+
+                            RenderViewport viewportRect = convertViewportRect(drawnRect, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, horizontalMisalignment, call.callDesc.rectLeftOrigin, call.callDesc.rectRightOrigin);
                             triangles.screenScale = { viewportRect.width / framebuffer.viewport.width, viewportRect.height / framebuffer.viewport.height };
                             triangles.screenOffset.x = halfPixelOffset.x + ((viewportRect.x + viewportRect.width / 2.0f) - halfViewportSize.x) / halfViewportSize.x;
                             triangles.screenOffset.y = halfPixelOffset.y + (halfViewportSize.y - (viewportRect.y + viewportRect.height / 2.0f)) / halfViewportSize.y;
