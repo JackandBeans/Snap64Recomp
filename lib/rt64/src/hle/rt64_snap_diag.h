@@ -157,6 +157,29 @@ inline std::atomic<uint32_t> &animHookCounter() {
     return counter;
 }
 
+// How much of a frame the renderer could actually pair with the frame before
+// it. Anything unpaired is drawn at its current pose for every one of the
+// display frames in that tick, so it steps once per game frame while
+// everything around it glides -- which is most visible exactly when the camera
+// moves and the whole screen is in motion.
+inline std::atomic<uint32_t> &transformsSeenCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
+inline std::atomic<uint32_t> &transformsPairedCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
+// Draws with no transform of their own at all -- screen-space rectangles and
+// the like. They cannot be paired by identity because there is nothing to
+// identify, so they are counted separately rather than hidden in the miss rate.
+inline std::atomic<uint32_t> &rectDrawCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
 // The game frame this is all happening on. Everything a report wants to
 // correlate -- a slow frame, a Pokemon being created, a block boundary --
 // happens on a different thread from the one that counts frames, and

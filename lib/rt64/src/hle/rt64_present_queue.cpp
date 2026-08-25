@@ -821,9 +821,25 @@ namespace {
                             snapdiag::holdCounter().exchange(0, std::memory_order_relaxed),
                             asked, dropped, (asked > 0) ? (100.0 * double(dropped) / double(asked)) : 0.0,
                             (ageCount > 0) ? (ageTotalMs / ageCount) : 0.0, ageWorstMs);
-                        fprintf(stdout, "[SNAP-PACE]   holds asked by camera %u, by authored step %u\n",
+                        fprintf(stdout, "[SNAP-PACE]   holds asked by camera %u, by authored step %u; verdicts raised: camera %u, step %u of which isolated %u\n",
                             snapdiag::holdFromCameraCounter().exchange(0, std::memory_order_relaxed),
-                            snapdiag::holdFromStepCounter().exchange(0, std::memory_order_relaxed));
+                            snapdiag::holdFromStepCounter().exchange(0, std::memory_order_relaxed),
+                            snapdiag::cameraDeclaredCounter().exchange(0, std::memory_order_relaxed),
+                            snapdiag::stepDeclaredCounter().exchange(0, std::memory_order_relaxed),
+                            snapdiag::stepIsolatedCounter().exchange(0, std::memory_order_relaxed));
+                        {
+                            // How much of the scene the renderer could pair with the
+                            // frame before it. Whatever it could not is drawn at one
+                            // pose for the whole tick, so it steps once per game frame
+                            // while everything around it glides -- which is most
+                            // visible when the camera moves and the whole screen is in
+                            // motion, and is what an effect sprite running at the
+                            // game's rate against smooth geometry looks like.
+                            const uint32_t seen = snapdiag::transformsSeenCounter().exchange(0, std::memory_order_relaxed);
+                            const uint32_t paired = snapdiag::transformsPairedCounter().exchange(0, std::memory_order_relaxed);
+                            fprintf(stdout, "[SNAP-PACE]   scene pairing: %u of %u transforms paired (%.1f%% interpolated, the rest step once per game frame)\n",
+                                paired, seen, (seen > 0) ? (100.0 * double(paired) / double(seen)) : 0.0);
+                        }
                         ageTotalMs = 0.0;
                         ageWorstMs = 0.0;
                         ageCount = 0;

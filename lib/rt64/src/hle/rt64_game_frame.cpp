@@ -353,6 +353,19 @@ namespace RT64 {
                 workloadsModified[workloads[w]].merge(modifiedBuffers);
             }
 
+            if (snapdiag::statsEnabled()) {
+                uint32_t seen = 0, paired = 0;
+                for (const auto &tm : curWorkloadMap.transforms) {
+                    seen++;
+                    if (tm.mapped) {
+                        paired++;
+                    }
+                }
+
+                snapdiag::transformsSeenCounter().fetch_add(seen, std::memory_order_relaxed);
+                snapdiag::transformsPairedCounter().fetch_add(paired, std::memory_order_relaxed);
+            }
+
             // Any transforms tagged with the empty ID will be instantly marked as used and skipped.
             for (uint32_t curIt : curWorkload.transformIgnoredIds) {
                 GameFrameMap::TransformMap &curTransformMap = curWorkloadMap.transforms[curIt];
