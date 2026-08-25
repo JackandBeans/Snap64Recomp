@@ -159,8 +159,33 @@ void ultramodern::set_native_thread_name(const std::string& name) {
 void ultramodern::set_native_thread_priority(ThreadPriority pri) {}
 #endif
 
+// Pokemon Snap port: how long THIS thread spent handed off to another guest
+// thread, and how many times. On the console a context switch was a register
+// save and a queue link; here every guest thread is an operating system thread
+// and a switch is a semaphore handoff plus two trips through the OS scheduler.
+// This game runs a process per object, so a frame performs a great many. Taken
+// and reset by the slow-frame report.
+static thread_local int64_t snap_tls_switch_nanos = 0;
+static thread_local uint32_t snap_tls_switch_count = 0;
+
+extern "C" int64_t snap_switch_take_nanos() {
+    const int64_t taken = snap_tls_switch_nanos;
+    snap_tls_switch_nanos = 0;
+    return taken;
+}
+
+extern "C" uint32_t snap_switch_take_count() {
+    const uint32_t taken = snap_tls_switch_count;
+    snap_tls_switch_count = 0;
+    return taken;
+}
+
 void wait_for_resumed(RDRAM_ARG UltraThreadContext* thread_context) {
+    const auto snapSwitchStart = std::chrono::steady_clock::now();
     thread_context->running.wait();
+    snap_tls_switch_nanos += std::chrono::duration_cast<std::chrono::nanoseconds>(
+        std::chrono::steady_clock::now() - snapSwitchStart).count();
+    snap_tls_switch_count++;
     // If this thread's context was replaced by another thread or deleted, destroy it again from its own context.
     // This will trigger thread cleanup instead.
     if (TO_PTR(OSThread, ultramodern::this_thread())->context != thread_context) {

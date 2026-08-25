@@ -24,6 +24,16 @@
 // plain counter is enough for it.
 static int64_t snap_display_list_nanos = 0;
 
+// How long this thread was handed off to other guest threads, and how often
+// (ultramodern/src/threads.cpp).
+extern "C" int64_t snap_switch_take_nanos();
+extern "C" uint32_t snap_switch_take_count();
+
+// Time the game thread spent copying out of the ROM (librecomp/src/pi.cpp).
+extern "C" std::atomic<int64_t> snap_rom_read_nanos;
+extern "C" std::atomic<uint64_t> snap_rom_read_bytes;
+extern "C" std::atomic<uint32_t> snap_rom_read_count;
+
 // How long THIS thread was blocked waiting for a message, taken and reset
 // together (ultramodern/src/mesgqueue.cpp).
 extern "C" int64_t snap_recv_block_take_nanos();
@@ -409,6 +419,8 @@ public:
 
             // Taken every tick, slow or not: left to accumulate it would
             // charge the next slow frame for every quiet one before it.
+            const double switchMs = double(snap_switch_take_nanos()) / 1.0e6;
+            const uint32_t switchCount = snap_switch_take_count();
             const double recvMs = double(snap_recv_block_take_nanos()) / 1.0e6;
             const uint32_t recvCount = snap_recv_block_take_count();
             if (snapdiag::statsEnabled() && (lastTickStart.time_since_epoch().count() != 0)) {
@@ -428,15 +440,27 @@ public:
                     const double fbMs = double(snapdiag::rdramCheckNanos().load(std::memory_order_relaxed)) / 1.0e6;
                     const uint32_t fbUploads = snapdiag::rdramUploadCounter().load(std::memory_order_relaxed);
                     printf("[SNAP-SLOWTICK] f%u took %.1f ms, of which %.1f ms waiting for the renderer\n", gameFrame, tickMs, waitMs);
-                    printf("[SNAP-SLOWTICK]   host threads %.1f ms (%u), display list %.1f ms (fb check %.1f ms, %u uploads), waiting on a message %.1f ms (%u), the game itself %.1f ms\n",
-                        threadMs, threadCount, dlMs, fbMs, fbUploads, recvMs, recvCount,
-                        tickMs - waitMs - threadMs - dlMs - recvMs);
+                    const double romMs = double(snap_rom_read_nanos.load(std::memory_order_relaxed)) / 1.0e6;
+                    const unsigned long long romKB = (unsigned long long)(snap_rom_read_bytes.load(std::memory_order_relaxed) / 1024);
+                    const double animMs = double(snapdiag::animHookNanos().load(std::memory_order_relaxed)) / 1.0e6;
+                    printf("[SNAP-SLOWTICK]   host threads %.1f ms (%u), display list %.1f ms (fb %.1f/%u), rom %.1f ms (%llu KB), message wait %.1f ms (%u), guest switches %.1f ms (%u), step detector %.1f ms (%u trees), the game itself %.1f ms\n",
+                        threadMs, threadCount, dlMs, fbMs, fbUploads,
+                        romMs, romKB,
+                        recvMs, recvCount,
+                        switchMs, switchCount,
+                        animMs, snapdiag::animHookCounter().load(std::memory_order_relaxed),
+                        tickMs - waitMs - threadMs - dlMs - recvMs - romMs - switchMs - animMs);
                     fflush(stdout);
                 }
             }
             // The totals describe one tick, slow or not.
             snap_thread_create_nanos.store(0, std::memory_order_relaxed);
             snap_thread_create_count.store(0, std::memory_order_relaxed);
+            snapdiag::animHookNanos().store(0, std::memory_order_relaxed);
+            snapdiag::animHookCounter().store(0, std::memory_order_relaxed);
+            snap_rom_read_nanos.store(0, std::memory_order_relaxed);
+            snap_rom_read_bytes.store(0, std::memory_order_relaxed);
+            snap_rom_read_count.store(0, std::memory_order_relaxed);
             snapdiag::rdramCheckNanos().store(0, std::memory_order_relaxed);
             snapdiag::rdramUploadCounter().store(0, std::memory_order_relaxed);
             snap_display_list_nanos = 0;

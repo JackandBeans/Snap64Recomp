@@ -142,6 +142,21 @@ inline std::atomic<uint32_t> &holdFromCameraCounter() {
     return counter;
 }
 
+// Time the port's own animation hook spends walking model trees, summed over
+// every object in a tick. It snapshots each tree before and after the game's
+// own animation call, and a frame that creates Pokemon poses every one of them
+// synchronously -- so the hook does its most work on exactly the frames that
+// are already the slowest.
+inline std::atomic<int64_t> &animHookNanos() {
+    static std::atomic<int64_t> nanos{0};
+    return nanos;
+}
+
+inline std::atomic<uint32_t> &animHookCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
 // The game frame this is all happening on. Everything a report wants to
 // correlate -- a slow frame, a Pokemon being created, a block boundary --
 // happens on a different thread from the one that counts frames, and

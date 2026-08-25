@@ -1,5 +1,7 @@
 #include <memory>
 #include <fstream>
+#include <atomic>
+#include <chrono>
 #include <array>
 #include <cstring>
 #include <string>
@@ -61,8 +63,18 @@ extern "C" void osCreatePiManager_recomp(uint8_t* rdram, recomp_context* ctx) {
     ;
 }
 
+// Pokemon Snap port: how long the game thread spent copying out of the ROM,
+// read and cleared once a tick by the slow-frame report. On the console this
+// was DMA the CPU did not wait on; here it is a memcpy the calling thread
+// performs, so it lands inside whatever frame asked for it.
+extern "C" {
+    std::atomic<int64_t> snap_rom_read_nanos{0};
+    std::atomic<uint64_t> snap_rom_read_bytes{0};
+    std::atomic<uint32_t> snap_rom_read_count{0};
+}
+
 void recomp::do_rom_read(uint8_t* rdram, gpr ram_address, uint32_t physical_addr, size_t num_bytes) {
-    // TODO use word copies when possible
+    const auto snapReadStart = std::chrono::steady_clock::now();
 
     // TODO handle misaligned DMA
     assert((physical_addr & 0x1) == 0 && "Only PI DMA from aligned ROM addresses is currently supported");
@@ -72,6 +84,13 @@ void recomp::do_rom_read(uint8_t* rdram, gpr ram_address, uint32_t physical_addr
         MEM_B(i, ram_address) = *rom_addr;
         rom_addr++;
     }
+
+    snap_rom_read_nanos.fetch_add(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - snapReadStart).count(),
+        std::memory_order_relaxed);
+    snap_rom_read_bytes.fetch_add(num_bytes, std::memory_order_relaxed);
+    snap_rom_read_count.fetch_add(1, std::memory_order_relaxed);
 }
 
 void recomp::do_rom_pio(uint8_t* rdram, gpr ram_address, uint32_t physical_addr) {

@@ -45,6 +45,8 @@
 
 #include <atomic>
 
+#include <chrono>
+
 #include "hle/rt64_snap_diag.h"
 #include "recomp.h"
 
@@ -254,6 +256,9 @@ extern "C" void animUpdateModelTreeAnimation(uint8_t* rdram, recomp_context* ctx
     bool sampled = false;
     uint32_t rootDObj = 0;
 
+    const bool timing = outermost && snapdiag::statsEnabled();
+    const auto beforeStart = timing ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+
     if (outermost && snap::valid_ram_address(gobj)) {
         rootDObj = static_cast<uint32_t>(MEM_W(0x48, (gpr)(int32_t)gobj));   // GObj::data.dobj
         if (snap::valid_ram_address(rootDObj)) {
@@ -262,9 +267,31 @@ extern "C" void animUpdateModelTreeAnimation(uint8_t* rdram, recomp_context* ctx
         }
     }
 
+    if (timing) {
+        snapdiag::animHookNanos().fetch_add(
+            std::chrono::duration_cast<std::chrono::nanoseconds>(
+                std::chrono::steady_clock::now() - beforeStart).count(),
+            std::memory_order_relaxed);
+        snapdiag::animHookCounter().fetch_add(1, std::memory_order_relaxed);
+    }
+
     __real_animUpdateModelTreeAnimation(rdram, ctx);
 
     depth--;
+
+    // The rest of this function is the port's too, so it is timed as well.
+    struct AfterTimer {
+        bool on;
+        std::chrono::steady_clock::time_point start;
+        ~AfterTimer() {
+            if (on) {
+                snapdiag::animHookNanos().fetch_add(
+                    std::chrono::duration_cast<std::chrono::nanoseconds>(
+                        std::chrono::steady_clock::now() - start).count(),
+                    std::memory_order_relaxed);
+            }
+        }
+    } afterTimer{timing, timing ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{}};
 
     if (!sampled || (snap::stepped_object_count() >= snap::MaxSteppedObjects)) {
         return;
