@@ -45,10 +45,16 @@ namespace RT64 {
         std::unique_ptr<ShaderCompiler> shaderCompiler;
         RenderMultisampling multisampling;
         bool usesHDR = false;
+
+        // Survives setup(), which updateMultisampling() calls a second time.
+        // Multisampling picks a different pixel shader library, and the library
+        // is part of every key, so both configurations coexist in one file.
+        std::unique_ptr<ShaderBlobCache> blobCache;
         
         RasterShaderCache(uint32_t threadCount, uint32_t ubershaderThreadCount);
         ~RasterShaderCache();
         void setup(RenderDevice *device, RenderShaderFormat shaderFormat, const ShaderLibrary *shaderLibrary, const RenderMultisampling &multisampling);
+        void openBlobCache(const std::filesystem::path &path);
         void submit(const ShaderDescription &desc);
         void waitForAll();
         void destroyAll();

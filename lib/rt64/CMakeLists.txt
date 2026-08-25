@@ -374,6 +374,7 @@ set (SOURCES
     "${PROJECT_SOURCE_DIR}/src/render/rt64_projection_processor.cpp"
     "${PROJECT_SOURCE_DIR}/src/render/rt64_raster_shader.cpp"
     "${PROJECT_SOURCE_DIR}/src/render/rt64_raster_shader_cache.cpp"
+    "${PROJECT_SOURCE_DIR}/src/render/rt64_shader_blob_cache.cpp"
     "${PROJECT_SOURCE_DIR}/src/render/rt64_render_target.cpp"
     "${PROJECT_SOURCE_DIR}/src/render/rt64_render_target_manager.cpp"
     "${PROJECT_SOURCE_DIR}/src/render/rt64_render_worker.cpp"

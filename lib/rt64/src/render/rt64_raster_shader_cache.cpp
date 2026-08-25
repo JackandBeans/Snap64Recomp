@@ -61,7 +61,7 @@ namespace RT64 {
                 assert((shaderCache->shaderUber != nullptr) && "Ubershader should've been created by the time a new shader is submitted to the cache.");
                 const RenderPipelineLayout *uberPipelineLayout = shaderCache->shaderUber->pipelineLayout.get();
                 const RenderMultisampling multisampling = shaderCache->multisampling;
-                std::unique_ptr<RasterShader> newShader = std::make_unique<RasterShader>(shaderCache->device, shaderDesc, uberPipelineLayout, shaderCache->shaderFormat, multisampling, shaderCache->shaderCompiler.get(), &shaderCache->optimizerCacheSPIRV);
+                std::unique_ptr<RasterShader> newShader = std::make_unique<RasterShader>(shaderCache->device, shaderDesc, uberPipelineLayout, shaderCache->shaderFormat, multisampling, shaderCache->shaderCompiler.get(), &shaderCache->optimizerCacheSPIRV, shaderCache->blobCache.get());
 
                 {
                     const std::unique_lock<std::mutex> lock(shaderCache->GPUShadersMutex);
@@ -118,6 +118,22 @@ namespace RT64 {
         if (shaderFormat == RenderShaderFormat::SPIRV) {
             optimizerCacheSPIRV.initialize();
         }
+    }
+
+    // Pokemon Snap port: keep compiled shader bytecode between launches. Only
+    // the DXIL path is worth it -- the SPIR-V path specialises pre-baked modules
+    // in process, which is already fast, and what it costs lives inside the
+    // driver rather than in the compiler. Deliberately not called from setup(),
+    // which runs again whenever antialiasing changes: the cache should survive
+    // that, and it does because the sample count picks a different shader
+    // library and the library is part of every key.
+    void RasterShaderCache::openBlobCache(const std::filesystem::path &path) {
+        if ((shaderFormat != RenderShaderFormat::DXIL) || path.empty()) {
+            return;
+        }
+
+        blobCache = std::make_unique<ShaderBlobCache>();
+        blobCache->open(path, device);
     }
 
     void RasterShaderCache::submit(const ShaderDescription &desc) {

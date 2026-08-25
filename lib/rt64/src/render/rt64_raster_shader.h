@@ -18,6 +18,7 @@
 #include "shared/rt64_other_mode.h"
 
 #include "rt64_shader_library.h"
+#include "rt64_shader_blob_cache.h"
 #include "rt64_shader_compiler.h"
 
 // Require the use of sample locations for MSAA.
@@ -67,7 +68,16 @@ namespace RT64 {
         std::unique_ptr<RenderPipeline> pipeline;
 
         RasterShader(RenderDevice *device, const ShaderDescription &desc, const RenderPipelineLayout *pipelineLayout, RenderShaderFormat shaderFormat, const RenderMultisampling &multisampling, 
-            const ShaderCompiler *shaderCompiler, const OptimizerCacheSPIRV *optimizerCacheSPIRV);
+            const ShaderCompiler *shaderCompiler, const OptimizerCacheSPIRV *optimizerCacheSPIRV, ShaderBlobCache *blobCache = nullptr);
+
+        // Names one compiled stage by the source that produced it: the generated
+        // HLSL for this shader description, the library blob it links against, and
+        // the target profile. Deriving the name from the source is what makes the
+        // on-disk cache safe -- edit a shader, or the libraries it links against,
+        // and every affected entry simply stops being found. There is no version
+        // number anyone has to remember to bump, which is the only way a bytecode
+        // cache can serve something that no longer matches the code.
+        static uint64_t blobCacheKey(const std::string &shaderText, uint64_t libraryHash, uint32_t stage);
 
         ~RasterShader();
         static RasterShaderText generateShaderText(const ShaderDescription &desc, bool multisampling);
@@ -78,6 +88,7 @@ namespace RT64 {
     struct RasterShaderUber {
         static const uint64_t RasterVSLibraryHash;
         static const uint64_t RasterPSLibraryHash;
+        static const uint64_t RasterPSLibraryMSHash;
 
         std::unique_ptr<RenderPipeline> pipelines[8];
         std::unique_ptr<RenderPipeline> postBlendDitherNoiseAddPipeline;

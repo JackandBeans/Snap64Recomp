@@ -1,0 +1,97 @@
+//
+// RT64
+//
+// Pokemon Snap port: an on-disk store for compiled shader bytecode.
+//
+// Turning the camera reveals materials the renderer has never drawn before, and
+// each one is compiled from HLSL and linked against the shader libraries while
+// the game runs. The renderer draws through the ubershader until the specialised
+// one is ready, so nothing waits on it directly, but the compile is heavyweight
+// work on several threads and the driver serialises parts of pipeline creation
+// behind locks the drawing thread wants -- which is the micro-stutter a first
+// playthrough shows whenever the view opens onto something new.
+//
+// The compiler's output is deterministic: the same shader source produces the
+// same bytecode every time. So it only has to be produced once per machine
+// rather than once per launch.
+//
+// This is purely a speed cache and cannot change what is drawn. The bytes it
+// returns are the exact bytes the compiler handed the device when they were
+// stored, and every way it can fail -- absent, wrong GPU, wrong driver, wrong
+// build, truncated, corrupt, or not a shader container at all -- lands on the
+// same code that runs today.
+//
+
+#pragma once
+
+#include <atomic>
+#include <condition_variable>
+#include <cstdint>
+#include <filesystem>
+#include <memory>
+#include <mutex>
+#include <thread>
+#include <unordered_map>
+#include <vector>
+
+#include "common/rt64_plume.h"
+
+namespace RT64 {
+    struct ShaderBlobCache {
+        // Stored blobs are immutable, so the writer thread takes a snapshot of
+        // shared pointers instead of copying megabytes while holding the lock.
+        typedef std::shared_ptr<const std::vector<uint8_t>> Blob;
+
+        // Covers the file layout only. What the cached bytes MEAN is covered by
+        // the key itself, which is derived from the shader source that produced
+        // them -- so editing a shader cannot serve stale bytecode, and no one
+        // has to remember to bump a number.
+        static const uint32_t FormatVersion = 1;
+
+        static const uint64_t MaxEntryBytes = 4ull * 1024 * 1024;
+        static const uint64_t MaxTotalBytes = 64ull * 1024 * 1024;
+        static const uint32_t MaxEntryCount = 65536;
+
+        // A compile that lands during a write goes into the next one. Waiting a
+        // few seconds keeps a burst of new materials to one file write instead
+        // of one per shader.
+        static const uint32_t WriteDelaySeconds = 5;
+
+        std::filesystem::path filePath;
+        uint64_t deviceKey = 0;
+        bool enabled = false;
+
+        // Guards entries and dirty. Never held across file I/O, and never held
+        // across a call into the graphics device.
+        std::mutex entriesMutex;
+        std::unordered_map<uint64_t, Blob> entries;
+        uint64_t totalBytes = 0;
+        bool dirty = false;
+
+        // Reported once when the cache closes, so a run can say plainly whether
+        // it served anything rather than leaving it to be inferred from feel.
+        std::atomic<uint32_t> hits = { 0 };
+        std::atomic<uint32_t> misses = { 0 };
+
+        std::mutex writeMutex;
+        std::condition_variable writeCondition;
+        std::unique_ptr<std::thread> writeThread;
+        std::atomic<bool> writeThreadRunning = { false };
+
+        ShaderBlobCache() = default;
+        ~ShaderBlobCache();
+
+        // Opening reads whatever is usable and starts the writer. A file this
+        // machine cannot use is deleted rather than re-read and re-rejected on
+        // every future launch.
+        void open(const std::filesystem::path &path, const RenderDevice *device);
+        void close();
+
+        Blob lookup(uint64_t key);
+        void store(uint64_t key, const void *data, uint64_t size);
+
+        void writeLoop();
+        bool writeFile();
+        bool readFile();
+    };
+};

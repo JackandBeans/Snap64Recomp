@@ -84,8 +84,48 @@ namespace RT64 {
 
     // RasterShader
 
+    uint64_t RasterShader::blobCacheKey(const std::string &shaderText, uint64_t libraryHash, uint32_t stage) {
+        struct {
+            uint64_t textHash;
+            uint64_t libraryHash;
+            uint32_t stage;
+            uint32_t reserved;
+        } keyData = {};
+
+        keyData.textHash = shaderText.empty() ? 0 : XXH3_64bits(shaderText.data(), shaderText.size());
+        keyData.libraryHash = libraryHash;
+        keyData.stage = stage;
+
+        // Zero means no key at all to the cache, so nudge the one value that
+        // would collide with it rather than quietly declining to cache it.
+        const uint64_t key = XXH3_64bits(&keyData, sizeof(keyData));
+        return (key != 0) ? key : 1;
+    }
+
+#if defined(_WIN32)
+    // A cached blob goes straight to the device, so it is checked for being a
+    // shader container of exactly the right length first. The file format's own
+    // checksums have already run; this catches bytes that are intact but wrong.
+    static bool isShaderContainer(const void *data, size_t size) {
+        if ((data == nullptr) || (size < 32) || (size > UINT32_MAX)) {
+            return false;
+        }
+
+        const uint8_t *bytes = reinterpret_cast<const uint8_t *>(data);
+        if ((bytes[0] != 0x44) || (bytes[1] != 0x58) || (bytes[2] != 0x42) || (bytes[3] != 0x43)) {
+            return false;
+        }
+
+        // Container header: the four character code, a sixteen byte hash, a four
+        // byte version, and then the size of the whole container.
+        uint32_t containerSize = 0;
+        memcpy(&containerSize, bytes + 24, sizeof(containerSize));
+        return containerSize == uint32_t(size);
+    }
+#endif
+
     RasterShader::RasterShader(RenderDevice *device, const ShaderDescription &desc, const RenderPipelineLayout *pipelineLayout, RenderShaderFormat shaderFormat, const RenderMultisampling &multisampling, 
-        const ShaderCompiler *shaderCompiler, const OptimizerCacheSPIRV *optimizerCacheSPIRV)
+        const ShaderCompiler *shaderCompiler, const OptimizerCacheSPIRV *optimizerCacheSPIRV, ShaderBlobCache *blobCache)
     {
         assert(device != nullptr);
 
@@ -180,39 +220,76 @@ namespace RT64 {
 #       if defined(_WIN32)
             RasterShaderText shaderText = generateShaderText(desc, useMSAA);
 
-            // Compile both shaders from text with the constants hard-coded in.
-            static const wchar_t *blobVSLibraryNames[] = { L"RasterVSEntry", L"RasterVSLibrary" };
-            static const wchar_t *blobPSLibraryNames[] = { L"RasterPSEntry", L"RasterPSLibrary" };
-            IDxcBlob *blobVSLibraries[] = { nullptr, nullptr };
-            IDxcBlob *blobPSLibraries[] = { nullptr, nullptr };
-            shaderCompiler->dxcUtils->CreateBlobFromPinned(RasterVSLibraryBlobDXIL, sizeof(RasterVSLibraryBlobDXIL), DXC_CP_ACP, (IDxcBlobEncoding **)(&blobVSLibraries[1]));
+            // Generating the text is string building and costs almost nothing;
+            // compiling and linking it is the expensive part, and is what the
+            // on-disk cache exists to skip. Generating it unconditionally is
+            // also what lets the key be derived from the source itself.
+            const uint64_t PSLibraryHash = useMSAA ? RasterShaderUber::RasterPSLibraryMSHash : RasterShaderUber::RasterPSLibraryHash;
+            const uint64_t vertexKey = blobCacheKey(shaderText.vertexShader, RasterShaderUber::RasterVSLibraryHash, 0);
+            const uint64_t pixelKey = blobCacheKey(shaderText.pixelShader, PSLibraryHash, 1);
+            ShaderBlobCache::Blob cachedVS;
+            ShaderBlobCache::Blob cachedPS;
+            if (blobCache != nullptr) {
+                cachedVS = blobCache->lookup(vertexKey);
+                cachedPS = blobCache->lookup(pixelKey);
+                if ((cachedVS != nullptr) && !isShaderContainer(cachedVS->data(), cachedVS->size())) {
+                    cachedVS = nullptr;
+                }
 
-            const void *PSLibraryBlob = useMSAA ? RasterPSLibraryMSBlobDXIL : RasterPSLibraryBlobDXIL;
-            uint32_t PSLibraryBlobSize = useMSAA ? sizeof(RasterPSLibraryMSBlobDXIL) : sizeof(RasterPSLibraryBlobDXIL);
-            shaderCompiler->dxcUtils->CreateBlobFromPinned(PSLibraryBlob, PSLibraryBlobSize, DXC_CP_ACP, (IDxcBlobEncoding **)(&blobPSLibraries[1]));
-                
-            // Compile both the vertex and pixel shader functions as libraries.
-            const std::wstring VertexShaderName = L"VSMain";
-            const std::wstring PixelShaderName = L"PSMain";
-            shaderCompiler->compile(shaderText.vertexShader, VertexShaderName, L"lib_6_3", shaderFormat, &blobVSLibraries[0]);
-            shaderCompiler->compile(shaderText.pixelShader, PixelShaderName, L"lib_6_3", shaderFormat, &blobPSLibraries[0]);
+                if ((cachedPS != nullptr) && !isShaderContainer(cachedPS->data(), cachedPS->size())) {
+                    cachedPS = nullptr;
+                }
+            }
 
-            // Link the vertex and pixel shaders with the libraries that define their main functions.
-            IDxcBlob *blobVS = nullptr;
-            IDxcBlob *blobPS = nullptr;
-            shaderCompiler->link(VertexShaderName, L"vs_6_3", blobVSLibraries, blobVSLibraryNames, std::size(blobVSLibraries), &blobVS);
-            shaderCompiler->link(PixelShaderName, L"ps_6_3", blobPSLibraries, blobPSLibraryNames, std::size(blobPSLibraries), &blobPS);
+            if ((cachedVS != nullptr) && (cachedPS != nullptr)) {
+                // The compiler's own bytes from an earlier run, stored under a
+                // name derived from the source that produced them. What gets
+                // built from here on is identical either way.
+                vertexShader = device->createShader(cachedVS->data(), cachedVS->size(), "VSMain", shaderFormat);
+                pixelShader = device->createShader(cachedPS->data(), cachedPS->size(), "PSMain", shaderFormat);
+            }
+            else {
+                // Compile both shaders from text with the constants hard-coded in.
+                static const wchar_t *blobVSLibraryNames[] = { L"RasterVSEntry", L"RasterVSLibrary" };
+                static const wchar_t *blobPSLibraryNames[] = { L"RasterPSEntry", L"RasterPSLibrary" };
+                IDxcBlob *blobVSLibraries[] = { nullptr, nullptr };
+                IDxcBlob *blobPSLibraries[] = { nullptr, nullptr };
+                shaderCompiler->dxcUtils->CreateBlobFromPinned(RasterVSLibraryBlobDXIL, sizeof(RasterVSLibraryBlobDXIL), DXC_CP_ACP, (IDxcBlobEncoding **)(&blobVSLibraries[1]));
 
-            vertexShader = device->createShader(blobVS->GetBufferPointer(), blobVS->GetBufferSize(), "VSMain", shaderFormat);
-            pixelShader = device->createShader(blobPS->GetBufferPointer(), blobPS->GetBufferSize(), "PSMain", shaderFormat);
+                const void *PSLibraryBlob = useMSAA ? RasterPSLibraryMSBlobDXIL : RasterPSLibraryBlobDXIL;
+                uint32_t PSLibraryBlobSize = useMSAA ? sizeof(RasterPSLibraryMSBlobDXIL) : sizeof(RasterPSLibraryBlobDXIL);
+                shaderCompiler->dxcUtils->CreateBlobFromPinned(PSLibraryBlob, PSLibraryBlobSize, DXC_CP_ACP, (IDxcBlobEncoding **)(&blobPSLibraries[1]));
 
-            // Blobs can be discarded once the shaders are created.
-            blobVSLibraries[0]->Release();
-            blobVSLibraries[1]->Release();
-            blobPSLibraries[0]->Release();
-            blobPSLibraries[1]->Release();
-            blobPS->Release();
-            blobVS->Release();
+                // Compile both the vertex and pixel shader functions as libraries.
+                const std::wstring VertexShaderName = L"VSMain";
+                const std::wstring PixelShaderName = L"PSMain";
+                shaderCompiler->compile(shaderText.vertexShader, VertexShaderName, L"lib_6_3", shaderFormat, &blobVSLibraries[0]);
+                shaderCompiler->compile(shaderText.pixelShader, PixelShaderName, L"lib_6_3", shaderFormat, &blobPSLibraries[0]);
+
+                // Link the vertex and pixel shaders with the libraries that define their main functions.
+                IDxcBlob *blobVS = nullptr;
+                IDxcBlob *blobPS = nullptr;
+                shaderCompiler->link(VertexShaderName, L"vs_6_3", blobVSLibraries, blobVSLibraryNames, std::size(blobVSLibraries), &blobVS);
+                shaderCompiler->link(PixelShaderName, L"ps_6_3", blobPSLibraries, blobPSLibraryNames, std::size(blobPSLibraries), &blobPS);
+
+                vertexShader = device->createShader(blobVS->GetBufferPointer(), blobVS->GetBufferSize(), "VSMain", shaderFormat);
+                pixelShader = device->createShader(blobPS->GetBufferPointer(), blobPS->GetBufferSize(), "PSMain", shaderFormat);
+
+                // Only the bytes just handed to the device are stored, so a hit
+                // on a later launch reproduces this exact shader.
+                if (blobCache != nullptr) {
+                    blobCache->store(vertexKey, blobVS->GetBufferPointer(), blobVS->GetBufferSize());
+                    blobCache->store(pixelKey, blobPS->GetBufferPointer(), blobPS->GetBufferSize());
+                }
+
+                // Blobs can be discarded once the shaders are created.
+                blobVSLibraries[0]->Release();
+                blobVSLibraries[1]->Release();
+                blobPSLibraries[0]->Release();
+                blobPSLibraries[1]->Release();
+                blobPS->Release();
+                blobVS->Release();
+            }
 #       else
             assert(false && "This platform does not support runtime shader compilation.");
 #       endif
@@ -408,10 +485,12 @@ namespace RT64 {
 #if defined(_WIN32)
     const uint64_t RasterShaderUber::RasterVSLibraryHash = XXH3_64bits(RasterVSLibraryBlobDXIL, sizeof(RasterVSLibraryBlobDXIL));
     const uint64_t RasterShaderUber::RasterPSLibraryHash = XXH3_64bits(RasterPSLibraryBlobDXIL, sizeof(RasterPSLibraryBlobDXIL));
+    const uint64_t RasterShaderUber::RasterPSLibraryMSHash = XXH3_64bits(RasterPSLibraryMSBlobDXIL, sizeof(RasterPSLibraryMSBlobDXIL));
 #else
     // Shader hashes are not required in other platforms as they don't use a shader cache.
     const uint64_t RasterShaderUber::RasterVSLibraryHash = 0;
     const uint64_t RasterShaderUber::RasterPSLibraryHash = 0;
+    const uint64_t RasterShaderUber::RasterPSLibraryMSHash = 0;
 #endif
 
     RasterShaderUber::RasterShaderUber(RenderDevice *device, RenderShaderFormat shaderFormat, const RenderMultisampling &multisampling, const ShaderLibrary *shaderLibrary, uint32_t threadCount) {

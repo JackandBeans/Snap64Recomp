@@ -354,6 +354,7 @@ namespace RT64 {
         const uint32_t ubershaderThreads = uint32_t(std::max(int(threadsAvailable) - 2, 1));
         rasterShaderCache = std::make_unique<RasterShaderCache>(rasterShaderThreads, ubershaderThreads);
         rasterShaderCache->setup(device.get(), renderInterface->getCapabilities().shaderFormat, shaderLibrary.get(), multisampling);
+        rasterShaderCache->openBlobCache(userPaths.isEmpty() ? std::filesystem::path() : userPaths.shaderCachePath);
 
 #   if RT_ENABLED
         if (device->getCapabilities().raytracing) {
