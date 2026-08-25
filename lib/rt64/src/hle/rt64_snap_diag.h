@@ -142,6 +142,16 @@ inline std::atomic<uint32_t> &holdFromCameraCounter() {
     return counter;
 }
 
+// The game frame this is all happening on. Everything a report wants to
+// correlate -- a slow frame, a Pokemon being created, a block boundary --
+// happens on a different thread from the one that counts frames, and
+// without a shared number the only way to line them up is by their order in
+// a log, which interleaving destroys.
+inline std::atomic<uint32_t> &gameFrameCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
 // What each verdict ASKED for, before the never-consecutive rule and the
 // other guards had their say. A verdict that fires often but holds rarely and
 // one that never fires at all are different faults with the same symptom.

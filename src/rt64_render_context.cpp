@@ -405,6 +405,8 @@ public:
             const auto waitStart = std::chrono::steady_clock::now();
             app_->workloadQueue->waitForWorkloadId(app_->state->workloadId);
             const auto waitEnd = std::chrono::steady_clock::now();
+            const uint32_t gameFrame = snapdiag::gameFrameCounter().fetch_add(1, std::memory_order_relaxed);
+
             // Taken every tick, slow or not: left to accumulate it would
             // charge the next slow frame for every quiet one before it.
             const double recvMs = double(snap_recv_block_take_nanos()) / 1.0e6;
@@ -412,7 +414,7 @@ public:
             if (snapdiag::statsEnabled() && (lastTickStart.time_since_epoch().count() != 0)) {
                 const double tickMs = std::chrono::duration<double, std::milli>(waitEnd - lastTickStart).count();
                 const double waitMs = std::chrono::duration<double, std::milli>(waitEnd - waitStart).count();
-                if (tickMs > 45.0) {
+                if (tickMs > 40.0) {
                     // Where the frame went. The renderer-wait figure only
                     // covers the wait for the render thread, so everything
                     // else the port does on this thread has read as the game
@@ -425,7 +427,7 @@ public:
                     const double dlMs = double(snap_display_list_nanos) / 1.0e6;
                     const double fbMs = double(snapdiag::rdramCheckNanos().load(std::memory_order_relaxed)) / 1.0e6;
                     const uint32_t fbUploads = snapdiag::rdramUploadCounter().load(std::memory_order_relaxed);
-                    printf("[SNAP-SLOWTICK] game frame took %.1f ms, of which %.1f ms waiting for the renderer\n", tickMs, waitMs);
+                    printf("[SNAP-SLOWTICK] f%u took %.1f ms, of which %.1f ms waiting for the renderer\n", gameFrame, tickMs, waitMs);
                     printf("[SNAP-SLOWTICK]   host threads %.1f ms (%u), display list %.1f ms (fb check %.1f ms, %u uploads), waiting on a message %.1f ms (%u), the game itself %.1f ms\n",
                         threadMs, threadCount, dlMs, fbMs, fbUploads, recvMs, recvCount,
                         tickMs - waitMs - threadMs - dlMs - recvMs);

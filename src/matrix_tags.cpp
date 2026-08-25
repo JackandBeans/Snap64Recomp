@@ -530,8 +530,9 @@ extern "C" void enterNextBlock(uint8_t* rdram, recomp_context* ctx) {
             snap_frame_dump_pending.store(30);
         }
         snap::g_world_rebased = true;
-        if (snapdiag::diagEnabled() && snap::valid_ram_address(block)) {
-            printf("[SNAP-BLOCK] entered block %d\n",
+        if ((snapdiag::diagEnabled() || snapdiag::statsEnabled()) && snap::valid_ram_address(block)) {
+            printf("[SNAP-BLOCK] f%u entered block %d\n",
+                snapdiag::gameFrameCounter().load(std::memory_order_relaxed),
                    static_cast<int32_t>(MEM_W(0x0, (gpr)(int32_t)block)));
             fflush(stdout);
         }
@@ -552,14 +553,14 @@ void logSpawn(uint8_t* rdram, uint32_t spawn, int32_t blockIndex) {
     for (int i = 0; i < 3; i++) {
         t[i] = read_cam_f32(rdram, spawn + 0x08 + i * 4);
     }
-    printf("[SNAP-SPAWN] block %d pokemon %u at (%.0f, %.0f, %.0f)\n",
-           blockIndex, id, t[0], t[1], t[2]);
+    printf("[SNAP-SPAWN] f%u block %d pokemon %u at (%.0f, %.0f, %.0f)\n",
+           snapdiag::gameFrameCounter().load(std::memory_order_relaxed), blockIndex, id, t[0], t[1], t[2]);
 }
 } // namespace
 } // namespace snap
 
 extern "C" void pokemonAdd(uint8_t* rdram, recomp_context* ctx) {
-    if (snapdiag::diagEnabled()) {
+    if (snapdiag::diagEnabled() || snapdiag::statsEnabled()) {
         const uint32_t block = static_cast<uint32_t>(ctx->r4);
         if (snap::valid_ram_address(block)) {
             const int32_t index = static_cast<int32_t>(MEM_W(0x0, (gpr)(int32_t)block));
@@ -581,7 +582,7 @@ extern "C" void pokemonAdd(uint8_t* rdram, recomp_context* ctx) {
 }
 
 extern "C" void pokemonAddOne(uint8_t* rdram, recomp_context* ctx) {
-    if (snapdiag::diagEnabled()) {
+    if (snapdiag::diagEnabled() || snapdiag::statsEnabled()) {
         const uint32_t block = static_cast<uint32_t>(ctx->r4);
         const uint32_t spawn = static_cast<uint32_t>(ctx->r6);
         if (snap::valid_ram_address(block) && snap::valid_ram_address(spawn)) {
