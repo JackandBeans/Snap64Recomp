@@ -1,5 +1,7 @@
 #include <bitset>
 #include <thread>
+#include <atomic>
+#include <chrono>
 
 #include "blockingconcurrentqueue.h"
 
@@ -204,6 +206,26 @@ extern "C" s32 osJamMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags) 
     return sent ? 0 : -1;
 }
 
+// Pokemon Snap port: time THIS game thread spent blocked waiting for a
+// message. Per-thread on purpose: several game threads are blocked at the
+// same time and their waits overlap in wall-clock, so a total across all of
+// them routinely exceeds the frame it is meant to describe. Only the thread
+// that owns the frame can say how much of that frame it spent waiting.
+static thread_local int64_t snap_tls_recv_nanos = 0;
+static thread_local uint32_t snap_tls_recv_count = 0;
+
+extern "C" int64_t snap_recv_block_take_nanos() {
+    const int64_t taken = snap_tls_recv_nanos;
+    snap_tls_recv_nanos = 0;
+    return taken;
+}
+
+extern "C" uint32_t snap_recv_block_take_count() {
+    const uint32_t taken = snap_tls_recv_count;
+    snap_tls_recv_count = 0;
+    return taken;
+}
+
 extern "C" s32 osRecvMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, s32 flags) {
     OSMesgQueue *mq = TO_PTR(OSMesgQueue, mq_);
     
@@ -212,8 +234,22 @@ extern "C" s32 osRecvMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, s32 
     // Handle any messages that have been received from an external thread.
     dequeue_external_messages(PASS_RDRAM1);
 
+    // Pokemon Snap port: a blocking receive is where a game thread waits --
+    // for the video retrace that paces the whole game, for the audio thread,
+    // for another process. Wall-clock spent here is the game being PACED, not
+    // the game being slow, and without separating the two a frame report
+    // cannot tell a heavy tick from a late signal.
+    const bool snapBlocking = (flags == OS_MESG_BLOCK);
+    const auto snapRecvStart = snapBlocking ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+
     // Try to receive a message.
     bool received = do_recv(PASS_RDRAM mq_, msg_, flags == OS_MESG_BLOCK);
+
+    if (snapBlocking) {
+        snap_tls_recv_nanos += std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - snapRecvStart).count();
+        snap_tls_recv_count++;
+    }
     
     // Check the queue to see if this thread should swap execution to another.
     ultramodern::check_running_queue(PASS_RDRAM1);

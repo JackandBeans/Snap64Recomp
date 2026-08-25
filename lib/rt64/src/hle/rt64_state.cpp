@@ -622,6 +622,23 @@ namespace RT64 {
         if (!rdramCheckPending) {
             return;
         }
+
+        // Timed because this runs on the GAME thread, inside the display
+        // list walk, and when it finds the framebuffer changed it uploads
+        // and then blocks until the GPU has finished. None of that shows up
+        // in the slow-frame line as renderer time.
+        const auto snapCheckStart = snapdiag::statsEnabled() ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+        struct SnapCheckTimer {
+            std::chrono::steady_clock::time_point start;
+            ~SnapCheckTimer() {
+                if (snapdiag::statsEnabled()) {
+                    snapdiag::rdramCheckNanos().fetch_add(
+                        std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            std::chrono::steady_clock::now() - start).count(),
+                        std::memory_order_relaxed);
+                }
+            }
+        } snapCheckTimer{snapCheckStart};
         
         assert(drawFbOperations.empty() && "There should be no pending framebuffer operations when this is started.");
         assert(drawFbDiscards.empty() && "There should be no pending framebuffer discards when this is started.");
@@ -633,6 +650,7 @@ namespace RT64 {
             framebufferManager.storeRAM(workload.fbStorage, RDRAM, fbPairIndex);
             framebufferManager.checkRAM(RDRAM, differentFbs, true);
             if (!differentFbs.empty()) {
+                snapdiag::rdramUploadCounter().fetch_add(1, std::memory_order_relaxed);
                 RenderWorkerExecution execution(ext.framebufferGraphicsWorker);
                 framebufferManager.uploadRAM(ext.framebufferGraphicsWorker, differentFbs.data(), differentFbs.size(), workload.fbChangePool, RDRAM, true, drawFbOperations, drawFbDiscards, ext.shaderLibrary);
             }

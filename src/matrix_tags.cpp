@@ -322,7 +322,10 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                 // the camera settles so sustained motion never chains. Five
                 // covers the longest observed load transition.
                 track->holdTicks = 5;
-                if (snapdiag::diagEnabled() || snapdiag::statsEnabled()) {
+                // Diagnostics only: a block boundary is a camera cut, so
+                // this flushed the console on the same frames the step
+                // probe did, for the same cost.
+                if (snapdiag::diagEnabled()) {
                     const float clamped = (dot < -1.0f) ? -1.0f : ((dot > 1.0f) ? 1.0f : dot);
                     printf("[SNAP-CAMCUT] cam %08X eye moved %.1f, look-at point moved %.1f, view turned %.1f degrees\n",
                            cam, eyeD, atD, acosf(clamped) * 57.29578f);

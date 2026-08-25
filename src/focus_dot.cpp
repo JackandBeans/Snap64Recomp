@@ -66,14 +66,32 @@ extern "C" void PokemonDetector_PostProcessImage(uint8_t* rdram, recomp_context*
     // colour there afterwards can only mean the game wrote it on this call.
     // Reading it cold is not enough: render to RAM copies each rendered frame
     // back over the framebuffer in RDRAM, and that frame contains the dot RT64
-    // drew last time, so the test would keep seeing its own output. Writing
-    // here is free because RDRAM framebuffer contents are never presented.
+    // drew last time, so the test would keep seeing its own output.
+    //
+    // The original value goes back afterwards. This used to claim the write
+    // was free because RDRAM is never presented, and that was wrong in the
+    // configuration the game ships in: with render to RAM on, the renderer
+    // hashes the framebuffer every frame to notice when the game has drawn
+    // into it behind the renderer's back, and a single changed pixel is
+    // indistinguishable from the game having done exactly that. It answered
+    // by uploading the whole framebuffer and then blocking the game thread
+    // on a GPU fence -- every frame, for a pixel the port itself wrote and
+    // nobody ever displayed. Leaving RDRAM exactly as the game left it costs
+    // one extra load and makes the frame honest.
     const uint32_t centerAddress = framebuffer + snap::DotCenterOffset;
+    const uint16_t originalPixel = static_cast<uint16_t>(MEM_H(0, (gpr)(int32_t)centerAddress) & 0xFFFF);
     MEM_H(0, (gpr)(int32_t)centerAddress) = static_cast<int16_t>(~snap::DotColor);
 
     __real_PokemonDetector_PostProcessImage(rdram, ctx);
 
     // MEM_H applies the byte-order XOR itself, so doing it here as well cancels
     // it and samples the pixel next door.
-    snap::g_focus_dot_visible = (MEM_H(0, (gpr)(int32_t)centerAddress) & 0xFFFF) == snap::DotColor;
+    const bool drewDot = (MEM_H(0, (gpr)(int32_t)centerAddress) & 0xFFFF) == snap::DotColor;
+    snap::g_focus_dot_visible = drewDot;
+    if (!drewDot) {
+        // The game did not write here, so the sentinel is the only thing that
+        // changed and it goes back. When the game DID write, what is there is
+        // already what the game put there.
+        MEM_H(0, (gpr)(int32_t)centerAddress) = static_cast<int16_t>(originalPixel);
+    }
 }

@@ -18,6 +18,19 @@
 
 #include "settings.h"
 #include "hle/rt64_snap_diag.h"
+
+// Time the game thread lost inside osCreateThread (ultramodern/src/threads.cpp).
+// The display-list walk is only ever entered from the game thread, so a
+// plain counter is enough for it.
+static int64_t snap_display_list_nanos = 0;
+
+// How long THIS thread was blocked waiting for a message, taken and reset
+// together (ultramodern/src/mesgqueue.cpp).
+extern "C" int64_t snap_recv_block_take_nanos();
+extern "C" uint32_t snap_recv_block_take_count();
+
+extern "C" std::atomic<int64_t> snap_thread_create_nanos;
+extern "C" std::atomic<uint32_t> snap_thread_create_count;
 #include <chrono>
 
 #if defined(_WIN32)
@@ -363,12 +376,17 @@ public:
 
         // Process the display list. Pass 0 for dlEndAddress â€” RT64 will walk
         // the list until it encounters a G_ENDDL command.
+        // Walked on the game thread, so it is part of the tick the slow-frame
+        // line reports and not part of the renderer wait below.
+        const auto dlStart = std::chrono::steady_clock::now();
         app_->processDisplayLists(
             app_->core.RDRAM,
             dl_start_phys,
             0,    // end address: 0 means walk until G_ENDDL
             true  // HLE mode
         );
+        snap_display_list_nanos += std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - dlStart).count();
 
         // Wait for this frame's workload to finish rendering before letting the
         // game continue. Snap runs at 60fps with only two framebuffers; without
@@ -387,14 +405,39 @@ public:
             const auto waitStart = std::chrono::steady_clock::now();
             app_->workloadQueue->waitForWorkloadId(app_->state->workloadId);
             const auto waitEnd = std::chrono::steady_clock::now();
+            // Taken every tick, slow or not: left to accumulate it would
+            // charge the next slow frame for every quiet one before it.
+            const double recvMs = double(snap_recv_block_take_nanos()) / 1.0e6;
+            const uint32_t recvCount = snap_recv_block_take_count();
             if (snapdiag::statsEnabled() && (lastTickStart.time_since_epoch().count() != 0)) {
                 const double tickMs = std::chrono::duration<double, std::milli>(waitEnd - lastTickStart).count();
                 const double waitMs = std::chrono::duration<double, std::milli>(waitEnd - waitStart).count();
                 if (tickMs > 45.0) {
+                    // Where the frame went. The renderer-wait figure only
+                    // covers the wait for the render thread, so everything
+                    // else the port does on this thread has read as the game
+                    // being slow. The residual is the point as much as the
+                    // parts: whatever no probe claims is the recompiled game
+                    // itself, and that decides whether there is anything
+                    // worth removing at all.
+                    const double threadMs = double(snap_thread_create_nanos.load(std::memory_order_relaxed)) / 1.0e6;
+                    const uint32_t threadCount = snap_thread_create_count.load(std::memory_order_relaxed);
+                    const double dlMs = double(snap_display_list_nanos) / 1.0e6;
+                    const double fbMs = double(snapdiag::rdramCheckNanos().load(std::memory_order_relaxed)) / 1.0e6;
+                    const uint32_t fbUploads = snapdiag::rdramUploadCounter().load(std::memory_order_relaxed);
                     printf("[SNAP-SLOWTICK] game frame took %.1f ms, of which %.1f ms waiting for the renderer\n", tickMs, waitMs);
+                    printf("[SNAP-SLOWTICK]   host threads %.1f ms (%u), display list %.1f ms (fb check %.1f ms, %u uploads), waiting on a message %.1f ms (%u), the game itself %.1f ms\n",
+                        threadMs, threadCount, dlMs, fbMs, fbUploads, recvMs, recvCount,
+                        tickMs - waitMs - threadMs - dlMs - recvMs);
                     fflush(stdout);
                 }
             }
+            // The totals describe one tick, slow or not.
+            snap_thread_create_nanos.store(0, std::memory_order_relaxed);
+            snap_thread_create_count.store(0, std::memory_order_relaxed);
+            snapdiag::rdramCheckNanos().store(0, std::memory_order_relaxed);
+            snapdiag::rdramUploadCounter().store(0, std::memory_order_relaxed);
+            snap_display_list_nanos = 0;
             lastTickStart = waitEnd;
         }
 

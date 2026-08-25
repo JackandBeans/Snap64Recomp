@@ -2,12 +2,25 @@
 #include <thread>
 #include <cassert>
 #include <string>
+#include <atomic>
+#include <chrono>
 
 #include "ultramodern/ultra64.h"
 #include "ultramodern/ultramodern.hpp"
 #include "blockingconcurrentqueue.h"
 
 #include "ultramodern/threads.hpp"
+
+// Pokemon Snap port: how long the game thread spent blocked inside
+// osCreateThread, read and cleared once a tick by the slow-frame report in
+// src/rt64_render_context.cpp. On the console this call was a struct fill
+// and a queue link; here it starts a real operating system thread and waits
+// for it to come up, and the game starts one per object that runs its own
+// process -- several at once whenever a course block is entered.
+extern "C" {
+    std::atomic<int64_t> snap_thread_create_nanos{0};
+    std::atomic<uint32_t> snap_thread_create_count{0};
+}
 
 // Native APIs only used to set thread names for easier debugging
 #ifdef _WIN32
@@ -188,12 +201,21 @@ static void _thread_func(RDRAM_ARG PTR(OSThread) self_, PTR(thread_func_t) entry
     thread_self = self_;
     is_game_thread = true;
 
+    // Signal the initialized semaphore to indicate that this thread can be started.
+    //
+    // Signalled before the thread is named and prioritised, not after. The
+    // creating thread is blocked on this semaphore, so everything ahead of it
+    // is charged to whoever called osCreateThread -- and this game creates a
+    // process per object, so entering a course block calls it a dozen times in
+    // one frame. Naming builds a wide string and calls into the debugger
+    // interface; both are the new thread's own business and nothing observes
+    // them. The thread still cannot run until osStartThread, so moving them
+    // after the signal changes no ordering the guest can see.
+    thread_context->initialized.signal();
+
     // Set the thread name
     ultramodern::set_native_thread_name(ultramodern::threads::get_game_thread_name(self));
     ultramodern::set_native_thread_priority(ultramodern::ThreadPriority::High);
-
-    // Signal the initialized semaphore to indicate that this thread can be started.
-    thread_context->initialized.signal();
 
     debug_printf("[Thread] Thread waiting to be started: %d\n", self->id);
 
@@ -246,6 +268,7 @@ extern "C" void osStartThread(RDRAM_ARG PTR(OSThread) t_) {
 
 extern "C" void osCreateThread(RDRAM_ARG PTR(OSThread) t_, OSId id, PTR(thread_func_t) entrypoint, PTR(void) arg, PTR(void) sp, OSPri pri) {
     debug_printf("[os] Create Thread %d\n", id);
+    const auto snapCreateStart = std::chrono::steady_clock::now();
     OSThread *t = TO_PTR(OSThread, t_);
     
     t->next = NULLPTR;
@@ -264,6 +287,12 @@ extern "C" void osCreateThread(RDRAM_ARG PTR(OSThread) t_, OSId id, PTR(thread_f
     // Wait until the thread is initialized to indicate that it's ready to be started.
     context->initialized.wait();
     debug_printf("[os] Thread %d is ready to be started\n", t->id);
+
+    snap_thread_create_nanos.fetch_add(
+        std::chrono::duration_cast<std::chrono::nanoseconds>(
+            std::chrono::steady_clock::now() - snapCreateStart).count(),
+        std::memory_order_relaxed);
+    snap_thread_create_count.fetch_add(1, std::memory_order_relaxed);
 }
 
 extern "C" void osStopThread(RDRAM_ARG PTR(OSThread) t_) {

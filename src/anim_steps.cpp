@@ -206,7 +206,14 @@ void note_stepped_object(uint32_t gobj) {
     if (snapdiag::captureEnabled()) {
         snap_frame_dump_pending.store(14);
     }
-    if (snapdiag::diagEnabled() || snapdiag::statsEnabled()) {
+    // Diagnostics only. Under the stats gate this printed and flushed once
+    // per stepped object, up to sixteen times, on precisely the frames worth
+    // measuring: a spawn poses every Pokemon it creates, so they all step at
+    // once. A console flush on Windows is a synchronous write to the
+    // terminal, and sixteen of them put milliseconds into the very number
+    // the gate exists to report. The gate promises no flushes; this is the
+    // site that broke it, and it made a measured 46 ms frame untrustworthy.
+    if (snapdiag::diagEnabled()) {
         printf("[SNAP-STEP] object %08X stepped to its pose this frame\n", gobj);
         fflush(stdout);
     }

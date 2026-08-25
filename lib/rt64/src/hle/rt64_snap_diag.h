@@ -147,6 +147,22 @@ inline std::atomic<uint32_t> &holdFromStepCounter() {
     return counter;
 }
 
+// Work the renderer does ON THE GAME THREAD, which the slow-frame report
+// cannot see any other way: its renderer-wait figure covers only the wait
+// for the render thread, so anything the game thread does inside the
+// display-list walk reads as the game being slow. The framebuffer check is
+// broken out because its upload path ends in a fence the game thread
+// blocks on.
+inline std::atomic<int64_t> &rdramCheckNanos() {
+    static std::atomic<int64_t> nanos{0};
+    return nanos;
+}
+
+inline std::atomic<uint32_t> &rdramUploadCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
 // Distinguishes this run's files from every other run's. Derived from the
 // launch time, so re-running an experiment adds files instead of replacing
 // the evidence the previous run produced.
