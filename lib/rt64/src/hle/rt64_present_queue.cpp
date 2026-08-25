@@ -824,10 +824,6 @@ namespace {
                         fprintf(stdout, "[SNAP-PACE]   holds asked by camera %u, by authored step %u\n",
                             snapdiag::holdFromCameraCounter().exchange(0, std::memory_order_relaxed),
                             snapdiag::holdFromStepCounter().exchange(0, std::memory_order_relaxed));
-                        fprintf(stdout, "[SNAP-PACE]   asked for: camera cut %u, animation step %u of which isolated %u\n",
-                            snapdiag::cameraDeclaredCounter().exchange(0, std::memory_order_relaxed),
-                            snapdiag::stepDeclaredCounter().exchange(0, std::memory_order_relaxed),
-                            snapdiag::stepIsolatedCounter().exchange(0, std::memory_order_relaxed));
                         ageTotalMs = 0.0;
                         ageWorstMs = 0.0;
                         ageCount = 0;

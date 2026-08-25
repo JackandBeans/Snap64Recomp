@@ -1370,37 +1370,28 @@ namespace RT64 {
                 // other thing entirely -- the movie changing what is on stage,
                 // the heaviest frame of its scene, the one the hardware missed.
                 // That is what gets held.
-                static bool snapPreviousStepHeld = false;
-                static bool snapPreviousCameraHeld = false;
+                static bool snapPreviousFrameStepHeld = false;
                 static uint32_t snapFramesSinceStep = 0;
                 const bool snapStepDeclared = (workload.snapSteppedIdCount > 0);
                 const bool snapStepIsolated = (snapFramesSinceStep >= 8);
-                const bool snapSteppedFrame = snapStepDeclared && snapStepIsolated && !snapPreviousStepHeld;
-                const bool snapCameraFrame = workload.snapCutHold && !snapPreviousCameraHeld;
+                const bool snapSteppedFrame = snapStepDeclared && snapStepIsolated && !snapPreviousFrameStepHeld;
                 snapFramesSinceStep = snapStepDeclared ? 0 : (snapFramesSinceStep + 1);
+                // What each verdict asked for, ahead of the guards. A verdict that
+                // fires constantly but is refused and one that never fires look the
+                // same from the hold count alone, and telling them apart cost an
+                // hour once already.
                 if (snapdiag::statsEnabled()) {
                     if (snapStepDeclared) {
                         snapdiag::stepDeclaredCounter().fetch_add(1, std::memory_order_relaxed);
-                    }
-                    if (snapStepDeclared && snapStepIsolated) {
-                        snapdiag::stepIsolatedCounter().fetch_add(1, std::memory_order_relaxed);
+                        if (snapStepIsolated) {
+                            snapdiag::stepIsolatedCounter().fetch_add(1, std::memory_order_relaxed);
+                        }
                     }
                     if (workload.snapCutHold) {
                         snapdiag::cameraDeclaredCounter().fetch_add(1, std::memory_order_relaxed);
                     }
                 }
-
-                // A skipped draw cannot repeat, whatever asked for it. The
-                // console skipped a tick only while the RCP was still busy
-                // with the previous one, and skipping is what lets it catch
-                // up, so the frame after a skip is always drawn. This rule
-                // came out of the intro work and was applied only to the
-                // authored-step verdict; the camera side kept its own latch,
-                // which arms five ticks on a cut and so could freeze six
-                // frames in a row. Six consecutive skipped draws is not
-                // something the hardware could do, and the cut into a
-                // course is where it spent them all at once.
-                bool snapCutHold = (snapCameraFrame || snapSteppedFrame) &&
+                bool snapCutHold = (workload.snapCutHold || snapSteppedFrame) &&
                     !workload.paused && (!usingMSAA || generateInterpolatedFrames) &&
                     !interpolationTargetKey.isEmpty() && !snapPrevTargetKey.isEmpty();
 
@@ -1453,24 +1444,12 @@ namespace RT64 {
                     // failed snapshot copy shows the rendered frame instead
                     // and must not.
                     snapConsecutiveHolds = snapCutHold ? (snapConsecutiveHolds + 1) : 0;
+                    snapPreviousFrameStepHeld = snapCutHold && snapSteppedFrame;
                 }
                 else if (!workload.snapCutHold) {
                     // Only a frame with no verdict at all closes the valve.
                     snapConsecutiveHolds = 0;
                 }
-
-                // Tracked apart, and assigned every tick. Apart because a
-                // camera hold and a step hold answer different questions, and
-                // letting one block the other took the intro's step holds from
-                // ten a ride down to one -- the movie cuts often enough that
-                // its re-pose frames sit right after a cut. Every tick because
-                // the flag used to be written only on ticks that actually held,
-                // so once set it stayed set until some later hold happened to
-                // clear it, and while it was set the verdict it guards could
-                // not fire at all. The step hold was silently locked out from
-                // its first use until a camera cut cleared the flag by accident.
-                snapPreviousStepHeld = snapCutHold && snapSteppedFrame;
-                snapPreviousCameraHeld = snapCutHold && snapCameraFrame;
                 if (snapCutHold && snapdiag::statsEnabled()) {
                     snapdiag::holdCounter().fetch_add(1, std::memory_order_relaxed);
                     if (workload.snapCutHold) {
