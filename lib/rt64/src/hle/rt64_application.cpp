@@ -372,6 +372,38 @@ namespace RT64 {
             }
 
             devicePipelineCache = std::make_unique<ShaderBlobCache>();
+            // Saved as the run goes rather than only at shutdown. The pipelines
+            // are worth nothing to a player who closes the game any way other
+            // than the one that happens to run the shutdown path, and worth
+            // nothing at all after a crash. Only asked for when the driver has
+            // actually built something new, and only on the cache's own thread.
+            RenderDevice *cacheDevice = device.get();
+            const std::filesystem::path markerPath = userPaths.pipelineCacheMarkerPath;
+            devicePipelineCache->refresh = [cacheDevice, markerPath](uint64_t &key, std::vector<uint8_t> &data) {
+                // The breadcrumb guards against a blob the driver cannot survive,
+                // and a driver that cannot survive one says so while it is building
+                // its first pipelines, not minutes into a course. Once the run has
+                // got this far the blob is proven, so the breadcrumb comes off --
+                // otherwise every later crash, for any unrelated reason, would
+                // throw away a cache that had nothing to do with it.
+                static bool markerCleared = false;
+                if (!markerCleared) {
+                    markerCleared = true;
+                    std::error_code markerError;
+                    std::filesystem::remove(markerPath, markerError);
+                }
+
+                static uint32_t lastBuilt = 0;
+                const uint32_t built = snap_pipeline_built.load(std::memory_order_relaxed);
+                if (built == lastBuilt) {
+                    return false;
+                }
+
+                lastBuilt = built;
+                key = ShaderBlobCache::DriverBlobKey;
+                data = cacheDevice->getPipelineCacheData();
+                return !data.empty();
+            };
             devicePipelineCache->open(userPaths.pipelineCachePath, device.get());
 
             ShaderBlobCache::Blob driverBlob = devicePipelineCache->lookup(ShaderBlobCache::DriverBlobKey);

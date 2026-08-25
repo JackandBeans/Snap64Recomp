@@ -102,6 +102,14 @@ namespace RT64 {
         }
 
         if (enabled) {
+            if (refresh != nullptr) {
+                uint64_t refreshKey = 0;
+                std::vector<uint8_t> refreshed;
+                if (refresh(refreshKey, refreshed) && !refreshed.empty()) {
+                    replace(refreshKey, refreshed.data(), refreshed.size());
+                }
+            }
+
             // Bounded by MaxTotalBytes and only done at all if something new was
             // compiled, so shutdown does not wait on a large write for nothing.
             writeFile();
@@ -165,6 +173,33 @@ namespace RT64 {
         writeCondition.notify_all();
     }
 
+    void ShaderBlobCache::replace(uint64_t key, const void *data, uint64_t size) {
+        if (!enabled || (key == 0) || (data == nullptr) || (size == 0) || (size > MaxEntryBytes)) {
+            return;
+        }
+
+        const uint8_t *bytes = reinterpret_cast<const uint8_t *>(data);
+        Blob blob = std::make_shared<const std::vector<uint8_t>>(bytes, bytes + size);
+        const std::unique_lock<std::mutex> lock(entriesMutex);
+        auto it = entries.find(key);
+        if (it != entries.end()) {
+            if (it->second->size() == size) {
+                return;
+            }
+
+            totalBytes -= it->second->size();
+            entries.erase(it);
+        }
+
+        if ((totalBytes + size) > MaxTotalBytes) {
+            return;
+        }
+
+        entries.emplace(key, std::move(blob));
+        totalBytes += size;
+        dirty = true;
+    }
+
     void ShaderBlobCache::writeLoop() {
         Thread::setCurrentThreadName("RT64 Shader Blob Cache");
         Thread::setCurrentThreadPriority(Thread::Priority::Idle);
@@ -179,6 +214,16 @@ namespace RT64 {
 
             if (!writeThreadRunning) {
                 break;
+            }
+
+            // Asked on this thread rather than a game one, so producing the
+            // blob never lands inside a frame.
+            if (refresh != nullptr) {
+                uint64_t refreshKey = 0;
+                std::vector<uint8_t> refreshed;
+                if (refresh(refreshKey, refreshed) && !refreshed.empty()) {
+                    replace(refreshKey, refreshed.data(), refreshed.size());
+                }
             }
 
             writeFile();

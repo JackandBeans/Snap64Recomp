@@ -25,6 +25,7 @@
 #pragma once
 
 #include <atomic>
+#include <functional>
 #include <condition_variable>
 #include <cstdint>
 #include <filesystem>
@@ -73,6 +74,15 @@ namespace RT64 {
         uint64_t totalBytes = 0;
         bool dirty = false;
 
+        // Asked, just before each write, whether one entry has changed. The
+        // driver's pipeline store is not built up here entry by entry the way
+        // shader bytecode is -- it is one opaque blob that only the driver can
+        // produce, and only on demand. Without this it could be saved only at
+        // shutdown, which made a performance feature depend on the player
+        // quitting a particular way and lost everything on a crash.
+        // Returns true and fills the vector when there is something new.
+        std::function<bool(uint64_t &, std::vector<uint8_t> &)> refresh;
+
         // Reported once when the cache closes, so a run can say plainly whether
         // it served anything rather than leaving it to be inferred from feel.
         std::atomic<uint32_t> hits = { 0 };
@@ -94,6 +104,9 @@ namespace RT64 {
 
         Blob lookup(uint64_t key);
         void store(uint64_t key, const void *data, uint64_t size);
+        // Unlike store(), replaces an entry that is already present. The driver
+        // blob is one entry rewritten as it grows, not a new one each time.
+        void replace(uint64_t key, const void *data, uint64_t size);
 
         void writeLoop();
         bool writeFile();
