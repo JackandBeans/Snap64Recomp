@@ -2,6 +2,7 @@
 // RT64
 //
 
+#include <algorithm>
 #include <chrono>
 #include <unordered_map>
 #include "common/rt64_math.h"
@@ -306,7 +307,16 @@ namespace RT64 {
         struct RectRef {
             uint32_t callIndex = 0;
             FixedRect rect;
-            uint64_t shaderHash = 0;
+            // Identity, not merely appearance. A shader description is the
+            // colour combiner, the other mode and the render flags and
+            // nothing else, so sand, leaves, splash and a HUD icon can all
+            // share one hash -- and then their orders interleave in a single
+            // group and aligning that group pairs sand with leaves. The
+            // texture and the buffer being drawn into are already on the
+            // call and separate them for nothing.
+            uint64_t groupKey = 0;
+            float cx = 0.0f;
+            float cy = 0.0f;
         };
 
         thread_local std::vector<RectRef> curRects;
@@ -325,10 +335,28 @@ namespace RT64 {
 
                     for (uint32_t d = 0; d < proj.gameCallCount; d++) {
                         const GameCall &call = proj.gameCalls[d];
+                        // The material alone. Two finer identities were tried and
+                        // both are wrong for the same reason: they change between
+                        // frames, so a sprite stops matching ITSELF.
+                        //
+                        // The texture changes because these sprites animate -- a
+                        // particle steps through its frames as it lives. The
+                        // colour buffer changes because the game double buffers,
+                        // so consecutive frames are drawn into different
+                        // addresses. Either one in the key took pairing from
+                        // ninety-nine percent to thirty-six.
+                        //
+                        // A key may only contain things that are stable across
+                        // the pair being matched. That leaves the material, and
+                        // order sorts out the rest.
+                        const uint64_t key = call.shaderDesc.hash();
+
                         RectRef ref;
                         ref.callIndex = call.callDesc.callIndex;
                         ref.rect = call.callDesc.rect;
-                        ref.shaderHash = call.shaderDesc.hash();
+                        ref.groupKey = key;
+                        ref.cx = float(call.callDesc.rect.ulx + call.callDesc.rect.lrx) * 0.5f;
+                        ref.cy = float(call.callDesc.rect.uly + call.callDesc.rect.lry) * 0.5f;
                         rects.emplace_back(ref);
                     }
                 }
@@ -385,13 +413,21 @@ namespace RT64 {
         curByShader.clear();
         prevByShader.clear();
         for (uint32_t i = 0; i < uint32_t(curRects.size()); i++) {
-            curByShader[curRects[i].shaderHash].push_back(i);
+            curByShader[curRects[i].groupKey].push_back(i);
         }
 
         for (uint32_t i = 0; i < uint32_t(prevRects.size()); i++) {
-            prevByShader[prevRects[i].shaderHash].push_back(i);
+            prevByShader[prevRects[i].groupKey].push_back(i);
         }
 
+        // A motion-consensus check was tried here and removed. It rejects a
+        // pair whose movement disagrees with the median of its group, which
+        // is sound for things carried along by the camera and wrong for
+        // these: the particles of one effect do not move together at all --
+        // sand flies outward, leaves drift apart -- so there is no agreed
+        // motion to measure against, and it threw away two thirds of the
+        // pairs it saw. Order chooses the pair; size and travel say whether
+        // it is believable. Nothing else here is honest.
         uint32_t pairedCount = 0;
         for (const auto &group : curByShader) {
             const auto prevGroupIt = prevByShader.find(group.first);
@@ -434,7 +470,12 @@ namespace RT64 {
                 }
 
                 skips++;
-                if (curGroup.size() >= prevGroup.size()) {
+                // The REMAINING counts, not the two group sizes. Fixed for
+                // the whole walk, the longer side goes on being stepped
+                // after it has already been caught up, so a removal from
+                // the middle of the previous frame's list can never be
+                // absorbed and every pairing behind it is thrown away.
+                if (c >= p) {
                     c--;
                 }
                 else {
