@@ -221,6 +221,47 @@ inline std::atomic<int64_t> &rectMatchNanos() {
     return nanos;
 }
 
+// How far through the world's motion each rendered image sits, in millionths
+// of a game frame, published by the thread that draws it and read by the
+// thread that shows it.
+//
+// Everything else here measures frame DELIVERY -- how often a picture arrived
+// and how long it took. A player does not see delivery. They see whether the
+// world's position climbs evenly against the clock, and a run where images
+// arrive perfectly on schedule while the motion in them advances in lurches
+// reads as flawless in every other counter in this file. That gap is why a
+// port can measure healthy and feel wrong.
+//
+// Slot zero is the image drawn into the game's own target; slot k+1 is
+// interpolated target k.
+constexpr uint32_t SnapMotionSlots = 64;
+
+inline std::atomic<int64_t> *motionSlots() {
+    static std::atomic<int64_t> slots[SnapMotionSlots];
+    return slots;
+}
+
+// The motion actually shown, sampled where it is shown.
+inline std::atomic<int64_t> &motionShownMicroFrames() {
+    static std::atomic<int64_t> value{0};
+    return value;
+}
+
+inline std::atomic<uint32_t> &motionStillPresentsCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
+inline std::atomic<uint32_t> &motionBackwardsCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
+inline std::atomic<uint32_t> &motionBiggestStepMicro() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
 // The game frame this is all happening on. Everything a report wants to
 // correlate -- a slow frame, a Pokemon being created, a block boundary --
 // happens on a different thread from the one that counts frames, and

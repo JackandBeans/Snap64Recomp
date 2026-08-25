@@ -760,6 +760,40 @@ namespace {
                             ageCount++;
                         }
                     }
+                    // What the eye was actually shown. The image being presented
+                    // carries how far through the world's motion it sits, so two
+                    // consecutive presents subtract to how far the world moved
+                    // between them. A present that advances the motion by nothing
+                    // is a frame the player sees as a stall however punctually it
+                    // arrived, and that is the difference between a port that
+                    // measures healthy and one that feels smooth.
+                    if (snapdiag::statsEnabled()) {
+                        const uint32_t motionSlot = usingMSAA ? uint32_t(i + 1) : uint32_t(i);
+                        if (motionSlot < snapdiag::SnapMotionSlots) {
+                            const int64_t shownNow = snapdiag::motionSlots()[motionSlot].load(std::memory_order_relaxed);
+                            const int64_t shownBefore = snapdiag::motionShownMicroFrames().exchange(shownNow, std::memory_order_relaxed);
+                            if ((shownBefore != 0) && (shownNow != 0)) {
+                                const int64_t step = shownNow - shownBefore;
+                                if (step < 0) {
+                                    // Two poses of the same motion reaching the
+                                    // screen out of order, which is seen as two of
+                                    // everything rather than as a pause.
+                                    snapdiag::motionBackwardsCounter().fetch_add(1, std::memory_order_relaxed);
+                                }
+                                else if (step == 0) {
+                                    snapdiag::motionStillPresentsCounter().fetch_add(1, std::memory_order_relaxed);
+                                }
+                                else {
+                                    const uint32_t stepMicro = uint32_t(std::min<int64_t>(step, 0xFFFFFFFF));
+                                    uint32_t biggest = snapdiag::motionBiggestStepMicro().load(std::memory_order_relaxed);
+                                    while ((stepMicro > biggest) &&
+                                        !snapdiag::motionBiggestStepMicro().compare_exchange_weak(biggest, stepMicro, std::memory_order_relaxed)) {
+                                    }
+                                }
+                            }
+                        }
+                    }
+
                     const double intervalMs = std::chrono::duration<double, std::milli>(presentTimestamp - previousPresentTimestamp).count();
 
                     // A freeze long enough to be called a freeze reports
@@ -844,6 +878,20 @@ namespace {
                                 rectsPaired, rects, (rects > 0) ? (100.0 * double(rectsPaired) / double(rects)) : 0.0);
                             fprintf(stdout, "[SNAP-PACE]   sprite pairing cost %.1f ms over the interval\n",
                                 double(snapdiag::rectMatchNanos().exchange(0, std::memory_order_relaxed)) / 1.0e6);
+                            const uint32_t stillPresents = snapdiag::motionStillPresentsCounter().exchange(0, std::memory_order_relaxed);
+                            const uint32_t backwards = snapdiag::motionBackwardsCounter().exchange(0, std::memory_order_relaxed);
+                            const double biggestStep = double(snapdiag::motionBiggestStepMicro().exchange(0, std::memory_order_relaxed)) / 1000000.0;
+                            fprintf(stdout, "[SNAP-PACE]   motion shown: %u of %u presents advanced the world by nothing (%.1f%%), %u went backwards, biggest single step %.2f game frames\n",
+                                stillPresents, intervalCount,
+                                (intervalCount > 0) ? (100.0 * double(stillPresents) / double(intervalCount)) : 0.0,
+                                backwards, biggestStep);
+                            // What the picture is actually being paced against.
+                            // Presenting faster than the display can show is
+                            // torn, unevenly spaced frames however good every
+                            // other number here looks.
+                            fprintf(stdout, "[SNAP-PACE]   display %u Hz, target %u, game %u, presenting %s\n",
+                                ext.sharedResources->swapChainRate, targetRate, viOriginalRate,
+                                ((targetRate > 0) && (ext.sharedResources->swapChainRate > 0) && (targetRate >= ext.sharedResources->swapChainRate)) ? "in step with the display" : "as fast as it can");
                             const uint32_t drawnFrames = snapdiag::drawnFrameCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t logicSteps = snapdiag::logicStepCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t skippedDraws = snapdiag::skippedDrawCounter().exchange(0, std::memory_order_relaxed);

@@ -1054,6 +1054,9 @@ namespace RT64 {
         Thread::setCurrentThreadName("RT64 Workload");
 
         WorkloadConfiguration workloadConfig;
+        // Counts drawn frames, so the motion position below is monotone across
+        // ticks and two images can simply be subtracted.
+        int64_t snapMotionBase = 0;
         int64_t logicalTicks = 0;
         int64_t displayTicks = 0;
         uint32_t originalRateForTicks = 0;
@@ -1269,6 +1272,8 @@ namespace RT64 {
                         snapdiag::skippedDrawCounter().fetch_add(1, std::memory_order_relaxed);
                     }
                 }
+
+                snapMotionBase++;
 
                 // Estimate amount of frames to render based on how many display frames it'd take to reach the next logical frame.
                 uint32_t displayFrames = 1;
@@ -1653,6 +1658,16 @@ namespace RT64 {
                         threadHoldCopy(snapHoldScratch.get(), RenderTargetKey(), overrideTarget, RenderTargetKey());
                     if (!heldSubFrame) {
                         const bool interpolationSubFrame = generateInterpolatedFrames && (curFrameWeight < 1.0f);
+                        // How far through this pair of poses the image about to
+                        // be drawn sits, recorded against the slot it is drawn
+                        // into, so the present thread can say what the eye was
+                        // actually shown rather than what was scheduled.
+                        if (snapdiag::statsEnabled() && (overrideModifier < snapdiag::SnapMotionSlots)) {
+                            snapdiag::motionSlots()[overrideModifier].store(
+                                (snapMotionBase * 1000000) + int64_t(curFrameWeight * 1000000.0f),
+                                std::memory_order_relaxed);
+                        }
+
                         threadRenderFrame(curFrame, prevFrame, workloadConfig, workload.debuggerRenderer, workload.debuggerCamera, curFrameWeight, prevFrameWeight, deltaTimeMs,
                             interpolationTargetKey, interpolationTargetFbPairIndex, overrideTarget, overrideModifier, velocityUploaderUsed, uploadExtras, tileInterpolationUsed, lookAtInterpolationUsed,
                             interpolationSubFrame);
