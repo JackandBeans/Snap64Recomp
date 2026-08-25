@@ -195,6 +195,32 @@ inline std::atomic<uint32_t> &rectDrawCounter() {
     return counter;
 }
 
+// How many of the game's logic steps each drawn frame carried, and how often
+// a frame carried more than usual -- which means the game skipped a draw
+// because the renderer still had the graphics context. A frame that carries
+// more of the world's motion has to be spread over more of the display's time.
+inline std::atomic<uint32_t> &logicStepCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
+inline std::atomic<uint32_t> &drawnFrameCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
+inline std::atomic<uint32_t> &skippedDrawCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
+// What the sprite pairing costs. It runs on the render thread once per frame
+// and walks every rectangle in it, and a busy frame has thousands.
+inline std::atomic<int64_t> &rectMatchNanos() {
+    static std::atomic<int64_t> nanos{0};
+    return nanos;
+}
+
 // The game frame this is all happening on. Everything a report wants to
 // correlate -- a slow frame, a Pokemon being created, a block boundary --
 // happens on a different thread from the one that counts frames, and

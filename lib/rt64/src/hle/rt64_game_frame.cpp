@@ -2,6 +2,7 @@
 // RT64
 //
 
+#include <chrono>
 #include <unordered_map>
 #include "common/rt64_math.h"
 
@@ -287,6 +288,21 @@ namespace RT64 {
     // a dropped rectangle simply draws the way it did before any of this, which
     // is the honest fallback.
     void GameFrame::matchRects(Workload &curWorkload, const Workload &prevWorkload) {
+        const bool timing = snapdiag::statsEnabled();
+        const auto matchStart = timing ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
+        struct MatchTimer {
+            bool on;
+            std::chrono::steady_clock::time_point start;
+            ~MatchTimer() {
+                if (on) {
+                    snapdiag::rectMatchNanos().fetch_add(
+                        std::chrono::duration_cast<std::chrono::nanoseconds>(
+                            std::chrono::steady_clock::now() - start).count(),
+                        std::memory_order_relaxed);
+                }
+            }
+        } matchTimer{timing, matchStart};
+
         struct RectRef {
             uint32_t callIndex = 0;
             FixedRect rect;

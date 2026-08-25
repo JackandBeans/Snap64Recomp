@@ -245,6 +245,12 @@ namespace RT64 {
         // the queue presents the previous frame's image for this workload's
         // interval to match.
         bool snapCutHold = false;
+        // How many of the game's logic steps this drawn frame stands for.
+        // Normally two on this game; three when the game skipped a draw
+        // because the renderer still had the graphics context. A frame that
+        // covers more of the world's motion has to be spread over more of
+        // the display's time, or the motion in it finishes early and stops.
+        uint32_t snapLogicSteps = 0;
         // Pokemon Snap port: the objects whose animation stepped to a new pose
         // this frame rather than moving to it. The game's own animation data
         // says so (src/matrix_tags.cpp reads it and writes the verdict into

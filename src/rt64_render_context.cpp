@@ -26,6 +26,10 @@ static int64_t snap_display_list_nanos = 0;
 
 // How long this thread was handed off to other guest threads, and how often
 // (ultramodern/src/threads.cpp).
+// How many logic steps the game ran for the frame it is submitting now
+// (src/frame_cost.cpp). Taken and reset here, so it describes this frame.
+extern "C" uint32_t snap_take_logic_steps();
+
 // The game's own frame, split by src/frame_cost.cpp on the game's own
 // thread. The handoff counters those two halves report cannot be read from
 // here: they are thread_local, and this runs on a host thread the game's
@@ -373,6 +377,15 @@ public:
         // rebase travels with its own frame. The queue's write slot was begun at
         // the end of the previous list, so nothing resets it between here and
         // the renderer reading it.
+        // How much of the world's motion this drawn frame stands for. The game
+        // updates twice per drawn frame normally, and three times when it could
+        // not take the graphics context and skipped a draw. The renderer spreads
+        // this frame's motion over real time, so it has to be told which.
+        {
+            RT64::Workload &workload = app_->workloadQueue->workloads[app_->workloadQueue->writeCursor];
+            workload.snapLogicSteps = snap_take_logic_steps();
+        }
+
         if (snap::g_world_rebased) {
             snap::g_world_rebased = false;
             RT64::Workload &workload = app_->workloadQueue->workloads[app_->workloadQueue->writeCursor];

@@ -1187,10 +1187,93 @@ namespace RT64 {
                     }
                 }
 
+                // How much of the world's motion this drawn frame stands for.
+                //
+                // The game updates the world more often than it draws it -- every
+                // course here runs its logic twice per drawn frame -- and when it
+                // cannot take the graphics context it skips the draw entirely and
+                // keeps updating. So a drawn frame usually carries two steps of
+                // motion and sometimes three, and the one that carries three is
+                // half again as far from its predecessor in both world motion and
+                // wall-clock time.
+                //
+                // The span below used to be the same constant for every frame. A
+                // three-step frame was therefore spread over a two-step slice of
+                // the display's time: the blend reached the new pose early and the
+                // picture then stood still until the next frame arrived. Motion,
+                // stall, jump -- which is what a spawn or a scene point feels like,
+                // and it is the renderer's doing rather than the game's, because
+                // the game did produce a pose for every one of those steps.
+                //
+                // Nothing here changes what is drawn. Both ends of the blend are
+                // still poses the game computed and the weight still runs zero to
+                // one between them; only how long that takes changes.
+                //
+                // The normal step count is taken as the most common value seen
+                // recently, not the smallest. A loading frame can carry one step,
+                // and treating that as normal would make every ordinary frame look
+                // like a skip and stretch it to double length.
+                static uint32_t snapStepHistogram[8] = {};
+                static uint32_t snapStepSamples = 0;
+                static uint32_t snapNormalSteps = 0;
+                const uint32_t snapSteps = std::min(workload.snapLogicSteps, 7u);
+                if (snapSteps > 0) {
+                    snapStepHistogram[snapSteps]++;
+                    snapStepSamples++;
+                    if (snapStepSamples >= 120) {
+                        uint32_t bestSteps = 0;
+                        uint32_t bestCount = 0;
+                        for (uint32_t s = 1; s < 8; s++) {
+                            if (snapStepHistogram[s] > bestCount) {
+                                bestCount = snapStepHistogram[s];
+                                bestSteps = s;
+                            }
+
+                            snapStepHistogram[s] = 0;
+                        }
+
+                        snapNormalSteps = bestSteps;
+                        snapStepSamples = 0;
+                    }
+                }
+
+                // Spreading a longer frame over more of the display's time was
+                // tried here and measured worse: twenty-two frames over the
+                // threshold against seven with it off, on the same ride and the
+                // same materials. Two reasons, both fatal.
+                //
+                // The normal step count cannot be inferred from recent history.
+                // A stretch of menu frames carries one step each, so the count
+                // learned there is one, and every ordinary two-step gameplay
+                // frame after it then looks like a skipped draw and gets stretched
+                // to double length. The misfire is not rare; it happens at every
+                // transition between modes.
+                //
+                // And even when it fires correctly it is the wrong medicine. A
+                // frame carries an extra logic step precisely because the renderer
+                // was too busy to take the graphics context, and stretching its
+                // span asks that same renderer for half again as many sub-frames.
+                // The response to being late is more work, which makes the next
+                // frame later.
+                //
+                // Measured, the game skips a draw about once a ride -- steady play
+                // reports two logic steps per frame and zero skips -- so this was
+                // a risky remedy for something rare. The counters stay because
+                // they are what established that.
+                const int64_t snapSpanTicks = workloadConfig.targetRate;
+
+                if (snapdiag::statsEnabled()) {
+                    snapdiag::logicStepCounter().fetch_add(snapSteps, std::memory_order_relaxed);
+                    snapdiag::drawnFrameCounter().fetch_add(1, std::memory_order_relaxed);
+                    if ((snapNormalSteps > 0) && (snapSteps > snapNormalSteps)) {
+                        snapdiag::skippedDrawCounter().fetch_add(1, std::memory_order_relaxed);
+                    }
+                }
+
                 // Estimate amount of frames to render based on how many display frames it'd take to reach the next logical frame.
                 uint32_t displayFrames = 1;
                 if (generateInterpolatedFrames) {
-                    logicalTicks += workloadConfig.targetRate;
+                    logicalTicks += snapSpanTicks;
                     displayFrames = uint32_t((logicalTicks - displayTicks) / workload.viOriginalRate);
                     deltaTimeMs = 1.0f / float(workloadConfig.targetRate);
 
@@ -1201,7 +1284,7 @@ namespace RT64 {
                     }
 
                     assert((logicalTicks > displayTicks) && "Logical ticks must always remain bigger than the display ticks.");
-                    assert(((logicalTicks - displayTicks) <= (workloadConfig.targetRate + workload.viOriginalRate)) && "The gap between logical ticks and display ticks can't be bigger than the target rate.");
+                    assert(((logicalTicks - displayTicks) <= (snapSpanTicks + workload.viOriginalRate)) && "The gap between logical ticks and display ticks can't be bigger than this frame's span.");
                     assert((displayFrames > 0) && "At least one display frame must be generated.");
                 }
                 else if (workload.viOriginalRate > 0) {
@@ -1491,9 +1574,9 @@ namespace RT64 {
                     RenderTarget *overrideTarget = nullptr;
                     uint32_t overrideModifier = 0;
                     if (generateInterpolatedFrames) {
-                        prevFrameWeight = std::clamp((workloadConfig.targetRate + displayTicks - logicalTicks) / float(workloadConfig.targetRate), 0.0f, 1.0f);
+                        prevFrameWeight = std::clamp(float(snapSpanTicks + displayTicks - logicalTicks) / float(snapSpanTicks), 0.0f, 1.0f);
                         displayTicks += workload.viOriginalRate;
-                        curFrameWeight = std::clamp((workloadConfig.targetRate + displayTicks - logicalTicks) / float(workloadConfig.targetRate), 0.0f, 1.0f);
+                        curFrameWeight = std::clamp(float(snapSpanTicks + displayTicks - logicalTicks) / float(snapSpanTicks), 0.0f, 1.0f);
 
                         // Every interpolated frame of a tick must sit further
                         // along the motion than the one before it. If a weight

@@ -18,6 +18,7 @@ namespace RT64 {
         snapOriginRebased = false;
         snapOriginDelta = hlslpp::float3(0.0f, 0.0f, 0.0f);
         snapCutHold = false;
+        snapLogicSteps = 0;
         snapSteppedIdCount = 0;
         fbPairCount = 0;
         fbPairSubmitted = 0;

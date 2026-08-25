@@ -842,6 +842,15 @@ namespace {
                             fprintf(stdout, "[SNAP-PACE]   scene pairing: %u of %u transforms paired (%.1f%%), sprites %u of %u paired (%.1f%%)\n",
                                 paired, seen, (seen > 0) ? (100.0 * double(paired) / double(seen)) : 0.0,
                                 rectsPaired, rects, (rects > 0) ? (100.0 * double(rectsPaired) / double(rects)) : 0.0);
+                            fprintf(stdout, "[SNAP-PACE]   sprite pairing cost %.1f ms over the interval\n",
+                                double(snapdiag::rectMatchNanos().exchange(0, std::memory_order_relaxed)) / 1.0e6);
+                            const uint32_t drawnFrames = snapdiag::drawnFrameCounter().exchange(0, std::memory_order_relaxed);
+                            const uint32_t logicSteps = snapdiag::logicStepCounter().exchange(0, std::memory_order_relaxed);
+                            const uint32_t skippedDraws = snapdiag::skippedDrawCounter().exchange(0, std::memory_order_relaxed);
+                            fprintf(stdout, "[SNAP-PACE]   game frames %u carrying %u logic steps (%.2f each), of which %u carried more than usual because the game skipped a draw\n",
+                                drawnFrames, logicSteps,
+                                (drawnFrames > 0) ? (double(logicSteps) / double(drawnFrames)) : 0.0,
+                                skippedDraws);
                         }
                         ageTotalMs = 0.0;
                         ageWorstMs = 0.0;

@@ -66,6 +66,11 @@ extern "C" uint32_t snap_recv_block_take_count();
 extern "C" {
     std::atomic<int64_t>  snap_game_update_nanos{0};
     std::atomic<uint32_t> snap_game_update_count{0};
+    // Counted separately from the figure above because the two are consumed by
+    // different readers at different moments: the report clears its copy once a
+    // tick, and the pacing takes this one when the display list is submitted.
+    // Sharing one counter meant whichever read first left the other reading zero.
+    std::atomic<uint32_t> snap_logic_steps_pending{0};
     std::atomic<int64_t>  snap_game_parked_nanos{0};
     std::atomic<uint32_t> snap_game_parked_count{0};
     std::atomic<int64_t>  snap_game_draw_nanos{0};
@@ -104,9 +109,24 @@ struct CostScope {
 
 } // namespace
 
+// How many logic steps have happened since the last time this was asked.
+// The game updates the world more often than it draws it -- every course
+// here runs its logic twice per drawn frame -- and when it cannot take the
+// graphics context it skips a draw entirely, so a drawn frame sometimes
+// stands for three logic steps instead of two. The renderer has to know
+// which, because it is spreading that frame's motion over real time.
+extern "C" uint32_t snap_take_logic_steps() {
+    return snap_logic_steps_pending.exchange(0, std::memory_order_relaxed);
+}
+
 // The logic half of a frame: input, then every object's update and every
 // object's process. Runs twice per drawn frame at this game's intervals.
 extern "C" void gtlUpdate(uint8_t* rdram, recomp_context* ctx) {
+    // Counted whatever the diagnostics are doing: the renderer paces a
+    // frame by this, so it is no longer only a measurement.
+    snap_game_update_count.fetch_add(1, std::memory_order_relaxed);
+    snap_logic_steps_pending.fetch_add(1, std::memory_order_relaxed);
+
     const bool on = snapdiag::statsEnabled();
     if (!on) {
         __real_gtlUpdate(rdram, ctx);
@@ -133,7 +153,6 @@ extern "C" void gtlUpdate(uint8_t* rdram, recomp_context* ctx) {
     const uint32_t parkedCount = snap_switch_take_count() + snap_recv_block_take_count();
     snap_game_parked_nanos.fetch_add(parkedNanos, std::memory_order_relaxed);
     snap_game_parked_count.fetch_add(parkedCount, std::memory_order_relaxed);
-    snap_game_update_count.fetch_add(1, std::memory_order_relaxed);
 }
 
 // The other half: reset the heap, build every object's display list, hand it to
