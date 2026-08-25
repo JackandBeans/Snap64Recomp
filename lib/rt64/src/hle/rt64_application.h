@@ -127,6 +127,11 @@ namespace RT64 {
         std::unique_ptr<RenderWorker> workloadGraphicsWorker;
         std::unique_ptr<RenderWorker> presentGraphicsWorker;
         std::unique_ptr<RasterShaderCache> rasterShaderCache;
+        // The driver's own pipeline store, carried between runs. Separate from
+        // the shader bytecode cache: that one skips compiling a shader, this one
+        // skips the driver building a pipeline out of it, and they are different
+        // costs paid at different moments.
+        std::unique_ptr<ShaderBlobCache> devicePipelineCache;
         std::unique_ptr<TextureCache> textureCache;
         std::unique_ptr<ShaderLibrary> shaderLibrary;
         std::unique_ptr<WorkloadQueue> workloadQueue;

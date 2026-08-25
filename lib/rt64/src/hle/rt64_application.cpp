@@ -5,8 +5,16 @@
 #include "rt64_application.h"
 #include "rhi/rt64_render_hooks.h"
 
+#include <atomic>
 #include <cinttypes>
 #include <filesystem>
+#include <fstream>
+
+#include "rt64_snap_diag.h"
+
+// Pipelines the driver reused versus built (contrib/plume/plume_d3d12.cpp).
+extern "C" std::atomic<uint32_t> snap_pipeline_reused;
+extern "C" std::atomic<uint32_t> snap_pipeline_built;
 
 #include "common/rt64_dynamic_libraries.h"
 #include "common/rt64_elapsed_timer.h"
@@ -339,6 +347,47 @@ namespace RT64 {
         const RenderSampleCounts commonSampleCounts = colorSampleCounts & depthSampleCounts;
         if ((commonSampleCounts & userConfig.msaaSampleCount()) == 0) {
             userConfig.antialiasing = UserConfiguration::Antialiasing::None;
+        }
+
+        // Hand the driver back the pipelines it built on earlier runs. This has
+        // to happen before the first pipeline of any kind is created, which the
+        // shader library below does.
+        //
+        // Caching the shader bytecode removed the compile; what remained was the
+        // driver turning that bytecode into a pipeline, which only the driver can
+        // skip. Measured while playing, thirty-seven of those still happened
+        // mid-course and landed inside stalls of thirty and forty milliseconds.
+        //
+        // An opaque driver blob is the one thing here that can take a driver down,
+        // so a breadcrumb is written before it is handed over and removed on a
+        // clean shutdown. Finding it already there means the last run that used
+        // this file did not survive, and the file is discarded rather than handed
+        // over a second time. The cost of being wrong is one warm-up.
+        if (!userPaths.isEmpty()) {
+            std::error_code markerError;
+            if (std::filesystem::exists(userPaths.pipelineCacheMarkerPath, markerError)) {
+                fprintf(stdout, "[SNAP-SHADER] discarding the driver pipeline cache: the previous run did not shut down cleanly\n");
+                std::filesystem::remove(userPaths.pipelineCachePath, markerError);
+                std::filesystem::remove(userPaths.pipelineCacheMarkerPath, markerError);
+            }
+
+            devicePipelineCache = std::make_unique<ShaderBlobCache>();
+            devicePipelineCache->open(userPaths.pipelineCachePath, device.get());
+
+            ShaderBlobCache::Blob driverBlob = devicePipelineCache->lookup(ShaderBlobCache::DriverBlobKey);
+            const bool hadBlob = (driverBlob != nullptr) && !driverBlob->empty();
+            if (hadBlob) {
+                std::ofstream marker(userPaths.pipelineCacheMarkerPath, std::ios::binary | std::ios::trunc);
+                marker.close();
+            }
+
+            const bool accepted = device->setPipelineCacheData(
+                hadBlob ? driverBlob->data() : nullptr,
+                hadBlob ? driverBlob->size() : 0);
+            if (hadBlob && !accepted) {
+                // Nothing was consumed, so the breadcrumb comes back off.
+                std::filesystem::remove(userPaths.pipelineCacheMarkerPath, markerError);
+            }
         }
 
         // Create the shader library.
@@ -697,7 +746,29 @@ namespace RT64 {
         workloadVelocityUploader.reset();
         workloadTilesUploader.reset();
         sharedQueueResources.reset();
+        // Destroying the shader cache joins every compilation thread, so past
+        // this line no pipeline is being created and the driver's store can be
+        // read without a question about concurrency.
         rasterShaderCache.reset();
+
+        if (devicePipelineCache != nullptr) {
+            if (snapdiag::diagEnabled() || snapdiag::statsEnabled()) {
+                fprintf(stdout, "[SNAP-SHADER] driver pipelines: %u reused from earlier runs, %u built this run\n",
+                    snap_pipeline_reused.load(std::memory_order_relaxed),
+                    snap_pipeline_built.load(std::memory_order_relaxed));
+                fflush(stdout);
+            }
+
+            const std::vector<uint8_t> driverBlob = device->getPipelineCacheData();
+            if (!driverBlob.empty()) {
+                devicePipelineCache->store(ShaderBlobCache::DriverBlobKey, driverBlob.data(), driverBlob.size());
+            }
+
+            devicePipelineCache.reset();
+
+            std::error_code markerError;
+            std::filesystem::remove(userPaths.pipelineCacheMarkerPath, markerError);
+        }
 #   if RT_ENABLED
         rtShaderCache.reset();
         blueNoiseTexture.texture.reset();

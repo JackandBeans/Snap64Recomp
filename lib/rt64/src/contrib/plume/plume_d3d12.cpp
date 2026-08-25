@@ -3090,6 +3090,67 @@ namespace plume {
 
     // D3D12GraphicsPipeline
 
+// Pokemon Snap port: pipelines the driver handed back from its own store versus
+// ones it had to build. Reported once at shutdown; without it, whether the store
+// is doing anything is a matter of opinion.
+extern "C" {
+    std::atomic<uint32_t> snap_pipeline_reused{0};
+    std::atomic<uint32_t> snap_pipeline_built{0};
+}
+
+    // FNV-1a rather than a real hash library: plume must not grow a dependency
+    // on RT64's contrib tree, and this value is only a lookup name whose
+    // correctness the runtime re-validates against the full description.
+    static void hashAppend(uint64_t &hash, const void *data, size_t size) {
+        const uint8_t *bytes = reinterpret_cast<const uint8_t *>(data);
+        for (size_t i = 0; i < size; i++) {
+            hash ^= uint64_t(bytes[i]);
+            hash *= 1099511628211ull;
+        }
+    }
+
+    static uint64_t hashGraphicsPipelineDesc(const D3D12_GRAPHICS_PIPELINE_STATE_DESC &psoDesc, const std::vector<D3D12_INPUT_ELEMENT_DESC> &inputElements) {
+        uint64_t hash = 14695981039346656037ull;
+
+        // The shader bytecode is the bulk of a pipeline's identity.
+        const D3D12_SHADER_BYTECODE *stages[] = { &psoDesc.VS, &psoDesc.PS, &psoDesc.DS, &psoDesc.HS, &psoDesc.GS };
+        for (const D3D12_SHADER_BYTECODE *stage : stages) {
+            const uint64_t stageSize = stage->BytecodeLength;
+            hashAppend(hash, &stageSize, sizeof(stageSize));
+            if ((stage->pShaderBytecode != nullptr) && (stageSize > 0)) {
+                hashAppend(hash, stage->pShaderBytecode, size_t(stageSize));
+            }
+        }
+
+        hashAppend(hash, &psoDesc.BlendState, sizeof(psoDesc.BlendState));
+        hashAppend(hash, &psoDesc.SampleMask, sizeof(psoDesc.SampleMask));
+        hashAppend(hash, &psoDesc.RasterizerState, sizeof(psoDesc.RasterizerState));
+        hashAppend(hash, &psoDesc.DepthStencilState, sizeof(psoDesc.DepthStencilState));
+        hashAppend(hash, &psoDesc.IBStripCutValue, sizeof(psoDesc.IBStripCutValue));
+        hashAppend(hash, &psoDesc.PrimitiveTopologyType, sizeof(psoDesc.PrimitiveTopologyType));
+        hashAppend(hash, &psoDesc.NumRenderTargets, sizeof(psoDesc.NumRenderTargets));
+        hashAppend(hash, psoDesc.RTVFormats, sizeof(psoDesc.RTVFormats));
+        hashAppend(hash, &psoDesc.DSVFormat, sizeof(psoDesc.DSVFormat));
+        hashAppend(hash, &psoDesc.SampleDesc, sizeof(psoDesc.SampleDesc));
+        hashAppend(hash, &psoDesc.NodeMask, sizeof(psoDesc.NodeMask));
+        hashAppend(hash, &psoDesc.Flags, sizeof(psoDesc.Flags));
+
+        for (const D3D12_INPUT_ELEMENT_DESC &element : inputElements) {
+            if (element.SemanticName != nullptr) {
+                hashAppend(hash, element.SemanticName, strlen(element.SemanticName));
+            }
+
+            hashAppend(hash, &element.SemanticIndex, sizeof(element.SemanticIndex));
+            hashAppend(hash, &element.Format, sizeof(element.Format));
+            hashAppend(hash, &element.InputSlot, sizeof(element.InputSlot));
+            hashAppend(hash, &element.AlignedByteOffset, sizeof(element.AlignedByteOffset));
+            hashAppend(hash, &element.InputSlotClass, sizeof(element.InputSlotClass));
+            hashAppend(hash, &element.InstanceDataStepRate, sizeof(element.InstanceDataStepRate));
+        }
+
+        return hash;
+    }
+
     D3D12GraphicsPipeline::D3D12GraphicsPipeline(D3D12Device *device, const RenderGraphicsPipelineDesc &desc) : D3D12Pipeline(device, Type::Graphics) {
         assert(desc.pipelineLayout != nullptr);
 
@@ -3215,7 +3276,35 @@ namespace plume {
 
         psoDesc.InputLayout = { inputElements.data(), UINT(inputElements.size()) };
 
+        // Ask the driver for a pipeline it already built, in a previous run if
+        // need be. Compiling the shader and building the pipeline from it are
+        // separate costs; caching the bytecode removes the first and leaves this
+        // one, which is the driver's own work and can only be skipped by the
+        // driver. Names collide harmlessly: LoadGraphicsPipeline validates the
+        // full description against the stored one and refuses any mismatch,
+        // which falls through to building it normally below.
+        wchar_t libraryName[24] = {};
+        if (device->pipelineLibrary != nullptr) {
+            const uint64_t libraryKey = hashGraphicsPipelineDesc(psoDesc, inputElements);
+            swprintf_s(libraryName, L"%016llX", (unsigned long long)(libraryKey));
+
+            const std::lock_guard<std::mutex> lock(device->pipelineLibraryMutex);
+            if (SUCCEEDED(device->pipelineLibrary->LoadGraphicsPipeline(libraryName, &psoDesc, IID_PPV_ARGS(&d3d))) && (d3d != nullptr)) {
+                snap_pipeline_reused.fetch_add(1, std::memory_order_relaxed);
+                return;
+            }
+
+            d3d = nullptr;
+        }
+
         device->d3d->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&d3d));
+
+        if ((device->pipelineLibrary != nullptr) && (d3d != nullptr)) {
+            snap_pipeline_built.fetch_add(1, std::memory_order_relaxed);
+            const std::lock_guard<std::mutex> lock(device->pipelineLibraryMutex);
+            // A duplicate name returns E_INVALIDARG and is not worth reporting.
+            device->pipelineLibrary->StorePipeline(libraryName, d3d);
+        }
     }
 
     D3D12GraphicsPipeline::~D3D12GraphicsPipeline() {
@@ -4142,6 +4231,74 @@ namespace plume {
         return description;
     }
 
+    bool D3D12Device::setPipelineCacheData(const void *data, uint64_t size) {
+        if (d3d == nullptr) {
+            return false;
+        }
+
+        D3D12_FEATURE_DATA_SHADER_CACHE shaderCache = {};
+        if (FAILED(d3d->CheckFeatureSupport(D3D12_FEATURE_SHADER_CACHE, &shaderCache, sizeof(shaderCache)))) {
+            return false;
+        }
+
+        if ((shaderCache.SupportFlags & D3D12_SHADER_CACHE_SUPPORT_LIBRARY) == 0) {
+            return false;
+        }
+
+        const std::lock_guard<std::mutex> lock(pipelineLibraryMutex);
+        if (pipelineLibrary != nullptr) {
+            pipelineLibrary->Release();
+            pipelineLibrary = nullptr;
+        }
+
+        // The library reads from this buffer for its whole life, so it is stored
+        // before use and never touched afterwards.
+        pipelineLibraryBlob.clear();
+        if ((data != nullptr) && (size > 0)) {
+            const uint8_t *bytes = reinterpret_cast<const uint8_t *>(data);
+            pipelineLibraryBlob.assign(bytes, bytes + size);
+        }
+
+        // A driver update, a different adapter, or a corrupt blob all show up
+        // here as a failure, and all get the same answer: throw it away and
+        // start an empty library, which costs a warm-up and nothing else.
+        HRESULT result = d3d->CreatePipelineLibrary(
+            pipelineLibraryBlob.empty() ? nullptr : pipelineLibraryBlob.data(),
+            SIZE_T(pipelineLibraryBlob.size()), IID_PPV_ARGS(&pipelineLibrary));
+        if (FAILED(result)) {
+            pipelineLibraryBlob.clear();
+            pipelineLibrary = nullptr;
+            result = d3d->CreatePipelineLibrary(nullptr, 0, IID_PPV_ARGS(&pipelineLibrary));
+            if (FAILED(result)) {
+                pipelineLibrary = nullptr;
+            }
+
+            return false;
+        }
+
+        return true;
+    }
+
+    std::vector<uint8_t> D3D12Device::getPipelineCacheData() const {
+        std::vector<uint8_t> data;
+        const std::lock_guard<std::mutex> lock(pipelineLibraryMutex);
+        if (pipelineLibrary == nullptr) {
+            return data;
+        }
+
+        const SIZE_T serializedSize = pipelineLibrary->GetSerializedSize();
+        if (serializedSize == 0) {
+            return data;
+        }
+
+        data.resize(serializedSize);
+        if (FAILED(pipelineLibrary->Serialize(data.data(), serializedSize))) {
+            data.clear();
+        }
+
+        return data;
+    }
+
     RenderSampleCounts D3D12Device::getSampleCountsSupported(RenderFormat format) const {
         HRESULT res;
         RenderSampleCounts countsSupported = RenderSampleCount::COUNT_0;
@@ -4165,6 +4322,18 @@ namespace plume {
     }
 
     void D3D12Device::release() {
+        // Released before the device it belongs to, and before the blob it reads
+        // from goes away with this object.
+        {
+            const std::lock_guard<std::mutex> lock(pipelineLibraryMutex);
+            if (pipelineLibrary != nullptr) {
+                pipelineLibrary->Release();
+                pipelineLibrary = nullptr;
+            }
+
+            pipelineLibraryBlob.clear();
+        }
+
         if (d3d != nullptr) {
             d3d->Release();
             d3d = nullptr;

@@ -48,6 +48,11 @@ namespace RT64 {
         // has to remember to bump a number.
         static const uint32_t FormatVersion = 1;
 
+        // The driver's pipeline store is one opaque blob rather than a set of
+        // keyed entries, so it gets a well-known key of its own in the same
+        // container -- same header checks, same checksums, same atomic replace.
+        static const uint64_t DriverBlobKey = 1;
+
         static const uint64_t MaxEntryBytes = 4ull * 1024 * 1024;
         static const uint64_t MaxTotalBytes = 64ull * 1024 * 1024;
         static const uint32_t MaxEntryCount = 65536;
