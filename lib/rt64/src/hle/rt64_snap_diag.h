@@ -167,6 +167,17 @@ inline std::atomic<uint32_t> &transformsSeenCounter() {
     return counter;
 }
 
+// Every screen-space rectangle the game drew, named or not.
+//
+// The paired-versus-seen figure counts only rectangles that already carry a
+// name, so it reads a hundred percent while most of the screen is untagged and
+// still stepping at the game's rate. That statistic can confirm the mechanism
+// works and can never reveal how much of the screen it reaches. This one can.
+inline std::atomic<uint32_t> &rectsTotalCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
 inline std::atomic<uint32_t> &rectsSeenCounter() {
     static std::atomic<uint32_t> counter = { 0 };
     return counter;

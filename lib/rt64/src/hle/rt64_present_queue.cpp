@@ -874,11 +874,15 @@ namespace {
                             const uint32_t stillPresents = snapdiag::motionStillPresentsCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t backwards = snapdiag::motionBackwardsCounter().exchange(0, std::memory_order_relaxed);
                             const double biggestStep = double(snapdiag::motionBiggestStepMicro().exchange(0, std::memory_order_relaxed)) / 1000000.0;
+                            const uint32_t rectsTotal = snapdiag::rectsTotalCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t rectsSeen = snapdiag::rectsSeenCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t rectsPaired = snapdiag::rectsPairedCounter().exchange(0, std::memory_order_relaxed);
                             fprintf(stdout, "[SNAP-PACE]   interpolated: %u of %u transforms paired (%.1f%%), %u of %u 2D rectangles paired (%.1f%%)\n",
                                 paired, seen, (seen > 0) ? (100.0 * double(paired) / double(seen)) : 0.0,
                                 rectsPaired, rectsSeen, (rectsSeen > 0) ? (100.0 * double(rectsPaired) / double(rectsSeen)) : 0.0);
+                            fprintf(stdout, "[SNAP-PACE]   2D coverage: %u of %u rectangles on screen carry a name (%.1f%%); the rest are drawn at the game's rate\n",
+                                rectsSeen, rectsTotal,
+                                (rectsTotal > 0) ? (100.0 * double(rectsSeen) / double(rectsTotal)) : 0.0);
                             const uint32_t rectElements = snapdiag::rectElementsCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t rectCountChanged = snapdiag::rectCountChangedCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t rectTravelRefused = snapdiag::rectTravelRefusedCounter().exchange(0, std::memory_order_relaxed);

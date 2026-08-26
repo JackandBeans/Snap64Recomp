@@ -1094,6 +1094,10 @@ namespace RT64 {
 
                 for (uint32_t c = 0; c < proj.gameCallCount; c++) {
                     DrawCall &call = proj.gameCalls[c].callDesc;
+                    if (countRectStats) {
+                        snapdiag::rectsTotalCounter().fetch_add(1, std::memory_order_relaxed);
+                    }
+
                     if (call.snapRectId == 0) {
                         continue;
                     }
