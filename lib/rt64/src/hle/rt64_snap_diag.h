@@ -323,6 +323,16 @@ inline std::atomic<uint32_t> &rectsPairedCounter() {
     return counter;
 }
 
+// Transforms the game actually named, as opposed to ones the renderer has to
+// guess at by hashing the draw and looking for something nearby. The paired
+// figure counts both, so a low pairing rate does not say WHY -- whether the
+// game is not tagging that content at all, or is tagging it with something
+// unstable. This separates the two.
+inline std::atomic<uint32_t> &transformsTaggedCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
 inline std::atomic<uint32_t> &transformsPairedCounter() {
     static std::atomic<uint32_t> counter{0};
     return counter;

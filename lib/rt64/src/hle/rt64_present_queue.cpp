@@ -879,6 +879,7 @@ namespace {
                             // game's rate against smooth geometry looks like.
                             const uint32_t seen = snapdiag::transformsSeenCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t paired = snapdiag::transformsPairedCounter().exchange(0, std::memory_order_relaxed);
+                            const uint32_t tagged = snapdiag::transformsTaggedCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t stillPresents = snapdiag::motionStillPresentsCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t backwards = snapdiag::motionBackwardsCounter().exchange(0, std::memory_order_relaxed);
                             const double biggestStep = double(snapdiag::motionBiggestStepMicro().exchange(0, std::memory_order_relaxed)) / 1000000.0;
@@ -888,6 +889,8 @@ namespace {
                             fprintf(stdout, "[SNAP-PACE]   interpolated: %u of %u transforms paired (%.1f%%), %u of %u 2D rectangles paired (%.1f%%)\n",
                                 paired, seen, (seen > 0) ? (100.0 * double(paired) / double(seen)) : 0.0,
                                 rectsPaired, rectsSeen, (rectsSeen > 0) ? (100.0 * double(rectsPaired) / double(rectsSeen)) : 0.0);
+                            fprintf(stdout, "[SNAP-PACE]   3D identity: %u of %u transforms were named by the game (%.1f%%); the rest are guessed at\n",
+                                tagged, seen, (seen > 0) ? (100.0 * double(tagged) / double(seen)) : 0.0);
                             const uint32_t rectsLerped = snapdiag::rectsLerpedCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t drawMarked = snapdiag::rectDrawMarkedCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t drawWeightOne = snapdiag::rectDrawWeightOneCounter().exchange(0, std::memory_order_relaxed);
