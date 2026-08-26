@@ -72,9 +72,22 @@ ignored = [
 # tick -- music advanced faster than wall-clock and the queue overran.
 #
 # Instead, repoint the base register at a scratch RDRAM word (0x80700000) that
-# the port updates every frame with SDL's real queued-byte count. 0x80700004 is
-# past the console's 4MB RDRAM (game never touches it) and below librecomp's
-# heap at 0x81000000.
+# the port updates every frame with SDL's real queued-byte count.
+#
+# On why 0x80700004 is free, since the obvious justification is wrong: it is NOT
+# past the memory the game is told it has. librecomp reports osMemSize as 8MB
+# (librecomp/src/recomp.cpp:513) and osGetMemSize returns the same, so the guest
+# nominally owns everything up to 0x80800000. What makes the address safe is that
+# this game never asks. It never reads osMemSize and never calls osGetMemSize --
+# its layout is entirely static, every heap it has is fixed (sGeneralHeap
+# 0x8004A8C8, auHeapBuffer 0x8004B250, album_Heap 0x80208FE0), and the highest
+# symbol in the whole ROM is 0x803DA800. Nothing the game does reaches within 3MB
+# of this word, and the port's patched instruction below is the only code in the
+# binary that uses 0x8070 as a base at all.
+#
+# That distinction matters: if a future change ever gives the game a heap sized
+# from osMemSize, this word is inside it and gets smashed a thousand times a
+# second.
 #   lui $t8, 0x8070   =>  0x3C188070   (was: lui $t8, 0xA450)
 # The following `lw $t9, 0x4($t8)` then reads the live value unmodified.
 [[patches.instruction]]

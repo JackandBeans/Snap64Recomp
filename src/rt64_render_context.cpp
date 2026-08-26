@@ -108,6 +108,13 @@ extern float g_world_rebase_delta[3];                        // matrix_tags.cpp
 class RT64Context : public ultramodern::renderer::RendererContext {
 public:
     RT64Context(uint8_t* rdram, ultramodern::renderer::WindowHandle window_handle, bool developer_mode) {
+        // Both of these live in the base class with no initialisers, and the
+        // caller reads chosen_api BEFORE it asks whether setup succeeded. Every
+        // path out of this constructor has to leave them defined -- including
+        // the ones that give up early, and the one where something throws.
+        setup_result = ultramodern::renderer::SetupResult::DynamicLibrariesNotFound;
+        chosen_api = ultramodern::renderer::GraphicsApi::Auto;
+
         // Populate the RT64 core struct from the emulated hardware state.
         RT64::Application::Core core{};
 
@@ -563,8 +570,16 @@ std::unique_ptr<ultramodern::renderer::RendererContext> create_render_context(
     if (!ctx->valid()) {
         fprintf(stderr, "[SNAP-RT64] Failed to create render context (result=%d)\n",
                 static_cast<int>(ctx->get_setup_result()));
-        return nullptr;
     }
+
+    // Returned even when setup failed, because the caller asks what happened
+    // before it asks whether anything happened: ultramodern reads
+    // get_chosen_api() one line ABOVE its valid() check (events.cpp:333-334).
+    // Handing back nullptr made every graphics failure -- no compatible adapter,
+    // a missing D3D12 or Vulkan runtime, a driver reset during startup -- a null
+    // dereference on the graphics thread, which is also the only thread that
+    // reports the failure. The report was unreachable from the one situation
+    // that produces it.
     return ctx;
 }
 
