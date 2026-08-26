@@ -1672,59 +1672,50 @@ namespace RT64 {
                             // about covering the scissor, and letting a moving
                             // edge flip it would make the whole rectangle
                             // change shape part way through a tick.
-                            // A rectangle is only moved when it kept its SIZE.
+                            // A rectangle is MOVED, never resized.
                             //
-                            // Where the texels land is a function of the
-                            // rectangle's own width and height, worked out when
-                            // the display list was built: RDP::drawRect derives
-                            // the far texture coordinates as uls + dsdx * width
-                            // and ult + dtdy * height, and the geometry itself
-                            // is a fixed quad that the viewport scales. So a
-                            // rectangle drawn at a size between two frames maps
-                            // its whole picture into that size -- it squashes.
+                            // Where its texels land is a function of its own
+                            // width and height, worked out when the display
+                            // list was built: RDP::drawRect derives the far
+                            // texture coordinates as uls + dsdx * width and
+                            // ult + dtdy * height, and the geometry is a fixed
+                            // quad that the viewport scales. So drawing at a
+                            // size between two frames maps the whole picture
+                            // into that size and squashes it.
                             //
-                            // For a sprite crossing the screen that never
-                            // matters, because its size does not change. For
-                            // the panel that unrolls down over the course
-                            // preview it matters completely: the game holds the
-                            // width, grows the height, and reveals more rows of
-                            // a picture drawn at a fixed rate per pixel.
-                            // Blending the height squeezes the whole picture
-                            // into the gap instead of uncovering it, which is a
-                            // worse artefact than the stepping it replaced and
-                            // was one this port introduced.
+                            // Taking the size from THIS frame and only moving
+                            // where it sits avoids that completely. The size is
+                            // always one the game asked for, so the texture
+                            // maps exactly as authored and nothing can be
+                            // distorted, while the position still moves at the
+                            // display's rate.
                             //
-                            // Doing it properly means blending where the texels
-                            // are sampled from as well, and those live in vertex
-                            // data built once per drawn frame and shared by
-                            // every image between them. Until that is worth
-                            // rebuilding per sub-frame, a rectangle that
-                            // changes size is drawn exactly as the game asked --
-                            // which is what the console showed.
-                            const FixedRect &authoredRect = call.callDesc.rect;
-                            const bool sameSize = call.callDesc.snapRectMapped &&
-                                ((authoredRect.lrx - authoredRect.ulx) == (call.callDesc.snapPrevRect.lrx - call.callDesc.snapPrevRect.ulx)) &&
-                                ((authoredRect.lry - authoredRect.uly) == (call.callDesc.snapPrevRect.lry - call.callDesc.snapPrevRect.uly));
-
+                            // Both failures this went through are covered by
+                            // that. Blending the size unrolled the course
+                            // preview panel by squeezing its picture into the
+                            // gap instead of uncovering it. Refusing to touch
+                            // anything whose size changed then dropped the
+                            // interface panels that resize by a pixel or two as
+                            // they slide, and they went back to stepping. A
+                            // panel that only grows -- the preview, whose top
+                            // edge is pinned -- has an origin that does not
+                            // move, so this leaves it exactly where the game
+                            // put it, which is what the console showed. A panel
+                            // that slides keeps its motion.
                             FixedRect drawnRect = call.callDesc.rect;
-                            if (snapdiag::statsEnabled() && call.callDesc.snapRectMapped) {
-                                snapdiag::rectDrawMarkedCounter().fetch_add(1, std::memory_order_relaxed);
-                                if (!(p.snapRectWeight < 1.0f)) {
-                                    snapdiag::rectDrawWeightOneCounter().fetch_add(1, std::memory_order_relaxed);
-                                }
-                            }
-
-                            if (sameSize && (p.snapRectWeight < 1.0f)) {
+                            if (call.callDesc.snapRectMapped && (p.snapRectWeight < 1.0f)) {
                                 const FixedRect &prevRect = call.callDesc.snapPrevRect;
                                 const float w = p.snapRectWeight;
                                 auto lerpCoord = [w](int32_t prev, int32_t cur) {
                                     return int32_t(std::lround(float(prev) + (float(cur) - float(prev)) * w));
                                 };
 
+                                const int32_t width = drawnRect.lrx - drawnRect.ulx;
+                                const int32_t height = drawnRect.lry - drawnRect.uly;
                                 drawnRect.ulx = lerpCoord(prevRect.ulx, drawnRect.ulx);
                                 drawnRect.uly = lerpCoord(prevRect.uly, drawnRect.uly);
-                                drawnRect.lrx = lerpCoord(prevRect.lrx, drawnRect.lrx);
-                                drawnRect.lry = lerpCoord(prevRect.lry, drawnRect.lry);
+                                drawnRect.lrx = drawnRect.ulx + width;
+                                drawnRect.lry = drawnRect.uly + height;
 
                                 if (snapdiag::statsEnabled()) {
                                     snapdiag::rectsLerpedCounter().fetch_add(1, std::memory_order_relaxed);
