@@ -280,6 +280,14 @@ inline std::atomic<uint32_t> &rectsUnnamedMovedCounter() {
 // does not build its rectangle inline: it plants a prepared list that contains
 // it, so the bytes it writes to the main list are a jump rather than an opcode
 // and a scan of that span finds nothing. One call is one rectangle.
+// Particles the effect system named. Its counterpart rectsFromEffectsCounter
+// counts what fx_draw drew; this counts what carries a name, so the two
+// together say how much of the effect system is reached.
+inline std::atomic<uint32_t> &rectsTaggedEffectsCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
 inline std::atomic<uint32_t> &rectsFromDetectorCounter() {
     static std::atomic<uint32_t> counter = { 0 };
     return counter;

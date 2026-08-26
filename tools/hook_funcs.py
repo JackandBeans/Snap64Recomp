@@ -79,6 +79,37 @@ HOOKED = [
     # The viewfinder's scorer: one framebuffer tile copy per Pokemon drawn, up
     # to twenty a frame, and only while a course is running.
     'PokemonDetector_SaveRegion',
+    # Every particle handed out gets a number, so a recycled address does not
+    # name the particle that used to live there.
+    'fx_createParticle',
+]
+
+# Calls inserted INSIDE a recompiled function, at a named guest address.
+#
+# Renaming a function only lets the port wrap it, which is useless when what
+# needs intercepting happens in the middle of one. fx_draw builds a rectangle
+# per particle inside three nested loops and calls nothing between the loop head
+# and the end, so there is no seam a wrapper can reach -- and tagging the whole
+# pass with one name would be worse than nothing, because every particle in the
+# game would share an id whose rectangle count changes every frame, and the
+# renderer refuses a pair whenever a count moves.
+#
+# The generated C carries a label for every guest address that anything branches
+# to, so an address IS an insertion point. Each entry is
+# (function, guest address, callback): the call is placed immediately after the
+# label, where the registers hold exactly what they held at that instruction.
+#
+# Anchored to an address rather than to surrounding text, so a regeneration that
+# moves the code still finds it -- and if the address stops being a label at all,
+# this fails loudly instead of silently doing nothing.
+INNER_HOOKS = [
+    # 0x800A5970 is where one particle's display-list cursor is fetched:
+    #   lw $v0, 0x0($t1)   with $t1 = gMainGfxPos
+    # A tag written and advanced before that load is picked up by it. After it
+    # the cursor lives in a register and the pointer in memory is not consulted
+    # again for this group, so anything written later would be overwritten.
+    # $s7 holds the particle throughout the body.
+    ('fx_draw', 0x800A5970, 'snap_fx_particle'),
 ]
 
 
@@ -126,8 +157,46 @@ def main() -> int:
             assert plain_decl in header_text, f'{name} missing from funcs.h'
             header_text = header_text.replace(plain_decl, plain_decl + '\n' + real_decl, 1)
 
+    # Inner hooks: a call placed at a guest address inside a function body.
+    inner = 0
+    for func_name, address, callback in INNER_HOOKS:
+        label = 'L_%08X:' % address
+        call = '    %s(rdram, ctx);' % callback
+        placed = False
+
+        for path in sorted(root.glob('funcs_*.c')):
+            text = path.read_text(encoding='utf-8')
+            if label not in text:
+                continue
+
+            assert text.count(label) == 1, (
+                f'{label} appears {text.count(label)} times in {path.name}; '
+                f'an inner hook needs exactly one insertion point')
+
+            head, _, tail = text.partition(label)
+            # Idempotent: re-running must not stack a second call.
+            if tail.lstrip('\r\n').startswith(call.strip()):
+                placed = True
+                break
+
+            text = head + label + '\n' + call + tail
+            path.write_text(text, encoding='utf-8', newline='')
+            inner += 1
+            placed = True
+            break
+
+        assert placed, (
+            f'inner hook for {func_name} at {address:#010x}: no label {label} found in '
+            f'{root}. The address is no longer a branch target, so the insertion point '
+            f'does not exist and the hook would silently do nothing.')
+
+        decl = f'void {callback}(uint8_t* rdram, recomp_context* ctx);'
+        if decl not in header_text:
+            header_text = decl + '\n' + header_text
+
     header.write_text(header_text, encoding='utf-8', newline='')
-    print(f'hooked {len(HOOKED)} functions across {renamed} file(s)')
+    print(f'hooked {len(HOOKED)} functions across {renamed} file(s), '
+          f'{len(INNER_HOOKS)} inner hook(s), {inner} inserted')
     return 0
 
 
