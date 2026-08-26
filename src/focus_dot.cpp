@@ -82,6 +82,28 @@ extern "C" void PokemonDetector_PostProcessImage(uint8_t* rdram, recomp_context*
     // one extra load and makes the frame honest.
     const uint32_t centerAddress = framebuffer + snap::DotCenterOffset;
     const uint16_t originalPixel = static_cast<uint16_t>(MEM_H(0, (gpr)(int32_t)centerAddress) & 0xFFFF);
+
+    // The restore is tied to leaving this function rather than to reaching the
+    // end of it. The real call waits on a message queue, and ultramodern turns
+    // a thread being destroyed while it waits into an exception -- so a scene
+    // torn down at the wrong moment unwound straight past the restore and left
+    // the sentinel in the framebuffer permanently. The framebuffer hash then
+    // differed on every frame afterwards, which is the whole-buffer upload and
+    // GPU fence this design exists to avoid.
+    struct SentinelGuard {
+        uint8_t* rdram;
+        uint32_t address;
+        uint16_t original;
+        bool restore = true;
+
+        ~SentinelGuard() {
+            if (restore) {
+                uint8_t* rdram = this->rdram;
+                MEM_H(0, (gpr)(int32_t)address) = static_cast<int16_t>(original);
+            }
+        }
+    } guard{ rdram, centerAddress, originalPixel };
+
     MEM_H(0, (gpr)(int32_t)centerAddress) = static_cast<int16_t>(~snap::DotColor);
 
     __real_PokemonDetector_PostProcessImage(rdram, ctx);
@@ -90,10 +112,8 @@ extern "C" void PokemonDetector_PostProcessImage(uint8_t* rdram, recomp_context*
     // it and samples the pixel next door.
     const bool drewDot = (MEM_H(0, (gpr)(int32_t)centerAddress) & 0xFFFF) == snap::DotColor;
     snap::g_focus_dot_visible = drewDot;
-    if (!drewDot) {
-        // The game did not write here, so the sentinel is the only thing that
-        // changed and it goes back. When the game DID write, what is there is
-        // already what the game put there.
-        MEM_H(0, (gpr)(int32_t)centerAddress) = static_cast<int16_t>(originalPixel);
-    }
+
+    // When the game DID write here, what is there is already what the game put
+    // there and must be left alone.
+    guard.restore = !drewDot;
 }

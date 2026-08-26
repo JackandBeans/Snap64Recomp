@@ -84,8 +84,14 @@ constexpr uint32_t AuthoredStepWord0 = Param(ExtendedOpcode, 8, 24) | Param(Auth
 // The camera's group, on the projection side: Snap's cameras multiply the
 // look-at into the projection stack (render.c: G_MTX_MUL | G_MTX_PROJECTION),
 // so a projection-side group emitted before the camera's matrices names the
-// view transform the renderer interpolates. Simple rather than decomposed
-// interpolation, matching what the renderer already defaulted the camera to.
+// view transform the renderer interpolates.
+//
+// Every component is named explicitly, because naming an id at all makes the
+// renderer take this word instead of its own defaults -- a field left unwritten
+// is not "unchanged", it is skip. Scale and skew were unwritten for a while,
+// which held the zoom flat across each interval and stepped it only on drawn
+// frames while position and rotation glided.
+//
 // Everything derived from per-vertex or per-tile data is skipped: this game
 // rebuilds those every frame, so ranges routinely describe different data and
 // the derived velocities are meaningless.
@@ -105,6 +111,8 @@ constexpr uint32_t CameraGroupCommon =
     Param(NoPush, 1, 0) |
     Param(1, 1, 1) |                        // projection side
     Param(1, 1, 2) |                        // decomposed interpolation
+    Param(ComponentInterpolate, 2, 7) |     // scale
+    Param(ComponentInterpolate, 2, 9) |     // skew
     Param(ComponentInterpolate, 2, 11) |    // perspective
     Param(ComponentSkip, 2, 13) |           // vertices
     Param(ComponentSkip, 2, 15) |           // tiles
@@ -146,6 +154,42 @@ bool valid_ram_address(uint32_t address) {
     // outside anything the runtime committed. The garbage pointer this exists
     // to reject was faulting instead of being rejected.
     return ((address >> 29) == 4u) && ((address & 0x1FFFFFFFu) < 0x00800000u);
+}
+
+// Whether the display list this write pointer belongs to has room for one
+// more run of commands, plus the margin the game still needs for its own.
+// The kind is recovered from which write pointer this is; anything that is
+// not one of them is declined rather than guessed at.
+bool gfx_buffer_has_room(uint8_t* rdram, uint32_t gfxPtrAddress, uint32_t cursor, uint32_t needed) {
+    constexpr uint32_t GtlDLBuffers = 0x8004A850;
+    constexpr uint32_t GMainGfxPos = 0x8004A890;
+    constexpr uint32_t GtlContextId = 0x8004A910;
+    constexpr uint32_t DLBufferSize = 8;
+    constexpr uint32_t BufferKinds = 4;
+
+    if ((gfxPtrAddress < GMainGfxPos) || (gfxPtrAddress >= (GMainGfxPos + (BufferKinds * 4)))) {
+        return false;
+    }
+
+    const uint32_t kind = (gfxPtrAddress - GMainGfxPos) / 4u;
+    const uint32_t context = MEM_W(0, (gpr)(int32_t)GtlContextId);
+    if (context >= 2u) {
+        return false;
+    }
+
+    const uint32_t entry = GtlDLBuffers + (((context * BufferKinds) + kind) * DLBufferSize);
+    const uint32_t start = MEM_W(0, (gpr)(int32_t)entry);
+    const uint32_t capacity = MEM_W(0x4, (gpr)(int32_t)entry);
+    if ((start == 0u) || (capacity == 0u) || (cursor < start)) {
+        return false;
+    }
+
+    const uint32_t used = cursor - start;
+    if (used > capacity) {
+        return false;
+    }
+
+    return (capacity - used) > (needed + 64u);
 }
 
 } // namespace
@@ -414,7 +458,9 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
     // extension that is never enabled leaves them as unknown opcodes.
     if (snap::valid_ram_address(gfxPtrAddress)) {
         const uint32_t gfx = MEM_W(0, (gpr)(int32_t)gfxPtrAddress);
-        if (snap::valid_ram_address(gfx)) {
+        const uint32_t needed = snap::GfxCommandSize *
+            (1u + snap::stepped_object_count() + 2u);
+        if (snap::valid_ram_address(gfx) && snap::gfx_buffer_has_room(rdram, gfxPtrAddress, gfx, needed)) {
             MEM_W(0x0, (gpr)(int32_t)gfx) = snap::EnableWord0;
             MEM_W(0x4, (gpr)(int32_t)gfx) = snap::EnableWord1;
             uint32_t cursor = gfx + snap::GfxCommandSize;
@@ -436,7 +482,6 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                 MEM_W(0x4, (gpr)(int32_t)cursor) = stepped;
                 cursor += snap::GfxCommandSize;
             }
-            snap::clear_stepped_objects();
             if (snap::valid_ram_address(cam)) {
                 MEM_W(0x0, (gpr)(int32_t)cursor) = snap::MatrixGroupWord0;
                 MEM_W(0x4, (gpr)(int32_t)cursor) = cam;
@@ -450,6 +495,8 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
             MEM_W(0, (gpr)(int32_t)gfxPtrAddress) = cursor;
         }
     }
+
+    snap::clear_stepped_objects();
 
     __real_renPrepareCameraMatrix(rdram, ctx);
 
