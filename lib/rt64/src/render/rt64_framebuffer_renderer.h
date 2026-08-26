@@ -147,11 +147,6 @@ namespace RT64 {
             bool postBlendNoise;
             bool postBlendNoiseNegative;
             uint32_t maxGameCall;
-            // Pokemon Snap port: how far between the previous game frame and
-            // this one the picture being drawn sits. Screen-space rectangles
-            // carry no transform, so the transform processor cannot blend
-            // them and the draw pass has to do it from the two boxes.
-            float curFrameWeight = 1.0f;
         };
 
         FramebufferRenderer(RenderWorker *worker, bool rtSupport, UserConfiguration::GraphicsAPI graphicsAPI, const ShaderLibrary *shaderLibrary);

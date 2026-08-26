@@ -172,69 +172,6 @@ inline std::atomic<uint32_t> &transformsPairedCounter() {
     return counter;
 }
 
-// Draws with no transform of their own at all -- screen-space rectangles and
-// the like. They cannot be paired by identity because there is nothing to
-// identify, so they are counted separately rather than hidden in the miss rate.
-// ... and how many of those could be paired with the frame before. An unpaired
-// rectangle holds one screen position for the whole tick, which against
-// interpolated geometry is what an effect sprite stuttering looks like.
-// Frames where the sprites were left alone because the scene changed, and
-// groups left alone because their membership did. Both are refusals, not
-// failures: the alternative to an uncertain pair is not a better pair, it is
-// a sprite drawn between two positions that were never the same sprite.
-inline std::atomic<uint32_t> &rectSceneSkipCounter() {
-    static std::atomic<uint32_t> counter{0};
-    return counter;
-}
-
-inline std::atomic<uint32_t> &rectGroupSkipCounter() {
-    static std::atomic<uint32_t> counter{0};
-    return counter;
-}
-
-inline std::atomic<uint32_t> &rectsPairedCounter() {
-    static std::atomic<uint32_t> counter{0};
-    return counter;
-}
-
-// Off switch, so a suspected regression can be separated from the change that
-// caused it without a rebuild.
-inline bool rectLerpDisabled() {
-    static const bool disabled = (std::getenv("SNAP_NO_RECT_LERP") != nullptr);
-    return disabled;
-}
-
-inline std::atomic<uint32_t> &rectDrawCounter() {
-    static std::atomic<uint32_t> counter{0};
-    return counter;
-}
-
-// How many of the game's logic steps each drawn frame carried, and how often
-// a frame carried more than usual -- which means the game skipped a draw
-// because the renderer still had the graphics context. A frame that carries
-// more of the world's motion has to be spread over more of the display's time.
-inline std::atomic<uint32_t> &logicStepCounter() {
-    static std::atomic<uint32_t> counter{0};
-    return counter;
-}
-
-inline std::atomic<uint32_t> &drawnFrameCounter() {
-    static std::atomic<uint32_t> counter{0};
-    return counter;
-}
-
-inline std::atomic<uint32_t> &skippedDrawCounter() {
-    static std::atomic<uint32_t> counter{0};
-    return counter;
-}
-
-// What the sprite pairing costs. It runs on the render thread once per frame
-// and walks every rectangle in it, and a busy frame has thousands.
-inline std::atomic<int64_t> &rectMatchNanos() {
-    static std::atomic<int64_t> nanos{0};
-    return nanos;
-}
-
 // How far through the world's motion each rendered image sits, in millionths
 // of a game frame, published by the thread that draws it and read by the
 // thread that shows it.
@@ -272,6 +209,24 @@ inline std::atomic<uint32_t> &motionBackwardsCounter() {
 }
 
 inline std::atomic<uint32_t> &motionBiggestStepMicro() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
+// How many of the game's logic steps each drawn frame carried, and how often
+// a frame carried more than usual -- which means the game skipped a draw
+// because the renderer still had the graphics context.
+inline std::atomic<uint32_t> &logicStepCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
+inline std::atomic<uint32_t> &drawnFrameCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
+inline std::atomic<uint32_t> &skippedDrawCounter() {
     static std::atomic<uint32_t> counter{0};
     return counter;
 }

@@ -23,29 +23,7 @@
 #include "rt64_transform_group.h"
 
 namespace RT64 {
-    // Pokemon Snap port: the box a screen-space rectangle occupied on the
-    // previous game frame, so this one can be drawn between the two.
-    //
-    // These draws sit outside everything else the renderer interpolates, and
-    // not because a tag is missing: RDP::drawRect pins the draw call's world
-    // matrix range to zero and bakes the finished screen box onto the call,
-    // so there is no transform to pair by identity. The game's particle
-    // effects are drawn exactly this way -- the effect system projects each
-    // particle to screen itself and emits one texture rectangle for it -- so
-    // every sprite in the game holds one screen position for a whole game
-    // frame. Against geometry that is being interpolated, and a camera that
-    // is being interpolated with it, a particle standing still in the world
-    // does not merely step: it slides backwards across the surface it sits
-    // on and snaps forward at the tick boundary.
-    struct RectPair {
-        FixedRect prevRect;
-        bool paired = false;
-    };
-
     struct DrawData {
-        // Indexed by DrawCallDesc::callIndex. Entries left unpaired are drawn
-        // exactly as they are drawn without this.
-        std::vector<RectPair> rectPairs;
         std::vector<float> posFloats;
         std::vector<float> velFloats;
         std::vector<float> tcFloats;

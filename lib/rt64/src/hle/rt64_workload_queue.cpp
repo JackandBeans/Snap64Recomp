@@ -792,7 +792,6 @@ namespace RT64 {
                     drawParams.ubershadersOnly = ubershadersOnly;
                     drawParams.postBlendNoise = workloadConfig.postBlendNoise;
                     drawParams.postBlendNoiseNegative = workloadConfig.postBlendNoiseNegative;
-                    drawParams.curFrameWeight = curFrameWeight;
                     drawParams.maxGameCall = std::min(gameCallCountMax - gameCallCursor, fbPair.gameCallCount);
                     framebufferRenderer->addFramebuffer(drawParams);
                 }
