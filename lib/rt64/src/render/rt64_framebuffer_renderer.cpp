@@ -1763,7 +1763,30 @@ namespace RT64 {
                                 // picture is drawn at a constant scale. That one
                                 // keeps its authored size and has its clip
                                 // blended instead.
-                                const bool uncovering = !sameSize && sameRate;
+                                // Uncovering keeps an EDGE PINNED. A panel
+                                // unrolls from somewhere: the course preview
+                                // holds its top and grows downwards, the
+                                // interface panel holds an edge and grows
+                                // sideways. Something that grows on all four
+                                // sides at once is not being uncovered, it is
+                                // getting bigger.
+                                //
+                                // Without this the clip was applied to anything
+                                // that grew, which includes every effect sprite
+                                // in the game that spawns small and swells --
+                                // the sand under Doduo, the leaves out of the
+                                // grass. Those were clipped down to their
+                                // BLENDED size, so at the start of each interval
+                                // barely any of the sprite survived the clip and
+                                // it filled in as the weight advanced. It read
+                                // as effects vanishing and popping back, which
+                                // is what was reported, and it was this.
+                                const bool edgePinned =
+                                    (prevRect.ulx == drawnRect.ulx) ||
+                                    (prevRect.uly == drawnRect.uly) ||
+                                    (prevRect.lrx == drawnRect.lrx) ||
+                                    (prevRect.lry == drawnRect.lry);
+                                const bool uncovering = !sameSize && sameRate && edgePinned;
                                 if (uncovering) {
                                     if (!blended.isEmpty()) {
                                         snapRevealRect = blended;
