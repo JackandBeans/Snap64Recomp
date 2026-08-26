@@ -169,6 +169,10 @@ static bool snap_fx_tag_fits(uint8_t* rdram, uint32_t cursor) {
 // cursor is fetched. Names the particle so the rectangle that follows belongs
 // to it and to nothing else.
 extern "C" void snap_fx_particle(uint8_t* rdram, recomp_context* ctx) {
+    if (!snapdiag::fxTaggingEnabled().load(std::memory_order_relaxed)) {
+        return;
+    }
+
     const uint32_t particle = static_cast<uint32_t>(ctx->r23);
     if (!snap::valid_ram_address(particle)) {
         return;
@@ -189,6 +193,7 @@ extern "C" void snap_fx_particle(uint8_t* rdram, recomp_context* ctx) {
 
     if (snapdiag::statsEnabled()) {
         snapdiag::rectsTaggedEffectsCounter().fetch_add(1, std::memory_order_relaxed);
+        snapdiag::fxTagsWrittenCounter().fetch_add(1, std::memory_order_relaxed);
     }
 }
 
@@ -202,6 +207,14 @@ extern "C" void snap_fx_particle(uint8_t* rdram, recomp_context* ctx) {
 // is. src/rect_tags.cpp closes its groups for exactly this reason; this did not,
 // and that was an omission rather than a decision.
 extern "C" void fx_draw(uint8_t* rdram, recomp_context* ctx) {
+    // How many different things the previous pass actually named. Compared
+    // against the number of tags it wrote, this says whether the register the
+    // tag reads is one particle or something shared between them.
+    if (snapdiag::statsEnabled()) {
+        snapdiag::fxDistinctParticlesCounter().fetch_add(
+            uint32_t(snap::g_particle_occurrence.size()), std::memory_order_relaxed);
+    }
+
     // Each pass counts its own drawings, so an id names one rectangle.
     snap::g_particle_occurrence.clear();
 

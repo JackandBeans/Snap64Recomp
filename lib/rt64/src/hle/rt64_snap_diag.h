@@ -266,6 +266,38 @@ inline std::atomic<uint32_t> &rectsRevealedCounter() {
 //
 // Those want opposite fixes and are indistinguishable from outside. Default on,
 // which is current behaviour.
+// How many DISTINCT things the effect tags actually named, against how many
+// tags were written.
+//
+// This settles whether the register the tag reads is one particle or something
+// shared between them. If every tag names a different address the register is
+// per-particle and the name is sound. If a few addresses account for hundreds of
+// tags then the name is a group, the number folded in beside it is nothing but
+// draw order, and pairing on it matches whichever particle happened to be drawn
+// in that position -- which is order-based pairing, the failure that tore the
+// laboratory background into bands, reintroduced inside the effect system.
+//
+// The evidence already points that way: paired rectangles move only two to
+// seventeen pixels while the view is being swung, and a leaf genuinely tracked
+// across a turn would move much further. Small travel means each one is being
+// matched to a neighbour rather than to itself.
+inline std::atomic<uint32_t> &fxTagsWrittenCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
+inline std::atomic<uint32_t> &fxDistinctParticlesCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
+// Whether the effect system's rectangles are named at all. Off leaves them
+// exactly where the game put them, which is what they looked best as.
+inline std::atomic<bool> &fxTaggingEnabled() {
+    static std::atomic<bool> enabled = { false };
+    return enabled;
+}
+
 inline std::atomic<bool> &rectInterpolationEnabled() {
     static std::atomic<bool> enabled = { true };
     return enabled;

@@ -158,6 +158,17 @@ bool handle_settings_hotkey(int scancode) {
         case SDL_SCANCODE_F5:
             save_settings();
             return true;
+        case SDL_SCANCODE_END: {
+            // Naming of the effect system's rectangles. Off by default until
+            // the name is proven to identify one particle rather than a group
+            // of them; interpolating on a name that does not is what smears
+            // the leaves into each other.
+            const bool on = !snapdiag::fxTaggingEnabled().load(std::memory_order_relaxed);
+            snapdiag::fxTaggingEnabled().store(on, std::memory_order_relaxed);
+            printf("[SNAP-CFG] effect sprite naming: %s\n", on ? "ON" : "off");
+            fflush(stdout);
+            return true;
+        }
         case SDL_SCANCODE_HOME: {
             // Screen-space rectangle interpolation. See the note in
             // rt64_snap_diag.h: this says which half of the renderer an

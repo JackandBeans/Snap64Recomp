@@ -923,6 +923,10 @@ namespace {
                             const uint32_t rectsFill = snapdiag::rectsFromCameraFillCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t rectsDetector = snapdiag::rectsFromDetectorCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t rectsTaggedFx = snapdiag::rectsTaggedEffectsCounter().exchange(0, std::memory_order_relaxed);
+                            const uint32_t fxTags = snapdiag::fxTagsWrittenCounter().exchange(0, std::memory_order_relaxed);
+                            const uint32_t fxDistinct = snapdiag::fxDistinctParticlesCounter().exchange(0, std::memory_order_relaxed);
+                            fprintf(stdout, "[SNAP-PACE]   effect names: %u tags naming %u distinct things (%.2f tags each -- 1.00 means one particle per name)\n",
+                                fxTags, fxDistinct, (fxDistinct > 0) ? (double(fxTags) / double(fxDistinct)) : 0.0);
                             fprintf(stdout, "[SNAP-PACE]   2D unnamed: effects %u, text %u, photo %u, menu-overlay sprites %u, camera fills %u, viewfinder scorer %u; effects NAMED %u (of %u untagged)\n",
                                 rectsFx, rectsText, rectsPhoto, rectsWindow, rectsFill, rectsDetector,
                                 rectsTaggedFx,
