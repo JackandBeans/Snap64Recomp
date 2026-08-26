@@ -1782,12 +1782,32 @@ namespace RT64 {
                                 // it filled in as the weight advanced. It read
                                 // as effects vanishing and popping back, which
                                 // is what was reported, and it was this.
-                                const bool edgePinned =
-                                    (prevRect.ulx == drawnRect.ulx) ||
-                                    (prevRect.uly == drawnRect.uly) ||
-                                    (prevRect.lrx == drawnRect.lrx) ||
-                                    (prevRect.lry == drawnRect.lry);
-                                const bool uncovering = !sameSize && sameRate && edgePinned;
+                                // Uncovering changes EXACTLY ONE edge. The
+                                // course preview rolls its bottom edge down
+                                // with top, left and right fixed; the panel
+                                // slides one edge out the same way. Every
+                                // genuine reveal in the logs has this shape --
+                                // 3x32 at (317,172) becoming 4x32 at (316,172)
+                                // moves the left edge and nothing else.
+                                //
+                                // Requiring only SOME edge to hold still let a
+                                // tumbling effect sprite in, whenever one of
+                                // its edges happened to land where it was and
+                                // its texel rate quantised equal -- the game
+                                // recomputes that rate from the on-screen size
+                                // every frame, so near-equal sizes produce
+                                // equal rates. Treated as a reveal, the sprite
+                                // was clipped to the blended rectangle and
+                                // drawn with chunks missing, which garbled the
+                                // leaves whenever the view swung. One moved
+                                // edge is the shape of an unrolling panel;
+                                // nothing that tumbles has it.
+                                const uint32_t movedEdges =
+                                    uint32_t(prevRect.ulx != drawnRect.ulx) +
+                                    uint32_t(prevRect.uly != drawnRect.uly) +
+                                    uint32_t(prevRect.lrx != drawnRect.lrx) +
+                                    uint32_t(prevRect.lry != drawnRect.lry);
+                                const bool uncovering = !sameSize && sameRate && (movedEdges == 1);
                                 if (uncovering) {
                                     if (!blended.isEmpty()) {
                                         snapRevealRect = blended;

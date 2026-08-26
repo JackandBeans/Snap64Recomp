@@ -291,10 +291,12 @@ inline std::atomic<uint32_t> &fxDistinctParticlesCounter() {
     return counter;
 }
 
-// Whether the effect system's rectangles are named at all. Off leaves them
-// exactly where the game put them, which is what they looked best as.
+// Whether the effect system's rectangles are named. Default on: the naming was
+// measured at one tag per distinct particle, so identity was never the fault --
+// the garbling came from the reveal rule misfiring on tumbling sprites, which
+// the one-moved-edge requirement closes. END still turns it off to compare.
 inline std::atomic<bool> &fxTaggingEnabled() {
-    static std::atomic<bool> enabled = { false };
+    static std::atomic<bool> enabled = { true };
     return enabled;
 }
 
