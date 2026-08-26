@@ -82,6 +82,10 @@ HOOKED = [
     # Every particle handed out gets a number, so a recycled address does not
     # name the particle that used to live there.
     'fx_createParticle',
+    # Sprite slots get a generation number; om.c's free list reissues the
+    # most recently freed address, so an address alone names two different
+    # sprites within a frame of each other.
+    'omGObjAddSprite',
 ]
 
 # Calls inserted INSIDE a recompiled function, at a named guest address.

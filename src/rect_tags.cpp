@@ -224,7 +224,7 @@ static void snap_tag_sprite(uint8_t* rdram, recomp_context* ctx) {
         return;
     }
 
-    const uint32_t id = sprite - snap::SObjFromSprite;
+    const uint32_t id = snap::sobj_id(sprite - snap::SObjFromSprite);
     MEM_W(snap::SpriteCursorOffset, (gpr)(int32_t)sprite) =
         static_cast<int32_t>(snap_write_rect_tag(rdram, cursor, id));
 }
@@ -256,6 +256,19 @@ extern "C" void renDrawSprite(uint8_t* rdram, recomp_context* ctx) {
 extern "C" void func_80373670_846E20(uint8_t* rdram, recomp_context* ctx) {
     snap_tag_sprite(rdram, ctx);
     __real_func_80373670_846E20(rdram, ctx);
+}
+
+// Every sprite slot handed out gets a generation number, so a recycled
+// address is a different name from the sprite that used to live there. Both
+// copies of the sprite library allocate through this one function, so one
+// hook covers them both.
+extern "C" void omGObjAddSprite(uint8_t* rdram, recomp_context* ctx) {
+    __real_omGObjAddSprite(rdram, ctx);
+
+    const uint32_t sobj = static_cast<uint32_t>(ctx->r2);
+    if (snap::valid_ram_address(sobj)) {
+        snap::g_sobj_serials[sobj] = ++snap::g_next_sobj_serial;
+    }
 }
 
 extern "C" void func_803719B0_845160(uint8_t* rdram, recomp_context* ctx) {
