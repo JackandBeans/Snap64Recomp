@@ -882,7 +882,13 @@ namespace {
                                 rectsPaired, rectsSeen, (rectsSeen > 0) ? (100.0 * double(rectsPaired) / double(rectsSeen)) : 0.0);
                             fprintf(stdout, "[SNAP-PACE]   2D coverage: %u of %u rectangles on screen carry a name (%.1f%%); the rest are drawn at the game's rate\n",
                                 rectsSeen, rectsTotal,
-                                (rectsTotal > 0) ? (100.0 * double(rectsSeen) / double(rectsTotal)) : 0.0);
+                                (rectsTotal > 0) ? (100.0 * double(rectsSeen) / double(rectsTotal)) : 0.0);
+                            const uint32_t rectsFx = snapdiag::rectsFromEffectsCounter().exchange(0, std::memory_order_relaxed);
+                            const uint32_t rectsText = snapdiag::rectsFromTextCounter().exchange(0, std::memory_order_relaxed);
+                            const uint32_t rectsPhoto = snapdiag::rectsFromPhotoCounter().exchange(0, std::memory_order_relaxed);
+                            fprintf(stdout, "[SNAP-PACE]   2D unnamed: effects %u, text %u, photo %u (of %u untagged)\n",
+                                rectsFx, rectsText, rectsPhoto,
+                                (rectsTotal > rectsSeen) ? (rectsTotal - rectsSeen) : 0u);
                             const uint32_t rectElements = snapdiag::rectElementsCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t rectCountChanged = snapdiag::rectCountChangedCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t rectTravelRefused = snapdiag::rectTravelRefusedCounter().exchange(0, std::memory_order_relaxed);

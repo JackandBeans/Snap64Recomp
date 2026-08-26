@@ -173,6 +173,25 @@ inline std::atomic<uint32_t> &transformsSeenCounter() {
 // name, so it reads a hundred percent while most of the screen is untagged and
 // still stepping at the game's rate. That statistic can confirm the mechanism
 // works and can never reveal how much of the screen it reaches. This one can.
+// Which code drew the rectangles nothing has named. Coverage says how much of
+// the screen is reached; these say what is standing in the way of reaching the
+// rest, which decides whether a native hook is enough or the function has to be
+// replaced on the game side.
+inline std::atomic<uint32_t> &rectsFromEffectsCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
+inline std::atomic<uint32_t> &rectsFromTextCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
+inline std::atomic<uint32_t> &rectsFromPhotoCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
 inline std::atomic<uint32_t> &rectsTotalCounter() {
     static std::atomic<uint32_t> counter = { 0 };
     return counter;

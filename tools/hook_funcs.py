@@ -63,6 +63,13 @@ HOOKED = [
     # is the object that owns them, and closes the group afterwards.
     'spX2Draw',
     'renDrawSprite',
+    # Measured only, to attribute the rectangles nothing has named yet to the
+    # code that emits them. Each of these builds its commands through
+    # gMainGfxPos, so the span between the write pointer before and after a
+    # call is exactly what that call produced.
+    'fx_draw',
+    'Msg_DrawMessage',
+    'func_8009E3D0',
 ]
 
 

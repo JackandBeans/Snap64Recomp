@@ -117,6 +117,7 @@ set(SNAP_SOURCES
     src/overlay_hook.cpp
     src/matrix_tags.cpp
     src/rect_tags.cpp
+    src/rect_census.cpp
     src/anim_steps.cpp
     src/focus_dot.cpp
     src/dl_budget.cpp
