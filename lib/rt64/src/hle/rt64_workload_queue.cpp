@@ -1480,7 +1480,26 @@ namespace RT64 {
                         snapdiag::cameraDeclaredCounter().fetch_add(1, std::memory_order_relaxed);
                     }
                 }
+                // Only while a film is playing.
+                //
+                // A hold repeats the previous picture for a whole game frame to
+                // hide a tick the console never displayed. Measured against a
+                // real session rather than the attract demo, every hold during
+                // play cost a freeze and then a lurch: windows with no holds
+                // advanced the world by an even 0.21 game frames at worst, and
+                // every window containing one jumped 2.14 to 3.21 frames in a
+                // single present. Forty-one holds, forty-one hitches, which is
+                // the stutter that survived every other fix.
+                //
+                // On the console a repeated frame at thirty per second was
+                // nearly invisible. Here the frames around it are interpolated
+                // to the display's rate, so the same repeat is a hole in
+                // otherwise perfectly even motion -- reproducing the skip
+                // faithfully creates a worse artifact than the one it hides.
+                // Where there is no staged tick to hide, which is all of
+                // ordinary play, it buys nothing and costs that.
                 bool snapCutHold = (workload.snapCutHold || snapSteppedFrame) &&
+                    workload.snapCutscene &&
                     !workload.paused && (!usingMSAA || generateInterpolatedFrames) &&
                     !interpolationTargetKey.isEmpty() && !snapPrevTargetKey.isEmpty();
 

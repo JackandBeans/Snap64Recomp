@@ -23,6 +23,13 @@ extern "C" {
 
 namespace snap {
     extern uint8_t* g_rdram;
+    // True while the code a ride runs from is the code that is loaded.
+    // The renderer holds frames to hide the staged ticks of the movie the
+    // console never displayed, and that is worth doing while a film is
+    // playing and harmful while somebody is driving: a held frame is a
+    // freeze and then a lurch of two or three game frames, which is
+    // exactly what a player feels as a stutter.
+    bool g_app_level_resident = false;
 }
 
 static inline uint32_t read_u32(uint8_t* rdram, uint32_t addr) {
@@ -48,6 +55,26 @@ extern "C" void dmaLoadOverlay(uint8_t* rdram, recomp_context* ctx) {
         snap_prepare_overlay_load(static_cast<int32_t>(vram_start), size);
         load_overlays(rom_start, static_cast<int32_t>(vram_start), size);
         snap_record_overlay_load(rom_start, static_cast<int32_t>(vram_start), size);
+
+        // The course's own code lives in ROM 0x4F0610 at 0x80350200 -- the
+        // course update and both camera routines are inside it -- so its
+        // arrival is the game entering a level and something loading over
+        // it is the game leaving one.
+        //
+        // The test used to watch a different overlay, one that loads once at
+        // boot and is evicted by the very next load, so the answer was "not
+        // in a level" from the first seconds onwards and everything gated on
+        // it was gated on nothing. A load only counts as evicting the level
+        // if it lands on the level's own entry, which is what being replaced
+        // actually means.
+        constexpr uint32_t LevelCodeStart = 0x80350200u;
+        constexpr uint32_t LevelCodeEnd = 0x803AB1C0u;
+        if (rom_start == 0x4F0610u) {
+            snap::g_app_level_resident = true;
+        }
+        else if ((vram_start < LevelCodeEnd) && ((vram_start + size) > LevelCodeStart)) {
+            snap::g_app_level_resident = false;
+        }
     }
 }
 

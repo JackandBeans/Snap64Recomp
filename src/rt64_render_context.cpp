@@ -26,6 +26,10 @@ static int64_t snap_display_list_nanos = 0;
 
 // How long this thread was handed off to other guest threads, and how often
 // (ultramodern/src/threads.cpp).
+namespace snap {
+    extern bool g_app_level_resident;                        // overlay_hook.cpp
+}
+
 // How many logic steps the game ran for the frame it is submitting now
 // (src/frame_cost.cpp). Taken and reset here, so it describes this frame.
 extern "C" uint32_t snap_take_logic_steps();
@@ -384,6 +388,7 @@ public:
         {
             RT64::Workload &workload = app_->workloadQueue->workloads[app_->workloadQueue->writeCursor];
             workload.snapLogicSteps = snap_take_logic_steps();
+            workload.snapCutscene = !snap::g_app_level_resident;
         }
 
         if (snap::g_world_rebased) {

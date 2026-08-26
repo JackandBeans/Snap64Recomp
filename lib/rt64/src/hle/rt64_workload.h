@@ -245,6 +245,12 @@ namespace RT64 {
         // the queue presents the previous frame's image for this workload's
         // interval to match.
         bool snapCutHold = false;
+        // Set while the game is showing a film rather than being played:
+        // menus, cards, the opening movie, a course's own opening camera.
+        // Frame holds are confined to those, because measurement of a real
+        // session showed every one of them during play produced a freeze and
+        // then a jump of two to three game frames.
+        bool snapCutscene = false;
         // How many of the game's logic steps this drawn frame stands for.
         // Normally two on this game; three when the game skipped a draw
         // because the renderer still had the graphics context. A frame that
