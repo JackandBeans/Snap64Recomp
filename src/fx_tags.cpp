@@ -102,11 +102,28 @@ uint32_t serial_for(uint32_t particle) {
     return (it != g_particle_serials.end()) ? it->second : 0u;
 }
 
+// How many times this particle has been drawn so far in this pass over the
+// effects, cleared at the start of each one.
+//
+// A particle is drawn once per render pass and the number of passes it appears
+// in is not the same every frame. Named by particle alone it is therefore an
+// element whose rectangle count moves -- one frame two rectangles, the next
+// frame one -- and a pair is refused whenever a count moves, because the
+// ordinal is only emission order and a changed count shifts everything after
+// it. Measured during effect bursts that refused twelve to twenty-four percent
+// of elements outright, and only about half of the named effect rectangles were
+// pairing at all against ninety-nine percent in the menus.
+//
+// Folding the occurrence into the name makes each drawing of a particle its own
+// element with exactly one rectangle, so its count is one and can never change.
+// The failure mode the gate exists to catch cannot arise here at all.
+std::unordered_map<uint32_t, uint32_t> g_particle_occurrence;
+
 // Mixes the address with the serial so a reissued address is a different name.
 // Avoids both values the extended commands reserve, so an id can never be read
 // as "ignore this" or "work it out yourself".
-uint32_t particle_id(uint32_t particle, uint32_t serial) {
-    uint32_t id = particle ^ (serial * 2654435761u);
+uint32_t particle_id(uint32_t particle, uint32_t serial, uint32_t occurrence) {
+    uint32_t id = particle ^ (serial * 2654435761u) ^ (occurrence * 0x9E3779B9u);
     id ^= (id >> 13);
     if ((id == 0u) || (id == 0xFFFFFFFFu)) {
         id = 1u;
@@ -162,7 +179,8 @@ extern "C" void snap_fx_particle(uint8_t* rdram, recomp_context* ctx) {
         return;
     }
 
-    const uint32_t id = snap::particle_id(particle, snap::serial_for(particle));
+    const uint32_t occurrence = snap::g_particle_occurrence[particle]++;
+    const uint32_t id = snap::particle_id(particle, snap::serial_for(particle), occurrence);
     MEM_W(0x0, (gpr)(int32_t)cursor) = snap::EnableWord0;
     MEM_W(0x4, (gpr)(int32_t)cursor) = snap::EnableWord1;
     MEM_W(0x8, (gpr)(int32_t)cursor) = snap::RectGroupWord0;
@@ -184,6 +202,9 @@ extern "C" void snap_fx_particle(uint8_t* rdram, recomp_context* ctx) {
 // is. src/rect_tags.cpp closes its groups for exactly this reason; this did not,
 // and that was an omission rather than a decision.
 extern "C" void fx_draw(uint8_t* rdram, recomp_context* ctx) {
+    // Each pass counts its own drawings, so an id names one rectangle.
+    snap::g_particle_occurrence.clear();
+
     const bool counting = snapdiag::statsEnabled();
     const uint32_t before = counting
         ? static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)snap::GMainGfxPos))
