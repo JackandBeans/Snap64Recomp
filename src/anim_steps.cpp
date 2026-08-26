@@ -204,6 +204,7 @@ void note_stepped_object(uint32_t gobj) {
         }
     }
     g_stepped_objects[g_stepped_object_count++] = gobj;
+    snapdiag::stepsNotedCounter().fetch_add(1, std::memory_order_relaxed);
     // Photograph what the screen actually shows across an authored step. The
     // whole chain verifies in logs; only the pictures can say whether the
     // object still travels between its two poses.

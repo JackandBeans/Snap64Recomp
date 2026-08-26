@@ -472,6 +472,48 @@ inline std::atomic<uint32_t> &stepIsolatedCounter() {
     return counter;
 }
 
+// The chain that produces a frame hold, counted at every link.
+//
+// The report says how many verdicts were RAISED and how many holds were taken,
+// and across five sessions it says both are zero -- so nothing is being
+// rejected by the gate, nothing is being raised in the first place. That could
+// break at any of four places and they want different fixes: the camera hook
+// never running, the cut test never passing, the animation system never finding
+// a step, or the steps it finds never reaching the display list.
+inline std::atomic<uint32_t> &cameraHookCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
+inline std::atomic<uint32_t> &cameraTestedCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
+// The largest eye jump and view swing seen, so a cut that sits just under the
+// threshold can be told from no cut at all. In hundredths of a unit and in
+// whole degrees.
+inline std::atomic<uint32_t> &cameraBiggestEyeCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
+inline std::atomic<uint32_t> &cameraBiggestSwingCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
+// Steps the animation system found, and steps that actually reached the list.
+inline std::atomic<uint32_t> &stepsNotedCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
+inline std::atomic<uint32_t> &stepsEmittedCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
 inline std::atomic<uint32_t> &cameraDeclaredCounter() {
     static std::atomic<uint32_t> counter{0};
     return counter;

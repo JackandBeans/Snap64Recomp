@@ -256,6 +256,7 @@ float read_cam_f32(uint8_t* rdram, uint32_t addr) {
 // this is also where the extension gets turned on; RT64 keeps the state, and
 // re-enabling is harmless.
 extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
+    snapdiag::cameraHookCounter().fetch_add(1, std::memory_order_relaxed);
     const uint32_t gfxPtrAddress = static_cast<uint32_t>(ctx->r4);
 
     // a1 is the OMCamera. Both view kinds keep eye at +0x3C and the look-at
@@ -313,6 +314,14 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
             }
             eyeD = sqrtf(eyeD2);
             atD = sqrtf(atD2);
+            snapdiag::cameraTestedCounter().fetch_add(1, std::memory_order_relaxed);
+            {
+                const uint32_t eyeHundredths = uint32_t(eyeD * 100.0f);
+                uint32_t seen = snapdiag::cameraBiggestEyeCounter().load(std::memory_order_relaxed);
+                while ((eyeHundredths > seen) &&
+                       !snapdiag::cameraBiggestEyeCounter().compare_exchange_weak(seen, eyeHundredths, std::memory_order_relaxed)) {
+                }
+            }
 
             // A cut is a jump that BREAKS from the camera's own motion, not
             // merely a large one. The floor comes from measurement: the
@@ -366,6 +375,16 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                 dot = 1.0f;
             }
             const bool atCut = (dot < CutCosine) && discontinuous(atD, track->atDelta);
+            {
+                // The swing in whole degrees, so a view that turned twenty-nine
+                // reads differently from one that did not turn at all.
+                const float clampedDot = (dot < -1.0f) ? -1.0f : ((dot > 1.0f) ? 1.0f : dot);
+                const uint32_t degrees = uint32_t(acosf(clampedDot) * (180.0f / 3.14159265f));
+                uint32_t seen = snapdiag::cameraBiggestSwingCounter().load(std::memory_order_relaxed);
+                while ((degrees > seen) &&
+                       !snapdiag::cameraBiggestSwingCounter().compare_exchange_weak(seen, degrees, std::memory_order_relaxed)) {
+                }
+            }
             if (eyeCut || atCut) {
                 cameraCut = true;
                 holdFrame = true;
@@ -480,6 +499,7 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                 }
                 MEM_W(0x0, (gpr)(int32_t)cursor) = snap::AuthoredStepWord0;
                 MEM_W(0x4, (gpr)(int32_t)cursor) = stepped;
+                snapdiag::stepsEmittedCounter().fetch_add(1, std::memory_order_relaxed);
                 cursor += snap::GfxCommandSize;
             }
             if (snap::valid_ram_address(cam)) {

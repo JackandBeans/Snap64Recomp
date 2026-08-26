@@ -869,6 +869,13 @@ namespace {
                             snapdiag::cameraDeclaredCounter().exchange(0, std::memory_order_relaxed),
                             snapdiag::stepDeclaredCounter().exchange(0, std::memory_order_relaxed),
                             snapdiag::stepIsolatedCounter().exchange(0, std::memory_order_relaxed));
+                        fprintf(stdout, "[SNAP-PACE]   hold chain: camera hook ran %u, cut testable on %u; biggest eye jump %.2f (cuts at 25.00), biggest view swing %u deg (cuts at 30); steps found %u, emitted %u\n",
+                            snapdiag::cameraHookCounter().exchange(0, std::memory_order_relaxed),
+                            snapdiag::cameraTestedCounter().exchange(0, std::memory_order_relaxed),
+                            double(snapdiag::cameraBiggestEyeCounter().exchange(0, std::memory_order_relaxed)) / 100.0,
+                            snapdiag::cameraBiggestSwingCounter().exchange(0, std::memory_order_relaxed),
+                            snapdiag::stepsNotedCounter().exchange(0, std::memory_order_relaxed),
+                            snapdiag::stepsEmittedCounter().exchange(0, std::memory_order_relaxed));
                         {
                             // How much of the scene the renderer could pair with the
                             // frame before it. Whatever it could not is drawn at one
