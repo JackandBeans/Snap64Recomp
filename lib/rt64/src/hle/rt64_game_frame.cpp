@@ -1403,8 +1403,7 @@ namespace RT64 {
                     // line per pair: what joined what. Wrong pairs are visible
                     // as lines whose two rectangles are not the same thing.
                     if (snapdiag::pairDumpPending().load(std::memory_order_relaxed) > 0) {
-                        fprintf(stdout, "[SNAP-PAIR] id %08X ord %u: (%d,%d %dx%d) -> (%d,%d %dx%d)
-",
+                        fprintf(stdout, "[SNAP-PAIR] id %08X ord %u: (%d,%d %dx%d) -> (%d,%d %dx%d)\n",
                             call.snapRectId, call.snapRectOrdinal,
                             prevRect.ulx >> 2, prevRect.uly >> 2,
                             (prevRect.lrx - prevRect.ulx) >> 2, (prevRect.lry - prevRect.uly) >> 2,
