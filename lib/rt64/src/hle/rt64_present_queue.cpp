@@ -888,7 +888,12 @@ namespace {
                             const uint32_t rectsPhoto = snapdiag::rectsFromPhotoCounter().exchange(0, std::memory_order_relaxed);
                             fprintf(stdout, "[SNAP-PACE]   2D unnamed: effects %u, text %u, photo %u (of %u untagged)\n",
                                 rectsFx, rectsText, rectsPhoto,
-                                (rectsTotal > rectsSeen) ? (rectsTotal - rectsSeen) : 0u);
+                                (rectsTotal > rectsSeen) ? (rectsTotal - rectsSeen) : 0u);
+                            const uint32_t unnamedStill = snapdiag::rectsUnnamedStillCounter().exchange(0, std::memory_order_relaxed);
+                            const uint32_t unnamedMoved = snapdiag::rectsUnnamedMovedCounter().exchange(0, std::memory_order_relaxed);
+                            fprintf(stdout, "[SNAP-PACE]   2D unnamed motion: %u stood still, %u moved (%.1f%% of unnamed content is what interpolation would actually change)\n",
+                                unnamedStill, unnamedMoved,
+                                ((unnamedStill + unnamedMoved) > 0) ? (100.0 * double(unnamedMoved) / double(unnamedStill + unnamedMoved)) : 0.0);
                             const uint32_t rectElements = snapdiag::rectElementsCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t rectCountChanged = snapdiag::rectCountChangedCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t rectTravelRefused = snapdiag::rectTravelRefusedCounter().exchange(0, std::memory_order_relaxed);

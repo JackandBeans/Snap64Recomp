@@ -177,6 +177,26 @@ inline std::atomic<uint32_t> &transformsSeenCounter() {
 // the screen is reached; these say what is standing in the way of reaching the
 // rest, which decides whether a native hook is enough or the function has to be
 // replaced on the game side.
+// Of the rectangles nothing has named, how many sat in exactly the same place
+// as a rectangle on the previous drawn frame.
+//
+// A rectangle that does not move does not need interpolating: naming it would
+// pair it with itself and blend two identical positions. So raw coverage
+// overstates the problem, and the number that actually matters is how much of
+// the unnamed content MOVES. Matching on exact coordinates cannot tell one
+// still rectangle from another, but it does not have to -- if a rectangle with
+// these exact corners was on screen last frame too, then whatever drew it did
+// not move it.
+inline std::atomic<uint32_t> &rectsUnnamedStillCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
+inline std::atomic<uint32_t> &rectsUnnamedMovedCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
 inline std::atomic<uint32_t> &rectsFromEffectsCounter() {
     static std::atomic<uint32_t> counter = { 0 };
     return counter;

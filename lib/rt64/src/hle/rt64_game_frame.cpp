@@ -6,6 +6,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <unordered_map>
+#include <unordered_set>
 #include "common/rt64_math.h"
 
 #include "rt64_game_frame.h"
@@ -1042,10 +1043,22 @@ namespace RT64 {
         const bool countRectStats = snapdiag::statsEnabled();
         thread_local std::unordered_map<uint32_t, uint32_t> prevCounts;
         thread_local std::unordered_map<uint32_t, uint32_t> curCounts;
+
+        // Every unnamed rectangle's exact corners, so a rectangle that has not
+        // moved can be told from one that has.
+        thread_local std::unordered_set<uint64_t> prevUnnamed;
         if (countRectStats) {
             prevCounts.clear();
             curCounts.clear();
+            prevUnnamed.clear();
         }
+
+        auto cornersOf = [](const FixedRect &r) {
+            return (uint64_t(uint32_t(r.ulx) & 0xFFFFu) << 48) |
+                   (uint64_t(uint32_t(r.uly) & 0xFFFFu) << 32) |
+                   (uint64_t(uint32_t(r.lrx) & 0xFFFFu) << 16) |
+                    uint64_t(uint32_t(r.lry) & 0xFFFFu);
+        };
 
         auto keyOf = [](const DrawCall &call) {
             return (uint64_t(call.snapRectId) << 32) | uint64_t(call.snapRectOrdinal);
@@ -1066,6 +1079,9 @@ namespace RT64 {
                         if (countRectStats) {
                             prevCounts[call.snapRectId]++;
                         }
+                    }
+                    else if (countRectStats) {
+                        prevUnnamed.insert(cornersOf(call.rect));
                     }
                 }
             }
@@ -1099,6 +1115,14 @@ namespace RT64 {
                     }
 
                     if (call.snapRectId == 0) {
+                        if (countRectStats) {
+                            if (prevUnnamed.find(cornersOf(call.rect)) != prevUnnamed.end()) {
+                                snapdiag::rectsUnnamedStillCounter().fetch_add(1, std::memory_order_relaxed);
+                            }
+                            else {
+                                snapdiag::rectsUnnamedMovedCounter().fetch_add(1, std::memory_order_relaxed);
+                            }
+                        }
                         continue;
                     }
                     if (countRectStats) {
