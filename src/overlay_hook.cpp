@@ -7,6 +7,7 @@
  * option routes all calls here; we run the real (recompiled) loader first,
  * then update librecomp's function tables for the newly resident code.
  */
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 
@@ -29,7 +30,7 @@ namespace snap {
     // playing and harmful while somebody is driving: a held frame is a
     // freeze and then a lurch of two or three game frames, which is
     // exactly what a player feels as a stutter.
-    bool g_app_level_resident = false;
+    std::atomic<bool> g_app_level_resident = { false };
 }
 
 static inline uint32_t read_u32(uint8_t* rdram, uint32_t addr) {
@@ -70,10 +71,10 @@ extern "C" void dmaLoadOverlay(uint8_t* rdram, recomp_context* ctx) {
         constexpr uint32_t LevelCodeStart = 0x80350200u;
         constexpr uint32_t LevelCodeEnd = 0x803AB1C0u;
         if (rom_start == 0x4F0610u) {
-            snap::g_app_level_resident = true;
+            snap::g_app_level_resident.store(true, std::memory_order_relaxed);
         }
         else if ((vram_start < LevelCodeEnd) && ((vram_start + size) > LevelCodeStart)) {
-            snap::g_app_level_resident = false;
+            snap::g_app_level_resident.store(false, std::memory_order_relaxed);
         }
     }
 }

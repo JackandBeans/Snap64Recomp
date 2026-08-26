@@ -27,7 +27,7 @@ static int64_t snap_display_list_nanos = 0;
 // How long this thread was handed off to other guest threads, and how often
 // (ultramodern/src/threads.cpp).
 namespace snap {
-    extern bool g_app_level_resident;                        // overlay_hook.cpp
+    extern std::atomic<bool> g_app_level_resident;           // overlay_hook.cpp
 }
 
 // How many logic steps the game ran for the frame it is submitting now
@@ -101,8 +101,8 @@ static void dummy_check_interrupts() {}
 
 namespace snap {
 
-extern bool g_focus_dot_visible;                             // focus_dot.cpp
-extern bool g_world_rebased;                                 // matrix_tags.cpp
+extern std::atomic<bool> g_focus_dot_visible;                // focus_dot.cpp
+extern std::atomic<bool> g_world_rebased;                    // matrix_tags.cpp
 extern float g_world_rebase_delta[3];                        // matrix_tags.cpp
 
 class RT64Context : public ultramodern::renderer::RendererContext {
@@ -373,7 +373,10 @@ public:
         // comes in. So the indicator was suppressed even on the frames the
         // game had drawn it. The observation is self-gating -- the hook only
         // runs when the game runs it, and it clears itself below.
-        app_->state->snapFocusDotRequest = snap::g_focus_dot_visible;
+        // Taken with an exchange: read and cleared in one step, so a set the
+        // game made between the read and the clear is not swallowed and the
+        // indicator does not drop out for a frame.
+        app_->state->snapFocusDotRequest = snap::g_focus_dot_visible.exchange(false, std::memory_order_relaxed);
 
         // Crossing into the next world block moves the origin everything is
         // expressed about, so this frame cannot be blended with the last one.
@@ -388,11 +391,12 @@ public:
         {
             RT64::Workload &workload = app_->workloadQueue->workloads[app_->workloadQueue->writeCursor];
             workload.snapLogicSteps = snap_take_logic_steps();
-            workload.snapCutscene = !snap::g_app_level_resident;
+            workload.snapCutscene = !snap::g_app_level_resident.load(std::memory_order_relaxed);
         }
 
-        if (snap::g_world_rebased) {
-            snap::g_world_rebased = false;
+        // Taken with an exchange so the flag and the deltas it refers to are
+        // consumed together and exactly once.
+        if (snap::g_world_rebased.exchange(false, std::memory_order_acquire)) {
             RT64::Workload &workload = app_->workloadQueue->workloads[app_->workloadQueue->writeCursor];
             workload.snapOriginRebased = true;
             workload.snapOriginDelta = hlslpp::float3(
@@ -405,12 +409,13 @@ public:
         // camera's matrix group packet, read onto the workload while the
         // display list below is processed (rt64_gbi_extended.cpp).
 
-        // Consumed, so the next frame has to be established by the game again.
-        // Without this the indicator latches on: with render to RAM enabled the
-        // frame RT64 drew, dot included, is copied back over the framebuffer in
-        // RDRAM, so the pixel the hook samples would already be the dot colour
-        // before the game had decided anything.
-        snap::g_focus_dot_visible = false;
+        // The clear that used to be here is part of the exchange above now.
+        // It has to be consumed, or the indicator latches on -- with render to
+        // RAM enabled the frame RT64 drew, dot included, is copied back over
+        // the framebuffer in RDRAM, so the pixel the hook samples would already
+        // be the dot colour before the game had decided anything. Doing it as a
+        // separate write here also let it land on a value the game had set in
+        // the meantime, which dropped the indicator for a frame.
 
         // Process the display list. Pass 0 for dlEndAddress â€” RT64 will walk
         // the list until it encounters a G_ENDDL command.

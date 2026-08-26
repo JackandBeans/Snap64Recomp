@@ -20,6 +20,7 @@
  * the indicator, because the answer always comes from the game itself.
  */
 
+#include <atomic>
 #include <cstdint>
 
 #include "recomp.h"
@@ -31,7 +32,10 @@ extern "C" {
 namespace snap {
 
 // Set by the hook below, consumed by send_dl on the next display list.
-bool g_focus_dot_visible = false;
+// Set on a guest thread and read, then cleared, on the thread that submits
+// display lists. Left as a plain bool the renderer's clear could swallow the
+// game's set and the indicator would drop out for a frame.
+std::atomic<bool> g_focus_dot_visible = { false };
 
 namespace {
 
@@ -111,7 +115,7 @@ extern "C" void PokemonDetector_PostProcessImage(uint8_t* rdram, recomp_context*
     // MEM_H applies the byte-order XOR itself, so doing it here as well cancels
     // it and samples the pixel next door.
     const bool drewDot = (MEM_H(0, (gpr)(int32_t)centerAddress) & 0xFFFF) == snap::DotColor;
-    snap::g_focus_dot_visible = drewDot;
+    snap::g_focus_dot_visible.store(drewDot, std::memory_order_relaxed);
 
     // When the game DID write here, what is there is already what the game put
     // there and must be left alone.

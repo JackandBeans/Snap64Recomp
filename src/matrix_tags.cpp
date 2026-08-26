@@ -211,7 +211,7 @@ bool gfx_buffer_has_room(uint8_t* rdram, uint32_t gfxPtrAddress, uint32_t cursor
 // no previous frame to pair with, so the renderer draws it snapped anyway.
 namespace snap {
 // Defined below with the block-transition hooks.
-extern bool g_world_rebased;
+extern std::atomic<bool> g_world_rebased;
 // Objects whose animation stepped to a new pose this frame (anim_steps.cpp).
 uint32_t stepped_object_count();
 uint32_t stepped_object(uint32_t index);
@@ -292,7 +292,7 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
             at[i] = snap::read_cam_f32(rdram, cam + 0x48 + i * 4);
         }
         float eyeD = 0.0f, atD = 0.0f;
-        if (snap::g_world_rebased) {
+        if (snap::g_world_rebased.load(std::memory_order_acquire)) {
             // A block-transition rebase moves the origin the camera's numbers
             // are expressed in, so the raw jump this frame is the origin
             // shift, not a cut: read in the new origin the motion is
@@ -561,7 +561,18 @@ extern "C" void omGetMtx(uint8_t* rdram, recomp_context* ctx) {
 // the world origin, so the frame it runs on is not continuous with the one
 // before it. Consumed by send_dl, which passes it to the renderer.
 namespace snap {
-bool g_world_rebased = false;
+// Written on a game thread and consumed on the thread that submits display
+// lists, which are not the same thread. The deltas are published first and the
+// flag last, with a release, so a reader that sees the flag is guaranteed to
+// see the deltas that belong to it; the reader takes the flag with an exchange
+// so two readers cannot both consume one rebase and a clear cannot be lost.
+//
+// Left as plain data this dropped rebases outright: the deltas could be read
+// from the previous one, or a flag raised for the next display list could be
+// cleared by this one. A dropped rebase is a frame interpolated across a move
+// of the world origin, which is the whole-screen flat colour this exists to
+// prevent.
+std::atomic<bool> g_world_rebased = { false };
 float g_world_rebase_delta[3] = {};
 }
 
@@ -615,7 +626,7 @@ extern "C" void enterNextBlock(uint8_t* rdram, recomp_context* ctx) {
         if (snapdiag::captureEnabled()) {
             snap_frame_dump_pending.store(30);
         }
-        snap::g_world_rebased = true;
+        snap::g_world_rebased.store(true, std::memory_order_release);
         if ((snapdiag::diagEnabled() || snapdiag::statsEnabled()) && snap::valid_ram_address(block)) {
             printf("[SNAP-BLOCK] f%u entered block %d\n",
                 snapdiag::gameFrameCounter().load(std::memory_order_relaxed),
