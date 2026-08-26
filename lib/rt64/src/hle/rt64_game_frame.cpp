@@ -1127,6 +1127,83 @@ namespace RT64 {
         fflush(stdout);
     }
 
+    // Says what a named rectangle DID between two drawn frames, and therefore
+    // which of the two rules will handle it.
+    //
+    // A rectangle that keeps its size is moving and its viewport is blended. One
+    // that changes size at a fixed texel rate is uncovering, and its clip is
+    // blended instead. One whose rate changed too is being rescaled, and its
+    // viewport is blended so the picture squashes the way the game intends.
+    // Those are three different pictures on screen and the difference between
+    // them is invisible from outside, so an element that still looks wrong
+    // cannot be diagnosed without knowing which one it took.
+    //
+    // Reported once per distinct shape, and only for rectangles that changed --
+    // a still one has nothing to say.
+    static void snapReportRectChange(const DrawCall &call, const FixedRect &prevRect, int16_t prevDsdx, int16_t prevDtdy) {
+        const int32_t curW = call.rect.lrx - call.rect.ulx;
+        const int32_t curH = call.rect.lry - call.rect.uly;
+        const int32_t prevW = prevRect.lrx - prevRect.ulx;
+        const int32_t prevH = prevRect.lry - prevRect.uly;
+        const bool sameSize = (curW == prevW) && (curH == prevH);
+        if (sameSize) {
+            return;
+        }
+
+        struct Shape {
+            int32_t width;
+            int32_t height;
+            uint32_t quiet;
+            bool used;
+        };
+
+        static Shape shapes[16] = {};
+        static uint32_t serial = 0;
+        serial++;
+
+        Shape *slot = nullptr;
+        for (Shape &shape : shapes) {
+            if (shape.used && (shape.width == (curW >> 2)) && (shape.height == (curH >> 2))) {
+                slot = &shape;
+                break;
+            }
+        }
+
+        if (slot != nullptr) {
+            if ((serial - slot->quiet) < 200u) {
+                slot->quiet = serial;
+                return;
+            }
+
+            slot->quiet = serial;
+        }
+        else {
+            for (Shape &shape : shapes) {
+                if (!shape.used) {
+                    slot = &shape;
+                    break;
+                }
+            }
+
+            if (slot == nullptr) {
+                return;
+            }
+
+            slot->used = true;
+            slot->width = curW >> 2;
+            slot->height = curH >> 2;
+            slot->quiet = serial;
+        }
+
+        const bool sameRate = (call.rectDsdx == prevDsdx) && (call.rectDtdy == prevDtdy);
+        fprintf(stdout, "[SNAP-2D] named rect resized: %dx%d at (%d,%d) -> %dx%d at (%d,%d), rate %d/%d -> %d/%d, treated as %s\n",
+            prevW >> 2, prevH >> 2, prevRect.ulx >> 2, prevRect.uly >> 2,
+            curW >> 2, curH >> 2, call.rect.ulx >> 2, call.rect.uly >> 2,
+            int(prevDsdx), int(prevDtdy), int(call.rectDsdx), int(call.rectDtdy),
+            sameRate ? "UNCOVERING (clip blended)" : "RESCALING (viewport blended)");
+        fflush(stdout);
+    }
+
     void GameFrame::snapMatchRects(Workload &curWorkload, const Workload &prevWorkload) {
         // The rectangle AND the rate it sampled its texture at. A rectangle
         // that grew while its texel rate held still is uncovering more of a
@@ -1268,6 +1345,10 @@ namespace RT64 {
                     call.snapPrevDsdx = it->second.dsdx;
                     call.snapPrevDtdy = it->second.dtdy;
                     call.snapRectMapped = true;
+
+                    if (countRectStats) {
+                        snapReportRectChange(call, prevRect, it->second.dsdx, it->second.dtdy);
+                    }
 
                     if (countRectStats) {
                         const int32_t curW = call.rect.lrx - call.rect.ulx;
