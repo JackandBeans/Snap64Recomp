@@ -366,11 +366,29 @@ namespace RT64 {
             }
 
             if (snapdiag::statsEnabled()) {
+                // Every matrix the previous frame drew with, so an unpaired one
+                // can be asked whether it actually went anywhere.
+                thread_local std::unordered_set<uint64_t> prevMatrices;
+                prevMatrices.clear();
+                for (const auto &m : prevWorkload.drawData.worldTransforms) {
+                    prevMatrices.insert(XXH3_64bits(&m, sizeof(m)));
+                }
+
                 uint32_t seen = 0, paired = 0;
-                for (const auto &tm : curWorkloadMap.transforms) {
+                for (size_t ti = 0; ti < curWorkloadMap.transforms.size(); ti++) {
+                    const auto &tm = curWorkloadMap.transforms[ti];
                     seen++;
                     if (tm.mapped) {
                         paired++;
+                    }
+                    else if (ti < curWorkload.drawData.worldTransforms.size()) {
+                        const auto &m = curWorkload.drawData.worldTransforms[ti];
+                        if (prevMatrices.find(XXH3_64bits(&m, sizeof(m))) != prevMatrices.end()) {
+                            snapdiag::transformsUnpairedStillCounter().fetch_add(1, std::memory_order_relaxed);
+                        }
+                        else {
+                            snapdiag::transformsUnpairedMovedCounter().fetch_add(1, std::memory_order_relaxed);
+                        }
                     }
                 }
 

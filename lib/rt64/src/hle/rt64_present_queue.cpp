@@ -894,6 +894,11 @@ namespace {
                                 tagged, seen, (seen > 0) ? (100.0 * double(tagged) / double(seen)) : 0.0);
                             fprintf(stdout, "[SNAP-PACE]   3D discarded: %u of %u transforms were named with the reserved id zero and dropped\n",
                                 ignored, seen);
+                            const uint32_t tfStill = snapdiag::transformsUnpairedStillCounter().exchange(0, std::memory_order_relaxed);
+                            const uint32_t tfMoved = snapdiag::transformsUnpairedMovedCounter().exchange(0, std::memory_order_relaxed);
+                            fprintf(stdout, "[SNAP-PACE]   3D unpaired motion: %u stood still, %u moved (%.1f%% of unpaired 3D is what interpolation would actually change)\n",
+                                tfStill, tfMoved,
+                                ((tfStill + tfMoved) > 0) ? (100.0 * double(tfMoved) / double(tfStill + tfMoved)) : 0.0);
                             const uint32_t rectsLerped = snapdiag::rectsLerpedCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t drawMarked = snapdiag::rectDrawMarkedCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t drawWeightOne = snapdiag::rectDrawWeightOneCounter().exchange(0, std::memory_order_relaxed);

@@ -278,6 +278,25 @@ inline std::atomic<uint32_t> &rectsFromCameraFillCounter() {
 // "ignore this one" and drops before any pairing is attempted. A matrix gets
 // that id when its serial was never stamped, so this separates content the game
 // does not tag at all from content it tags with nothing.
+// Of the transforms that did not pair, how many actually MOVED.
+//
+// The same question that retired the two-dimensional coverage figure. A
+// transform nothing paired is only a problem if the thing it draws is going
+// somewhere; a background that sits still has the same matrix in both frames,
+// and pairing it would blend two identical positions. Matching on the exact
+// matrix cannot tell one still object from another, and does not need to -- if
+// this exact transform was in the previous frame, whatever it draws did not
+// move.
+inline std::atomic<uint32_t> &transformsUnpairedStillCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
+inline std::atomic<uint32_t> &transformsUnpairedMovedCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
 inline std::atomic<uint32_t> &transformsIgnoredCounter() {
     static std::atomic<uint32_t> counter = { 0 };
     return counter;
