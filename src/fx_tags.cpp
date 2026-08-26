@@ -169,12 +169,23 @@ static bool snap_fx_tag_fits(uint8_t* rdram, uint32_t cursor) {
 // cursor is fetched. Names the particle so the rectangle that follows belongs
 // to it and to nothing else.
 extern "C" void snap_fx_particle(uint8_t* rdram, recomp_context* ctx) {
-    if (!snapdiag::fxTaggingEnabled().load(std::memory_order_relaxed)) {
+    const uint32_t particle = static_cast<uint32_t>(ctx->r23);
+    if (!snap::valid_ram_address(particle)) {
         return;
     }
 
-    const uint32_t particle = static_cast<uint32_t>(ctx->r23);
-    if (!snap::valid_ram_address(particle)) {
+    // Counted whether or not the name is written.
+    //
+    // The previous build gated this whole function on the feature switch, so
+    // turning the naming off to stop the smearing also silenced the one number
+    // that says WHY it smears. A measurement that stops when the thing it
+    // measures is disabled cannot be used to decide whether to enable it.
+    const uint32_t occurrence = snap::g_particle_occurrence[particle]++;
+    if (snapdiag::statsEnabled()) {
+        snapdiag::fxTagsWrittenCounter().fetch_add(1, std::memory_order_relaxed);
+    }
+
+    if (!snapdiag::fxTaggingEnabled().load(std::memory_order_relaxed)) {
         return;
     }
 
@@ -183,7 +194,6 @@ extern "C" void snap_fx_particle(uint8_t* rdram, recomp_context* ctx) {
         return;
     }
 
-    const uint32_t occurrence = snap::g_particle_occurrence[particle]++;
     const uint32_t id = snap::particle_id(particle, snap::serial_for(particle), occurrence);
     MEM_W(0x0, (gpr)(int32_t)cursor) = snap::EnableWord0;
     MEM_W(0x4, (gpr)(int32_t)cursor) = snap::EnableWord1;
@@ -193,7 +203,6 @@ extern "C" void snap_fx_particle(uint8_t* rdram, recomp_context* ctx) {
 
     if (snapdiag::statsEnabled()) {
         snapdiag::rectsTaggedEffectsCounter().fetch_add(1, std::memory_order_relaxed);
-        snapdiag::fxTagsWrittenCounter().fetch_add(1, std::memory_order_relaxed);
     }
 }
 
