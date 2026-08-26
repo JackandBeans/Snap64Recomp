@@ -1739,16 +1739,43 @@ namespace RT64 {
                                     (call.callDesc.rectDsdx == call.callDesc.snapPrevDsdx) &&
                                     (call.callDesc.rectDtdy == call.callDesc.snapPrevDtdy);
 
-                                if (sameSize) {
+                                // Uncovering is the one case the viewport must
+                                // not follow. Everything else it must.
+                                //
+                                // A rectangle that kept its size is moving, so
+                                // the viewport moves with it.
+                                //
+                                // A rectangle whose texel rate CHANGED with its
+                                // size is being scaled, not uncovered: the rate
+                                // moves inversely to the size precisely so the
+                                // whole picture keeps fitting, which means the
+                                // far texture coordinate lands in the same place
+                                // whatever the size and the picture is meant to
+                                // squash. Blending the viewport is then exactly
+                                // right, and refusing to -- as this did for one
+                                // build -- left the course preview stepping on
+                                // the way back up while it uncovered smoothly on
+                                // the way down.
+                                //
+                                // Only a rectangle that grew or shrank at a
+                                // FIXED rate is uncovering, because there the
+                                // far coordinate moves with the size and the
+                                // picture is drawn at a constant scale. That one
+                                // keeps its authored size and has its clip
+                                // blended instead.
+                                const bool uncovering = !sameSize && sameRate;
+                                if (uncovering) {
+                                    if (!blended.isEmpty()) {
+                                        snapRevealRect = blended;
+                                        if (snapdiag::statsEnabled()) {
+                                            snapdiag::rectsRevealedCounter().fetch_add(1, std::memory_order_relaxed);
+                                        }
+                                    }
+                                }
+                                else {
                                     drawnRect = blended;
                                     if (snapdiag::statsEnabled()) {
                                         snapdiag::rectsLerpedCounter().fetch_add(1, std::memory_order_relaxed);
-                                    }
-                                }
-                                else if (sameRate && !blended.isEmpty()) {
-                                    snapRevealRect = blended;
-                                    if (snapdiag::statsEnabled()) {
-                                        snapdiag::rectsRevealedCounter().fetch_add(1, std::memory_order_relaxed);
                                     }
                                 }
                             }
