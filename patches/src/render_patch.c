@@ -97,6 +97,22 @@ static u32 renEXCoherence = 0;
 
 #define renEXTagModelMatrix(gfx, ommtx)                                            renEXTagCoherent((gfx), OM_MTX_TAG(ommtx), G_EX_INTERPOLATE_DECOMPOSE,     G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO,                 G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO)
 
+/* Scale and skew are interpolated with everything else.
+
+   They were skipped, and a component left unwritten is not "unchanged" --
+   the renderer takes this word instead of its own defaults the moment an
+   id is named, so skip means skip. A billboard that changes size therefore
+   held its size flat across the whole interval and jumped only on drawn
+   frames, while its position glided. Effect sprites are billboards and
+   most of them do change size: a puff of sand swells as it rises, leaves
+   turn and shrink as they fall, smoke expands. So the one part of those
+   animations that carries the motion was the one part not being
+   interpolated, which is exactly the report -- the sprites moving but the
+   animation itself still stepping.
+
+   Simple mode blends the matrix component-wise, so there is no
+   decomposition here for a scale term to go wrong in; the flags only
+   choose which parts of that blend happen. */
 /* The billboard kinds do not produce a rigid matrix. The renderer
    reconstructs their overwritten combined matrix as an equivalent world
    transform, and that reconstruction carries projection terms in its
@@ -106,7 +122,7 @@ static u32 renEXCoherence = 0;
    the matrix component-wise instead, which for two consecutive billboard
    matrices -- always near each other -- is the correct blend, with no
    decomposition to go wrong. */
-#define renEXTagBillboardMatrix(gfx, ommtx)                                        renEXTagCoherent((gfx), OM_MTX_TAG(ommtx), G_EX_INTERPOLATE_SIMPLE,        G_EX_COMPONENT_AUTO, G_EX_COMPONENT_INTERPOLATE, G_EX_COMPONENT_SKIP,          G_EX_COMPONENT_SKIP, G_EX_COMPONENT_INTERPOLATE)
+#define renEXTagBillboardMatrix(gfx, ommtx)                                        renEXTagCoherent((gfx), OM_MTX_TAG(ommtx), G_EX_INTERPOLATE_SIMPLE,        G_EX_COMPONENT_AUTO, G_EX_COMPONENT_INTERPOLATE, G_EX_COMPONENT_INTERPOLATE,          G_EX_COMPONENT_INTERPOLATE, G_EX_COMPONENT_INTERPOLATE)
 
 s32 renPrepareModelMatrix(Gfx** gfxPtr, DObj* dobj) {
     Gfx* sp2DC;
