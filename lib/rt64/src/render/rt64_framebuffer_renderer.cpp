@@ -1672,6 +1672,40 @@ namespace RT64 {
                             // about covering the scissor, and letting a moving
                             // edge flip it would make the whole rectangle
                             // change shape part way through a tick.
+                            // A rectangle is only moved when it kept its SIZE.
+                            //
+                            // Where the texels land is a function of the
+                            // rectangle's own width and height, worked out when
+                            // the display list was built: RDP::drawRect derives
+                            // the far texture coordinates as uls + dsdx * width
+                            // and ult + dtdy * height, and the geometry itself
+                            // is a fixed quad that the viewport scales. So a
+                            // rectangle drawn at a size between two frames maps
+                            // its whole picture into that size -- it squashes.
+                            //
+                            // For a sprite crossing the screen that never
+                            // matters, because its size does not change. For
+                            // the panel that unrolls down over the course
+                            // preview it matters completely: the game holds the
+                            // width, grows the height, and reveals more rows of
+                            // a picture drawn at a fixed rate per pixel.
+                            // Blending the height squeezes the whole picture
+                            // into the gap instead of uncovering it, which is a
+                            // worse artefact than the stepping it replaced and
+                            // was one this port introduced.
+                            //
+                            // Doing it properly means blending where the texels
+                            // are sampled from as well, and those live in vertex
+                            // data built once per drawn frame and shared by
+                            // every image between them. Until that is worth
+                            // rebuilding per sub-frame, a rectangle that
+                            // changes size is drawn exactly as the game asked --
+                            // which is what the console showed.
+                            const FixedRect &authoredRect = call.callDesc.rect;
+                            const bool sameSize = call.callDesc.snapRectMapped &&
+                                ((authoredRect.lrx - authoredRect.ulx) == (call.callDesc.snapPrevRect.lrx - call.callDesc.snapPrevRect.ulx)) &&
+                                ((authoredRect.lry - authoredRect.uly) == (call.callDesc.snapPrevRect.lry - call.callDesc.snapPrevRect.uly));
+
                             FixedRect drawnRect = call.callDesc.rect;
                             if (snapdiag::statsEnabled() && call.callDesc.snapRectMapped) {
                                 snapdiag::rectDrawMarkedCounter().fetch_add(1, std::memory_order_relaxed);
@@ -1680,7 +1714,7 @@ namespace RT64 {
                                 }
                             }
 
-                            if (call.callDesc.snapRectMapped && (p.snapRectWeight < 1.0f)) {
+                            if (sameSize && (p.snapRectWeight < 1.0f)) {
                                 const FixedRect &prevRect = call.callDesc.snapPrevRect;
                                 const float w = p.snapRectWeight;
                                 auto lerpCoord = [w](int32_t prev, int32_t cur) {
