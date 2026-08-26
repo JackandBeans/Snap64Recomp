@@ -1230,8 +1230,22 @@ namespace RT64 {
         thread_local std::unordered_map<uint64_t, PrevRect> prevRects;
         prevRects.clear();
 
-        // How many rectangles each element drew, on each side. The ordinal is
-        // only a sound part of the key while this number holds still.
+        // How many rectangles each element drew, on each side.
+        //
+        // This is not a diagnostic. The pairing key is (element, ordinal) and
+        // the ordinal is nothing but the order the element emitted its
+        // rectangles in, so it only means the same thing on both sides while
+        // this number does. An element that drew seven rectangles last frame
+        // and eight this frame has had every ordinal after the insertion point
+        // shifted, and pairing them matches pieces of it to other pieces of it
+        // -- which is the failure that tore the laboratory background into
+        // bands, happening inside one element instead of across a screenful.
+        //
+        // Measured on a real session it is rare, a few elements in a thousand,
+        // and the pairs it produces are visibly wrong: one moved a hundred and
+        // thirty pixels across the screen while changing size, which no
+        // interface element does in a thirtieth of a second. Counted on both
+        // sides and refused when they disagree.
         const bool countRectStats = snapdiag::statsEnabled();
         thread_local std::unordered_map<uint32_t, uint32_t> prevCounts;
         thread_local std::unordered_map<uint32_t, uint32_t> curCounts;
@@ -1239,9 +1253,9 @@ namespace RT64 {
         // Every unnamed rectangle's exact corners, so a rectangle that has not
         // moved can be told from one that has.
         thread_local std::unordered_set<uint64_t> prevUnnamed;
+        prevCounts.clear();
+        curCounts.clear();
         if (countRectStats) {
-            prevCounts.clear();
-            curCounts.clear();
             prevUnnamed.clear();
         }
 
@@ -1268,9 +1282,7 @@ namespace RT64 {
                     const DrawCall &call = proj.gameCalls[c].callDesc;
                     if (call.snapRectId != 0) {
                         prevRects.insert({ keyOf(call), PrevRect{ call.rect, call.rectDsdx, call.rectDtdy } });
-                        if (countRectStats) {
-                            prevCounts[call.snapRectId]++;
-                        }
+                        prevCounts[call.snapRectId]++;
                     }
                     else if (countRectStats) {
                         prevUnnamed.insert(cornersOf(call.rect));
@@ -1281,6 +1293,26 @@ namespace RT64 {
 
         if (prevRects.empty()) {
             return;
+        }
+
+        // Counted before anything is paired: whether ordinal three is
+        // trustworthy depends on how many rectangles the element turns out to
+        // draw in total, which is not known until its last one has been seen.
+        for (uint32_t f = 0; f < curWorkload.fbPairCount; f++) {
+            const FramebufferPair &fbPair = curWorkload.fbPairs[f];
+            for (uint32_t p = 0; p < fbPair.projectionCount; p++) {
+                const Projection &proj = fbPair.projections[p];
+                if (proj.type != Projection::Type::Rectangle) {
+                    continue;
+                }
+
+                for (uint32_t c = 0; c < proj.gameCallCount; c++) {
+                    const DrawCall &call = proj.gameCalls[c].callDesc;
+                    if (call.snapRectId != 0) {
+                        curCounts[call.snapRectId]++;
+                    }
+                }
+            }
         }
 
         // An object's address can be handed to a different object once the
@@ -1320,7 +1352,16 @@ namespace RT64 {
                     }
                     if (countRectStats) {
                         snapdiag::rectsSeenCounter().fetch_add(1, std::memory_order_relaxed);
-                        curCounts[call.snapRectId]++;
+                    }
+
+                    // The element drew a different number of rectangles than it
+                    // did last frame, so this one's ordinal does not name the
+                    // same piece of it that it named before. Left where the game
+                    // put it.
+                    const auto prevCountIt = prevCounts.find(call.snapRectId);
+                    if ((prevCountIt == prevCounts.end()) ||
+                        (prevCountIt->second != curCounts[call.snapRectId])) {
+                        continue;
                     }
 
                     auto it = prevRects.find(keyOf(call));
