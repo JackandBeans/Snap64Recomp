@@ -103,3 +103,15 @@ SNAP_CENSUS(Msg_DrawMessage, rectsFromTextCounter)
 
 // The photo and score render path.
 SNAP_CENSUS(func_8009E3D0, rectsFromPhotoCounter)
+
+// The menu overlay's own copy of the sprite library. func_803719B0_845160 is
+// the twin of renDrawSprite: it seeds a per-sprite cursor from gMainGfxPos and
+// hands it down, so the span it writes is everything its sprites produced. Only
+// the RESIDENT library is tagged, so if the interface draws through this one
+// instead, none of what it draws carries a name.
+SNAP_CENSUS(func_803719B0_845160, rectsFromWindowCounter)
+
+// Background and depth clears, counted so they can be discounted: they fill the
+// same place every frame and interpolating them would achieve nothing.
+SNAP_CENSUS(renInitCamera, rectsFromCameraFillCounter)
+SNAP_CENSUS(renInitCameraEx, rectsFromCameraFillCounter)

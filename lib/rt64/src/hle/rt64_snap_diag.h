@@ -258,6 +258,31 @@ inline std::atomic<uint32_t> &rectsUnnamedMovedCounter() {
     return counter;
 }
 
+// The menu overlay carries its own private copy of the sprite library, and the
+// port only tags the resident one. If the interface screens draw through the
+// copy, every rectangle they produce is unnamed however well the resident path
+// works.
+inline std::atomic<uint32_t> &rectsFromWindowCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
+// Background and depth fills. These never move, so they are counted in order to
+// be subtracted rather than to be fixed.
+inline std::atomic<uint32_t> &rectsFromCameraFillCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
+// Transforms the game named with the reserved id zero, which RT64 reads as
+// "ignore this one" and drops before any pairing is attempted. A matrix gets
+// that id when its serial was never stamped, so this separates content the game
+// does not tag at all from content it tags with nothing.
+inline std::atomic<uint32_t> &transformsIgnoredCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
 inline std::atomic<uint32_t> &rectsFromEffectsCounter() {
     static std::atomic<uint32_t> counter = { 0 };
     return counter;

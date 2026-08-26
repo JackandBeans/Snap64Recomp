@@ -377,6 +377,7 @@ namespace RT64 {
                 snapdiag::transformsSeenCounter().fetch_add(seen, std::memory_order_relaxed);
                 snapdiag::transformsPairedCounter().fetch_add(paired, std::memory_order_relaxed);
                 snapdiag::transformsTaggedCounter().fetch_add(uint32_t(curWorkload.transformIdMap.size()), std::memory_order_relaxed);
+                snapdiag::transformsIgnoredCounter().fetch_add(uint32_t(curWorkload.transformIgnoredIds.size()), std::memory_order_relaxed);
             }
 
             // Any transforms tagged with the empty ID will be instantly marked as used and skipped.

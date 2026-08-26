@@ -70,6 +70,11 @@ HOOKED = [
     'fx_draw',
     'Msg_DrawMessage',
     'func_8009E3D0',
+    # The menu overlay's private copy of the sprite library, and the camera's
+    # own background fills.
+    'func_803719B0_845160',
+    'renInitCamera',
+    'renInitCameraEx',
 ]
 
 

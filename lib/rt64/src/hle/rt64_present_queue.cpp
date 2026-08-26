@@ -880,6 +880,7 @@ namespace {
                             const uint32_t seen = snapdiag::transformsSeenCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t paired = snapdiag::transformsPairedCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t tagged = snapdiag::transformsTaggedCounter().exchange(0, std::memory_order_relaxed);
+                            const uint32_t ignored = snapdiag::transformsIgnoredCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t stillPresents = snapdiag::motionStillPresentsCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t backwards = snapdiag::motionBackwardsCounter().exchange(0, std::memory_order_relaxed);
                             const double biggestStep = double(snapdiag::motionBiggestStepMicro().exchange(0, std::memory_order_relaxed)) / 1000000.0;
@@ -891,6 +892,8 @@ namespace {
                                 rectsPaired, rectsSeen, (rectsSeen > 0) ? (100.0 * double(rectsPaired) / double(rectsSeen)) : 0.0);
                             fprintf(stdout, "[SNAP-PACE]   3D identity: %u of %u transforms were named by the game (%.1f%%); the rest are guessed at\n",
                                 tagged, seen, (seen > 0) ? (100.0 * double(tagged) / double(seen)) : 0.0);
+                            fprintf(stdout, "[SNAP-PACE]   3D discarded: %u of %u transforms were named with the reserved id zero and dropped\n",
+                                ignored, seen);
                             const uint32_t rectsLerped = snapdiag::rectsLerpedCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t drawMarked = snapdiag::rectDrawMarkedCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t drawWeightOne = snapdiag::rectDrawWeightOneCounter().exchange(0, std::memory_order_relaxed);
@@ -902,8 +905,10 @@ namespace {
                             const uint32_t rectsFx = snapdiag::rectsFromEffectsCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t rectsText = snapdiag::rectsFromTextCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t rectsPhoto = snapdiag::rectsFromPhotoCounter().exchange(0, std::memory_order_relaxed);
-                            fprintf(stdout, "[SNAP-PACE]   2D unnamed: effects %u, text %u, photo %u (of %u untagged)\n",
-                                rectsFx, rectsText, rectsPhoto,
+                            const uint32_t rectsWindow = snapdiag::rectsFromWindowCounter().exchange(0, std::memory_order_relaxed);
+                            const uint32_t rectsFill = snapdiag::rectsFromCameraFillCounter().exchange(0, std::memory_order_relaxed);
+                            fprintf(stdout, "[SNAP-PACE]   2D unnamed: effects %u, text %u, photo %u, menu-overlay sprites %u, camera fills %u (of %u untagged)\n",
+                                rectsFx, rectsText, rectsPhoto, rectsWindow, rectsFill,
                                 (rectsTotal > rectsSeen) ? (rectsTotal - rectsSeen) : 0u);
                             const uint32_t unnamedStill = snapdiag::rectsUnnamedStillCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t unnamedMoved = snapdiag::rectsUnnamedMovedCounter().exchange(0, std::memory_order_relaxed);
