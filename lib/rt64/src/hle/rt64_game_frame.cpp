@@ -1035,6 +1035,78 @@ namespace RT64 {
     //
     // Anything the game has not tagged keeps id zero, matches nothing, and is
     // drawn exactly where it asked to be.
+    // Names the unnamed content that moved, so nobody has to catch it with a key.
+    //
+    // Asking the player to press a key at the moment they see something assumes the
+    // something lasts long enough to react to, and a panel sliding into place does not.
+    // This reports it instead: a rectangle that carries no identity and was not in the
+    // same place last frame is, by definition, content stepping at the game's rate while
+    // everything around it moves at the display's -- which is exactly the complaint.
+    //
+    // Reported once per distinct shape rather than once per rectangle, because a line of
+    // text is dozens of rectangles of identical size and only needs saying once. The size
+    // is what identifies the element: a panel is hundreds of pixels wide, a character is
+    // eight. Bounded to sixteen shapes so a screen full of moving content cannot flood the
+    // log, and each shape re-reports only after it has been quiet for a while, so an
+    // animation that runs for a second says so once rather than sixty times.
+    static void snapReportUnnamedMotion(const FixedRect &rect) {
+        struct Shape {
+            int32_t width;
+            int32_t height;
+            uint32_t quietFrames;
+            bool used;
+        };
+
+        static Shape shapes[16] = {};
+        static uint32_t frameSerial = 0;
+        frameSerial++;
+
+        const int32_t width = (rect.lrx - rect.ulx) >> 2;
+        const int32_t height = (rect.lry - rect.uly) >> 2;
+        if ((width <= 0) || (height <= 0)) {
+            return;
+        }
+
+        Shape *slot = nullptr;
+        for (Shape &shape : shapes) {
+            if (shape.used && (shape.width == width) && (shape.height == height)) {
+                slot = &shape;
+                break;
+            }
+        }
+
+        if (slot != nullptr) {
+            // Seen recently enough that saying it again would only repeat.
+            if ((frameSerial - slot->quietFrames) < 240u) {
+                slot->quietFrames = frameSerial;
+                return;
+            }
+
+            slot->quietFrames = frameSerial;
+        }
+        else {
+            for (Shape &shape : shapes) {
+                if (!shape.used) {
+                    slot = &shape;
+                    break;
+                }
+            }
+
+            if (slot == nullptr) {
+                return;
+            }
+
+            slot->used = true;
+            slot->width = width;
+            slot->height = height;
+            slot->quietFrames = frameSerial;
+        }
+
+        fprintf(stdout, "[SNAP-2D] unnamed content MOVED: %dx%d at (%d,%d) -- this is stepping at the game's rate\n",
+            width, height, rect.ulx >> 2, rect.uly >> 2);
+        fflush(stdout);
+    }
+
     void GameFrame::snapMatchRects(Workload &curWorkload, const Workload &prevWorkload) {
         thread_local std::unordered_map<uint64_t, FixedRect> prevRects;
         prevRects.clear();
@@ -1122,6 +1194,7 @@ namespace RT64 {
                             }
                             else {
                                 snapdiag::rectsUnnamedMovedCounter().fetch_add(1, std::memory_order_relaxed);
+                                snapReportUnnamedMotion(call.rect);
                             }
                         }
                         continue;
