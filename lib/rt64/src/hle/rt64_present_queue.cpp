@@ -903,7 +903,9 @@ namespace {
                             const uint32_t drawMarked = snapdiag::rectDrawMarkedCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t drawWeightOne = snapdiag::rectDrawWeightOneCounter().exchange(0, std::memory_order_relaxed);
                             fprintf(stdout, "[SNAP-PACE]   2D drawn moved: %u of %u marked draws were placed between two frames; %u arrived at weight one\n",
-                                rectsLerped, drawMarked, drawWeightOne);
+                                rectsLerped, drawMarked, drawWeightOne);
+                            const uint32_t rectsRevealed = snapdiag::rectsRevealedCounter().exchange(0, std::memory_order_relaxed);
+                            fprintf(stdout, "[SNAP-PACE]   2D drawn revealed: %u rectangle draws were uncovered between two frames\n", rectsRevealed);
                             fprintf(stdout, "[SNAP-PACE]   2D coverage: %u of %u rectangles on screen carry a name (%.1f%%); the rest are drawn at the game's rate\n",
                                 rectsSeen, rectsTotal,
                                 (rectsTotal > 0) ? (100.0 * double(rectsSeen) / double(rectsTotal)) : 0.0);

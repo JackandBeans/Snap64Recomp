@@ -1128,7 +1128,17 @@ namespace RT64 {
     }
 
     void GameFrame::snapMatchRects(Workload &curWorkload, const Workload &prevWorkload) {
-        thread_local std::unordered_map<uint64_t, FixedRect> prevRects;
+        // The rectangle AND the rate it sampled its texture at. A rectangle
+        // that grew while its texel rate held still is uncovering more of a
+        // picture; one whose rate changed is being rescaled. They look the same
+        // in the corners alone and need opposite treatment.
+        struct PrevRect {
+            FixedRect rect;
+            int16_t dsdx;
+            int16_t dtdy;
+        };
+
+        thread_local std::unordered_map<uint64_t, PrevRect> prevRects;
         prevRects.clear();
 
         // How many rectangles each element drew, on each side. The ordinal is
@@ -1168,7 +1178,7 @@ namespace RT64 {
                 for (uint32_t c = 0; c < proj.gameCallCount; c++) {
                     const DrawCall &call = proj.gameCalls[c].callDesc;
                     if (call.snapRectId != 0) {
-                        prevRects.insert({ keyOf(call), call.rect });
+                        prevRects.insert({ keyOf(call), PrevRect{ call.rect, call.rectDsdx, call.rectDtdy } });
                         if (countRectStats) {
                             prevCounts[call.snapRectId]++;
                         }
@@ -1229,7 +1239,7 @@ namespace RT64 {
                         continue;
                     }
 
-                    const FixedRect &prevRect = it->second;
+                    const FixedRect &prevRect = it->second.rect;
                     const bool travelled =
                         (std::abs(call.rect.ulx - prevRect.ulx) > MaxTravel) ||
                         (std::abs(call.rect.uly - prevRect.uly) > MaxTravel) ||
@@ -1255,6 +1265,8 @@ namespace RT64 {
                     }
 
                     call.snapPrevRect = prevRect;
+                    call.snapPrevDsdx = it->second.dsdx;
+                    call.snapPrevDtdy = it->second.dtdy;
                     call.snapRectMapped = true;
 
                     if (countRectStats) {

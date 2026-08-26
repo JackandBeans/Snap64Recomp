@@ -83,6 +83,8 @@ namespace RT64 {
         uint32_t snapRectId;
         uint32_t snapRectOrdinal;
         FixedRect snapPrevRect;
+        int16_t snapPrevDsdx;
+        int16_t snapPrevDtdy;
         bool snapRectMapped;
         uint16_t rectLeftOrigin;
         uint16_t rectRightOrigin;

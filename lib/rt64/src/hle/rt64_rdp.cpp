@@ -1259,6 +1259,8 @@ namespace RT64 {
         drawCall.snapRectId = extended.global.snapRectId;
         drawCall.snapRectOrdinal = extended.global.snapRectOrdinal;
         drawCall.snapPrevRect = FixedRect();
+        drawCall.snapPrevDsdx = 0;
+        drawCall.snapPrevDtdy = 0;
         drawCall.snapRectMapped = false;
         if (extended.global.snapRectId != 0) {
             extended.global.snapRectOrdinal++;

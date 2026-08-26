@@ -243,6 +243,14 @@ inline std::atomic<uint32_t> &rectDrawWeightOneCounter() {
     return counter;
 }
 
+// Rectangles uncovered rather than moved: drawn at the size the game asked for
+// and clipped to the blended size, so the reveal runs at the display's rate
+// without the picture being stretched into the gap.
+inline std::atomic<uint32_t> &rectsRevealedCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
 inline std::atomic<uint32_t> &rectsLerpedCounter() {
     static std::atomic<uint32_t> counter = { 0 };
     return counter;

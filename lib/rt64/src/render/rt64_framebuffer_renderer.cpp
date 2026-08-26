@@ -1519,6 +1519,11 @@ namespace RT64 {
                 renderIndices.highlightColor = call.debuggerDesc.highlightColor;
                 renderIndicesVector.push_back(renderIndices);
 
+                // Set when a rectangle is uncovering rather than moving; the clip
+                // below is narrowed to it so the reveal runs at the display's rate.
+                FixedRect snapRevealRect;
+                snapRevealRect.reset();
+
                 uint32_t cycleType = call.callDesc.otherMode.cycleType();
                 if (cycleType == G_CYC_FILL) {
                     instanceDrawCall.type = InstanceDrawCall::Type::FillRect;
@@ -1672,36 +1677,40 @@ namespace RT64 {
                             // about covering the scissor, and letting a moving
                             // edge flip it would make the whole rectangle
                             // change shape part way through a tick.
-                            // A rectangle is MOVED, never resized.
+                            // A rectangle either MOVES or UNCOVERS, and the
+                            // two want opposite handling.
                             //
                             // Where its texels land is a function of its own
-                            // width and height, worked out when the display
-                            // list was built: RDP::drawRect derives the far
-                            // texture coordinates as uls + dsdx * width and
-                            // ult + dtdy * height, and the geometry is a fixed
-                            // quad that the viewport scales. So drawing at a
-                            // size between two frames maps the whole picture
-                            // into that size and squashes it.
+                            // width and height, fixed when the display list was
+                            // built -- RDP::drawRect derives the far texture
+                            // coordinates as uls + dsdx * width and
+                            // ult + dtdy * height -- and the geometry is a
+                            // static quad the viewport scales. So a rectangle
+                            // drawn at a size between two frames maps its whole
+                            // picture into that size and squashes it.
                             //
-                            // Taking the size from THIS frame and only moving
-                            // where it sits avoids that completely. The size is
-                            // always one the game asked for, so the texture
-                            // maps exactly as authored and nothing can be
-                            // distorted, while the position still moves at the
-                            // display's rate.
+                            // A rectangle that kept its size is moving, and
+                            // moving the viewport is exactly right.
                             //
-                            // Both failures this went through are covered by
-                            // that. Blending the size unrolled the course
-                            // preview panel by squeezing its picture into the
-                            // gap instead of uncovering it. Refusing to touch
-                            // anything whose size changed then dropped the
-                            // interface panels that resize by a pixel or two as
-                            // they slide, and they went back to stepping. A
-                            // panel that only grows -- the preview, whose top
-                            // edge is pinned -- has an origin that does not
-                            // move, so this leaves it exactly where the game
-                            // put it, which is what the console showed. A panel
-                            // that slides keeps its motion.
+                            // A rectangle that grew while its texel rate held
+                            // still is neither moving nor being rescaled: it is
+                            // uncovering more of a picture drawn at a fixed rate
+                            // per pixel. That is how both the panel that slides
+                            // out from the left edge and the course preview that
+                            // rolls down are built -- their origins never move,
+                            // which is why moving them achieved nothing at all.
+                            // For those the picture is drawn at the size the game
+                            // asked for, so it cannot distort, and the CLIP is
+                            // taken to the blended size instead. The rows that
+                            // show are the same rows the game would have drawn at
+                            // that height, so it uncovers at the display's rate
+                            // rather than in steps.
+                            //
+                            // A rectangle whose texel rate also changed is being
+                            // genuinely rescaled. Blending that needs the texture
+                            // coordinates blended with it, and those live in
+                            // vertex data shared by every image between two
+                            // frames, so it is drawn exactly as authored.
                             FixedRect drawnRect = call.callDesc.rect;
                             if (snapdiag::statsEnabled() && call.callDesc.snapRectMapped) {
                                 snapdiag::rectDrawMarkedCounter().fetch_add(1, std::memory_order_relaxed);
@@ -1717,15 +1726,30 @@ namespace RT64 {
                                     return int32_t(std::lround(float(prev) + (float(cur) - float(prev)) * w));
                                 };
 
-                                const int32_t width = drawnRect.lrx - drawnRect.ulx;
-                                const int32_t height = drawnRect.lry - drawnRect.uly;
-                                drawnRect.ulx = lerpCoord(prevRect.ulx, drawnRect.ulx);
-                                drawnRect.uly = lerpCoord(prevRect.uly, drawnRect.uly);
-                                drawnRect.lrx = drawnRect.ulx + width;
-                                drawnRect.lry = drawnRect.uly + height;
+                                FixedRect blended;
+                                blended.ulx = lerpCoord(prevRect.ulx, drawnRect.ulx);
+                                blended.uly = lerpCoord(prevRect.uly, drawnRect.uly);
+                                blended.lrx = lerpCoord(prevRect.lrx, drawnRect.lrx);
+                                blended.lry = lerpCoord(prevRect.lry, drawnRect.lry);
 
-                                if (snapdiag::statsEnabled()) {
-                                    snapdiag::rectsLerpedCounter().fetch_add(1, std::memory_order_relaxed);
+                                const bool sameSize =
+                                    ((drawnRect.lrx - drawnRect.ulx) == (prevRect.lrx - prevRect.ulx)) &&
+                                    ((drawnRect.lry - drawnRect.uly) == (prevRect.lry - prevRect.uly));
+                                const bool sameRate =
+                                    (call.callDesc.rectDsdx == call.callDesc.snapPrevDsdx) &&
+                                    (call.callDesc.rectDtdy == call.callDesc.snapPrevDtdy);
+
+                                if (sameSize) {
+                                    drawnRect = blended;
+                                    if (snapdiag::statsEnabled()) {
+                                        snapdiag::rectsLerpedCounter().fetch_add(1, std::memory_order_relaxed);
+                                    }
+                                }
+                                else if (sameRate && !blended.isEmpty()) {
+                                    snapRevealRect = blended;
+                                    if (snapdiag::statsEnabled()) {
+                                        snapdiag::rectsRevealedCounter().fetch_add(1, std::memory_order_relaxed);
+                                    }
                                 }
                             }
 
@@ -1754,6 +1778,18 @@ namespace RT64 {
                         }
 
                         triangles.scissor = convertFixedRect(call.callDesc.scissorRect, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, int32_t(horizontalMisalignment), call.callDesc.scissorLeftOrigin, call.callDesc.scissorRightOrigin);
+
+                        // Narrowed to the part of an uncovering rectangle that
+                        // has been revealed so far. The picture is drawn at the
+                        // size the game asked for, so nothing is stretched; only
+                        // how much of it shows is blended.
+                        if (!snapRevealRect.isNull()) {
+                            const RenderRect revealed = convertFixedRect(snapRevealRect, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, int32_t(horizontalMisalignment), call.callDesc.rectLeftOrigin, call.callDesc.rectRightOrigin);
+                            triangles.scissor.left = std::max(triangles.scissor.left, revealed.left);
+                            triangles.scissor.top = std::max(triangles.scissor.top, revealed.top);
+                            triangles.scissor.right = std::max(triangles.scissor.left, std::min(triangles.scissor.right, revealed.right));
+                            triangles.scissor.bottom = std::max(triangles.scissor.top, std::min(triangles.scissor.bottom, revealed.bottom));
+                        }
 
                         bool usesViewport = (proj.type == Projection::Type::Perspective) || (proj.type == Projection::Type::Orthographic);
                         if (usesViewport) {
