@@ -85,7 +85,12 @@ extern "C" void __osSetWatchLo_recomp(uint8_t* rdram, recomp_context* ctx) {
 // libultra kernel internals referenced by symbol-less statics found in the
 // prologue scan (interrupt/VI plumbing). ultramodern implements this layer
 // natively, so these recompiled paths never execute meaningfully.
-extern "C" void __osTimerInterrupt_recomp(uint8_t*, recomp_context*) {}
-extern "C" void __osViSwapContext_recomp(uint8_t*, recomp_context*) {}
-extern "C" void __osViGetCurrentContext_recomp(uint8_t*, recomp_context*) {}
-extern "C" void __osContAddressCrc_recomp(uint8_t*, recomp_context*) {}
+// v0 is written here for the same reason it is written everywhere else in this
+// file: left alone it holds whatever the previously executed recompiled
+// function put there. __osViGetCurrentContext returns an OSViContext*, so a
+// caller that dereferences the residue faults on an address that has nothing
+// to do with the game.
+extern "C" void __osTimerInterrupt_recomp(uint8_t*, recomp_context* ctx) { ctx->r2 = 0; }
+extern "C" void __osViSwapContext_recomp(uint8_t*, recomp_context* ctx) { ctx->r2 = 0; }
+extern "C" void __osViGetCurrentContext_recomp(uint8_t*, recomp_context* ctx) { ctx->r2 = 0; }
+extern "C" void __osContAddressCrc_recomp(uint8_t*, recomp_context* ctx) { ctx->r2 = 0; }

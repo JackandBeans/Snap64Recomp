@@ -46,8 +46,10 @@ constexpr uint32_t DotCenterY = 117 + 2;
 constexpr uint32_t DotCenterOffset = ((DotCenterY * ScreenWidth) + DotCenterX) * sizeof(uint16_t);
 
 bool valid_ram_address(uint32_t address) {
-    const uint32_t offset = address & 0x1FFFFFFFu;
-    return (address >= 0x80000000u) && (offset < 0x00800000u);
+    // KSEG0 only: the MEM_ macros subtract 0x80000000 without masking, so a
+    // KSEG1 pointer that passes a masked range test is then read far outside
+    // what the runtime committed. See the note in matrix_tags.cpp.
+    return ((address >> 29) == 4u) && ((address & 0x1FFFFFFFu) < 0x00800000u);
 }
 
 } // namespace

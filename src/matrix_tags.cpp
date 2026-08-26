@@ -137,9 +137,15 @@ constexpr uint32_t IdIgnore = 0x0;
 constexpr uint32_t IdAuto = 0xFFFFFFFF;
 
 bool valid_ram_address(uint32_t address) {
-    // KSEG0/KSEG1 pointers into the 8MB the game sees.
-    const uint32_t offset = address & 0x1FFFFFFFu;
-    return (address >= 0x80000000u) && (offset < 0x00800000u);
+    // The 8MB the game sees, through KSEG0 only.
+    //
+    // Masking first and then testing the range admits a KSEG1 or KSEG2
+    // pointer whose low bits happen to be small -- 0xA0100000 passes -- but
+    // the MEM_ macros do not mask at all: they index rdram + address minus
+    // 0x80000000, so that same pointer is read half a gigabyte past the base,
+    // outside anything the runtime committed. The garbage pointer this exists
+    // to reject was faulting instead of being rejected.
+    return ((address >> 29) == 4u) && ((address & 0x1FFFFFFFu) < 0x00800000u);
 }
 
 } // namespace
@@ -379,10 +385,23 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
     // straight holds frames show again.
     {
         static uint32_t consecutiveHolds = 0;
+        const bool askedToHold = holdFrame;
         if (holdFrame && (consecutiveHolds >= 8)) {
             holdFrame = false;
         }
-        consecutiveHolds = holdFrame ? (consecutiveHolds + 1) : 0;
+
+        // Counted on what was asked for rather than on what was shown, and
+        // decayed rather than reset. Reset on the released frame only
+        // alternated -- eight held, one shown, eight held -- and because this
+        // is shared by every camera, a frame carrying a second camera that
+        // asked for nothing zeroed it before the first camera's run could ever
+        // reach eight, so the valve never opened at all.
+        if (askedToHold) {
+            consecutiveHolds++;
+        }
+        else if (consecutiveHolds > 0) {
+            consecutiveHolds--;
+        }
     }
 
     // Enable the extension, then name this camera's view transform before the

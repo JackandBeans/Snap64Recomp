@@ -180,10 +180,29 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
         float gc_x = static_cast<float>(lx) / 32767.0f;
         float gc_y = static_cast<float>(-ly) / 32767.0f; // Invert Y (SDL Y+ is down)
 
-        // Apply deadzone.
+        // The dead zone exists for the pad, not for the game: a real N64
+        // stick has none, and this only covers the rest an analog stick on a
+        // modern controller does not quite return to.
+        //
+        // Taken as a distance from centre and then rescaled, so the first
+        // usable position is the smallest movement rather than a jump.
+        // Applying it to each axis separately, and passing the raw value
+        // through once it was crossed, did two things wrong. The output
+        // stepped straight from nothing to fifteen percent of full deflection,
+        // and since this game divides the stick byte by eighty and uses the
+        // quotient unclamped as a rate, the first perceptible nudge commanded
+        // fifteen percent of full turn, pitch and reticle speed. And a
+        // diagonal whose smaller axis sat under the threshold lost that axis
+        // completely, so fine aim on the diagonal did not exist -- a square
+        // gate on a round stick, in a game that is entirely aiming.
         constexpr float DEADZONE = 0.15f;
-        if (std::fabs(gc_x) > DEADZONE) ax = gc_x;
-        if (std::fabs(gc_y) > DEADZONE) ay = gc_y;
+        const float rawMagnitude = std::sqrt((gc_x * gc_x) + (gc_y * gc_y));
+        if (rawMagnitude > DEADZONE) {
+            const float scaled = (rawMagnitude - DEADZONE) / (1.0f - DEADZONE);
+            const float rescale = std::fmin(scaled, 1.0f) / rawMagnitude;
+            ax = gc_x * rescale;
+            ay = gc_y * rescale;
+        }
     }
 
     // Clamp analog values.
@@ -243,6 +262,15 @@ ultramodern::input::connected_device_info_t input_get_connected_device_info(int 
             .connected_pak    = ultramodern::input::Pak::None,
         };
     }
+
+    // Asked here as well as from the poll, because the game asks this first.
+    // contInitialize calls osContInit before it ever reads the port, and this
+    // used to be reachable only through osContStartReadData -- so at the one
+    // moment the answer mattered no controller had been opened yet, the port
+    // reported nothing attached, and the game skipped its pak and motor setup
+    // for good. It runs once and is never repeated, so rumble was dead for
+    // every player in every session, controller plugged in or not.
+    try_open_controller();
 
     // Report what is actually plugged in. Claiming a Rumble Pak with no
     // controller attached sends the game down pak init and probe paths that

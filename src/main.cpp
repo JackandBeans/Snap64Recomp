@@ -149,6 +149,8 @@ static void vi_callback() {
     // Called each VI interrupt. Can be used for frame pacing.
 }
 
+static void error_message_box(const char* msg);
+
 static void gfx_init_callback() {
     // Called when the graphics subsystem is fully initialized.
     // We launch a detached thread that waits for the VI thread to complete
@@ -162,7 +164,14 @@ static void gfx_init_callback() {
         if (recomp::is_rom_valid(game_id)) {
             recomp::start_game(game_id);
         } else {
-            fprintf(stderr, "[SNAP] ERROR: ROM not valid at startup (check pokemonsnap.z64 in CWD)\n");
+            // Said where it can be seen. stdout and stderr are invisible on
+            // the launch path a player actually uses, and without this the
+            // window simply stays black forever with nothing explaining it --
+            // the most likely first run a public release ever has.
+            error_message_box(
+                "Pokemon Snap ROM not found.\n\n"
+                "Place a US copy named pokemonsnap.z64 next to the executable "
+                "and start the game again.");
         }
     }).detach();
 }

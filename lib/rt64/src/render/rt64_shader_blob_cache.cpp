@@ -242,8 +242,6 @@ namespace RT64 {
             for (const auto &entry : entries) {
                 snapshot.emplace_back(entry.first, entry.second);
             }
-
-            dirty = false;
         }
 
         // The lock is gone before any file I/O happens. A compile that finishes
@@ -313,6 +311,16 @@ namespace RT64 {
         if (ec) {
             std::filesystem::remove(tempPath, ec);
             return false;
+        }
+
+        // Cleared only now the bytes are on disk. Clearing it up front meant a
+        // write that failed for any ordinary reason -- a full disk, a locked
+        // directory, an antivirus holding the file -- silently threw away
+        // everything the run had compiled and never tried again, including the
+        // final attempt at shutdown, which returns early on a clean flag.
+        {
+            const std::unique_lock<std::mutex> lock(entriesMutex);
+            dirty = false;
         }
 
         return true;

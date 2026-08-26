@@ -1554,9 +1554,19 @@ namespace RT64 {
                     snapConsecutiveHolds = snapCutHold ? (snapConsecutiveHolds + 1) : 0;
                     snapPreviousFrameStepHeld = snapCutHold && snapSteppedFrame;
                 }
-                else if (!workload.snapCutHold) {
-                    // Only a frame with no verdict at all closes the valve.
-                    snapConsecutiveHolds = 0;
+                else {
+                    // A frame that did not hold is the frame the rule was
+                    // written about: the next step may be held again. Assigning
+                    // this only where a hold happened made it a latch instead
+                    // -- one step hold and every later one was refused for the
+                    // rest of the session, which is the whole mechanism
+                    // firing once and then never again.
+                    snapPreviousFrameStepHeld = false;
+
+                    if (!workload.snapCutHold) {
+                        // Only a frame with no verdict at all closes the valve.
+                        snapConsecutiveHolds = 0;
+                    }
                 }
                 if (snapCutHold && snapdiag::statsEnabled()) {
                     snapdiag::holdCounter().fetch_add(1, std::memory_order_relaxed);
