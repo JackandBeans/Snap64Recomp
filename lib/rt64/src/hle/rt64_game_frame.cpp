@@ -1047,8 +1047,9 @@ namespace RT64 {
     // text is dozens of rectangles of identical size and only needs saying once. The size
     // is what identifies the element: a panel is hundreds of pixels wide, a character is
     // eight. Bounded to sixteen shapes so a screen full of moving content cannot flood the
-    // log, and each shape re-reports only after it has been quiet for a while, so an
-    // animation that runs for a second says so once rather than sixty times.
+    // log, and a shape stays quiet until a couple of hundred further moving rectangles have
+    // gone by, so an animation that runs for a second says its piece once rather than
+    // sixty times.
     static void snapReportUnnamedMotion(const FixedRect &rect) {
         struct Shape {
             int32_t width;
