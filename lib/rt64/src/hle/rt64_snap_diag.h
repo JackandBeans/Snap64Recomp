@@ -167,6 +167,19 @@ inline std::atomic<uint32_t> &transformsSeenCounter() {
     return counter;
 }
 
+inline std::atomic<uint32_t> &rectsSeenCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
+// How many of the game's 2D rectangles carried a name this frame and found the
+// same element in the frame before. What does not pair is drawn where the game
+// put it, which is correct but steps at the game's rate.
+inline std::atomic<uint32_t> &rectsPairedCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
 inline std::atomic<uint32_t> &transformsPairedCounter() {
     static std::atomic<uint32_t> counter{0};
     return counter;

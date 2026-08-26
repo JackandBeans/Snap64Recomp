@@ -1323,6 +1323,7 @@ namespace RT64 {
                         drawParams.postBlendNoise = ext.emulatorConfig->dither.postBlendNoise;
                         drawParams.postBlendNoiseNegative = ext.emulatorConfig->dither.postBlendNoiseNegative;
                         drawParams.maxGameCall = UINT_MAX;
+                        drawParams.snapRectWeight = 1.0f;
                         framebufferRenderer->addFramebuffer(drawParams);
                     }
 
@@ -2786,6 +2787,16 @@ namespace RT64 {
     // workload it was computed for.
     void State::snapAuthoredStepCommand(uint32_t id) {
         ext.workloadQueue->workloads[ext.workloadQueue->writeCursor].snapAddSteppedId(id);
+    }
+
+    // The id names the element; the ordinal counts the rectangles it draws.
+    // A background made of twenty identical strips needs both: the id says
+    // which twenty rectangles belong together, and the ordinal says which of
+    // them this one is, so strip three pairs with strip three rather than
+    // with whichever strip happened to land nearest it on screen.
+    void State::snapRectGroupCommand(uint32_t id) {
+        rdp->extended.global.snapRectId = id;
+        rdp->extended.global.snapRectOrdinal = 0;
     }
 
     void State::snapCutHoldCommand() {

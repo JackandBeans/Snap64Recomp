@@ -793,6 +793,7 @@ namespace RT64 {
                     drawParams.postBlendNoise = workloadConfig.postBlendNoise;
                     drawParams.postBlendNoiseNegative = workloadConfig.postBlendNoiseNegative;
                     drawParams.maxGameCall = std::min(gameCallCountMax - gameCallCursor, fbPair.gameCallCount);
+                    drawParams.snapRectWeight = curFrameWeight;
                     framebufferRenderer->addFramebuffer(drawParams);
                 }
                 

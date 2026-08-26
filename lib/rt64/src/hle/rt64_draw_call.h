@@ -77,6 +77,13 @@ namespace RT64 {
         FixedRect rect;
         int16_t rectDsdx;
         int16_t rectDtdy;
+        // Pokemon Snap port: which 2D element drew this rectangle, and which
+        // of that element's rectangles it is. Zero means no element claimed
+        // it, and an unclaimed rectangle is never moved.
+        uint32_t snapRectId;
+        uint32_t snapRectOrdinal;
+        FixedRect snapPrevRect;
+        bool snapRectMapped;
         uint16_t rectLeftOrigin;
         uint16_t rectRightOrigin;
         FixedRect scissorRect;

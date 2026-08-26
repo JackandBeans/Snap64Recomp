@@ -176,6 +176,18 @@ namespace RT64 {
             state->snapAuthoredStepCommand((*dl)->w1);
         }
 
+        // Pokemon Snap port: names the element the rectangles after this one
+        // belong to. The game knows which object is drawing; the renderer,
+        // looking only at a screen-space rectangle, cannot -- a rectangle
+        // carries no transform and no vertices, so nothing about the pixels
+        // distinguishes one strip of a background from the strip above it.
+        // Guessing was tried and produced exactly that failure. The id is the
+        // object's own address, which is stable while it exists and different
+        // from every other object's.
+        void rectGroupV1(State *state, DisplayList **dl) {
+            state->snapRectGroupCommand((*dl)->w1);
+        }
+
         void matrixGroupV1(State *state, DisplayList **dl) {
             matrixGroupCommand(state, dl, false, false);
         }
@@ -426,6 +438,7 @@ namespace RT64 {
             Map[G_EX_VERTEXZTEST_V1] = &vertexZTestV1;
             Map[G_EX_ENDVERTEXZTEST_V1] = &endVertexZTestV1;
             Map[G_EX_AUTHOREDSTEP_V1] = &authoredStepV1;
+            Map[G_EX_RECTGROUP_V1] = &rectGroupV1;
             Map[G_EX_MATRIXGROUP_V1] = &matrixGroupV1;
             Map[G_EX_POPMATRIXGROUP_V1] = &popMatrixGroupV1;
             Map[G_EX_FORCEUPSCALE2D_V1] = &forceUpscale2DV1;

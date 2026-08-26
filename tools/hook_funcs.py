@@ -2,7 +2,7 @@
 
 MSVC has no linker --wrap, so interception works by renaming the generated
 definition to __real_<name> and letting the port define <name> itself (see
-src/overlay_hook.cpp, src/matrix_ids.cpp). Re-run this after regenerating
+src/overlay_hook.cpp, src/matrix_tags.cpp). Re-run this after regenerating
 RecompiledFuncs with N64Recomp; it is idempotent.
 
 Usage: python tools/hook_funcs.py [RecompiledFuncs directory]
@@ -56,6 +56,13 @@ HOOKED = [
     # The camera focus indicator: the game draws it into RDRAM, which HLE
     # presentation never shows, so the port observes it and redraws it.
     'PokemonDetector_PostProcessImage',
+    # Names the object each sprite belongs to, in the display list, so the
+    # renderer can find the same sprite in the previous frame. Texture
+    # rectangles carry no matrix and no vertices, so this is the only thing
+    # that can tell one from another. spX2Draw is the sprite; renDrawSprite
+    # is the object that owns them, and closes the group afterwards.
+    'spX2Draw',
+    'renDrawSprite',
 ]
 
 

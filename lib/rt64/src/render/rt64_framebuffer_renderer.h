@@ -147,6 +147,9 @@ namespace RT64 {
             bool postBlendNoise;
             bool postBlendNoiseNegative;
             uint32_t maxGameCall;
+            // Pokemon Snap port: how far this image sits between the previous
+            // drawn frame and the current one, for moving tagged rectangles.
+            float snapRectWeight;
         };
 
         FramebufferRenderer(RenderWorker *worker, bool rtSupport, UserConfiguration::GraphicsAPI graphicsAPI, const ShaderLibrary *shaderLibrary);

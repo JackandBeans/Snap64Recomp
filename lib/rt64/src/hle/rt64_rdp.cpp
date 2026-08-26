@@ -1098,6 +1098,8 @@ namespace RT64 {
         extended.global.rect = ExtendedAlignment();
         extended.global.scissor = ExtendedAlignment();
         extended.global.rectAspect = G_EX_ASPECT_AUTO;
+        extended.global.snapRectId = 0;
+        extended.global.snapRectOrdinal = 0;
     }
     
     void RDP::drawTris(uint32_t triCount, const float *pos, const float *tc, const float *col, uint8_t tile, uint8_t levels) {
@@ -1250,6 +1252,17 @@ namespace RT64 {
         drawCall.rectLeftOrigin = extAlignment.leftOrigin;
         drawCall.rectRightOrigin = extAlignment.rightOrigin;
         drawCall.rectAspect = extended.global.rectAspect;
+        // Only rectangles inside a group carry an identity. Everything else
+        // keeps id zero, which never matches anything, so it is drawn exactly
+        // where the game asked for it -- the behaviour of every rectangle
+        // before this existed.
+        drawCall.snapRectId = extended.global.snapRectId;
+        drawCall.snapRectOrdinal = extended.global.snapRectOrdinal;
+        drawCall.snapPrevRect = FixedRect();
+        drawCall.snapRectMapped = false;
+        if (extended.global.snapRectId != 0) {
+            extended.global.snapRectOrdinal++;
+        }
 
         if (flushedState) {
             state->loadDrawState();

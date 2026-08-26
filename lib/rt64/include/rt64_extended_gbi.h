@@ -81,7 +81,12 @@
 #define G_EX_SETTEXCOORDWRAPPOINT_V1    0x000032
 #define G_EX_SETRECTASPECT_V1           0x000033
 #define G_EX_AUTHOREDSTEP_V1        0x000034
-#define G_EX_MAX                        0x000035
+// Pokemon Snap port: names the 2D element the rectangles that follow belong
+// to, so the renderer can find that element in the previous frame and move
+// it between the two. An id of zero closes the group; a rectangle drawn
+// outside one is never paired and lands exactly where the game put it.
+#define G_EX_RECTGROUP_V1           0x000035
+#define G_EX_MAX                        0x000036
 
 #define G_EX_ORIGIN_NONE            0x800
 #define G_EX_ORIGIN_LEFT            0x0

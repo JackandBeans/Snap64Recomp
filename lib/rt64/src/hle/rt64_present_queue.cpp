@@ -874,6 +874,11 @@ namespace {
                             const uint32_t stillPresents = snapdiag::motionStillPresentsCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t backwards = snapdiag::motionBackwardsCounter().exchange(0, std::memory_order_relaxed);
                             const double biggestStep = double(snapdiag::motionBiggestStepMicro().exchange(0, std::memory_order_relaxed)) / 1000000.0;
+                            const uint32_t rectsSeen = snapdiag::rectsSeenCounter().exchange(0, std::memory_order_relaxed);
+                            const uint32_t rectsPaired = snapdiag::rectsPairedCounter().exchange(0, std::memory_order_relaxed);
+                            fprintf(stdout, "[SNAP-PACE]   interpolated: %u of %u transforms paired (%.1f%%), %u of %u 2D rectangles paired (%.1f%%)\n",
+                                paired, seen, (seen > 0) ? (100.0 * double(paired) / double(seen)) : 0.0,
+                                rectsPaired, rectsSeen, (rectsSeen > 0) ? (100.0 * double(rectsPaired) / double(rectsSeen)) : 0.0);
                             fprintf(stdout, "[SNAP-PACE]   motion shown: %u of %u presents advanced the world by nothing (%.1f%%), %u went backwards, biggest single step %.2f game frames\n",
                                 stillPresents, intervalCount,
                                 (intervalCount > 0) ? (100.0 * double(stillPresents) / double(intervalCount)) : 0.0,

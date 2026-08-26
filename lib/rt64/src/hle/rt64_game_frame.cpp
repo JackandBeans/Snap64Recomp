@@ -4,6 +4,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
 #include <unordered_map>
 #include "common/rt64_math.h"
 
@@ -318,6 +319,12 @@ namespace RT64 {
             workloadMap.tiles.resize(curWorkload.drawData.rdpTiles.size());
             workloadMap.lookAt.clear();
             workloadMap.lookAt.resize(curWorkload.drawData.rspLookAt.size());
+
+            // Rectangles are matched by the name the game gave them rather
+            // than through the scene maps, because a rectangle never enters a
+            // scene: GameFrame::set admits only perspective and orthographic
+            // projections, so nothing below this ever sees one.
+            snapMatchRects(curWorkload, prevWorkload);
             workloadMap.prevTransformsMapped.clear();
             workloadMap.prevTransformsMapped.resize(prevWorkload.drawData.worldTransforms.size());
             workloadMap.prevTilesMapped.clear();
@@ -998,6 +1005,111 @@ namespace RT64 {
             curLookAtMap.deltaY = hlslpp::float3(curLookAt.y) - hlslpp::float3(prevLookAt.y);
             firstCurWorkloadMap.prevLookAtMapped[indices.second] = true;
             lookAtInterpolationUsed = lookAtInterpolationUsed || lookAtMoved;
+        }
+    }
+
+
+    // Pokemon Snap port: pair this frame's tagged rectangles with the same
+    // element's rectangles in the previous frame.
+    //
+    // A texture rectangle is the one thing in a display list that carries no
+    // identity at all. It has no matrix and no vertices -- RDP::drawRect bakes
+    // the final screen coordinates straight into the call and sets both world
+    // matrix indices to zero -- so the renderer, looking only at what it was
+    // handed, has nothing to tell one rectangle from another. Pairing them by
+    // what they look like was tried: the laboratory background is a stack of
+    // identical full-width strips, and every strip matched every other, so they
+    // were drawn sliding towards each other's positions and the picture tore
+    // into bands. Nothing measurable about the pixels distinguishes strip three
+    // from strip four, because nothing about them IS different.
+    //
+    // The game knows. Each sprite is drawn from an object that owns it and
+    // whose address is stable for as long as it exists, and the port tags the
+    // display list with it. The ordinal then separates that object's own
+    // rectangles by the order it drew them, which is the order its own loop
+    // runs in and is the same every frame. So strip three pairs with strip
+    // three, and identical strips cannot be confused, because they are not
+    // being compared -- they are being named.
+    //
+    // Anything the game has not tagged keeps id zero, matches nothing, and is
+    // drawn exactly where it asked to be.
+    void GameFrame::snapMatchRects(Workload &curWorkload, const Workload &prevWorkload) {
+        thread_local std::unordered_map<uint64_t, FixedRect> prevRects;
+        prevRects.clear();
+
+        auto keyOf = [](const DrawCall &call) {
+            return (uint64_t(call.snapRectId) << 32) | uint64_t(call.snapRectOrdinal);
+        };
+
+        for (uint32_t f = 0; f < prevWorkload.fbPairCount; f++) {
+            const FramebufferPair &fbPair = prevWorkload.fbPairs[f];
+            for (uint32_t p = 0; p < fbPair.projectionCount; p++) {
+                const Projection &proj = fbPair.projections[p];
+                if (proj.type != Projection::Type::Rectangle) {
+                    continue;
+                }
+
+                for (uint32_t c = 0; c < proj.gameCallCount; c++) {
+                    const DrawCall &call = proj.gameCalls[c].callDesc;
+                    if (call.snapRectId != 0) {
+                        prevRects.insert({ keyOf(call), call.rect });
+                    }
+                }
+            }
+        }
+
+        if (prevRects.empty()) {
+            return;
+        }
+
+        // An object's address can be handed to a different object once the
+        // first one is gone. The id is then honest about what it names and
+        // still wrong about what it means, and the only symptom is a rectangle
+        // that appears to travel an impossible distance in one frame. Real 2D
+        // motion in this game is tens of pixels per frame; a jump across most
+        // of the screen is a recycled address, not a moving sprite, and it is
+        // shown where it is rather than swept there from somewhere else.
+        const int32_t MaxTravel = 160 << 2;
+
+        for (uint32_t f = 0; f < curWorkload.fbPairCount; f++) {
+            FramebufferPair &fbPair = curWorkload.fbPairs[f];
+            for (uint32_t p = 0; p < fbPair.projectionCount; p++) {
+                Projection &proj = fbPair.projections[p];
+                if (proj.type != Projection::Type::Rectangle) {
+                    continue;
+                }
+
+                for (uint32_t c = 0; c < proj.gameCallCount; c++) {
+                    DrawCall &call = proj.gameCalls[c].callDesc;
+                    if (call.snapRectId == 0) {
+                        continue;
+                    }
+                    if (snapdiag::statsEnabled()) {
+                        snapdiag::rectsSeenCounter().fetch_add(1, std::memory_order_relaxed);
+                    }
+
+                    auto it = prevRects.find(keyOf(call));
+                    if (it == prevRects.end()) {
+                        continue;
+                    }
+
+                    const FixedRect &prevRect = it->second;
+                    const bool travelled =
+                        (std::abs(call.rect.ulx - prevRect.ulx) > MaxTravel) ||
+                        (std::abs(call.rect.uly - prevRect.uly) > MaxTravel) ||
+                        (std::abs(call.rect.lrx - prevRect.lrx) > MaxTravel) ||
+                        (std::abs(call.rect.lry - prevRect.lry) > MaxTravel);
+                    if (travelled) {
+                        continue;
+                    }
+
+                    call.snapPrevRect = prevRect;
+                    call.snapRectMapped = true;
+                    if (snapdiag::statsEnabled()) {
+                        snapdiag::rectsPairedCounter().fetch_add(1, std::memory_order_relaxed);
+                    }
+                }
+            }
         }
     }
 

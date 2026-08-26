@@ -4,7 +4,7 @@
 
 #include "rt64_framebuffer_renderer.h"
 
-#include "hle/rt64_snap_diag.h"
+#include <cmath>
 
 #include "../include/rt64_extended_gbi.h"
 
@@ -1654,7 +1654,37 @@ namespace RT64 {
                                 horizontalMisalignment = p.horizontalMisalignment;
                             }
 
-                            RenderViewport viewportRect = convertViewportRect(call.callDesc.rect, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, horizontalMisalignment, call.callDesc.rectLeftOrigin, call.callDesc.rectRightOrigin);
+                            // Pokemon Snap port: a tagged rectangle is drawn
+                            // between where its element was on the previous
+                            // drawn frame and where it is on this one, so 2D
+                            // content moves at the display's rate like
+                            // everything else rather than stepping at the
+                            // game's. Only the position moves; which rectangle
+                            // this is, what it samples and how it blends are
+                            // all still exactly what the game asked for. An
+                            // untagged or unmatched rectangle keeps the
+                            // authored coordinates untouched.
+                            //
+                            // The aspect decision above deliberately reads the
+                            // authored rectangle instead: it is a yes or no
+                            // about covering the scissor, and letting a moving
+                            // edge flip it would make the whole rectangle
+                            // change shape part way through a tick.
+                            FixedRect drawnRect = call.callDesc.rect;
+                            if (call.callDesc.snapRectMapped && (p.snapRectWeight < 1.0f)) {
+                                const FixedRect &prevRect = call.callDesc.snapPrevRect;
+                                const float w = p.snapRectWeight;
+                                auto lerpCoord = [w](int32_t prev, int32_t cur) {
+                                    return int32_t(std::lround(float(prev) + (float(cur) - float(prev)) * w));
+                                };
+
+                                drawnRect.ulx = lerpCoord(prevRect.ulx, drawnRect.ulx);
+                                drawnRect.uly = lerpCoord(prevRect.uly, drawnRect.uly);
+                                drawnRect.lrx = lerpCoord(prevRect.lrx, drawnRect.lrx);
+                                drawnRect.lry = lerpCoord(prevRect.lry, drawnRect.lry);
+                            }
+
+                            RenderViewport viewportRect = convertViewportRect(drawnRect, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, horizontalMisalignment, call.callDesc.rectLeftOrigin, call.callDesc.rectRightOrigin);
                             triangles.screenScale = { viewportRect.width / framebuffer.viewport.width, viewportRect.height / framebuffer.viewport.height };
                             triangles.screenOffset.x = halfPixelOffset.x + ((viewportRect.x + viewportRect.width / 2.0f) - halfViewportSize.x) / halfViewportSize.x;
                             triangles.screenOffset.y = halfPixelOffset.y + (halfViewportSize.y - (viewportRect.y + viewportRect.height / 2.0f)) / halfViewportSize.y;
