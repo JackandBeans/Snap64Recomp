@@ -97,6 +97,7 @@ namespace RT64 {
                 // to, and how many of them it has drawn so far this group.
                 uint32_t snapRectId;
                 uint32_t snapRectOrdinal;
+                bool snapRectSingle;
             } global;
 
             uint16_t scissorLeftOriginStack[RDP_EXTENDED_STACK_SIZE];

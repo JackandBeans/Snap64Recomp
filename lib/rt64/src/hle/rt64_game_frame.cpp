@@ -1439,6 +1439,24 @@ namespace RT64 {
         }
 
         {
+            // A replay has nobody at the keyboard, so the dump can also fire on
+            // a clock: SNAP_PAIRDUMP=N asks for the pairs of one frame every N
+            // matcher runs, which over a two minute ride samples every part of
+            // it without drowning the log.
+            static uint32_t dumpEvery = []() {
+                const char* env = getenv("SNAP_PAIRDUMP");
+                return (env != nullptr) ? uint32_t(atoi(env)) : 0u;
+            }();
+            static uint32_t sinceDump = 0;
+            if ((dumpEvery > 0) && (++sinceDump >= dumpEvery)) {
+                sinceDump = 0;
+                // Two, not one: the block below consumes a count in the same
+                // breath, and the pair loop that actually prints runs on the
+                // NEXT frame. Set to one here, it was consumed before any pair
+                // could see it, and the clock-driven dump printed nothing.
+                snapdiag::pairDumpPending().store(2, std::memory_order_relaxed);
+            }
+
             uint32_t pending = snapdiag::pairDumpPending().load(std::memory_order_relaxed);
             if (pending > 0) {
                 snapdiag::pairDumpPending().store(pending - 1, std::memory_order_relaxed);

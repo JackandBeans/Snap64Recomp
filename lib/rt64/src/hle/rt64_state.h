@@ -170,7 +170,7 @@ namespace RT64 {
         void setRenderToRAM(uint8_t renderToRAM);
         void snapCutHoldCommand();
         void snapAuthoredStepCommand(uint32_t id);
-        void snapRectGroupCommand(uint32_t id);
+        void snapRectGroupCommand(uint32_t id, bool single);
         void setDitherNoiseStrength(float noiseStrength);
         void setExtendedRDRAM(bool isExtended);
         void setTexcoordWrapPoint(int16_t wrapU, int16_t wrapV);

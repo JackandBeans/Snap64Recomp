@@ -2794,9 +2794,10 @@ namespace RT64 {
     // which twenty rectangles belong together, and the ordinal says which of
     // them this one is, so strip three pairs with strip three rather than
     // with whichever strip happened to land nearest it on screen.
-    void State::snapRectGroupCommand(uint32_t id) {
+    void State::snapRectGroupCommand(uint32_t id, bool single) {
         rdp->extended.global.snapRectId = id;
         rdp->extended.global.snapRectOrdinal = 0;
+        rdp->extended.global.snapRectSingle = single;
     }
 
     void State::snapCutHoldCommand() {

@@ -68,7 +68,14 @@ constexpr uint32_t HookOpcode = 0xE0;
 constexpr uint32_t HookMagicNumber = 0x525464;
 constexpr uint32_t HookOpEnable = 0x1;
 constexpr uint32_t ExtendedOpcode = 0x64;
-constexpr uint32_t RectGroupV1 = 0x000035;
+// The self-closing form: one rectangle takes the name, then the group ends by
+// itself. A particle whose own tag could not be written -- no display-list
+// headroom, which happens precisely during the bursts -- previously fell into
+// the PREVIOUS particle's still-open group as its second rectangle, and paired
+// across frames with whichever particle happened to follow. That inheritance
+// was the garbling that survived every identity fix, and the replay's pair
+// dump caught it as effect ids carrying ordinal one.
+constexpr uint32_t RectGroupV1 = 0x000036;
 
 constexpr uint32_t EnableWord0 = Param(HookOpcode, 8, 24) | Param(HookMagicNumber, 24, 0);
 constexpr uint32_t EnableWord1 = Param(HookOpEnable, 4, 28) | Param(ExtendedOpcode, 8, 0);

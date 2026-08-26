@@ -185,7 +185,14 @@ namespace RT64 {
         // object's own address, which is stable while it exists and different
         // from every other object's.
         void rectGroupV1(State *state, DisplayList **dl) {
-            state->snapRectGroupCommand((*dl)->w1);
+            state->snapRectGroupCommand((*dl)->w1, false);
+        }
+
+        // One rectangle only: the group closes itself after the first, so a
+        // rectangle whose own tag was declined stays unnamed instead of
+        // inheriting a neighbour's name.
+        void rectGroupOneV1(State *state, DisplayList **dl) {
+            state->snapRectGroupCommand((*dl)->w1, true);
         }
 
         void matrixGroupV1(State *state, DisplayList **dl) {
@@ -439,6 +446,7 @@ namespace RT64 {
             Map[G_EX_ENDVERTEXZTEST_V1] = &endVertexZTestV1;
             Map[G_EX_AUTHOREDSTEP_V1] = &authoredStepV1;
             Map[G_EX_RECTGROUP_V1] = &rectGroupV1;
+            Map[G_EX_RECTGROUP_ONE_V1] = &rectGroupOneV1;
             Map[G_EX_MATRIXGROUP_V1] = &matrixGroupV1;
             Map[G_EX_POPMATRIXGROUP_V1] = &popMatrixGroupV1;
             Map[G_EX_FORCEUPSCALE2D_V1] = &forceUpscale2DV1;

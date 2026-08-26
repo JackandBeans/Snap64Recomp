@@ -1100,6 +1100,7 @@ namespace RT64 {
         extended.global.rectAspect = G_EX_ASPECT_AUTO;
         extended.global.snapRectId = 0;
         extended.global.snapRectOrdinal = 0;
+        extended.global.snapRectSingle = false;
     }
     
     void RDP::drawTris(uint32_t triCount, const float *pos, const float *tc, const float *col, uint8_t tile, uint8_t levels) {
@@ -1264,6 +1265,13 @@ namespace RT64 {
         drawCall.snapRectMapped = false;
         if (extended.global.snapRectId != 0) {
             extended.global.snapRectOrdinal++;
+
+            // A single-rectangle group has now had its rectangle. Whatever is
+            // drawn next carries no name unless something names it.
+            if (extended.global.snapRectSingle) {
+                extended.global.snapRectId = 0;
+                extended.global.snapRectSingle = false;
+            }
         }
 
         if (flushedState) {

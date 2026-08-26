@@ -86,7 +86,14 @@
 // it between the two. An id of zero closes the group; a rectangle drawn
 // outside one is never paired and lands exactly where the game put it.
 #define G_EX_RECTGROUP_V1           0x000035
-#define G_EX_MAX                        0x000036
+// A group of exactly one rectangle. The first rectangle after this command
+// takes the id and the group closes itself; a second rectangle before any new
+// command is explicitly unnamed rather than misattributed. Built for particles,
+// where a declined tag otherwise let the next particle's rectangle fall into
+// the previous particle's still-open group and pair across frames with
+// whichever particle happened to follow.
+#define G_EX_RECTGROUP_ONE_V1       0x000036
+#define G_EX_MAX                        0x000037
 
 #define G_EX_ORIGIN_NONE            0x800
 #define G_EX_ORIGIN_LEFT            0x0
