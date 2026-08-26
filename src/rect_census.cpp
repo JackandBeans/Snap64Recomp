@@ -90,13 +90,10 @@ static uint32_t snap_count_rects(uint8_t* rdram, uint32_t from, uint32_t to) {
                                             std::memory_order_relaxed);                  \
     }
 
-// The particle and effect system. This is the leading suspect for the untagged
-// rectangles in gameplay: it is what puts the leaves out of the tall grass and
-// the sand under Doduo on screen, and it builds every rectangle inline, inside
-// three nested loops, calling nothing -- so there is no inner function a native
-// hook could reach and no way to name individual effects without replacing the
-// function on the game side.
-SNAP_CENSUS(fx_draw, rectsFromEffectsCounter)
+// fx_draw is wrapped in src/fx_tags.cpp instead, because it has to close the
+// group its particles opened as well as be counted, and a wrapper that only
+// counts would leave the last particle's name current for everything drawn
+// after it.
 
 // Text. Emits its rectangles inline as well.
 SNAP_CENSUS(Msg_DrawMessage, rectsFromTextCounter)

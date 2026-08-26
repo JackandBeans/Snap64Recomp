@@ -174,6 +174,47 @@ extern "C" void snap_fx_particle(uint8_t* rdram, recomp_context* ctx) {
     }
 }
 
+// The whole effect pass. Counted, and -- the part that matters -- CLOSED.
+//
+// Each particle opens a group naming itself, and a group stays current until
+// something replaces it. Without a close the last particle of the pass keeps
+// naming everything drawn afterwards, which then pairs against whatever
+// happened to follow the last particle on the previous frame. Those are
+// unrelated rectangles being blended towards each other, which is what ghosting
+// is. src/rect_tags.cpp closes its groups for exactly this reason; this did not,
+// and that was an omission rather than a decision.
+extern "C" void fx_draw(uint8_t* rdram, recomp_context* ctx) {
+    const bool counting = snapdiag::statsEnabled();
+    const uint32_t before = counting
+        ? static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)snap::GMainGfxPos))
+        : 0u;
+
+    __real_fx_draw(rdram, ctx);
+
+    const uint32_t cursor = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)snap::GMainGfxPos));
+    if (counting && snap::valid_ram_address(before) && snap::valid_ram_address(cursor) &&
+        (cursor > before) && ((cursor - before) < 0x8000u)) {
+        uint32_t count = 0;
+        for (uint32_t at = before; (at + 8u) <= cursor; at += 8u) {
+            const uint32_t opcode = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)at)) >> 24;
+            if ((opcode == 0xE4u) || (opcode == 0xE5u) || (opcode == 0xF6u)) {
+                count++;
+            }
+        }
+
+        snapdiag::rectsFromEffectsCounter().fetch_add(count, std::memory_order_relaxed);
+    }
+
+    if (snap::valid_ram_address(cursor) && snap_fx_tag_fits(rdram, cursor)) {
+        MEM_W(0x0, (gpr)(int32_t)cursor) = snap::EnableWord0;
+        MEM_W(0x4, (gpr)(int32_t)cursor) = snap::EnableWord1;
+        MEM_W(0x8, (gpr)(int32_t)cursor) = snap::RectGroupWord0;
+        MEM_W(0xC, (gpr)(int32_t)cursor) = 0;
+        MEM_W(0, (gpr)(int32_t)snap::GMainGfxPos) =
+            static_cast<int32_t>(cursor + snap::TagBytes);
+    }
+}
+
 // Every particle handed out gets a number, so a recycled address is a different
 // name from the particle that used to live there.
 extern "C" void fx_createParticle(uint8_t* rdram, recomp_context* ctx) {
