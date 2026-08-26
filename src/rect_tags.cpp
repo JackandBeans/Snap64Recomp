@@ -31,6 +31,7 @@
  * hook covers all of them.
  */
 #include <cstdint>
+#include <unordered_map>
 
 #include "recomp.h"
 #include "hle/rt64_snap_diag.h"
@@ -58,6 +59,43 @@ constexpr uint32_t EnableWord1 = Param(HookOpEnable, 4, 28) | Param(ExtendedOpco
 constexpr uint32_t RectGroupWord0 = Param(ExtendedOpcode, 8, 24) | Param(RectGroupV1, 24, 0);
 
 constexpr uint32_t TagBytes = 16;
+
+// A sprite slot's address is not enough to name it by itself.
+//
+// The decompiled allocator (src/sys/om.c in the decomp: omGetSObj and
+// omFreeSObj) is a LIFO free list -- freeing pushes onto the head and
+// allocating pops it straight back, so the most recently destroyed sprite's
+// address is the very next one handed out. Effects churn constantly: a leaf
+// despawns, another spawns, and the new one takes the dead one's address
+// within a frame or two. Named by address alone the new sprite inherits the
+// old one's identity and pairs with its previous position, drawn sliding out
+// of somewhere it never was -- the ghosting that survived every effect-system
+// fix, because it lives in the OTHER tagged path.
+//
+// The same hazard was already found and closed twice in this port, for object
+// matrices (the omGetMtx serial) and for particles (fx_tags.cpp). This is the
+// third copy of the same lesson: any identity taken from a recycling allocator
+// needs a generation number beside the address.
+//
+// Touched only on the game's own thread, at creation and at drawing.
+std::unordered_map<uint32_t, uint32_t> g_sobj_serials;
+uint32_t g_next_sobj_serial = 0;
+
+uint32_t sobj_id(uint32_t sobj) {
+    uint32_t serial = 0;
+    const auto it = g_sobj_serials.find(sobj);
+    if (it != g_sobj_serials.end()) {
+        serial = it->second;
+    }
+
+    uint32_t id = sobj ^ (serial * 2654435761u);
+    id ^= (id >> 13);
+    if ((id == 0u) || (id == 0xFFFFFFFFu)) {
+        id = 1u;
+    }
+
+    return id;
+}
 
 // The sprite library's own fields, from the shipped code: spX2Draw reads its
 // display-list cursor from Sprite+0x3C and returns without writing anything
