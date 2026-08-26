@@ -94,6 +94,62 @@ void input_poll() {
     try_open_controller();
 }
 
+
+// Records or replays every controller reading the game is handed.
+//
+// The point is autonomy. Every test so far has needed a person on the stick,
+// because the attract demo never reaches the content under test -- it is the
+// game's own recorded-input playback, only of a ride nobody chose. This is the
+// same idea pointed at the whole game, the way TAS input movies work: play a
+// course once with SNAP_RECORD set and every reading is written down; run with
+// SNAP_REPLAY and the file is handed back reading by reading, no hands needed.
+// The ride is on rails, so replay keeps to the course even where the game's
+// own randomness drifts.
+//
+// The tap sits at the single point every input reaches the game through, after
+// all mapping and dead zones, so a recording is exactly what the game
+// experienced and a replay needs no controller at all.
+static void snap_input_tap(uint16_t* buttons, float* x, float* y) {
+    static FILE* record = nullptr;
+    static FILE* replay = nullptr;
+    static bool opened = false;
+    if (!opened) {
+        opened = true;
+        const char* replayPath = getenv("SNAP_REPLAY");
+        const char* recordPath = getenv("SNAP_RECORD");
+        if (replayPath != nullptr) {
+            replay = fopen(replayPath, "rb");
+            printf("[SNAP-INPUT] replaying inputs from %s: %s\n",
+                   replayPath, replay ? "open" : "FAILED");
+        }
+        else if (recordPath != nullptr) {
+            record = fopen(recordPath, "wb");
+            printf("[SNAP-INPUT] recording inputs to %s: %s\n",
+                   recordPath, record ? "open" : "FAILED");
+        }
+        fflush(stdout);
+    }
+
+    if (replay != nullptr) {
+        struct { uint16_t btn; float rx; float ry; } r;
+        if (fread(&r, sizeof(r), 1, replay) == 1) {
+            *buttons = r.btn;
+            *x = r.rx;
+            *y = r.ry;
+        }
+        else {
+            // The recording ran out: hold neutral rather than repeat the tail.
+            *buttons = 0;
+            *x = 0.0f;
+            *y = 0.0f;
+        }
+    }
+    else if (record != nullptr) {
+        struct { uint16_t btn; float rx; float ry; } r{ *buttons, *x, *y };
+        fwrite(&r, sizeof(r), 1, record);
+    }
+}
+
 bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
     // Only support controller port 0.
     if (controller_num != 0) {
@@ -238,6 +294,10 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
     *buttons = btn;
     *x = ax;
     *y = ay;
+    // The session tap: everything the game is about to be handed, recorded or
+    // replaced. See snap_input_tap below.
+    snap_input_tap(buttons, x, y);
+
     return true;
 }
 
