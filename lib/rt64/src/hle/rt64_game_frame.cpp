@@ -1037,6 +1037,16 @@ namespace RT64 {
         thread_local std::unordered_map<uint64_t, FixedRect> prevRects;
         prevRects.clear();
 
+        // How many rectangles each element drew, on each side. The ordinal is
+        // only a sound part of the key while this number holds still.
+        const bool countRectStats = snapdiag::statsEnabled();
+        thread_local std::unordered_map<uint32_t, uint32_t> prevCounts;
+        thread_local std::unordered_map<uint32_t, uint32_t> curCounts;
+        if (countRectStats) {
+            prevCounts.clear();
+            curCounts.clear();
+        }
+
         auto keyOf = [](const DrawCall &call) {
             return (uint64_t(call.snapRectId) << 32) | uint64_t(call.snapRectOrdinal);
         };
@@ -1053,6 +1063,9 @@ namespace RT64 {
                     const DrawCall &call = proj.gameCalls[c].callDesc;
                     if (call.snapRectId != 0) {
                         prevRects.insert({ keyOf(call), call.rect });
+                        if (countRectStats) {
+                            prevCounts[call.snapRectId]++;
+                        }
                     }
                 }
             }
@@ -1084,8 +1097,9 @@ namespace RT64 {
                     if (call.snapRectId == 0) {
                         continue;
                     }
-                    if (snapdiag::statsEnabled()) {
+                    if (countRectStats) {
                         snapdiag::rectsSeenCounter().fetch_add(1, std::memory_order_relaxed);
+                        curCounts[call.snapRectId]++;
                     }
 
                     auto it = prevRects.find(keyOf(call));
@@ -1099,15 +1113,43 @@ namespace RT64 {
                         (std::abs(call.rect.uly - prevRect.uly) > MaxTravel) ||
                         (std::abs(call.rect.lrx - prevRect.lrx) > MaxTravel) ||
                         (std::abs(call.rect.lry - prevRect.lry) > MaxTravel);
+                    if (countRectStats) {
+                        const int32_t worst = std::max(std::max(std::abs(call.rect.ulx - prevRect.ulx),
+                                                                std::abs(call.rect.uly - prevRect.uly)),
+                                                       std::max(std::abs(call.rect.lrx - prevRect.lrx),
+                                                                std::abs(call.rect.lry - prevRect.lry)));
+                        const uint32_t worstPixels = uint32_t(worst >> 2);
+                        uint32_t seenWorst = snapdiag::rectBiggestTravelCounter().load(std::memory_order_relaxed);
+                        while ((worstPixels > seenWorst) &&
+                               !snapdiag::rectBiggestTravelCounter().compare_exchange_weak(seenWorst, worstPixels, std::memory_order_relaxed)) {
+                        }
+                    }
+
                     if (travelled) {
+                        if (countRectStats) {
+                            snapdiag::rectTravelRefusedCounter().fetch_add(1, std::memory_order_relaxed);
+                        }
                         continue;
                     }
 
                     call.snapPrevRect = prevRect;
                     call.snapRectMapped = true;
-                    if (snapdiag::statsEnabled()) {
+                    if (countRectStats) {
                         snapdiag::rectsPairedCounter().fetch_add(1, std::memory_order_relaxed);
                     }
+                }
+            }
+        }
+
+        // The measurement the ordinal rests on: an element that drew a
+        // different number of rectangles than it did last frame has had its
+        // ordinals shifted, so rectangle three is a different piece of it now.
+        if (countRectStats) {
+            for (const auto &entry : curCounts) {
+                snapdiag::rectElementsCounter().fetch_add(1, std::memory_order_relaxed);
+                auto prevIt = prevCounts.find(entry.first);
+                if ((prevIt != prevCounts.end()) && (prevIt->second != entry.second)) {
+                    snapdiag::rectCountChangedCounter().fetch_add(1, std::memory_order_relaxed);
                 }
             }
         }

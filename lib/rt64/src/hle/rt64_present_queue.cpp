@@ -878,7 +878,15 @@ namespace {
                             const uint32_t rectsPaired = snapdiag::rectsPairedCounter().exchange(0, std::memory_order_relaxed);
                             fprintf(stdout, "[SNAP-PACE]   interpolated: %u of %u transforms paired (%.1f%%), %u of %u 2D rectangles paired (%.1f%%)\n",
                                 paired, seen, (seen > 0) ? (100.0 * double(paired) / double(seen)) : 0.0,
-                                rectsPaired, rectsSeen, (rectsSeen > 0) ? (100.0 * double(rectsPaired) / double(rectsSeen)) : 0.0);
+                                rectsPaired, rectsSeen, (rectsSeen > 0) ? (100.0 * double(rectsPaired) / double(rectsSeen)) : 0.0);
+                            const uint32_t rectElements = snapdiag::rectElementsCounter().exchange(0, std::memory_order_relaxed);
+                            const uint32_t rectCountChanged = snapdiag::rectCountChangedCounter().exchange(0, std::memory_order_relaxed);
+                            const uint32_t rectTravelRefused = snapdiag::rectTravelRefusedCounter().exchange(0, std::memory_order_relaxed);
+                            const uint32_t rectBiggestTravel = snapdiag::rectBiggestTravelCounter().exchange(0, std::memory_order_relaxed);
+                            fprintf(stdout, "[SNAP-PACE]   2D identity: %u of %u elements changed their rectangle count (%.1f%%), %u pairs refused for travelling too far, furthest pair moved %u px\n",
+                                rectCountChanged, rectElements,
+                                (rectElements > 0) ? (100.0 * double(rectCountChanged) / double(rectElements)) : 0.0,
+                                rectTravelRefused, rectBiggestTravel);
                             fprintf(stdout, "[SNAP-PACE]   motion shown: %u of %u presents advanced the world by nothing (%.1f%%), %u went backwards, biggest single step %.2f game frames\n",
                                 stillPresents, intervalCount,
                                 (intervalCount > 0) ? (100.0 * double(stillPresents) / double(intervalCount)) : 0.0,

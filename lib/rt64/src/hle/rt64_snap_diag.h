@@ -175,6 +175,38 @@ inline std::atomic<uint32_t> &rectsSeenCounter() {
 // How many of the game's 2D rectangles carried a name this frame and found the
 // same element in the frame before. What does not pair is drawn where the game
 // put it, which is correct but steps at the game's rate.
+// How many named elements drew a DIFFERENT NUMBER of rectangles than they did
+// on the previous drawn frame. The pairing key is (element, ordinal), and the
+// ordinal is just the order the element emitted its rectangles in -- so if the
+// count moves, rectangle three of an element is a different piece of it than it
+// was last frame, and pairing them blends two unrelated pieces together. This
+// counts how often that happens, because reading the sprite library's MIPS can
+// establish that it is possible but not that it occurs.
+inline std::atomic<uint32_t> &rectCountChangedCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
+inline std::atomic<uint32_t> &rectElementsCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
+// The largest distance, in whole pixels, any paired rectangle travelled between
+// two drawn frames. The matcher refuses a pair past 160, so if real motion gets
+// near that during play the backstop is silently switching interpolation off
+// exactly when the camera moves.
+inline std::atomic<uint32_t> &rectBiggestTravelCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
+// Pairs the backstop actually refused.
+inline std::atomic<uint32_t> &rectTravelRefusedCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
 inline std::atomic<uint32_t> &rectsPairedCounter() {
     static std::atomic<uint32_t> counter = { 0 };
     return counter;
