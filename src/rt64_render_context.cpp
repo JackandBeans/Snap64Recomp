@@ -28,6 +28,7 @@ static int64_t snap_display_list_nanos = 0;
 // (ultramodern/src/threads.cpp).
 namespace snap {
     extern std::atomic<bool> g_app_level_resident;           // overlay_hook.cpp
+    extern std::atomic<bool> g_hold_in_course;                   // overlay_hook.cpp
 }
 
 // How many logic steps the game ran for the frame it is submitting now
@@ -398,7 +399,8 @@ public:
         {
             RT64::Workload &workload = app_->workloadQueue->workloads[app_->workloadQueue->writeCursor];
             workload.snapLogicSteps = snap_take_logic_steps();
-            workload.snapCutscene = !snap::g_app_level_resident.load(std::memory_order_relaxed);
+            workload.snapCutscene = !snap::g_app_level_resident.load(std::memory_order_relaxed) ||
+            snap::g_hold_in_course.load(std::memory_order_relaxed);
         }
 
         // Taken with an exchange so the flag and the deltas it refers to are

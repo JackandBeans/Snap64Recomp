@@ -12,6 +12,9 @@
 #include "recomp.h"
 
 namespace snap {
+// overlay_hook.cpp
+extern std::atomic<bool> g_hold_in_course;
+
 
 static Settings s_settings;
 static const char* SETTINGS_FILE = "snapsettings.json";
@@ -155,6 +158,17 @@ bool handle_settings_hotkey(int scancode) {
         case SDL_SCANCODE_F5:
             save_settings();
             return true;
+        case SDL_SCANCODE_F1: {
+            // Frame holds inside a course. See the note in overlay_hook.cpp:
+            // the gate refuses every verdict raised during a course's opening
+            // movie, and whether that is a fault is a question for the eye
+            // rather than the log.
+            const bool held = !snap::g_hold_in_course.load(std::memory_order_relaxed);
+            snap::g_hold_in_course.store(held, std::memory_order_relaxed);
+            printf("[SNAP-CFG] frame holds inside a course: %s\n", held ? "ON" : "off");
+            fflush(stdout);
+            return true;
+        }
         case SDL_SCANCODE_F12:
             // Marks the moment. The statistics are averaged over about two
             // seconds, which is long enough to dilute a fault lasting a few

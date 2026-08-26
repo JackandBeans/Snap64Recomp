@@ -31,6 +31,25 @@ namespace snap {
     // freeze and then a lurch of two or three game frames, which is
     // exactly what a player feels as a stutter.
     std::atomic<bool> g_app_level_resident = { false };
+
+    // Lets a frame be held inside a course, which the gate below otherwise
+    // forbids. Off by default, because that is the behaviour every measurement
+    // so far was taken against.
+    //
+    // The gate says "hold only while a film is playing" and asks the wrong
+    // question to find out: it tests whether the course's own code is loaded,
+    // which is true for the whole of a ride INCLUDING its opening movie. So
+    // every verdict raised during that movie is refused -- measured on a real
+    // session, seven of them, four camera cuts then two more then an isolated
+    // authored step, none held.
+    //
+    // Whether that is a fault depends on something no amount of reading can
+    // settle. The same session reported the opening as smooth with all seven
+    // refused, and each hold costs several blocking round trips to the GPU on
+    // frames that are already the heaviest of their scene. Granting them could
+    // as easily spoil a sequence that currently looks right. So it is a switch,
+    // and the comparison is made by looking at the two.
+    std::atomic<bool> g_hold_in_course = { false };
 }
 
 static inline uint32_t read_u32(uint8_t* rdram, uint32_t addr) {
