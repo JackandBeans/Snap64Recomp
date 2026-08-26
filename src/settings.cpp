@@ -197,6 +197,7 @@ bool handle_settings_hotkey(int scancode) {
             // frames into nothing; this ends the interval here so the report
             // that follows describes what was on screen just now.
             snapdiag::markRequestCounter().fetch_add(1, std::memory_order_relaxed);
+            snapdiag::pairDumpPending().store(2, std::memory_order_relaxed);
             printf("[SNAP-CFG] marked -- see the [SNAP-MARK] report below (needs SNAP_STATS=1)\n");
             fflush(stdout);
             return true;

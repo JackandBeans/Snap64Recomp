@@ -1399,6 +1399,19 @@ namespace RT64 {
                     call.snapPrevDtdy = it->second.dtdy;
                     call.snapRectMapped = true;
 
+                    // The mark key asks for the next frames' actual pairs. One
+                    // line per pair: what joined what. Wrong pairs are visible
+                    // as lines whose two rectangles are not the same thing.
+                    if (snapdiag::pairDumpPending().load(std::memory_order_relaxed) > 0) {
+                        fprintf(stdout, "[SNAP-PAIR] id %08X ord %u: (%d,%d %dx%d) -> (%d,%d %dx%d)
+",
+                            call.snapRectId, call.snapRectOrdinal,
+                            prevRect.ulx >> 2, prevRect.uly >> 2,
+                            (prevRect.lrx - prevRect.ulx) >> 2, (prevRect.lry - prevRect.uly) >> 2,
+                            call.rect.ulx >> 2, call.rect.uly >> 2,
+                            (call.rect.lrx - call.rect.ulx) >> 2, (call.rect.lry - call.rect.uly) >> 2);
+                    }
+
                     if (countRectStats) {
                         snapReportRectChange(call, prevRect, it->second.dsdx, it->second.dtdy);
                     }
@@ -1423,6 +1436,14 @@ namespace RT64 {
                         snapdiag::rectsPairedCounter().fetch_add(1, std::memory_order_relaxed);
                     }
                 }
+            }
+        }
+
+        {
+            uint32_t pending = snapdiag::pairDumpPending().load(std::memory_order_relaxed);
+            if (pending > 0) {
+                snapdiag::pairDumpPending().store(pending - 1, std::memory_order_relaxed);
+                fflush(stdout);
             }
         }
 

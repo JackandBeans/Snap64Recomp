@@ -213,6 +213,16 @@ inline std::atomic<uint32_t> &transformsSeenCounter() {
 // afterwards from memory is exactly the position this project keeps getting
 // stuck in. Pressing a key ends the interval on the spot, so the numbers that
 // print next describe the moment and not the two seconds around it.
+// Set by the mark key alongside the interval cut: the next matcher run prints
+// every pair it makes, so the moment the player is looking at arrives as the
+// actual pairs -- which id joined which rectangle to which -- rather than as
+// aggregates. Aggregates have been misread here more than once; a pair listing
+// cannot be, because the wrong pair is a line in it.
+inline std::atomic<uint32_t> &pairDumpPending() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
 inline std::atomic<uint32_t> &markRequestCounter() {
     static std::atomic<uint32_t> counter = { 0 };
     return counter;
