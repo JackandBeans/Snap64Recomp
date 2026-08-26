@@ -438,48 +438,41 @@ namespace RT64 {
             const std::vector<uint32_t> &curGroup = group.second;
             const std::vector<uint32_t> &prevGroup = prevGroupIt->second;
 
-            // Walk both from the end, where the stable survivors are. A
-            // rectangle that does not validate against its opposite number is
-            // treated as an insertion or a removal: step the longer side on and
-            // try again, so one new particle does not shift every pairing
-            // behind it. Bounded, because an unbounded search is how a
-            // mispairing becomes a smear.
-            constexpr uint32_t SkipBudget = 4;
-            size_t c = curGroup.size();
-            size_t p = prevGroup.size();
-            uint32_t skips = 0;
-            while ((c > 0) && (p > 0)) {
-                const RectRef &cur = curRects[curGroup[c - 1]];
-                const RectRef &prev = prevRects[prevGroup[p - 1]];
-                if (plausible(prev.rect, cur.rect)) {
-                    if (cur.callIndex < curWorkload.drawData.rectPairs.size()) {
-                        RectPair &pair = curWorkload.drawData.rectPairs[cur.callIndex];
-                        pair.prevRect = prev.rect;
-                        pair.paired = true;
-                        pairedCount++;
-                    }
+            // Only a group whose membership did not change at all.
+            //
+            // Order is a sound way to choose a pair only while the two lists
+            // hold the same things. The moment one gains or loses a member,
+            // every position after it shifts, and the walk that absorbed the
+            // difference by stepping one side on was guessing which end the
+            // change happened at. Guessing wrong pairs a sprite with its
+            // neighbour, which on screen is the leaves out of the tall grass
+            // tearing into each other as they are emitted -- and emission is
+            // exactly when the count changes.
+            //
+            // Equal counts, aligned one to one, or nothing. A group that is
+            // gaining or losing members simply does not interpolate for that
+            // frame and draws where the game put it, which is what it did
+            // before any of this and is never wrong -- only less smooth.
+            if (curGroup.size() != prevGroup.size()) {
+                if (snapdiag::statsEnabled()) {
+                    snapdiag::rectGroupSkipCounter().fetch_add(1, std::memory_order_relaxed);
+                }
 
-                    c--;
-                    p--;
-                    skips = 0;
+                continue;
+            }
+
+            for (size_t k = 0; k < curGroup.size(); k++) {
+                const RectRef &cur = curRects[curGroup[k]];
+                const RectRef &prev = prevRects[prevGroup[k]];
+                if (!plausible(prev.rect, cur.rect)) {
                     continue;
                 }
 
-                if (skips >= SkipBudget) {
-                    break;
-                }
-
-                skips++;
-                // The REMAINING counts, not the two group sizes. Fixed for
-                // the whole walk, the longer side goes on being stepped
-                // after it has already been caught up, so a removal from
-                // the middle of the previous frame's list can never be
-                // absorbed and every pairing behind it is thrown away.
-                if (c >= p) {
-                    c--;
-                }
-                else {
-                    p--;
+                if (cur.callIndex < curWorkload.drawData.rectPairs.size()) {
+                    RectPair &pair = curWorkload.drawData.rectPairs[cur.callIndex];
+                    pair.prevRect = prev.rect;
+                    pair.paired = true;
+                    pairedCount++;
                 }
             }
         }
@@ -588,7 +581,35 @@ namespace RT64 {
                 workloadsModified[workloads[w]].merge(modifiedBuffers);
             }
 
-            matchRects(curWorkload, prevWorkload);
+            // Only when this frame is a continuation of the last one. The
+            // rectangles carry no identity of their own, so the whole method
+            // rests on the two frames being the same scene a moment apart;
+            // across a scene change the previous frame is a different screen
+            // entirely and its interface elements pair happily with the new
+            // one's, which is a menu smearing into a course as it loads.
+            //
+            // The 3D pairing rate is the test, because it is measured on
+            // identity rather than guessed at: it sits at 96 to 98 percent
+            // through ordinary play and collapses to under 40 at a
+            // transition. If the world did not carry over, neither did the
+            // things drawn on top of it.
+            {
+                uint32_t seen = 0;
+                uint32_t paired = 0;
+                for (const auto &tm : curWorkloadMap.transforms) {
+                    seen++;
+                    if (tm.mapped) {
+                        paired++;
+                    }
+                }
+
+                if ((seen == 0) || ((paired * 2) >= seen)) {
+                    matchRects(curWorkload, prevWorkload);
+                }
+                else if (snapdiag::statsEnabled()) {
+                    snapdiag::rectSceneSkipCounter().fetch_add(1, std::memory_order_relaxed);
+                }
+            }
 
             if (snapdiag::statsEnabled()) {
                 uint32_t seen = 0, paired = 0;

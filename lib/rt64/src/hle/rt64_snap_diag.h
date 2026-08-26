@@ -178,6 +178,20 @@ inline std::atomic<uint32_t> &transformsPairedCounter() {
 // ... and how many of those could be paired with the frame before. An unpaired
 // rectangle holds one screen position for the whole tick, which against
 // interpolated geometry is what an effect sprite stuttering looks like.
+// Frames where the sprites were left alone because the scene changed, and
+// groups left alone because their membership did. Both are refusals, not
+// failures: the alternative to an uncertain pair is not a better pair, it is
+// a sprite drawn between two positions that were never the same sprite.
+inline std::atomic<uint32_t> &rectSceneSkipCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
+inline std::atomic<uint32_t> &rectGroupSkipCounter() {
+    static std::atomic<uint32_t> counter{0};
+    return counter;
+}
+
 inline std::atomic<uint32_t> &rectsPairedCounter() {
     static std::atomic<uint32_t> counter{0};
     return counter;

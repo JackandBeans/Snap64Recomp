@@ -876,6 +876,9 @@ namespace {
                             fprintf(stdout, "[SNAP-PACE]   scene pairing: %u of %u transforms paired (%.1f%%), sprites %u of %u paired (%.1f%%)\n",
                                 paired, seen, (seen > 0) ? (100.0 * double(paired) / double(seen)) : 0.0,
                                 rectsPaired, rects, (rects > 0) ? (100.0 * double(rectsPaired) / double(rects)) : 0.0);
+                            fprintf(stdout, "[SNAP-PACE]   sprites left alone: %u frames for a scene change, %u groups for a membership change\n",
+                                snapdiag::rectSceneSkipCounter().exchange(0, std::memory_order_relaxed),
+                                snapdiag::rectGroupSkipCounter().exchange(0, std::memory_order_relaxed));
                             fprintf(stdout, "[SNAP-PACE]   sprite pairing cost %.1f ms over the interval\n",
                                 double(snapdiag::rectMatchNanos().exchange(0, std::memory_order_relaxed)) / 1.0e6);
                             const uint32_t stillPresents = snapdiag::motionStillPresentsCounter().exchange(0, std::memory_order_relaxed);
