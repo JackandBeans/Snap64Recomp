@@ -112,3 +112,22 @@ SNAP_CENSUS(func_8009E3D0, rectsFromPhotoCounter)
 // same place every frame and interpolating them would achieve nothing.
 SNAP_CENSUS(renInitCamera, rectsFromCameraFillCounter)
 SNAP_CENSUS(renInitCameraEx, rectsFromCameraFillCounter)
+
+// Counted by calls, not by scanning what it wrote.
+//
+// Everything above builds its rectangle inline, so the bytes between the write
+// pointer before and after a call are the rectangle itself. This one plants a
+// prepared display list that contains the rectangle, so what it adds to the
+// main list is a jump into that list and a scan of the span finds no opcode at
+// all. It emits exactly one rectangle per call, so calls are the count.
+//
+// It is here because it runs once per Pokemon drawn, up to twenty a frame, and
+// only during a course -- which is the shape of the gap: menus report every
+// rectangle named, rides report a fifth of them.
+extern "C" void PokemonDetector_SaveRegion(uint8_t* rdram, recomp_context* ctx) {
+    if (snapdiag::statsEnabled()) {
+        snapdiag::rectsFromDetectorCounter().fetch_add(1, std::memory_order_relaxed);
+    }
+
+    __real_PokemonDetector_SaveRegion(rdram, ctx);
+}

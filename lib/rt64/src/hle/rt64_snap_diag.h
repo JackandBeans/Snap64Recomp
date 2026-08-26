@@ -270,6 +270,21 @@ inline std::atomic<uint32_t> &rectsUnnamedMovedCounter() {
 // port only tags the resident one. If the interface screens draw through the
 // copy, every rectangle they produce is unnamed however well the resident path
 // works.
+// The viewfinder's scorer. It copies a tile of the framebuffer once per
+// Pokemon it has drawn, capped at twenty a frame, and it is the leading
+// candidate for the two thousand rectangles a ride produces that nothing has
+// yet accounted for -- it runs only during a course, which matches the split
+// exactly, menus reading 100% coverage while rides read 18 to 25.
+//
+// Counted by CALLS rather than by scanning the display list, because this one
+// does not build its rectangle inline: it plants a prepared list that contains
+// it, so the bytes it writes to the main list are a jump rather than an opcode
+// and a scan of that span finds nothing. One call is one rectangle.
+inline std::atomic<uint32_t> &rectsFromDetectorCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
 inline std::atomic<uint32_t> &rectsFromWindowCounter() {
     static std::atomic<uint32_t> counter = { 0 };
     return counter;

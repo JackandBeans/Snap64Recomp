@@ -76,6 +76,9 @@ HOOKED = [
     'func_803719B0_845160',
     'renInitCamera',
     'renInitCameraEx',
+    # The viewfinder's scorer: one framebuffer tile copy per Pokemon drawn, up
+    # to twenty a frame, and only while a course is running.
+    'PokemonDetector_SaveRegion',
 ]
 
 

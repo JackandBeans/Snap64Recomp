@@ -921,8 +921,9 @@ namespace {
                             const uint32_t rectsPhoto = snapdiag::rectsFromPhotoCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t rectsWindow = snapdiag::rectsFromWindowCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t rectsFill = snapdiag::rectsFromCameraFillCounter().exchange(0, std::memory_order_relaxed);
-                            fprintf(stdout, "[SNAP-PACE]   2D unnamed: effects %u, text %u, photo %u, menu-overlay sprites %u, camera fills %u (of %u untagged)\n",
-                                rectsFx, rectsText, rectsPhoto, rectsWindow, rectsFill,
+                            const uint32_t rectsDetector = snapdiag::rectsFromDetectorCounter().exchange(0, std::memory_order_relaxed);
+                            fprintf(stdout, "[SNAP-PACE]   2D unnamed: effects %u, text %u, photo %u, menu-overlay sprites %u, camera fills %u, viewfinder scorer %u (of %u untagged)\n",
+                                rectsFx, rectsText, rectsPhoto, rectsWindow, rectsFill, rectsDetector,
                                 (rectsTotal > rectsSeen) ? (rectsTotal - rectsSeen) : 0u);
                             const uint32_t unnamedStill = snapdiag::rectsUnnamedStillCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t unnamedMoved = snapdiag::rectsUnnamedMovedCounter().exchange(0, std::memory_order_relaxed);
