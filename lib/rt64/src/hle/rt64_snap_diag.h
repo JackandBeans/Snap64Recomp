@@ -251,6 +251,26 @@ inline std::atomic<uint32_t> &rectsRevealedCounter() {
     return counter;
 }
 
+// Whether screen-space rectangles are interpolated at all.
+//
+// Six explanations for the same artefact have now been tried and none was it,
+// and each one cost a build and a session. This settles which half of the
+// renderer the fault is even in, which no amount of reading the code has
+// managed. Turn it off and look at the same thing:
+//
+//   unchanged  -> the content is not a rectangle. It is geometry or a billboard
+//                 going through the matrix path, and everything done to the
+//                 rectangle path was aimed at the wrong half of the renderer.
+//   different  -> it IS a rectangle, it IS being interpolated, and what the
+//                 rectangle path does with it is what looks wrong.
+//
+// Those want opposite fixes and are indistinguishable from outside. Default on,
+// which is current behaviour.
+inline std::atomic<bool> &rectInterpolationEnabled() {
+    static std::atomic<bool> enabled = { true };
+    return enabled;
+}
+
 inline std::atomic<uint32_t> &rectsLerpedCounter() {
     static std::atomic<uint32_t> counter = { 0 };
     return counter;

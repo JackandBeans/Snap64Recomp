@@ -1719,7 +1719,8 @@ namespace RT64 {
                                 }
                             }
 
-                            if (call.callDesc.snapRectMapped && (p.snapRectWeight < 1.0f)) {
+                            if (call.callDesc.snapRectMapped && (p.snapRectWeight < 1.0f) &&
+                                snapdiag::rectInterpolationEnabled().load(std::memory_order_relaxed)) {
                                 const FixedRect &prevRect = call.callDesc.snapPrevRect;
                                 const float w = p.snapRectWeight;
                                 auto lerpCoord = [w](int32_t prev, int32_t cur) {
