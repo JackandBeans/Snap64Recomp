@@ -1162,6 +1162,23 @@ namespace RT64 {
 
                     call.snapPrevRect = prevRect;
                     call.snapRectMapped = true;
+
+                    if (countRectStats) {
+                        const int32_t curW = call.rect.lrx - call.rect.ulx;
+                        const int32_t curH = call.rect.lry - call.rect.uly;
+                        const int32_t prevW = prevRect.lrx - prevRect.ulx;
+                        const int32_t prevH = prevRect.lry - prevRect.uly;
+                        const int32_t dW = std::abs(curW - prevW);
+                        const int32_t dH = std::abs(curH - prevH);
+                        if ((dW != 0) || (dH != 0)) {
+                            snapdiag::rectSizeChangedCounter().fetch_add(1, std::memory_order_relaxed);
+                            const uint32_t worstPixels = uint32_t(std::max(dW, dH) >> 2);
+                            uint32_t seen = snapdiag::rectBiggestSizeChangeCounter().load(std::memory_order_relaxed);
+                            while ((worstPixels > seen) &&
+                                   !snapdiag::rectBiggestSizeChangeCounter().compare_exchange_weak(seen, worstPixels, std::memory_order_relaxed)) {
+                            }
+                        }
+                    }
                     if (countRectStats) {
                         snapdiag::rectsPairedCounter().fetch_add(1, std::memory_order_relaxed);
                     }

@@ -187,6 +187,49 @@ inline std::atomic<uint32_t> &transformsSeenCounter() {
 // still rectangle from another, but it does not have to -- if a rectangle with
 // these exact corners was on screen last frame too, then whatever drew it did
 // not move it.
+// Rectangles the renderer actually moved, counted where it moves them. Pairing
+// a rectangle and drawing it somewhere between two positions are different
+// steps, and only the second one is what anybody sees.
+// Which half of the condition to move a rectangle failed. Pairing marks the
+// rectangle; the weight says where between the two frames this image sits. If
+// rectangles arrive at the renderer still marked but always at weight one, the
+// pairing is fine and the image being drawn is simply never between anything.
+// Paired rectangles whose SIZE changed between the two drawn frames, and the
+// largest such change.
+//
+// Position and size are lerped together, but they do not mean the same thing. A
+// sprite that moves is a sprite moving. A sprite whose rectangle changes size
+// has usually changed to a different picture -- animation is a texture swap in
+// this game, and consecutive frames of an animation need not be the same
+// dimensions. Blending between two sizes then stretches the NEW image smoothly
+// across the interval, because the texture coordinates were computed for the
+// authored rectangle and the quad is scaled by the viewport. That reads as a
+// sprite breathing or popping rather than as a sprite moving.
+inline std::atomic<uint32_t> &rectSizeChangedCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
+inline std::atomic<uint32_t> &rectBiggestSizeChangeCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
+inline std::atomic<uint32_t> &rectDrawMarkedCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
+inline std::atomic<uint32_t> &rectDrawWeightOneCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
+inline std::atomic<uint32_t> &rectsLerpedCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
 inline std::atomic<uint32_t> &rectsUnnamedStillCounter() {
     static std::atomic<uint32_t> counter = { 0 };
     return counter;
