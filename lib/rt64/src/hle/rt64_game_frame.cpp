@@ -1134,19 +1134,22 @@ namespace RT64 {
     // that changes size at a fixed texel rate is uncovering, and its clip is
     // blended instead. One whose rate changed too is being rescaled, and its
     // viewport is blended so the picture squashes the way the game intends.
-    // Those are three different pictures on screen and the difference between
-    // them is invisible from outside, so an element that still looks wrong
-    // cannot be diagnosed without knowing which one it took.
+    // Those are three different pictures and the difference is invisible from
+    // outside, so an element that still looks wrong cannot be diagnosed without
+    // knowing which one it took.
     //
-    // Reported once per distinct shape, and only for rectangles that changed --
-    // a still one has nothing to say.
+    // The two rules get their own slots. A single shared table was tried and it
+    // filled entirely with a burst of shrinking sprites, so the uncovering case
+    // -- the one being looked for -- never got a slot and the log said it never
+    // happened, while the counter beside it said it happened three hundred
+    // times. A bounded table shared between the thing you are hunting and the
+    // noise around it will always report the noise.
     static void snapReportRectChange(const DrawCall &call, const FixedRect &prevRect, int16_t prevDsdx, int16_t prevDtdy) {
         const int32_t curW = call.rect.lrx - call.rect.ulx;
         const int32_t curH = call.rect.lry - call.rect.uly;
         const int32_t prevW = prevRect.lrx - prevRect.ulx;
         const int32_t prevH = prevRect.lry - prevRect.uly;
-        const bool sameSize = (curW == prevW) && (curH == prevH);
-        if (sameSize) {
+        if ((curW == prevW) && (curH == prevH)) {
             return;
         }
 
@@ -1157,14 +1160,18 @@ namespace RT64 {
             bool used;
         };
 
-        static Shape shapes[16] = {};
+        static Shape uncovering[10] = {};
+        static Shape rescaling[10] = {};
         static uint32_t serial = 0;
         serial++;
 
+        const bool sameRate = (call.rectDsdx == prevDsdx) && (call.rectDtdy == prevDtdy);
+        Shape *table = sameRate ? uncovering : rescaling;
+
         Shape *slot = nullptr;
-        for (Shape &shape : shapes) {
-            if (shape.used && (shape.width == (curW >> 2)) && (shape.height == (curH >> 2))) {
-                slot = &shape;
+        for (uint32_t i = 0; i < 10; i++) {
+            if (table[i].used && (table[i].width == (curW >> 2)) && (table[i].height == (curH >> 2))) {
+                slot = &table[i];
                 break;
             }
         }
@@ -1178,9 +1185,9 @@ namespace RT64 {
             slot->quiet = serial;
         }
         else {
-            for (Shape &shape : shapes) {
-                if (!shape.used) {
-                    slot = &shape;
+            for (uint32_t i = 0; i < 10; i++) {
+                if (!table[i].used) {
+                    slot = &table[i];
                     break;
                 }
             }
@@ -1195,10 +1202,15 @@ namespace RT64 {
             slot->quiet = serial;
         }
 
-        const bool sameRate = (call.rectDsdx == prevDsdx) && (call.rectDtdy == prevDtdy);
-        fprintf(stdout, "[SNAP-2D] named rect resized: %dx%d at (%d,%d) -> %dx%d at (%d,%d), rate %d/%d -> %d/%d, treated as %s\n",
+        // Which way it went matters as much as by how much: uncovering can only
+        // be done by clipping while the picture is GROWING, because the clip can
+        // hide part of what the current frame draws and cannot conjure rows the
+        // current frame does not contain.
+        const char *direction = ((curW * curH) >= (prevW * prevH)) ? "growing" : "shrinking";
+        fprintf(stdout, "[SNAP-2D] named rect resized: %dx%d at (%d,%d) -> %dx%d at (%d,%d), %s, rate %d/%d -> %d/%d, treated as %s\n",
             prevW >> 2, prevH >> 2, prevRect.ulx >> 2, prevRect.uly >> 2,
             curW >> 2, curH >> 2, call.rect.ulx >> 2, call.rect.uly >> 2,
+            direction,
             int(prevDsdx), int(prevDtdy), int(call.rectDsdx), int(call.rectDtdy),
             sameRate ? "UNCOVERING (clip blended)" : "RESCALING (viewport blended)");
         fflush(stdout);
