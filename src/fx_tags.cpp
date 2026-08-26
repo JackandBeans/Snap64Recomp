@@ -122,8 +122,8 @@ std::unordered_map<uint32_t, uint32_t> g_particle_occurrence;
 // Mixes the address with the serial so a reissued address is a different name.
 // Avoids both values the extended commands reserve, so an id can never be read
 // as "ignore this" or "work it out yourself".
-uint32_t particle_id(uint32_t particle, uint32_t serial, uint32_t occurrence) {
-    uint32_t id = particle ^ (serial * 2654435761u) ^ (occurrence * 0x9E3779B9u);
+uint32_t particle_id(uint32_t particle, uint32_t serial, uint32_t pass) {
+    uint32_t id = particle ^ (serial * 2654435761u) ^ (pass * 0x9E3779B9u);
     id ^= (id >> 13);
     if ((id == 0u) || (id == 0xFFFFFFFFu)) {
         id = 1u;
@@ -180,10 +180,26 @@ extern "C" void snap_fx_particle(uint8_t* rdram, recomp_context* ctx) {
     // turning the naming off to stop the smearing also silenced the one number
     // that says WHY it smears. A measurement that stops when the thing it
     // measures is disabled cannot be used to decide whether to enable it.
-    const uint32_t occurrence = snap::g_particle_occurrence[particle]++;
+    snap::g_particle_occurrence[particle]++;
     if (snapdiag::statsEnabled()) {
         snapdiag::fxTagsWrittenCounter().fetch_add(1, std::memory_order_relaxed);
     }
+
+    // Which render pass this drawing belongs to, read from fx_draw's own loop
+    // counter -- the prologue stores it at sp+0x1F8 and the drawing loops run
+    // inside it.
+    //
+    // The pass matters because this game renders twice: the scene, and the
+    // Pokemon detector's offscreen pass. fx_draw walks up to four cameras, so
+    // one particle can be drawn once per pass in a single frame. Distinguished
+    // only by drawing order, the on-screen drawing of one frame can carry the
+    // same name as the OFFSCREEN drawing of the next, and pairing them blends a
+    // rectangle towards a position in a buffer nobody sees -- which garbles.
+    // The 3D path salts its ids by pass for precisely this reason
+    // (renEXPassSalt, patches/src/render_patch.c); this is the same idea. The
+    // pass slot is stable -- slot zero is the scene camera -- where drawing
+    // order between passes is not.
+    const uint32_t pass = static_cast<uint32_t>(MEM_W(0x1F8, ctx->r29)) & 3u;
 
     if (!snapdiag::fxTaggingEnabled().load(std::memory_order_relaxed)) {
         return;
@@ -194,7 +210,7 @@ extern "C" void snap_fx_particle(uint8_t* rdram, recomp_context* ctx) {
         return;
     }
 
-    const uint32_t id = snap::particle_id(particle, snap::serial_for(particle), occurrence);
+    const uint32_t id = snap::particle_id(particle, snap::serial_for(particle), pass);
     MEM_W(0x0, (gpr)(int32_t)cursor) = snap::EnableWord0;
     MEM_W(0x4, (gpr)(int32_t)cursor) = snap::EnableWord1;
     MEM_W(0x8, (gpr)(int32_t)cursor) = snap::RectGroupWord0;
