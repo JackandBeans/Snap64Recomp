@@ -846,7 +846,15 @@ namespace {
                         intervalJudder++;
                     }
                     intervalPrevMs = intervalMs;
-                    if (intervalCount >= 600) {
+                    // Ended early when the player marks something, so the
+                    // interval that prints is the one containing the moment.
+                    const uint32_t markPending = snapdiag::markRequestCounter().exchange(0, std::memory_order_relaxed);
+                    if (markPending > 0) {
+                        fprintf(stdout, "[SNAP-MARK] #%u -- the numbers below cover the moment this was pressed\n",
+                            snapdiag::markSerialCounter().fetch_add(1, std::memory_order_relaxed) + 1);
+                    }
+
+                    if ((intervalCount >= 600) || ((markPending > 0) && (intervalCount > 0))) {
                         const uint32_t asked = snapdiag::subFrameAskedCounter().exchange(0, std::memory_order_relaxed);
                         const uint32_t dropped = snapdiag::subFrameDroppedCounter().exchange(0, std::memory_order_relaxed) +
                             snapdiag::workloadDroppedCounter().exchange(0, std::memory_order_relaxed);

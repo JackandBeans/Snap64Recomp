@@ -205,6 +205,24 @@ inline std::atomic<uint32_t> &transformsSeenCounter() {
 // across the interval, because the texture coordinates were computed for the
 // authored rectangle and the quad is scaled by the viewport. That reads as a
 // sprite breathing or popping rather than as a sprite moving.
+// Raised by the player, at the moment they see the thing they are reporting.
+//
+// Every statistic here is averaged over six hundred presents, which is about
+// two seconds -- long enough that a fault lasting a few frames is diluted into
+// nothing by the frames either side of it. A run that has to be described
+// afterwards from memory is exactly the position this project keeps getting
+// stuck in. Pressing a key ends the interval on the spot, so the numbers that
+// print next describe the moment and not the two seconds around it.
+inline std::atomic<uint32_t> &markRequestCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
+inline std::atomic<uint32_t> &markSerialCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
 inline std::atomic<uint32_t> &rectSizeChangedCounter() {
     static std::atomic<uint32_t> counter = { 0 };
     return counter;

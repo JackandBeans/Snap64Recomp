@@ -1,4 +1,5 @@
 ﻿#include "settings.h"
+#include "hle/rt64_snap_diag.h"
 
 #include <algorithm>
 #include <cstdio>
@@ -153,6 +154,15 @@ bool handle_settings_hotkey(int scancode) {
             return true;
         case SDL_SCANCODE_F5:
             save_settings();
+            return true;
+        case SDL_SCANCODE_F12:
+            // Marks the moment. The statistics are averaged over about two
+            // seconds, which is long enough to dilute a fault lasting a few
+            // frames into nothing; this ends the interval here so the report
+            // that follows describes what was on screen just now.
+            snapdiag::markRequestCounter().fetch_add(1, std::memory_order_relaxed);
+            printf("[SNAP-CFG] marked -- see the [SNAP-MARK] report below (needs SNAP_STATS=1)\n");
+            fflush(stdout);
             return true;
         case SDL_SCANCODE_F2:
             s_settings.crop_enabled = !s_settings.crop_enabled;
