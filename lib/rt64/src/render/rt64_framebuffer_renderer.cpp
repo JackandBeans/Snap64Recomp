@@ -1703,6 +1703,13 @@ namespace RT64 {
                             // put it, which is what the console showed. A panel
                             // that slides keeps its motion.
                             FixedRect drawnRect = call.callDesc.rect;
+                            if (snapdiag::statsEnabled() && call.callDesc.snapRectMapped) {
+                                snapdiag::rectDrawMarkedCounter().fetch_add(1, std::memory_order_relaxed);
+                                if (!(p.snapRectWeight < 1.0f)) {
+                                    snapdiag::rectDrawWeightOneCounter().fetch_add(1, std::memory_order_relaxed);
+                                }
+                            }
+
                             if (call.callDesc.snapRectMapped && (p.snapRectWeight < 1.0f)) {
                                 const FixedRect &prevRect = call.callDesc.snapPrevRect;
                                 const float w = p.snapRectWeight;
