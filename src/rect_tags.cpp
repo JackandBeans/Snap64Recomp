@@ -33,6 +33,7 @@
 #include <cstdint>
 
 #include "recomp.h"
+#include "hle/rt64_snap_diag.h"
 
 extern "C" {
 #include "funcs.h"
@@ -125,38 +126,113 @@ static uint32_t snap_write_rect_tag(uint8_t* rdram, uint32_t cursor, uint32_t id
     return cursor + snap::TagBytes;
 }
 
-// One sprite. a0 is the Sprite, which lives inside the SObj that owns it, and
-// that SObj is what the rectangles this draws belong to.
-extern "C" void spX2Draw(uint8_t* rdram, recomp_context* ctx) {
-    const uint32_t sprite = static_cast<uint32_t>(ctx->r4);
+// Counts the rectangle commands in a span of display list, so the effect of
+// naming a path can be read from the same number that identified it. Walked at
+// command alignment; a texture rectangle is more than one word and the words
+// after the first are coordinates, so this compares paths against each other
+// rather than being an exact total.
+static uint32_t snap_count_window_rects(uint8_t* rdram, uint32_t from, uint32_t to) {
+    if (!snap::valid_ram_address(from) || !snap::valid_ram_address(to) || (to <= from)) {
+        return 0;
+    }
 
-    if (snap::valid_ram_address(sprite)) {
-        // Hidden sprites draw nothing and return before writing the cursor
-        // back, so a tag written here would be left behind and the caller
-        // would then move the list pointer to the middle of it.
-        const uint32_t flags = static_cast<uint32_t>(MEM_HU(snap::SpriteFlagsOffset, (gpr)(int32_t)sprite));
-        if ((flags & snap::SpriteHiddenFlag) == 0u) {
-            const uint32_t cursor = static_cast<uint32_t>(MEM_W(snap::SpriteCursorOffset, (gpr)(int32_t)sprite));
-            if (snap::valid_ram_address(cursor) && snap_rect_tag_fits(rdram, cursor)) {
-                const uint32_t id = sprite - snap::SObjFromSprite;
-                MEM_W(snap::SpriteCursorOffset, (gpr)(int32_t)sprite) =
-                    static_cast<int32_t>(snap_write_rect_tag(rdram, cursor, id));
-            }
+    if ((to - from) > 0x8000u) {
+        return 0;
+    }
+
+    uint32_t count = 0;
+    for (uint32_t cursor = from; (cursor + 8u) <= to; cursor += 8u) {
+        const uint32_t opcode = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)cursor)) >> 24;
+        if ((opcode == 0xE4u) || (opcode == 0xE5u) || (opcode == 0xF6u)) {
+            count++;
         }
     }
 
-    __real_spX2Draw(rdram, ctx);
+    return count;
+}
+
+// One sprite. a0 is the Sprite, which lives inside the SObj that owns it, and
+// that SObj is what the rectangles this draws belong to.
+//
+// Two copies of this library exist. The resident one draws during a course; the
+// menu overlay carries its own, and until now only the resident one was tagged,
+// which is why the interface screens stepped while the selection bracket beside
+// them -- drawn by the resident library -- moved smoothly. Measured on a real
+// session, the menu overlay's copy accounted for essentially every unnamed
+// rectangle on those screens.
+//
+// The copies are byte-for-byte the same shape: the hidden flag is at
+// Sprite+0x14 with the same bit, the display-list cursor is at Sprite+0x3C, and
+// the caller seeds it from gMainGfxPos and takes it back minus eight. So they
+// take the same treatment, verified against both rather than assumed from one.
+// The ids cannot collide because both libraries draw objects from the same
+// allocator, so an SObj address names exactly one sprite whichever copy drew it.
+static void snap_tag_sprite(uint8_t* rdram, recomp_context* ctx) {
+    const uint32_t sprite = static_cast<uint32_t>(ctx->r4);
+    if (!snap::valid_ram_address(sprite)) {
+        return;
+    }
+
+    // Hidden sprites draw nothing and return before writing the cursor back, so
+    // a tag written here would be left behind and the caller would then move
+    // the list pointer into the middle of it.
+    const uint32_t flags = static_cast<uint32_t>(MEM_HU(snap::SpriteFlagsOffset, (gpr)(int32_t)sprite));
+    if ((flags & snap::SpriteHiddenFlag) != 0u) {
+        return;
+    }
+
+    const uint32_t cursor = static_cast<uint32_t>(MEM_W(snap::SpriteCursorOffset, (gpr)(int32_t)sprite));
+    if (!snap::valid_ram_address(cursor) || !snap_rect_tag_fits(rdram, cursor)) {
+        return;
+    }
+
+    const uint32_t id = sprite - snap::SObjFromSprite;
+    MEM_W(snap::SpriteCursorOffset, (gpr)(int32_t)sprite) =
+        static_cast<int32_t>(snap_write_rect_tag(rdram, cursor, id));
 }
 
 // One object's whole sprite list. Closing the group here means the rectangles
-// that follow -- anything the game draws that is not a sprite -- carry no name
-// and are left exactly where they were put.
-extern "C" void renDrawSprite(uint8_t* rdram, recomp_context* ctx) {
+// that follow -- anything drawn that is not a sprite -- carry no name and are
+// left exactly where they were put.
+static void snap_close_sprite_group(uint8_t* rdram) {
     const uint32_t cursor = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)snap::GMainGfxPos));
     if (snap::valid_ram_address(cursor) && snap_rect_tag_fits(rdram, cursor)) {
         MEM_W(0, (gpr)(int32_t)snap::GMainGfxPos) =
             static_cast<int32_t>(snap_write_rect_tag(rdram, cursor, 0u));
     }
+}
 
+// The resident library, used during a course.
+extern "C" void spX2Draw(uint8_t* rdram, recomp_context* ctx) {
+    snap_tag_sprite(rdram, ctx);
+    __real_spX2Draw(rdram, ctx);
+}
+
+extern "C" void renDrawSprite(uint8_t* rdram, recomp_context* ctx) {
+    snap_close_sprite_group(rdram);
     __real_renDrawSprite(rdram, ctx);
+}
+
+// The menu overlay's copy, used by the laboratory, the course selector and the
+// rest of the interface.
+extern "C" void func_80373670_846E20(uint8_t* rdram, recomp_context* ctx) {
+    snap_tag_sprite(rdram, ctx);
+    __real_func_80373670_846E20(rdram, ctx);
+}
+
+extern "C" void func_803719B0_845160(uint8_t* rdram, recomp_context* ctx) {
+    snap_close_sprite_group(rdram);
+
+    // Still counted, so the effect of naming this path can be read straight off
+    // the same line that identified it.
+    if (!snapdiag::statsEnabled()) {
+        __real_func_803719B0_845160(rdram, ctx);
+        return;
+    }
+
+    const uint32_t before = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)snap::GMainGfxPos));
+    __real_func_803719B0_845160(rdram, ctx);
+    const uint32_t after = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)snap::GMainGfxPos));
+    snapdiag::rectsFromWindowCounter().fetch_add(
+        snap_count_window_rects(rdram, before, after), std::memory_order_relaxed);
 }

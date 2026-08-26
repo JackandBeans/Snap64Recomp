@@ -72,6 +72,7 @@ HOOKED = [
     'func_8009E3D0',
     # The menu overlay's private copy of the sprite library, and the camera's
     # own background fills.
+    'func_80373670_846E20',
     'func_803719B0_845160',
     'renInitCamera',
     'renInitCameraEx',
