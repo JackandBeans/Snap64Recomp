@@ -1374,7 +1374,7 @@ namespace RT64 {
                             // Sprite-sized only: full-screen fills and one-pixel
                             // seams would bury the effect rectangles the window
                             // exists to explain.
-                            if ((w >= 4) && (w <= 150) && (h >= 4) && (h <= 150)) {
+                            if ((w >= 4) && (w <= 320) && (h >= 2) && (h <= 150)) {
                                 fprintf(stdout, "[SNAP-PAIR] f%u UNNAMED (%d,%d %dx%d)\n",
                                     f, call.rect.ulx >> 2, call.rect.uly >> 2, w, h);
                             }
