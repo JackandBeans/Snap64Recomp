@@ -54,8 +54,14 @@ namespace RT64 {
         // container -- same header checks, same checksums, same atomic replace.
         static const uint64_t DriverBlobKey = 1;
 
-        static const uint64_t MaxEntryBytes = 4ull * 1024 * 1024;
-        static const uint64_t MaxTotalBytes = 64ull * 1024 * 1024;
+        // Individual shader blobs are tens of kilobytes; the driver's
+        // serialized pipeline library shares this cache and is a different
+        // animal -- on this machine's driver it is a 10KB index, but drivers
+        // that serialize real pipeline binaries produce tens of megabytes,
+        // and a cap sized for shaders silently threw that entry away. The
+        // total budget still bounds the file.
+        static const uint64_t MaxEntryBytes = 48ull * 1024 * 1024;
+        static const uint64_t MaxTotalBytes = 96ull * 1024 * 1024;
         static const uint32_t MaxEntryCount = 65536;
 
         // A compile that lands during a write goes into the next one. Waiting a
@@ -65,7 +71,10 @@ namespace RT64 {
 
         std::filesystem::path filePath;
         uint64_t deviceKey = 0;
-        bool enabled = false;
+        // Atomic because the compilation workers read it without a lock: the
+        // release store in open() publishes the fully-loaded entries to any
+        // worker that observes it true.
+        std::atomic<bool> enabled = { false };
 
         // Guards entries and dirty. Never held across file I/O, and never held
         // across a call into the graphics device.

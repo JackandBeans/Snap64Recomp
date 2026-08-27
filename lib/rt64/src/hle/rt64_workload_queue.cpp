@@ -214,6 +214,13 @@ namespace RT64 {
             break;
         }
 
+        // The ceiling applies to whatever the mode produced, so a capped
+        // window scale and a capped manual value behave the same.
+        const float resolutionCap = float(ext.sharedResources->userConfig.resolutionMultiplierCap);
+        if (resolutionCap > 0.0f) {
+            resolutionMultiplier = std::min(resolutionMultiplier, resolutionCap);
+        }
+
         uint32_t msaaSampleCount = ext.sharedResources->userConfig.msaaSampleCount();
 
         // Build the resolution scale vector from the configuration.

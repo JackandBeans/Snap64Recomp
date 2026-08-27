@@ -43,6 +43,10 @@ void load_settings() {
         s_settings.hq_sound           = j.value("hq_sound", s_settings.hq_sound);
         s_settings.three_point_filtering = j.value("three_point_filtering", s_settings.three_point_filtering);
         s_settings.downsample         = j.value("downsample", s_settings.downsample);
+        s_settings.resolution_scale   = std::clamp(j.value("resolution_scale", s_settings.resolution_scale), 0, 8);
+        s_settings.present_filter     = std::clamp(j.value("present_filter", s_settings.present_filter), 0, 2);
+        s_settings.upscale_2d         = std::clamp(j.value("upscale_2d", s_settings.upscale_2d), 0, 2);
+        s_settings.dither_noise       = j.value("dither_noise", s_settings.dither_noise);
         s_settings.interpolate_camera = j.value("interpolate_camera", s_settings.interpolate_camera);
         s_settings.render_to_ram      = j.value("render_to_ram", s_settings.render_to_ram);
         s_settings.ubershaders_only   = j.value("ubershaders_only", s_settings.ubershaders_only);
@@ -68,6 +72,10 @@ void save_settings() {
         {"hq_sound",              s_settings.hq_sound},
         {"three_point_filtering", s_settings.three_point_filtering},
         {"downsample",            s_settings.downsample},
+        {"resolution_scale",      s_settings.resolution_scale},
+        {"present_filter",        s_settings.present_filter},
+        {"upscale_2d",            s_settings.upscale_2d},
+        {"dither_noise",          s_settings.dither_noise},
         {"interpolate_camera",    s_settings.interpolate_camera},
         {"render_to_ram",         s_settings.render_to_ram},
         {"ubershaders_only",      s_settings.ubershaders_only},

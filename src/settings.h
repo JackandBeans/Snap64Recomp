@@ -84,6 +84,24 @@ struct Settings {
     bool  interpolate_camera = true;
     int   downsample        = 1;
 
+    // Render resolution, in multiples of the game's 320x240. Zero follows the
+    // window (RT64's integer window scale, the old behaviour). A fixed value
+    // decouples rendering cost from window size: measured on this machine the
+    // beach replay holds 280 fps at 4x (1280x960) and collapses at the ~6x a
+    // 1440p window asks for, so a large window with a capped scale is the
+    // difference between smooth and unplayable. The presentation path already
+    // scales any render size to the window.
+    int   resolution_scale  = 0;      // 0 = follow window, 1..8 = ceiling on the window scale
+
+    // How the finished frame is put on screen: 0 nearest (raw pixels),
+    // 1 linear, 2 the anti-aliased pixel scaling RT64 defaults to.
+    int   present_filter    = 2;
+    // What resolution 2D rectangles render at: 0 original chunky pixels,
+    // 1 only content that scales anyway, 2 everything sharp.
+    int   upscale_2d        = 1;
+    // The console's own post-blend dither noise. A look choice.
+    bool  dither_noise      = true;
+
     // Diagnostic, not shipped as a feature. RT64 draws every call through a
     // fallback ubershader until the call's specialised pipeline finishes
     // compiling, and Snorlax's sleep symbols are visible during exactly that

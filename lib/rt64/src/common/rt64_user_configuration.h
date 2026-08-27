@@ -88,6 +88,12 @@ namespace RT64 {
         DisplayBuffering displayBuffering;
         Antialiasing antialiasing;
         double resolutionMultiplier;
+        // Pokemon Snap port: with WindowIntegerScale, the ceiling the
+        // window-derived multiplier may reach. Zero means uncapped. A large
+        // window otherwise implies a render size the machine cannot hold --
+        // measured here: 280 fps at 4x, collapse at the ~6x a 1440p window
+        // asks for -- and presentation already scales any render size up.
+        double resolutionMultiplierCap;
         int downsampleMultiplier;
         Filtering filtering;
         AspectRatio aspectRatio;

@@ -15,6 +15,7 @@ namespace RT64 {
         j["displayBuffering"] = cfg.displayBuffering;
         j["antialiasing"] = cfg.antialiasing;
         j["resolutionMultiplier"] = cfg.resolutionMultiplier;
+        j["resolutionMultiplierCap"] = cfg.resolutionMultiplierCap;
         j["downsampleMultiplier"] = cfg.downsampleMultiplier;
         j["filtering"] = cfg.filtering;
         j["aspectRatio"] = cfg.aspectRatio;
@@ -38,6 +39,7 @@ namespace RT64 {
         cfg.displayBuffering = j.value("displayBuffering", defaultCfg.displayBuffering);
         cfg.antialiasing = j.value("antialiasing", defaultCfg.antialiasing);
         cfg.resolutionMultiplier = j.value("resolutionMultiplier", defaultCfg.resolutionMultiplier);
+        cfg.resolutionMultiplierCap = j.value("resolutionMultiplierCap", defaultCfg.resolutionMultiplierCap);
         cfg.downsampleMultiplier = j.value("downsampleMultiplier", defaultCfg.downsampleMultiplier);
         cfg.filtering = j.value("filtering", defaultCfg.filtering);
         cfg.aspectRatio = j.value("aspectRatio", defaultCfg.aspectRatio);
@@ -69,6 +71,7 @@ namespace RT64 {
         displayBuffering = DisplayBuffering::Double;
         antialiasing = Antialiasing::None;
         resolutionMultiplier = 2.0f;
+        resolutionMultiplierCap = 0.0f;
         downsampleMultiplier = 1;
         filtering = Filtering::AntiAliasedPixelScaling;
         aspectRatio = AspectRatio::Original;
@@ -98,6 +101,7 @@ namespace RT64 {
         clampEnum<InternalColorFormat>(internalColorFormat);
         clampEnum<HardwareResolve>(hardwareResolve);
         resolutionMultiplier = std::clamp<double>(resolutionMultiplier, 0.0f, ResolutionMultiplierLimit);
+        resolutionMultiplierCap = std::clamp<double>(resolutionMultiplierCap, 0.0f, ResolutionMultiplierLimit);
         downsampleMultiplier = std::clamp<int>(downsampleMultiplier, 1, ResolutionMultiplierLimit);
         aspectTarget = std::clamp<double>(aspectTarget, 0.1f, 100.0f);
         extAspectTarget = std::clamp<double>(extAspectTarget, 0.1f, 100.0f);

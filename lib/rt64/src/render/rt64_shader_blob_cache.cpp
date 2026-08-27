@@ -76,7 +76,7 @@ namespace RT64 {
 
         filePath = path;
         deviceKey = deviceKeyFromDevice(device);
-        enabled = true;
+        enabled.store(true, std::memory_order_release);
 
         std::error_code ec;
         if (std::filesystem::exists(filePath, ec) && !readFile()) {
@@ -101,7 +101,7 @@ namespace RT64 {
             writeThread.reset();
         }
 
-        if (enabled) {
+        if (enabled.load(std::memory_order_acquire)) {
             if (refresh != nullptr) {
                 uint64_t refreshKey = 0;
                 std::vector<uint8_t> refreshed;
@@ -129,12 +129,12 @@ namespace RT64 {
             dirty = false;
         }
 
-        enabled = false;
+        enabled.store(false, std::memory_order_release);
         filePath.clear();
     }
 
     ShaderBlobCache::Blob ShaderBlobCache::lookup(uint64_t key) {
-        if (!enabled || (key == 0)) {
+        if (!enabled.load(std::memory_order_acquire) || (key == 0)) {
             return nullptr;
         }
 
@@ -146,7 +146,7 @@ namespace RT64 {
     }
 
     void ShaderBlobCache::store(uint64_t key, const void *data, uint64_t size) {
-        if (!enabled || (key == 0) || (data == nullptr) || (size == 0) || (size > MaxEntryBytes)) {
+        if (!enabled.load(std::memory_order_acquire) || (key == 0) || (data == nullptr) || (size == 0) || (size > MaxEntryBytes)) {
             return;
         }
 
@@ -174,7 +174,7 @@ namespace RT64 {
     }
 
     void ShaderBlobCache::replace(uint64_t key, const void *data, uint64_t size) {
-        if (!enabled || (key == 0) || (data == nullptr) || (size == 0) || (size > MaxEntryBytes)) {
+        if (!enabled.load(std::memory_order_acquire) || (key == 0) || (data == nullptr) || (size == 0) || (size > MaxEntryBytes)) {
             return;
         }
 
@@ -183,15 +183,26 @@ namespace RT64 {
         const std::unique_lock<std::mutex> lock(entriesMutex);
         auto it = entries.find(key);
         if (it != entries.end()) {
-            if (it->second->size() == size) {
+            // Same bytes, nothing to do. Judged on the CONTENT: a driver
+            // pipeline library that grew a pipeline and serialized to the same
+            // length is a different blob, and the size test alone dropped it.
+            if ((it->second->size() == size) &&
+                (std::memcmp(it->second->data(), bytes, size_t(size)) == 0)) {
                 return;
             }
 
-            totalBytes -= it->second->size();
+            // Admission is decided before anything is destroyed: a replacement
+            // that does not fit leaves the old entry standing rather than
+            // erasing it and then bailing, which lost a valid blob outright.
+            const uint64_t bytesWithoutOld = totalBytes - it->second->size();
+            if ((bytesWithoutOld + size) > MaxTotalBytes) {
+                return;
+            }
+
+            totalBytes = bytesWithoutOld;
             entries.erase(it);
         }
-
-        if ((totalBytes + size) > MaxTotalBytes) {
+        else if ((totalBytes + size) > MaxTotalBytes) {
             return;
         }
 

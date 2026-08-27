@@ -2,6 +2,8 @@
 // RT64
 //
 
+#pragma once
+
 #include <filesystem>
 #include <unordered_set>
 

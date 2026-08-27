@@ -67,6 +67,10 @@ extern "C" std::atomic<uint32_t> snap_thread_create_count;
 #include <objidl.h>
 #endif
 #include "hle/rt64_application.h"
+#include "render/rt64_texture_cache.h"
+#include "common/rt64_replacement_database.h"
+
+#include <filesystem>
 
 // ---------------------------------------------------------------------------
 // Static dummy buffers required by RT64 (must persist for the lifetime of app)
@@ -186,6 +190,21 @@ public:
         // Enable developer/debug mode if requested.
         app_->userConfig.developerMode = developer_mode;
 
+        // Boot with the saved graphics settings rather than defaults: the
+        // antialiasing level in particular tears down and rebuilds the whole
+        // shader cache when changed after setup, so starting at the saved
+        // level makes that cost never happen. Config file I/O is off, so
+        // these writes are the configuration.
+        switch (snap::settings().msaa) {
+            case 8: app_->userConfig.antialiasing = RT64::UserConfiguration::Antialiasing::MSAA8X; break;
+            case 4: app_->userConfig.antialiasing = RT64::UserConfiguration::Antialiasing::MSAA4X; break;
+            case 2: app_->userConfig.antialiasing = RT64::UserConfiguration::Antialiasing::MSAA2X; break;
+            default: app_->userConfig.antialiasing = RT64::UserConfiguration::Antialiasing::None; break;
+        }
+        app_->userConfig.resolution = RT64::UserConfiguration::Resolution::WindowIntegerScale;
+        app_->userConfig.resolutionMultiplierCap = double(std::clamp(snap::settings().resolution_scale, 0, 8));
+        app_->userConfig.validate();
+
         // Attempt setup.
         auto result = app_->setup(0);
 
@@ -231,6 +250,41 @@ public:
         printf("[SNAP-RT64] Renderer context created (result=%d, api=%d)\n",
                static_cast<int>(result), static_cast<int>(chosen_api));
 
+        // Load any texture packs sitting in texture_packs/ next to the
+        // executable. RT64's replacement subsystem is complete -- database,
+        // .rtz archives, DDS and PNG, streaming, its own VRAM pool -- and was
+        // only ever reachable from a developer-mode file dialog. A pack is
+        // either a .rtz archive or a loose directory carrying an rt64.json.
+        // Loading blocks, which is why it happens here at boot and never
+        // mid-course; ordering is alphabetical, and later packs override
+        // earlier ones where they collide.
+        {
+            std::vector<RT64::ReplacementDirectory> packs;
+            const std::filesystem::path packRoot = "texture_packs";
+            std::error_code ec;
+            if (std::filesystem::is_directory(packRoot, ec)) {
+                std::vector<std::filesystem::path> found;
+                for (const auto &entry : std::filesystem::directory_iterator(packRoot, ec)) {
+                    if (entry.is_regular_file() &&
+                        RT64::ReplacementDatabase::toLower(entry.path().extension().string()) == RT64::ReplacementPackExtension) {
+                        found.push_back(entry.path());
+                    }
+                    else if (entry.is_directory() &&
+                             std::filesystem::exists(entry.path() / RT64::ReplacementDatabaseFilename, ec)) {
+                        found.push_back(entry.path());
+                    }
+                }
+                std::sort(found.begin(), found.end());
+                for (const auto &path : found) {
+                    packs.emplace_back(RT64::ReplacementDirectory(path));
+                }
+            }
+            if (!packs.empty()) {
+                const bool loaded = app_->textureCache->loadReplacementDirectories(packs);
+                printf("[SNAP-TEX] %u texture pack(s) in texture_packs/: %s\n",
+                    uint32_t(packs.size()), loaded ? "loaded" : "FAILED to load");
+            }
+        }
     }
 
     ~RT64Context() override {
@@ -273,8 +327,44 @@ public:
         app_->userConfig.downsampleMultiplier = std::max(1, new_config.ds_option);
         app_->userConfig.threePointFiltering = snap::settings().three_point_filtering;
 
+        // Render scale: zero follows the window as before; a nonzero value
+        // is a CEILING on the window-derived multiplier, so a small window
+        // still renders small but a huge one stops at what the machine can
+        // hold. Measured here: 280 fps at 4x, collapse at the ~6x a 1440p
+        // window asks for. Presentation scales any render size to fit.
+        app_->userConfig.resolution = RT64::UserConfiguration::Resolution::WindowIntegerScale;
+        app_->userConfig.resolutionMultiplierCap = double(std::clamp(snap::settings().resolution_scale, 0, 8));
+
+        // The present filter and the 2D-resolution choice apply live; the
+        // dither noise rides the emulator config below.
+        switch (snap::settings().present_filter) {
+            case 0: app_->userConfig.filtering = RT64::UserConfiguration::Filtering::Nearest; break;
+            case 1: app_->userConfig.filtering = RT64::UserConfiguration::Filtering::Linear; break;
+            default: app_->userConfig.filtering = RT64::UserConfiguration::Filtering::AntiAliasedPixelScaling; break;
+        }
+        switch (snap::settings().upscale_2d) {
+            case 0: app_->userConfig.upscale2D = RT64::UserConfiguration::Upscale2D::Original; break;
+            case 2: app_->userConfig.upscale2D = RT64::UserConfiguration::Upscale2D::All; break;
+            default: app_->userConfig.upscale2D = RT64::UserConfiguration::Upscale2D::ScaledOnly; break;
+        }
+
+        // Changing the sample count is the one setting that has to rebuild
+        // the render targets and the shader cache; RT64 only did that from
+        // its own developer inspector, so the setting was applied and then
+        // never consumed -- antialiasing has been a no-op switch since the
+        // port began. Rebuilt only on an actual change: it is a full teardown
+        // and costs a visible pause.
+        const uint32_t prevSamples = app_->userConfig.msaaSampleCount();
         app_->userConfig.validate();
+        const bool msaaChanged = (app_->userConfig.msaaSampleCount() != prevSamples);
         app_->updateUserConfig(true);
+        if (msaaChanged) {
+            app_->updateMultisampling();
+        }
+
+        // The console's own dither noise: a look choice, not a defect.
+        app_->emulatorConfig.dither.postBlendNoise = snap::settings().dither_noise;
+        app_->updateEmulatorConfig();
 
         // Overscan crop: hide the dead margins the game leaves in its
         // framebuffer, the way the CRTs it was authored for did. See
