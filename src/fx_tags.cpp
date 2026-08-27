@@ -20,24 +20,27 @@
  * and die, and the renderer refuses a pair whenever an element's count moves.
  * It would report every rectangle named and pair none of them.
  *
- * So the tag is emitted from INSIDE the loop, at the address where the display
- * list cursor for one particle's commands is fetched. tools/hook_funcs.py grew
- * the ability to insert a call at a named guest address for this.
+ * So the tag is emitted from INSIDE the loop, at a guest address every drawn
+ * particle passes through exactly once. tools/hook_funcs.py grew the ability
+ * to insert a call at a named guest address for this.
  *
- * Two facts make the insertion point correct, both read from the translated
- * MIPS rather than assumed:
+ * The insertion point is 0x800A5158 -- where fx_draw's three palette paths
+ * converge and the texture-load decision is made -- and the reason it is THERE
+ * and not later was found the hard way. The first insertion point, 0x800A5970
+ * (the cursor fetch just ahead of each particle's SetPrimColor), is skipped by
+ * the branch at 0x800A5158 whenever the particle's sprite frame equals the one
+ * drawn just before it: beql jumps past it with the cursor fetch in its own
+ * delay slot. Tumbling leaves share a handful of animation frames, so during a
+ * gust half the particles on screen drew UNNAMED on any given frame, the set
+ * changing as they tumbled. Each miss broke that particle's pairing for two
+ * ticks -- unnamed, then named again with no history -- so at 280Hz some
+ * leaves glided while others stood frozen for a tick and jumped. That mix is
+ * the ghosting that survived every identity fix, and it was this.
  *
- *   - At 0x800A5970 the code does lw $v0, 0x0($t1) with $t1 holding
- *     gMainGfxPos, then advances the pointer by eight and writes its first
- *     command through $v0. A tag written and advanced BEFORE that load is
- *     picked up by it; a tag written after would be overwritten, because from
- *     that instruction on the cursor lives in a register and the pointer in
- *     memory is no longer consulted for this group.
- *
- *   - $s7 holds the particle for the whole body. The branch above it advances
- *     $s7 only on the path that skips drawing -- the recompiler jumps over the
- *     delay slot on the path that draws -- so a particle that reaches here is
- *     the one $s7 names, and the code below reads its fields at 0x4B and 0x6.
+ * At 0x800A5158 the particle is still in $s7 and the pass index at sp+0x1F8;
+ * both downstream cursor fetches read gMainGfxPos from memory AFTER the tag
+ * advanced it, and the load/DP commands that may sit between the tag and the
+ * rectangle leave the pending name untouched -- only a rectangle consumes it.
  *
  * Each particle emits exactly one rectangle, so the group is always a group of
  * one and the count can never change between frames. That is the one thing the
@@ -45,6 +48,8 @@
  */
 #include <atomic>
 #include <cstdint>
+#include <cstdio>
+#include <cstdlib>
 #include <unordered_map>
 
 #include "recomp.h"
@@ -53,6 +58,14 @@
 extern "C" {
 #include "funcs.h"
 }
+
+// The presented-frame capture window (lib/rt64 present queue). The effects the
+// smear investigation chases spawn on the game's own dice -- two replays of the
+// same recording put leaves in different places -- so a capture armed at a fixed
+// moment photographs whatever happens to be there, which twice now has been
+// nothing. Armed HERE, on the particles themselves, every gust in the ride is
+// photographed no matter where the dice put it.
+extern "C" std::atomic<int32_t> snap_frame_dump_pending;
 
 namespace snap {
 namespace {
@@ -227,6 +240,14 @@ extern "C" void snap_fx_particle(uint8_t* rdram, recomp_context* ctx) {
     if (snapdiag::statsEnabled()) {
         snapdiag::rectsTaggedEffectsCounter().fetch_add(1, std::memory_order_relaxed);
     }
+
+    // While a capture burst is open, say which particle each name belongs to.
+    // The matcher's dump speaks in ids and the pictures speak in sprites; this
+    // line is the join between them.
+    if (snap_frame_dump_pending.load(std::memory_order_relaxed) > 0) {
+        printf("[SNAP-FX] particle %08X serial %u pass %u id %08X\n",
+            particle, snap::serial_for(particle), pass, id);
+    }
 }
 
 // The whole effect pass. Counted, and -- the part that matters -- CLOSED.
@@ -245,6 +266,39 @@ extern "C" void fx_draw(uint8_t* rdram, recomp_context* ctx) {
     if (snapdiag::statsEnabled()) {
         snapdiag::fxDistinctParticlesCounter().fetch_add(
             uint32_t(snap::g_particle_occurrence.size()), std::memory_order_relaxed);
+    }
+
+    // SNAP_PCAP_FX=N arms a presented-frame capture burst whenever the frame
+    // just drawn carried at least N distinct particles. The effects under
+    // investigation spawn on the game's own dice, so a camera armed at a fixed
+    // reading photographs whatever happens to be there -- twice now, nothing.
+    // Armed on the particles themselves it cannot miss them. The occurrence
+    // map at this point holds the frame that JUST finished drawing, and the
+    // burst it arms is photographed a few presents later, so the pictures
+    // cover the same gust that pulled the trigger. A cooldown spreads the
+    // bursts across the ride instead of spending the file budget on the first
+    // gust; the file cap in the present queue still has the last word.
+    {
+        static const uint32_t fxTrigger = []() {
+            const char* env = std::getenv("SNAP_PCAP_FX");
+            return (env != nullptr) ? uint32_t(strtoul(env, nullptr, 10)) : 0u;
+        }();
+        static const uint32_t fxBurst = []() {
+            const char* env = std::getenv("SNAP_PCAP_BURST");
+            return (env != nullptr) ? uint32_t(strtoul(env, nullptr, 10)) : 36u;
+        }();
+        static uint32_t fxDrawCalls = 0;
+        static uint32_t lastArmedAt = 0;
+        fxDrawCalls++;
+        if ((fxTrigger > 0) && (snap::g_particle_occurrence.size() >= fxTrigger) &&
+            (snap_frame_dump_pending.load(std::memory_order_relaxed) <= 0) &&
+            ((fxDrawCalls - lastArmedAt) > 90u)) {
+            lastArmedAt = fxDrawCalls;
+            snap_frame_dump_pending.store(int32_t(fxBurst));
+            printf("[SNAP-PCAP] armed %u presents on %u particles at fx frame %u\n",
+                fxBurst, uint32_t(snap::g_particle_occurrence.size()), fxDrawCalls);
+            fflush(stdout);
+        }
     }
 
     // Each pass counts its own drawings, so an id names one rectangle.

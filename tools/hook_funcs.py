@@ -107,13 +107,32 @@ HOOKED = [
 # moves the code still finds it -- and if the address stops being a label at all,
 # this fails loudly instead of silently doing nothing.
 INNER_HOOKS = [
-    # 0x800A5970 is where one particle's display-list cursor is fetched:
-    #   lw $v0, 0x0($t1)   with $t1 = gMainGfxPos
-    # A tag written and advanced before that load is picked up by it. After it
-    # the cursor lives in a register and the pointer in memory is not consulted
-    # again for this group, so anything written later would be overwritten.
-    # $s7 holds the particle throughout the body.
-    ('fx_draw', 0x800A5970, 'snap_fx_particle'),
+    # 0x800A5158 is the one point every drawn particle passes through exactly
+    # once, BEFORE any display-list cursor fetch that could bypass a tag.
+    #
+    # The previous insertion point, 0x800A5970 (the cursor fetch ahead of the
+    # SetPrimColor that precedes each particle's rectangle), was NOT on every
+    # path: the branch at 0x800A5158 --
+    #   beql $t7, $s2, L_800A5974   ; if this particle's texture == the one
+    #       lw $v0, 0x0($t1)        ; already loaded, skip the texture load
+    # -- jumps straight past it, fetching the cursor in its own delay slot.
+    # Any particle drawn with the same sprite frame as the particle drawn just
+    # before it therefore emitted its rectangle with NO tag. Tumbling leaves
+    # share a handful of animation frames, so during a gust half of them went
+    # unnamed on any given frame, each unnamed frame breaking that leaf's
+    # pairing for two ticks (the unnamed one, and the return with no history).
+    # On screen: some leaves glide while others stand frozen for a tick and
+    # jump -- the ghosting this port chased through eight identity fixes.
+    #
+    # 0x800A5158 is where the three TLUT paths converge and the texture-load
+    # decision is made: a dominator of the rectangle emission, reached once per
+    # drawn particle on every path. Both cursor fetches downstream (the delay
+    # slot above and 0x800A5970 on the load path) read the pointer from memory
+    # AFTER the tag advanced it, and the DP commands between the tag and the
+    # rectangle leave the pending name untouched -- only a rectangle consumes
+    # it. $s7 still holds the particle here; the pass index still sits at
+    # sp+0x1F8.
+    ('fx_draw', 0x800A5158, 'snap_fx_particle'),
 ]
 
 
@@ -162,27 +181,34 @@ def main() -> int:
             header_text = header_text.replace(plain_decl, plain_decl + '\n' + real_decl, 1)
 
     # Inner hooks: a call placed at a guest address inside a function body.
+    #
+    # Every existing call to the callback is stripped first, wherever it is.
+    # This is what makes the pass idempotent AND lets an insertion point MOVE:
+    # the earlier version only checked the target label before inserting, and
+    # its check missed the call's own indentation -- so every re-run stacked
+    # another call at the same label, which is how fx_draw came to tag each
+    # particle twice.
     inner = 0
     for func_name, address, callback in INNER_HOOKS:
         label = 'L_%08X:' % address
         call = '    %s(rdram, ctx);' % callback
+        call_line_re = re.compile(r'^[ \t]*%s\(rdram, ctx\);\r?\n' % re.escape(callback),
+                                  flags=re.MULTILINE)
         placed = False
 
         for path in sorted(root.glob('funcs_*.c')):
             text = path.read_text(encoding='utf-8')
-            if label not in text:
+            stripped = call_line_re.sub('', text)
+            if label not in stripped:
+                if stripped != text:
+                    path.write_text(stripped, encoding='utf-8', newline='')
                 continue
 
-            assert text.count(label) == 1, (
-                f'{label} appears {text.count(label)} times in {path.name}; '
+            assert stripped.count(label) == 1, (
+                f'{label} appears {stripped.count(label)} times in {path.name}; '
                 f'an inner hook needs exactly one insertion point')
 
-            head, _, tail = text.partition(label)
-            # Idempotent: re-running must not stack a second call.
-            if tail.lstrip('\r\n').startswith(call.strip()):
-                placed = True
-                break
-
+            head, _, tail = stripped.partition(label)
             text = head + label + '\n' + call + tail
             path.write_text(text, encoding='utf-8', newline='')
             inner += 1
