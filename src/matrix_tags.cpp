@@ -225,6 +225,10 @@ struct CameraTrack {
     // Last call's per-call motion, for the velocity-continuity test.
     float eyeDelta = 0.0f;
     float atDelta = 0.0f;
+    // The projection's field of view, judged the same way the pose is: a
+    // smooth ramp is motion, a jump from stillness is a cut.
+    float fovy = 0.0f;
+    float fovyDelta = 0.0f;
     // Remaining ticks of an active cut transit: the camera crosses to its
     // new pose over more than one tick, and every tick of the crossing must
     // hold, not just the first.
@@ -292,6 +296,10 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
             eye[i] = snap::read_cam_f32(rdram, cam + 0x3C + i * 4);
             at[i] = snap::read_cam_f32(rdram, cam + 0x48 + i * 4);
         }
+        // The perspective union's fovy (om.h: OMCamera+0x18 is MtxCameraPersp,
+        // fovy at +0x08). An orthographic camera keeps other data there, so
+        // the value is only trusted inside a plausible field-of-view range.
+        const float fovy = snap::read_cam_f32(rdram, cam + 0x20);
         float eyeD = 0.0f, atD = 0.0f;
         if (snap::g_world_rebased.load(std::memory_order_acquire)) {
             // A block-transition rebase moves the origin the camera's numbers
@@ -375,6 +383,33 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                 dot = 1.0f;
             }
             const bool atCut = (dot < CutCosine) && discontinuous(atD, track->atDelta);
+
+            // The projection can cut without the pose moving at all. The Beach
+            // intro's hand-off is the proof: the ease lands the eye within a
+            // few units -- far under any pose threshold -- while the same tick
+            // resets the field of view from the cinematic 60 to the gameplay
+            // 55. On hardware everything snapped together: pose, zoom,
+            // viewport, model, interface, one clean discontinuity. Interpolated,
+            // the content cut instantly while the picture kept zooming for a
+            // tick -- half cut, half glide, which is what "looks off" was.
+            // Declaring the cut is enough on its own: the renderer only blends
+            // the projection when the view blends (rt64_projection_processor),
+            // so skipping the view snaps the zoom with it. The same
+            // discontinuity rule as the pose: a fovy ramp an animation plays
+            // is motion and blends; a jump from a standing value is a cut. The
+            // range gate keeps an orthographic camera's unrelated data at this
+            // offset from ever voting.
+            const float fovyD = fabsf(fovy - track->fovy);
+            const bool fovyPlausible = (fovy > 5.0f) && (fovy < 130.0f) &&
+                (track->fovy > 5.0f) && (track->fovy < 130.0f);
+            // The floor sits above the viewfinder's own zoom animation --
+            // raising or lowering it ramps the field of view about three
+            // degrees a frame, and the first frame of every ramp is
+            // "discontinuous" by the velocity test. Measured: ramps step
+            // 3.0-3.8 degrees; the hand-off jump is ~15. Five clears one and
+            // stays far under the other.
+            const bool fovyCut = fovyPlausible && (fovyD > 5.0f) &&
+                (fabsf(fovyD - track->fovyDelta) > std::max(2.0f, 0.5f * track->fovyDelta));
             {
                 // The swing in whole degrees, so a view that turned twenty-nine
                 // reads differently from one that did not turn at all.
@@ -385,7 +420,7 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                        !snapdiag::cameraBiggestSwingCounter().compare_exchange_weak(seen, degrees, std::memory_order_relaxed)) {
                 }
             }
-            if (eyeCut || atCut) {
+            if (eyeCut || atCut || fovyCut) {
                 cameraCut = true;
                 holdFrame = true;
                 // The crossing to the new pose spans more than one tick;
@@ -398,8 +433,8 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
                 // probe did, for the same cost.
                 if (snapdiag::diagEnabled()) {
                     const float clamped = (dot < -1.0f) ? -1.0f : ((dot > 1.0f) ? 1.0f : dot);
-                    printf("[SNAP-CAMCUT] cam %08X eye moved %.1f, look-at point moved %.1f, view turned %.1f degrees\n",
-                           cam, eyeD, atD, acosf(clamped) * 57.29578f);
+                    printf("[SNAP-CAMCUT] cam %08X eye moved %.1f, look-at point moved %.1f, view turned %.1f degrees, fov %.1f -> %.1f\n",
+                           cam, eyeD, atD, acosf(clamped) * 57.29578f, track->fovy, fovy);
                     fflush(stdout);
                 }
                 if (snapdiag::captureEnabled()) {
@@ -435,6 +470,8 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
         track->lastSeen = ++snap::g_camera_seen_counter;
         track->eyeDelta = eyeD;
         track->atDelta = atD;
+        track->fovyDelta = fabsf(fovy - track->fovy);
+        track->fovy = fovy;
         std::memcpy(track->eye, eye, sizeof(eye));
         std::memcpy(track->at, at, sizeof(at));
         track->valid = true;
