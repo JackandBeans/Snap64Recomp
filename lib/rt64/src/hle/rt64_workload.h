@@ -60,6 +60,13 @@ namespace RT64 {
         std::vector<interop::GPUTile> gpuTiles;
         std::vector<DrawCallTile> callTiles;
         std::vector<interop::RSPViewport> rspViewports;
+        // Pokemon Snap port: the viewports as rendered this sub-frame -- for a
+        // matched, view-interpolated projection the entry is blended between
+        // the previous frame's viewport and this one's, so a scene the game
+        // scales into an animated inset (the photo mode's letterbox) scales at
+        // the display's rate instead of stepping at the game's. Rebuilt and
+        // re-uploaded per sub-frame by the projection processor.
+        std::vector<interop::RSPViewport> modRspViewports;
         std::vector<int16_t> viewportClipRatios;
         std::vector<uint16_t> viewportOrigins;
         std::vector<interop::RSPFog> rspFog;

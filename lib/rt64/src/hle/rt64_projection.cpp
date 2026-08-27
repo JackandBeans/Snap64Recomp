@@ -14,6 +14,8 @@ namespace RT64 {
         pointLightCount = 0;
         transformsIndex = 0;
         scissorRect.reset();
+        snapBlendedScissor.reset();
+        snapScissorBlended = false;
         lightManager.reset();
     }
 

@@ -1497,7 +1497,11 @@ namespace RT64 {
             const uint16_t viewportOrigin = drawData.viewportOrigins[proj.transformsIndex];
             if (proj.usesViewport()) {
                 // The call's scissor spans the whole width of the framebuffer pair scissor. Custom origin must not be in use to be able to use the stretched viewport.
-                const auto &viewport = drawData.rspViewports[proj.transformsIndex];
+                // Pokemon Snap port: read the viewport as blended for this
+                // sub-frame, so the clip derived from it moves with the scene
+                // instead of cropping the blended picture at the stepped edge.
+                const auto &viewport = (proj.transformsIndex < drawData.modRspViewports.size()) ?
+                    drawData.modRspViewports[proj.transformsIndex] : drawData.rspViewports[proj.transformsIndex];
                 FixedRect intersectionRect = proj.scissorRect.intersection(viewport.rect(viewportClipRatios));
                 bool coversWholeWidth = !intersectionRect.isEmpty() && (intersectionRect.ulx <= fbPair.scissorRect.ulx) && (intersectionRect.lrx >= fbPair.scissorRect.lrx);
                 bool horizontalRatio = !intersectionRect.isEmpty() && (intersectionRect.width(true, true) > intersectionRect.height(true, true));
@@ -1814,7 +1818,19 @@ namespace RT64 {
                                     uint32_t(prevRect.uly != drawnRect.uly) +
                                     uint32_t(prevRect.lrx != drawnRect.lrx) +
                                     uint32_t(prevRect.lry != drawnRect.lry);
-                                const bool uncovering = !sameSize && sameRate && (movedEdges == 1);
+                                // The whole reveal-versus-rescale question is
+                                // about where TEXELS land, and a fill rectangle
+                                // has none: it is one solid colour at any size,
+                                // so blending its rectangle is always right.
+                                // Left to the reveal test, the viewfinder's
+                                // black bands matched it exactly on the way out
+                                // -- one moved edge, no texel rate -- and the
+                                // clip-blend can only ever CUT a rectangle
+                                // down, so a band grew smoothly and retracted
+                                // in the game's own steps.
+                                const bool fillCycle =
+                                    (call.shaderDesc.otherMode.cycleType() == G_CYC_FILL);
+                                const bool uncovering = !fillCycle && !sameSize && sameRate && (movedEdges == 1);
                                 if (uncovering) {
                                     if (!blended.isEmpty()) {
                                         snapRevealRect = blended;
@@ -1878,7 +1894,18 @@ namespace RT64 {
                             break;
                         }
 
-                        triangles.scissor = convertFixedRect(call.callDesc.scissorRect, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, int32_t(horizontalMisalignment), call.callDesc.scissorLeftOrigin, call.callDesc.scissorRightOrigin);
+                        // Pokemon Snap port: a call clipped by the projection's
+                        // own animated scissor is clipped by the blended one on
+                        // sub-frames where the view interpolated, so the crop
+                        // edge moves with the scene it crops instead of
+                        // stepping at the game's rate. A call with its own
+                        // narrower scissor keeps it untouched.
+                        const FixedRect &callRect = call.callDesc.scissorRect;
+                        const bool callUsesProjScissor = proj.snapScissorBlended &&
+                            (callRect.ulx == proj.scissorRect.ulx) && (callRect.uly == proj.scissorRect.uly) &&
+                            (callRect.lrx == proj.scissorRect.lrx) && (callRect.lry == proj.scissorRect.lry);
+                        const FixedRect &callScissor = callUsesProjScissor ? proj.snapBlendedScissor : callRect;
+                        triangles.scissor = convertFixedRect(callScissor, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, int32_t(horizontalMisalignment), call.callDesc.scissorLeftOrigin, call.callDesc.scissorRightOrigin);
 
                         // Narrowed to the part of an uncovering rectangle that
                         // has been revealed so far. The picture is drawn at the
