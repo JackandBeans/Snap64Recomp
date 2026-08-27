@@ -28,10 +28,36 @@ extern "C" std::atomic<int32_t> snap_frame_dump_pending{0};
 namespace RT64 {
 
 namespace {
-    // Written at half resolution: the artifact is full-screen scale and half
-    // res keeps a burst of captures in the tens of megabytes.
-    constexpr uint32_t SnapCaptureMaxFiles = 400;
-    constexpr size_t SnapCaptureMaxQueuedJobs = 4;
+    // Whether a reading-scheduled capture (src/input.cpp) is driving this run.
+    // The churn-frame armers are gated on SNAP_CAPTURE; giving the schedule its
+    // own gate means a scheduled run photographs only the moments it chose,
+    // instead of spending its file budget on every block boundary on the way.
+    bool snapPcapScheduled() {
+        static const bool scheduled = (std::getenv("SNAP_PCAP_EVERY") != nullptr) || (std::getenv("SNAP_PCAP_AT") != nullptr) ||
+            (std::getenv("SNAP_PCAP_FX") != nullptr);
+        return scheduled;
+    }
+
+    // Written at half resolution by default: the artifact is full-screen scale
+    // and half res keeps a burst of captures in the tens of megabytes. A
+    // sprite-sized artifact needs the real pixels -- SNAP_PCAP_FULL keeps them.
+    uint32_t snapCaptureDivisor() {
+        static const uint32_t divisor = (std::getenv("SNAP_PCAP_FULL") != nullptr) ? 1 : 2;
+        return divisor;
+    }
+
+    uint32_t snapCaptureMaxFiles() {
+        static const uint32_t maxFiles = []() {
+            const char *env = std::getenv("SNAP_PCAP_MAX");
+            return (env != nullptr) ? uint32_t(strtoul(env, nullptr, 10)) : 400u;
+        }();
+        return maxFiles;
+    }
+
+    // Deep enough to hold a whole burst while the worker writes: consecutive
+    // frames are the point of a burst -- a numbering gap in the middle of a
+    // smear is the frame the investigation needed.
+    constexpr size_t SnapCaptureMaxQueuedJobs = 32;
 
     // Encoding a capture is a full-image conversion plus a multi-megabyte
     // file write. The first version of this rig did that on the present
@@ -49,6 +75,7 @@ namespace {
         uint32_t bytesPerPixel = 0;
         bool sourceIsBGRA = false;
         uint32_t index = 0;
+        uint32_t gameFrame = 0;
     };
 
     struct SnapPresentCapture {
@@ -89,21 +116,22 @@ namespace {
         }
     }
 
-    // Runs on the capture worker: half-res conversion to BGR, then the shared
+    // Runs on the capture worker: downscale conversion to BGR, then the shared
     // writer. Success is counted here, where it is known.
     void snapCaptureEncodeJob(const SnapCaptureJob &job) {
-        const uint32_t outWidth = job.width / 2;
-        const uint32_t outHeight = job.height / 2;
+        const uint32_t divisor = snapCaptureDivisor();
+        const uint32_t outWidth = job.width / divisor;
+        const uint32_t outHeight = job.height / divisor;
         if ((outWidth == 0) || (outHeight == 0) || !snapdiag::ensureDumpDir()) {
             return;
         }
 
         std::vector<uint8_t> bgr(size_t(outWidth) * outHeight * 3);
         for (uint32_t y = 0; y < outHeight; y++) {
-            const uint8_t *src = job.pixels.data() + uint64_t(y) * 2 * job.rowPitchBytes;
+            const uint8_t *src = job.pixels.data() + uint64_t(y) * divisor * job.rowPitchBytes;
             uint8_t *out = bgr.data() + size_t(y) * outWidth * 3;
             for (uint32_t x = 0; x < outWidth; x++) {
-                const uint8_t *p = src + uint64_t(x) * 2 * job.bytesPerPixel;
+                const uint8_t *p = src + uint64_t(x) * divisor * job.bytesPerPixel;
                 if (job.bytesPerPixel == 8) {
                     out[x * 3 + 0] = p[5];
                     out[x * 3 + 1] = p[3];
@@ -122,11 +150,14 @@ namespace {
             }
         }
 
+        // The game frame in the name is what ties a picture back to the
+        // replay's clock: the schedule arms in readings, the log reports
+        // readings against game frames, and the files sort into bursts.
         char path[160];
-        snprintf(path, sizeof(path), "snap_frame_dumps/r%05u_present_%05u.bmp", snapdiag::runToken(), job.index);
+        snprintf(path, sizeof(path), "snap_frame_dumps/r%05u_present_%05u_g%06u.bmp", snapdiag::runToken(), job.index, job.gameFrame);
         if (snapdiag::writeBMP24(path, outWidth, outHeight, bgr.data())) {
             snapCapture().filesWritten.fetch_add(1);
-            fprintf(stdout, "[SNAP-PCAP] wrote present %u\n", job.index);
+            fprintf(stdout, "[SNAP-PCAP] wrote present %u (game frame %u)\n", job.index, job.gameFrame);
             fflush(stdout);
         }
     }
@@ -165,7 +196,7 @@ namespace {
     // makes the buffer safe to map afterwards.
     void snapCaptureRecord(RenderDevice *device, RenderCommandList *commandList, const RenderTexture *texture, RenderFormat format, uint32_t width, uint32_t height) {
         SnapPresentCapture &capture = snapCapture();
-        if (capture.warned || (capture.filesWritten.load() >= SnapCaptureMaxFiles)) {
+        if (capture.warned || (capture.filesWritten.load() >= snapCaptureMaxFiles())) {
             return;
         }
 
@@ -236,6 +267,7 @@ namespace {
         job.bytesPerPixel = capture.bytesPerPixel;
         job.sourceIsBGRA = (format == RenderFormat::B8G8R8A8_UNORM);
         job.index = capture.counter++;
+        job.gameFrame = snapdiag::gameFrameCounter().load(std::memory_order_relaxed);
         job.pixels.assign(pixels, pixels + capture.bufferSize);
         capture.buffer->unmap();
 
@@ -629,7 +661,7 @@ namespace {
                     // Pokemon Snap port: while the game side is dumping its
                     // framebuffers around a churn frame, also photograph the
                     // image actually being presented, interpolation included.
-                    if (snapdiag::captureEnabled() && (snap_frame_dump_pending.load() > 0)) {
+                    if ((snapdiag::captureEnabled() || snapPcapScheduled()) && (snap_frame_dump_pending.load() > 0)) {
                         // The window is consumed here. It used to be counted down by
                         // the game-side dumper, which no longer exists, so an armed
                         // capture never stopped until it hit the file cap.
@@ -666,7 +698,7 @@ namespace {
 
                 // The wait above is the fence for the recorded copy, so the
                 // readback is safe to map and write out here.
-                if (snapdiag::captureEnabled()) {
+                if (snapdiag::captureEnabled() || snapPcapScheduled()) {
                     snapCaptureFinish(renderParams.textureFormat);
                 }
             }
@@ -912,7 +944,7 @@ namespace {
                             fprintf(stdout, "[SNAP-PACE]   2D drawn moved: %u of %u marked draws were placed between two frames; %u arrived at weight one\n",
                                 rectsLerped, drawMarked, drawWeightOne);
                             const uint32_t rectsRevealed = snapdiag::rectsRevealedCounter().exchange(0, std::memory_order_relaxed);
-                            fprintf(stdout, "[SNAP-PACE]   2D drawn revealed: %u rectangle draws were uncovered between two frames\n", rectsRevealed);
+                            fprintf(stdout, "[SNAP-PACE]   2D drawn revealed: %u rectangle draws were uncovered between two frames\n", rectsRevealed);
                             fprintf(stdout, "[SNAP-PACE]   2D coverage: %u of %u rectangles on screen carry a name (%.1f%%); the rest are drawn at the game's rate\n",
                                 rectsSeen, rectsTotal,
                                 (rectsTotal > 0) ? (100.0 * double(rectsSeen) / double(rectsTotal)) : 0.0);
@@ -935,7 +967,7 @@ namespace {
                             const uint32_t unnamedMoved = snapdiag::rectsUnnamedMovedCounter().exchange(0, std::memory_order_relaxed);
                             fprintf(stdout, "[SNAP-PACE]   2D unnamed motion: %u stood still, %u moved (%.1f%% of unnamed content is what interpolation would actually change)\n",
                                 unnamedStill, unnamedMoved,
-                                ((unnamedStill + unnamedMoved) > 0) ? (100.0 * double(unnamedMoved) / double(unnamedStill + unnamedMoved)) : 0.0);
+                                ((unnamedStill + unnamedMoved) > 0) ? (100.0 * double(unnamedMoved) / double(unnamedStill + unnamedMoved)) : 0.0);
                             const uint32_t rectElements = snapdiag::rectElementsCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t rectCountChanged = snapdiag::rectCountChangedCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t rectTravelRefused = snapdiag::rectTravelRefusedCounter().exchange(0, std::memory_order_relaxed);

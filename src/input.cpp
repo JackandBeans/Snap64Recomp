@@ -25,9 +25,19 @@
 
 #include "input.h"
 
+#include <atomic>
 #include <cstdio>
+#include <cstdlib>
+#include <cstring>
 #include <cmath>
 #include <SDL2/SDL.h>
+
+// Pokemon Snap port: how many more presented images to photograph. Lives in
+// RT64's present queue, where the pictures actually leave for the screen;
+// armed from here on a schedule counted in controller readings, because under
+// SNAP_REPLAY the reading index is the only clock that lands on the same game
+// moment every run.
+extern "C" std::atomic<int32_t> snap_frame_dump_pending;
 
 // N64 controller button bits (matching libultra OS_CONT_* defines).
 #define N64_BTN_A       0x8000
@@ -113,6 +123,19 @@ static void snap_input_tap(uint16_t* buttons, float* x, float* y) {
     static FILE* record = nullptr;
     static FILE* replay = nullptr;
     static bool opened = false;
+    // Presented-frame capture on a schedule. A visual fault can only be judged
+    // from the images that actually reached the screen, and a replay passes any
+    // given moment exactly once -- so the camera has to already be armed when
+    // the moment arrives. Readings are the schedule's clock: SNAP_PCAP_EVERY=N
+    // arms a burst every N readings (scouting an unknown ride), SNAP_PCAP_AT=
+    // a,b,c arms at exact readings (returning to a moment scouting found), and
+    // SNAP_PCAP_BURST says how many consecutive presents each burst photographs.
+    static uint32_t pcapEvery = 0;
+    static uint32_t pcapStart = 0;
+    static uint32_t pcapBurst = 24;
+    static uint32_t pcapAt[64] = {};
+    static uint32_t pcapAtCount = 0;
+    static uint32_t readingIndex = 0;
     if (!opened) {
         opened = true;
         const char* replayPath = getenv("SNAP_REPLAY");
@@ -127,6 +150,52 @@ static void snap_input_tap(uint16_t* buttons, float* x, float* y) {
             printf("[SNAP-INPUT] recording inputs to %s: %s\n",
                    recordPath, record ? "open" : "FAILED");
         }
+        const char* everyEnv = getenv("SNAP_PCAP_EVERY");
+        if (everyEnv != nullptr) {
+            pcapEvery = uint32_t(strtoul(everyEnv, nullptr, 10));
+        }
+        const char* startEnv = getenv("SNAP_PCAP_START");
+        if (startEnv != nullptr) {
+            pcapStart = uint32_t(strtoul(startEnv, nullptr, 10));
+        }
+        const char* burstEnv = getenv("SNAP_PCAP_BURST");
+        if (burstEnv != nullptr) {
+            pcapBurst = uint32_t(strtoul(burstEnv, nullptr, 10));
+        }
+        const char* atEnv = getenv("SNAP_PCAP_AT");
+        if (atEnv != nullptr) {
+            const char* cursor = atEnv;
+            while ((*cursor != '\0') && (pcapAtCount < 64)) {
+                char* after = nullptr;
+                const unsigned long value = strtoul(cursor, &after, 10);
+                if (after == cursor) {
+                    break;
+                }
+                pcapAt[pcapAtCount++] = uint32_t(value);
+                cursor = (*after == ',') ? (after + 1) : after;
+            }
+        }
+        if ((pcapEvery > 0) || (pcapAtCount > 0)) {
+            printf("[SNAP-PCAP] schedule: every %u readings from %u, at %u fixed readings, %u presents per burst\n",
+                   pcapEvery, pcapStart, pcapAtCount, pcapBurst);
+        }
+        fflush(stdout);
+    }
+
+    readingIndex++;
+    bool armCapture = false;
+    if ((pcapEvery > 0) && (readingIndex >= pcapStart) &&
+        (((readingIndex - pcapStart) % pcapEvery) == 0)) {
+        armCapture = true;
+    }
+    for (uint32_t i = 0; i < pcapAtCount; i++) {
+        if (pcapAt[i] == readingIndex) {
+            armCapture = true;
+        }
+    }
+    if (armCapture) {
+        snap_frame_dump_pending.store(int32_t(pcapBurst));
+        printf("[SNAP-PCAP] armed %u presents at reading %u\n", pcapBurst, readingIndex);
         fflush(stdout);
     }
 
