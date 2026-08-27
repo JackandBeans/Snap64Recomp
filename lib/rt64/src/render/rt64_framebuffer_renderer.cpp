@@ -4,9 +4,16 @@
 
 #include "rt64_framebuffer_renderer.h"
 
+#include <atomic>
 #include <cmath>
 
 #include "hle/rt64_snap_diag.h"
+
+// Pokemon Snap port: the presented-frame capture window (rt64_present_queue.cpp).
+// While a burst is being photographed, every named rectangle draw below prints
+// the weight and endpoints it was actually placed with, one line per sub-frame,
+// so the smear in a picture can be read back to the exact lerp that drew it.
+extern "C" std::atomic<int32_t> snap_frame_dump_pending;
 
 #include "../include/rt64_extended_gbi.h"
 
@@ -1821,6 +1828,29 @@ namespace RT64 {
                                     if (snapdiag::statsEnabled()) {
                                         snapdiag::rectsLerpedCounter().fetch_add(1, std::memory_order_relaxed);
                                     }
+                                }
+                            }
+
+                            // One line per named sprite-sized rectangle per
+                            // sub-frame while the capture window is open: the
+                            // weight it was placed at and the endpoints it was
+                            // placed between. The captured pictures say what a
+                            // smear looks like; these lines say which lerp put
+                            // each rectangle there.
+                            if (snap_frame_dump_pending.load(std::memory_order_relaxed) > 0) {
+                                const uint32_t sid = call.callDesc.snapRectId;
+                                const int32_t sw = (call.callDesc.rect.lrx - call.callDesc.rect.ulx) >> 2;
+                                const int32_t sh = (call.callDesc.rect.lry - call.callDesc.rect.uly) >> 2;
+                                if ((sid != 0) && (sw >= 4) && (sw <= 150) && (sh >= 4) && (sh <= 150)) {
+                                    fprintf(stdout, "[SNAP-RDRAW] f%u id %08X ord %u w %.3f auth (%d,%d %dx%d) prev (%d,%d %dx%d) drawn (%d,%d %dx%d) mapped %d\n",
+                                        p.fbPairIndex, sid, call.callDesc.snapRectOrdinal, p.snapRectWeight,
+                                        call.callDesc.rect.ulx >> 2, call.callDesc.rect.uly >> 2, sw, sh,
+                                        call.callDesc.snapPrevRect.ulx >> 2, call.callDesc.snapPrevRect.uly >> 2,
+                                        (call.callDesc.snapPrevRect.lrx - call.callDesc.snapPrevRect.ulx) >> 2,
+                                        (call.callDesc.snapPrevRect.lry - call.callDesc.snapPrevRect.uly) >> 2,
+                                        drawnRect.ulx >> 2, drawnRect.uly >> 2,
+                                        (drawnRect.lrx - drawnRect.ulx) >> 2, (drawnRect.lry - drawnRect.uly) >> 2,
+                                        int(call.callDesc.snapRectMapped));
                                 }
                             }
 

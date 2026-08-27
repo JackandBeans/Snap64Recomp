@@ -3,6 +3,7 @@
 //
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <cstdlib>
 #include <unordered_map>
@@ -16,6 +17,12 @@
 #include <cstdio>
 
 #include "xxHash/xxh3.h"
+
+// Pokemon Snap port: the presented-frame capture window (rt64_present_queue.cpp).
+// While a burst of presents is being photographed, the rectangle matcher below
+// prints every decision it makes, so the pictures and the pairs that produced
+// them are two views of the same moment.
+extern "C" std::atomic<int32_t> snap_frame_dump_pending;
 
 namespace RT64 {
     // GameFrame
@@ -1324,6 +1331,19 @@ namespace RT64 {
         // shown where it is rather than swept there from somewhere else.
         const int32_t MaxTravel = 160 << 2;
 
+        // While the present queue is photographing a burst, every decision made
+        // here is printed against the same game-frame number the pictures carry.
+        // A pair line and a captured frame are then two views of one moment: the
+        // dump says what the matcher decided, the picture says what it looked
+        // like. MISS lines carry the reason, because a frozen sprite and a
+        // mispaired sprite look identical in the counters and nothing else
+        // separates them.
+        const bool snapDumpWindow = (snap_frame_dump_pending.load(std::memory_order_relaxed) > 0);
+        if (snapDumpWindow) {
+            fprintf(stdout, "[SNAP-PAIR] === match into g%u ===\n",
+                snapdiag::gameFrameCounter().load(std::memory_order_relaxed));
+        }
+
         for (uint32_t f = 0; f < curWorkload.fbPairCount; f++) {
             FramebufferPair &fbPair = curWorkload.fbPairs[f];
             for (uint32_t p = 0; p < fbPair.projectionCount; p++) {
@@ -1348,6 +1368,17 @@ namespace RT64 {
                                 snapReportUnnamedMotion(call.rect);
                             }
                         }
+                        if (snapDumpWindow) {
+                            const int32_t w = (call.rect.lrx - call.rect.ulx) >> 2;
+                            const int32_t h = (call.rect.lry - call.rect.uly) >> 2;
+                            // Sprite-sized only: full-screen fills and one-pixel
+                            // seams would bury the effect rectangles the window
+                            // exists to explain.
+                            if ((w >= 4) && (w <= 150) && (h >= 4) && (h <= 150)) {
+                                fprintf(stdout, "[SNAP-PAIR] f%u UNNAMED (%d,%d %dx%d)\n",
+                                    f, call.rect.ulx >> 2, call.rect.uly >> 2, w, h);
+                            }
+                        }
                         continue;
                     }
                     if (countRectStats) {
@@ -1361,11 +1392,26 @@ namespace RT64 {
                     const auto prevCountIt = prevCounts.find(call.snapRectId);
                     if ((prevCountIt == prevCounts.end()) ||
                         (prevCountIt->second != curCounts[call.snapRectId])) {
+                        if (snapDumpWindow) {
+                            fprintf(stdout, "[SNAP-PAIR] f%u MISS id %08X ord %u (%d,%d %dx%d) %s prev-count %u cur-count %u\n",
+                                f, call.snapRectId, call.snapRectOrdinal,
+                                call.rect.ulx >> 2, call.rect.uly >> 2,
+                                (call.rect.lrx - call.rect.ulx) >> 2, (call.rect.lry - call.rect.uly) >> 2,
+                                (prevCountIt == prevCounts.end()) ? "new-id" : "count-changed",
+                                (prevCountIt == prevCounts.end()) ? 0u : prevCountIt->second,
+                                curCounts[call.snapRectId]);
+                        }
                         continue;
                     }
 
                     auto it = prevRects.find(keyOf(call));
                     if (it == prevRects.end()) {
+                        if (snapDumpWindow) {
+                            fprintf(stdout, "[SNAP-PAIR] f%u MISS id %08X ord %u (%d,%d %dx%d) no-prev-ordinal\n",
+                                f, call.snapRectId, call.snapRectOrdinal,
+                                call.rect.ulx >> 2, call.rect.uly >> 2,
+                                (call.rect.lrx - call.rect.ulx) >> 2, (call.rect.lry - call.rect.uly) >> 2);
+                        }
                         continue;
                     }
 
@@ -1391,6 +1437,14 @@ namespace RT64 {
                         if (countRectStats) {
                             snapdiag::rectTravelRefusedCounter().fetch_add(1, std::memory_order_relaxed);
                         }
+                        if (snapDumpWindow) {
+                            fprintf(stdout, "[SNAP-PAIR] f%u MISS id %08X ord %u (%d,%d %dx%d) travelled from (%d,%d %dx%d)\n",
+                                f, call.snapRectId, call.snapRectOrdinal,
+                                call.rect.ulx >> 2, call.rect.uly >> 2,
+                                (call.rect.lrx - call.rect.ulx) >> 2, (call.rect.lry - call.rect.uly) >> 2,
+                                prevRect.ulx >> 2, prevRect.uly >> 2,
+                                (prevRect.lrx - prevRect.ulx) >> 2, (prevRect.lry - prevRect.uly) >> 2);
+                        }
                         continue;
                     }
 
@@ -1402,9 +1456,9 @@ namespace RT64 {
                     // The mark key asks for the next frames' actual pairs. One
                     // line per pair: what joined what. Wrong pairs are visible
                     // as lines whose two rectangles are not the same thing.
-                    if (snapdiag::pairDumpPending().load(std::memory_order_relaxed) > 0) {
-                        fprintf(stdout, "[SNAP-PAIR] id %08X ord %u: (%d,%d %dx%d) -> (%d,%d %dx%d)\n",
-                            call.snapRectId, call.snapRectOrdinal,
+                    if (snapDumpWindow || (snapdiag::pairDumpPending().load(std::memory_order_relaxed) > 0)) {
+                        fprintf(stdout, "[SNAP-PAIR] f%u id %08X ord %u: (%d,%d %dx%d) -> (%d,%d %dx%d)\n",
+                            f, call.snapRectId, call.snapRectOrdinal,
                             prevRect.ulx >> 2, prevRect.uly >> 2,
                             (prevRect.lrx - prevRect.ulx) >> 2, (prevRect.lry - prevRect.uly) >> 2,
                             call.rect.ulx >> 2, call.rect.uly >> 2,
@@ -1460,6 +1514,10 @@ namespace RT64 {
             uint32_t pending = snapdiag::pairDumpPending().load(std::memory_order_relaxed);
             if (pending > 0) {
                 snapdiag::pairDumpPending().store(pending - 1, std::memory_order_relaxed);
+                fflush(stdout);
+            }
+
+            if (snapDumpWindow) {
                 fflush(stdout);
             }
         }
