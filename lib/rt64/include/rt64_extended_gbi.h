@@ -438,6 +438,26 @@ typedef union {
         0 \
     )
 
+// Pokemon Snap port: names the rectangles that follow so the renderer can pair
+// them with the same element's rectangles in the previous frame. An id of 0
+// closes the group; nothing after it carries a name until the next group opens.
+#define gEXRectGroup(cmd, id) \
+    G_EX_COMMAND1(cmd, \
+        PARAM(RT64_EXTENDED_OPCODE, 8, 24) | PARAM(G_EX_RECTGROUP_V1, 24, 0), \
+        (id) \
+    )
+
+// The self-closing form: exactly one rectangle takes the name, then the group
+// ends by itself. The right tool when a rectangle can independently fail to be
+// emitted (a degenerate size is silently dropped) -- with an open group that
+// silent drop shifts every later ordinal and refuses the whole element; with
+// one name per rectangle only the missing one goes unpaired.
+#define gEXRectGroupOne(cmd, id) \
+    G_EX_COMMAND1(cmd, \
+        PARAM(RT64_EXTENDED_OPCODE, 8, 24) | PARAM(G_EX_RECTGROUP_ONE_V1, 24, 0), \
+        (id) \
+    )
+
 #define gEXPushOtherMode(cmd) \
     G_EX_COMMAND1(cmd, \
         PARAM(RT64_EXTENDED_OPCODE, 8, 24) | PARAM(G_EX_PUSHOTHERMODE_V1, 24, 0), \

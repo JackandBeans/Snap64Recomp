@@ -259,16 +259,37 @@ namespace RT64 {
             // frame's final draws so it joins the same workload and present.
             // 5x5 pixels at screen center minus the corners, matching the
             // CPU-drawn pattern in the game's PokemonDetector_PostProcessImage.
+            //
+            // Whatever rectangle group the frame's LAST sprite opened is still
+            // open here -- the sprite library closes groups at the START of the
+            // next object's draw, and nothing runs after the last one. Left
+            // open, the dot's three rectangles joined that sprite's group:
+            // its rectangle count moved by three every frame the dot toggled,
+            // and the matcher refuses a pair whenever a count moves, so
+            // whichever interface sprite happened to draw last lost its
+            // interpolation for exactly those frames. The group is closed
+            // first, and the dot draws under its own name -- a constant is
+            // right because the dot is one fixed thing at one fixed place;
+            // naming it also lets its three rectangles pair frame to frame
+            // instead of being three unnamed strangers every frame.
             if (state->snapFocusDotRequest) {
                 state->snapFocusDotRequest = false;
+                constexpr uint32_t SnapFocusDotId = 0x50534644u;  // 'PSFD'
                 const uint32_t savedH = state->rdp->otherMode.H;
                 const uint32_t savedL = state->rdp->otherMode.L;
                 state->rdp->setOtherMode((savedH & ~(0x3u << G_MDSFT_CYCLETYPE)) | G_CYC_FILL, savedL);
                 state->rdp->setFillColor(0xF801F801u);
+                state->snapRectGroupCommand(SnapFocusDotId, false);
                 state->rdp->fillRect(158 << 2, 117 << 2, 160 << 2, 117 << 2);
                 state->rdp->fillRect(157 << 2, 118 << 2, 161 << 2, 120 << 2);
                 state->rdp->fillRect(158 << 2, 121 << 2, 160 << 2, 121 << 2);
+                state->snapRectGroupCommand(0, false);
                 state->rdp->setOtherMode(savedH, savedL);
+            }
+            else {
+                // The dot is absent this frame, but the last sprite's group is
+                // just as open; close it so nothing later can inherit it.
+                state->snapRectGroupCommand(0, false);
             }
 
             state->fullSync();
