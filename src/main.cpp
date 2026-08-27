@@ -69,10 +69,22 @@ static void* create_gfx() {
 }
 
 static ultramodern::renderer::WindowHandle create_window(void* /*gfx_data*/) {
+    // SNAP_WINDOW=WxH opens at an exact size. A replayed ride only reproduces
+    // a player's GPU load if it renders at the player's resolution, and the
+    // render scale follows the window, so a performance question can only be
+    // investigated at the size it was reported at.
+    int windowW = 1280, windowH = 960;
+    if (const char* size = getenv("SNAP_WINDOW")) {
+        int w = 0, h = 0;
+        if ((sscanf(size, "%dx%d", &w, &h) == 2) && (w >= 320) && (h >= 240)) {
+            windowW = w;
+            windowH = h;
+        }
+    }
     sdl_window = SDL_CreateWindow(
         "Pokemon Snap",
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
-        1280, 960,
+        windowW, windowH,
         SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI
     );
     if (!sdl_window) {
