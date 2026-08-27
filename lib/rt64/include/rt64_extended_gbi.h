@@ -441,8 +441,19 @@ typedef union {
 // Pokemon Snap port: names the rectangles that follow so the renderer can pair
 // them with the same element's rectangles in the previous frame. An id of 0
 // closes the group; nothing after it carries a name until the next group opens.
+//
+// Each tag carries its own enable prefix, exactly like the port's C++-side
+// taggers (src/fx_tags.cpp, src/rect_tags.cpp), because a bare extended opcode
+// is only parsed after something has enabled the extension for the current
+// walk -- and the border pass sits at the very top of the display list, ahead
+// of the camera setup that otherwise turns it on. A tag that depends on its
+// position in the frame is a tag that silently stops working when the frame is
+// rearranged; this one carries everything it needs.
 #define gEXRectGroup(cmd, id) \
-    G_EX_COMMAND1(cmd, \
+    G_EX_COMMAND2(cmd, \
+        PARAM(RT64_HOOK_OPCODE, 8, 24) | PARAM(RT64_HOOK_MAGIC_NUMBER, 24, 0), \
+        PARAM(RT64_HOOK_OP_ENABLE, 4, 28) | PARAM(RT64_EXTENDED_OPCODE, 8, 0), \
+        \
         PARAM(RT64_EXTENDED_OPCODE, 8, 24) | PARAM(G_EX_RECTGROUP_V1, 24, 0), \
         (id) \
     )
@@ -453,7 +464,10 @@ typedef union {
 // silent drop shifts every later ordinal and refuses the whole element; with
 // one name per rectangle only the missing one goes unpaired.
 #define gEXRectGroupOne(cmd, id) \
-    G_EX_COMMAND1(cmd, \
+    G_EX_COMMAND2(cmd, \
+        PARAM(RT64_HOOK_OPCODE, 8, 24) | PARAM(RT64_HOOK_MAGIC_NUMBER, 24, 0), \
+        PARAM(RT64_HOOK_OP_ENABLE, 4, 28) | PARAM(RT64_EXTENDED_OPCODE, 8, 0), \
+        \
         PARAM(RT64_EXTENDED_OPCODE, 8, 24) | PARAM(G_EX_RECTGROUP_ONE_V1, 24, 0), \
         (id) \
     )
