@@ -28,6 +28,7 @@
 #include "audio.h"
 #include "input.h"
 #include "settings.h"
+#include "version.h"
 namespace snap { extern uint8_t* g_rdram; }
 extern "C" void snap_publish_ai_len(uint8_t* rdram);
 
@@ -429,7 +430,7 @@ int main(int argc, char* argv[]) {
         }
     }
 #endif
-    printf("[SNAP] Pokemon Snap PC Recompilation v0.1.0\n");
+    printf("[SNAP] " SNAP_PORT_NAME " (" SNAP_PORT_DESC ") v" SNAP_PORT_VERSION "\n");
 
     snap::load_settings();
     snap::apply_graphics_settings();

@@ -30,6 +30,7 @@
 #include <vector>
 
 #include "settings.h"
+#include "version.h"
 
 // stb_image's implementation is compiled inside the RT64 library
 // (rt64_texture_cache.cpp); this include only brings the declarations.
@@ -262,6 +263,67 @@ Strip compose_lines(const char* line1, const char* line2) {
     return out;
 }
 
+// One line in the credits face -- the condensed 1px font of the title
+// screen's copyright block, for the port's own line beneath it.
+Strip compose_credits(const char* text) {
+    Strip strip;
+
+    auto crd_glyph = [](char c) -> const MenuGlyph* {
+        for (size_t i = 0; i < sizeof(kMenuCrdGlyphs) / sizeof(kMenuCrdGlyphs[0]); i++) {
+            if (kMenuCrdGlyphs[i].ch == c) {
+                return &kMenuCrdGlyphs[i];
+            }
+        }
+        return nullptr;
+    };
+
+    int xc = 1;
+    for (const char* c = text; *c != 0; c++) {
+        if (*c == ' ') {
+            xc += 3;
+        }
+        else if (const MenuGlyph* g = crd_glyph(*c)) {
+            xc += g->coreW + 1;
+        }
+    }
+    const int visW = xc + 1;
+    strip.width = (visW + 63) & ~63;
+    strip.intensity.assign(size_t(strip.width) * StripHeight, 0);
+    strip.alpha.assign(size_t(strip.width) * StripHeight, 0);
+
+    // Centred inside the padded buffer, so placing the strip at
+    // 160 - width/2 centres the visible text on screen.
+    xc = 1 + (strip.width - visW) / 2;
+    for (const char* c = text; *c != 0; c++) {
+        if (*c == ' ') {
+            xc += 3;
+            continue;
+        }
+        const MenuGlyph* g = crd_glyph(*c);
+        if (g == nullptr) {
+            continue;
+        }
+        const unsigned char* ia = kMenuCrdIA + size_t(g->off) * 2;
+        for (int gy = 0; gy < kMenuFontCellH; gy++) {
+            for (int gx = 0; gx < g->cellW; gx++) {
+                const int px = xc - g->coreStart + gx;
+                if ((px < 0) || (px >= strip.width)) {
+                    continue;
+                }
+                const uint8_t i = ia[(gy * g->cellW + gx) * 2 + 0];
+                const uint8_t a = ia[(gy * g->cellW + gx) * 2 + 1];
+                const size_t at = size_t(gy) * strip.width + px;
+                if ((a != 0) && (a >= strip.alpha[at])) {
+                    strip.intensity[at] = std::max(strip.intensity[at], i);
+                    strip.alpha[at] = a;
+                }
+            }
+        }
+        xc += g->coreW + 1;
+    }
+    return strip;
+}
+
 // Prepends the original bullet dot to a composed label strip, at the same
 // spacing the stock Option items use: dot pixels first, the text starting
 // at the column the original "Screen" label starts its S.
@@ -404,6 +466,77 @@ bool load_override(const char* name, Strip &strip) {
 uint32_t g_last_applied_seq = 0;
 bool g_staged = false;
 
+// The credits line keeps its alpha mask host-side so its staged RGBA16
+// texels can be recoloured live: the Option screen's breathing cadence
+// over a slow rainbow sweep, exactly the kind of colour-cycled flourish
+// the era loved. The sprite reads RDRAM every frame, so rewriting the
+// texels is the whole animation.
+struct {
+    uint32_t addr = 0;
+    int w = 0, h = 0;
+    std::vector<uint8_t> mask;
+} g_credits;
+
+void hsv_to_rgb(int hue, uint8_t value, uint8_t &r, uint8_t &g, uint8_t &b) {
+    // Saturation fixed at ~0.72 so every hue stays luminous on screen.
+    const int sector = (hue / 60) % 6;
+    const int f = hue % 60;
+    const uint8_t lo = uint8_t(value * 28 / 100);
+    const uint8_t up = uint8_t(lo + (value - lo) * f / 60);
+    const uint8_t dn = uint8_t(value - (value - lo) * f / 60);
+    switch (sector) {
+        case 0:  r = value; g = up;    b = lo;    break;
+        case 1:  r = dn;    g = value; b = lo;    break;
+        case 2:  r = lo;    g = value; b = up;    break;
+        case 3:  r = lo;    g = dn;    b = value; break;
+        case 4:  r = up;    g = lo;    b = value; break;
+        default: r = value; g = lo;    b = dn;    break;
+    }
+}
+
+void animate_credits() {
+    if (g_credits.addr == 0) {
+        return;
+    }
+    static uint32_t tick = 0;
+    static int breath = 0xFF;
+    static int bState = 0;
+    static int bHold = 0;
+    tick++;
+
+    // The Option screen's own breathing: dim by 4 a tick to 0x80, brighten
+    // by 0x1E back to 0xFF, hold thirty ticks, repeat.
+    switch (bState) {
+        case 0:
+            breath -= 4;
+            if (breath <= 0x80) { breath = 0x80; bState = 1; }
+            break;
+        case 1:
+            breath += 0x1E;
+            if (breath >= 0xFF) { breath = 0xFF; bState = 2; bHold = 0; }
+            break;
+        default:
+            if (++bHold > 30) { bState = 0; }
+            break;
+    }
+
+    const int w = g_credits.w;
+    const int h = g_credits.h;
+    for (int y = 0; y < h; y++) {
+        for (int x = 0; x < w; x++) {
+            if (g_credits.mask[size_t(y) * w + x] < 128) {
+                continue;
+            }
+            uint8_t r, g, b;
+            hsv_to_rgb(int((tick * 2 + x * 3) % 360), uint8_t(breath), r, g, b);
+            const uint16_t texel = uint16_t(((r >> 3) << 11) | ((g >> 3) << 6) | ((b >> 3) << 1) | 1);
+            const int chunk = x / 64;
+            const uint32_t off = uint32_t((chunk * 64 * h + y * 64 + (x % 64)) * 2);
+            write_u16(g_credits.addr + off, texel);
+        }
+    }
+}
+
 void seed_mailbox() {
     const Settings &s = settings();
     write_u8(MailboxAddr + 0x8, uint8_t(s.resolution_scale));
@@ -507,7 +640,9 @@ void stage_menu_assets(uint8_t* rdram) {
         { "High reduces banding in gradients.",      "Takes effect after restarting the game." },
         { "Triple buffering smooths frame delivery.","Takes effect after restarting the game." },
     };
-    constexpr uint32_t StringCount = BaseCount + 23;
+    // Id BaseCount+23: the title's third credits line, in the copyright
+    // block's own condensed face, recoloured live by animate_credits().
+    constexpr uint32_t StringCount = BaseCount + 24;
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -601,6 +736,11 @@ void stage_menu_assets(uint8_t* rdram) {
             w = 16;
             h = 16;
         }
+        else if (id == BaseCount + 23) {
+            strip = compose_credits(SNAP_PORT_CREDITS);
+            w = strip.width;
+            h = strip.height;
+        }
         else if (id == BaseCount + 22) {
             // The wordmark, staged even when absent: a zero width tells the
             // patch there is nothing to draw.
@@ -651,6 +791,13 @@ void stage_menu_assets(uint8_t* rdram) {
         write_u16(DirectoryAddr + 0xC + id * 8, uint16_t(w));
         write_u16(DirectoryAddr + 0xE + id * 8, uint16_t(h));
 
+        if (id == BaseCount + 23) {
+            g_credits.addr = cursor;
+            g_credits.w = w;
+            g_credits.h = h;
+            g_credits.mask = strip.alpha;
+        }
+
         // Written as contiguous 64-texel column blocks, because the sprite
         // library loads each bitmap with a block load that cannot stride
         // through a wider image. Chunk k covers columns [64k, 64k+cw).
@@ -667,6 +814,10 @@ void stage_menu_assets(uint8_t* rdram) {
                     }
                     else if (id == BaseCount + 22) {
                         texel = logo.texels[size_t(y) * w + (cx + x)];   // RGBA16
+                    }
+                    else if (id == BaseCount + 23) {
+                        // Initial white; animate_credits() recolours live.
+                        texel = (strip.alpha[size_t(y) * w + (cx + x)] >= 128) ? 0xFFFF : 0;
                     }
                     else {
                         const size_t src = size_t(y) * w + (cx + x);
@@ -698,6 +849,7 @@ void poll_menu_mailbox(uint8_t* rdram) {
     if (read_u32_mail(MailboxAddr) != MailboxMagic) {
         return;
     }
+    animate_credits();
     const uint32_t seq = read_u32_mail(MailboxAddr + 0x4);
     if (seq == g_last_applied_seq) {
         return;

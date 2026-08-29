@@ -274,6 +274,197 @@ def synth_cell(art):
 
 
 # ---------------------------------------------------------------------------
+# The credits face: the 1px-stroke condensed font of the title screen's
+# copyright lines (sprite 0x802F82C8). Harvested for the port's own third
+# line; the characters the copyright text lacks are drawn in its style.
+# No commas in the transcript: their tails tuck under the neighbouring
+# digits' columns and never form separate runs. Digit cells are clipped
+# below their baseline so a swallowed comma tail cannot ride along.
+CRD_SOURCE = (0x802F82C8, "@1995 1996 1998 Nintendo/Creatures/GAMEFREAK")
+CRD_SYNTH = {
+    "J": [
+        ".....",
+        "..###",
+        "...#.",
+        "...#.",
+        "...#.",
+        "...#.",
+        "#..#.",
+        "####.",
+        ".##..",
+        ".....",
+    ],
+    "B": [
+        ".....",
+        "###..",
+        "#..#.",
+        "#..#.",
+        "###..",
+        "#..#.",
+        "#..#.",
+        "###..",
+        ".....",
+        ".....",
+    ],
+    "S": [
+        ".....",
+        ".###.",
+        "#....",
+        "#....",
+        ".##..",
+        "...#.",
+        "...#.",
+        "###..",
+        ".....",
+        ".....",
+    ],
+    "k": [
+        ".....",
+        "#....",
+        "#....",
+        "#..#.",
+        "#.#..",
+        "##...",
+        "#.#..",
+        "#..#.",
+        ".....",
+        ".....",
+    ],
+    "m": [
+        ".....",
+        ".....",
+        ".....",
+        "####.",
+        "#.#.#",
+        "#.#.#",
+        "#.#.#",
+        "#.#.#",
+        ".....",
+        ".....",
+    ],
+    "p": [
+        ".....",
+        ".....",
+        ".....",
+        "###..",
+        "#..#.",
+        "#..#.",
+        "###..",
+        "#....",
+        "#....",
+        ".....",
+    ],
+    "c": [
+        ".....",
+        ".....",
+        ".....",
+        ".###.",
+        "#....",
+        "#....",
+        "#....",
+        ".###.",
+        ".....",
+        ".....",
+    ],
+    "v": [
+        ".....",
+        ".....",
+        ".....",
+        "#..#.",
+        "#..#.",
+        "#..#.",
+        ".##..",
+        ".##..",
+        ".....",
+        ".....",
+    ],
+    "&": [
+        ".....",
+        ".##..",
+        "#..#.",
+        "#.#..",
+        ".#...",
+        "#.#.#",
+        "#..#.",
+        ".##.#",
+        ".....",
+        ".....",
+    ],
+    "(": [
+        ".....",
+        "..#..",
+        ".#...",
+        ".#...",
+        ".#...",
+        ".#...",
+        ".#...",
+        "..#..",
+        ".....",
+        ".....",
+    ],
+    ")": [
+        ".....",
+        "..#..",
+        "...#.",
+        "...#.",
+        "...#.",
+        "...#.",
+        "...#.",
+        "..#..",
+        ".....",
+        ".....",
+    ],
+    "0": [
+        ".....",
+        ".##..",
+        "#..#.",
+        "#..#.",
+        "#..#.",
+        "#..#.",
+        "#..#.",
+        ".##..",
+        ".....",
+        ".....",
+    ],
+    "4": [
+        ".....",
+        "..##.",
+        ".#.#.",
+        "#..#.",
+        "####.",
+        "...#.",
+        "...#.",
+        "...#.",
+        ".....",
+        ".....",
+    ],
+    ".": [
+        ".....",
+        ".....",
+        ".....",
+        ".....",
+        ".....",
+        ".....",
+        ".....",
+        "#....",
+        ".....",
+        ".....",
+    ],
+    "\x01": [
+        ".....",
+        ".....",
+        ".....",
+        ".....",
+        "##...",
+        "##...",
+        ".....",
+        ".....",
+        ".....",
+        ".....",
+    ],
+}
+
+# ---------------------------------------------------------------------------
 # The header font: the medium ~10px face of the "Options" screen title
 # (sprite 0x80341790). Only that one sprite exists in this face, so the
 # letters "Graphics" needs beyond it are drawn here in its style: 2px
@@ -483,6 +674,36 @@ def main():
             level = {"#": 255, "%": 160, "+": 80, ".": 0}
             hdr[c] = (w, 0, w, [[(255, level[ch]) for ch in row] for row in art])
 
+    # Credits face: harvested copyright glyphs plus the drawn letters.
+    crd = {}
+    cvram, ctext = CRD_SOURCE
+    cimg, cw, chh = decode_sprite(seg, cvram)
+    cpred = make_pred(False)
+    cbands = find_lines(cimg, cw, chh, cpred)
+    cruns = runs_in(cimg, cw, cbands[0][0], cbands[0][1], cpred)
+    cexpect = [c for c in ctext if c != " "]
+    if len(cruns) == len(cexpect):
+        ctop = cbands[0][0]
+        for i, c in enumerate(cexpect):
+            s, e = cruns[i]
+            if c in crd:
+                continue
+            x0, x1 = max(0, s - 1), min(cw, e + 1)
+            cell = []
+            for row_i, y in enumerate(range(ctop - 1, ctop - 1 + CELL_H)):
+                if c.isdigit() and row_i > 7:
+                    cell.append([(0, 0)] * (x1 - x0))
+                else:
+                    cell.append([cimg[y][x] if 0 <= y < chh else (0, 0) for x in range(x0, x1)])
+            crd[c] = (x1 - x0, s - x0, e - x0, cell)
+        print("credits harvested:", "".join(sorted(crd.keys())))
+    else:
+        print(f"credits: {len(cruns)} runs vs {len(cexpect)} chars -- SKIP")
+    for c, art in CRD_SYNTH.items():
+        if c not in crd:
+            w = len(art[0])
+            crd[c] = (w, 0, w, [[(255, 255 if ch == "#" else 0) for ch in row] for row in art])
+
     have = sorted(glyphs.keys())
     print("harvested:", "".join(have))
     # Audit EVERY string the page stages -- src/menu_assets.cpp is the truth.
@@ -593,7 +814,12 @@ def main():
                 entries.append((c, wdt, cs, ce - cs, off))
             f.write("constexpr MenuGlyph k%sGlyphs[] = {\n" % name)
             for (c, wdt, cs, cw, off) in entries:
-                cc = "'\\''" if c == "'" else f"'{c}'"
+                if c == "'":
+                    cc = "'\\''"
+                elif c.isprintable() and ord(c) < 127:
+                    cc = f"'{c}'"
+                else:
+                    cc = f"'\\x{ord(c):02x}'"
                 f.write(f"    {{ {cc}, {wdt}, {cs}, {cw}, {off} }},\n")
             f.write("};\n")
             f.write("constexpr unsigned char k%sIA[] = {\n" % name)
@@ -615,7 +841,8 @@ def main():
             f.write("struct MenuGlyph { char ch; unsigned char cellW, coreStart, coreW; unsigned short off; };\n")
             n1, b1 = emit_table(f, "MenuFont", glyphs, CELL_H)
             n2, b2 = emit_table(f, "MenuHdr", hdr, HDR_CELL_H)
-        print("wrote src/menu_font.h (%d+%d glyphs, %d+%d bytes)" % (n1, n2, b1, b2))
+            n3, b3 = emit_table(f, "MenuCrd", crd, CELL_H)
+        print("wrote src/menu_font.h (%d+%d+%d glyphs, %d+%d+%d bytes)" % (n1, n2, n3, b1, b2, b3))
 
 
 if __name__ == "__main__":

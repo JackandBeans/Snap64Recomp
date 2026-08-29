@@ -119,6 +119,7 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_TRIPLE     47
 #define STR_DESC2      48   /* ..+3: descriptions for the second-wave rows */
 #define STR_LOGO       52   /* "Recomp" wordmark, RGBA16, for the title */
+#define STR_CREDITS    53   /* the port's credits line, RGBA16, animated */
 
 #define OPT_ITEMS      6    /* Screen, Graphics, Sound, Z, Stick, Return */
 #define OPT_GRAPHICS   1
@@ -988,6 +989,16 @@ void func_800E2058_A095E8(void) {
     func_800E18A0_A08E30(sobj, SP_TEXSHUF | SP_TRANSPARENT);
 
     snap_show_badge();
+
+    /* The port's own credits line, one row of the copyright cadence below
+     * the block, centred; the port recolours its texels live, so all the
+     * sprite carries is position. Rides this gobj and leaves with it. */
+    {
+        Sprite* credits = snap_build_sprite(STR_CREDITS, 160 - (DIR_W(STR_CREDITS) / 2), 214, G_IM_FMT_RGBA);
+        if (credits != NULL) {
+            omGObjAddSprite(gobj, credits);
+        }
+    }
 }
 
 /* The title's letter bounce is deliberately NOT replaced: the original
