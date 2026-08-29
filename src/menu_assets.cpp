@@ -49,7 +49,12 @@ namespace {
 
 constexpr uint32_t MailboxAddr = 0x80C00000u;
 constexpr uint32_t DirectoryAddr = 0x80C01000u;
-constexpr uint32_t PixelsAddr = 0x80C01100u;
+// The directory holds an 8-byte header plus 8 bytes per string id; the
+// pixel cursor must start beyond the LAST entry, not at a round number.
+// At 0x...1100 the entries for ids 31+ silently overwrote the first
+// staged tile's pixels (invisibly -- address bytes decode as near-black
+// texels on the black backdrop). 0x400 of directory seats 126 ids.
+constexpr uint32_t PixelsAddr = 0x80C01400u;
 constexpr uint32_t MailboxMagic = 0x53474658u;   // 'SGFX'
 constexpr uint32_t DirectoryMagic = 0x53474130u; // 'SGA0'
 constexpr uint32_t STR_ITEM_LABEL_ID = 1;        // "Graphics", the Option item
@@ -204,6 +209,9 @@ Strip compose_hdr(const char* text) {
         else if (const MenuGlyph* g = hdr_glyph(*c)) {
             xc += g->coreW + kMenuFontLetterGap;
         }
+        else {
+            xc += 6;
+        }
     }
     strip.width = (xc + 2 + 63) & ~63;
     strip.intensity.assign(size_t(strip.width) * strip.height, 0);
@@ -217,6 +225,7 @@ Strip compose_hdr(const char* text) {
         }
         const MenuGlyph* g = hdr_glyph(*c);
         if (g == nullptr) {
+            xc += 6;
             continue;
         }
         const unsigned char* ia = kMenuHdrIA + size_t(g->off) * 2;
@@ -264,6 +273,12 @@ Strip compose_help(const char* text) {
         else if (const MenuGlyph* g = hlp_glyph(*c)) {
             xc += g->coreW + kMenuHlpLetterGap;
         }
+        else {
+            // A character outside the face still takes room: a silent
+            // zero advance would fuse its neighbours with nothing to
+            // show a string edit went past the harvested set.
+            xc += 6;
+        }
     }
     strip.width = (xc + 2 + 63) & ~63;
     strip.intensity.assign(size_t(strip.width) * strip.height, 0);
@@ -277,6 +292,7 @@ Strip compose_help(const char* text) {
         }
         const MenuGlyph* g = hlp_glyph(*c);
         if (g == nullptr) {
+            xc += 6;
             continue;
         }
         const unsigned char* ia = kMenuHlpIA + size_t(g->off) * 2;
@@ -930,6 +946,15 @@ void stage_menu_assets(uint8_t* rdram) {
         // library loads each bitmap with a block load that cannot stride
         // through a wider image. Chunk k covers columns [64k, 64k+cw).
         const int chunks = (w + 63) / 64;
+        if (chunks > 4) {
+            // The patch's swap path carries at most four chunks, and nine
+            // help lines already pad to exactly 256 -- a reworded line
+            // that spills over would truncate on screen with no other
+            // symptom, so the spill announces itself here instead.
+            printf("[SNAP-GFX] WARNING: string %d is %dpx wide (%d chunks); "
+                   "the menu draws at most 4 -- it will truncate at 256px\n",
+                   id, w, chunks);
+        }
         uint32_t at = cursor;
         for (int k = 0; k < chunks; k++) {
             const int cx = k * 64;
