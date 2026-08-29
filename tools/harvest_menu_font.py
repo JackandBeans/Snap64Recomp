@@ -274,6 +274,206 @@ def synth_cell(art):
 
 
 # ---------------------------------------------------------------------------
+# The help face: the antialiased rendering of the menu letterforms used by
+# the twelve stock help sentences (all 238x30 IA16; intensity is 255 on
+# every inked texel and ALL of the antialiasing lives in alpha, unlike the
+# hard-edged label/value sprites the body face is cut from). Harvested so
+# the port's own help and description strings sit in the box with the same
+# soft edges as the stock sentences around them. Two-line sprites carry
+# their second line exactly 12 rows below the first, which is also the
+# pitch compose_lines stacks at. The canonical sentence goes first so its
+# cells win the first-occurrence contest.
+HLP_SOURCES = [
+    (0x8032F360, "Display setting on screen."),
+    (0x80316230, "Control Stick setting."),
+    (0x80319B80, "Press up on Control Stick to raise view.|Press down on Control Stick to lower view."),
+    (0x8031D4D0, "Press up on Control Stick to lower view.|Press down on Control Stick to raise view."),
+    (0x80320E20, "Hold Z Button to focus."),
+    (0x80324770, "Press Z Button to focus, and press|Z Button again to release."),
+    (0x803280C0, "Z Button setting."),
+    (0x8032BA10, "Return to title screen."),
+    (0x80332CB0, "Adjust orange frame by moving Control Stick."),
+    (0x80336600, "Set sound to Mono."),
+    (0x80339F50, "Sound setting."),
+    (0x8033D8A0, "Set sound to Stereo."),
+]
+HLP_CELL_H = 12
+
+# Characters the twelve sentences never use, drawn in the help face's own
+# proportions (9-row caps on cell rows 1-9, x-height rows 4-9, descenders
+# below) with hand-placed antialiasing: '#'=255, '%'=160, '+'=80.
+HLP_SYNTH = {
+    "L": [
+        "....",
+        "#...",
+        "#...",
+        "#...",
+        "#...",
+        "#...",
+        "#...",
+        "#...",
+        "#..+",
+        "####",
+        "....",
+        "....",
+    ],
+    "N": [
+        ".....",
+        "#...#",
+        "##..#",
+        "##+.#",
+        "#.#.#",
+        "#.#.#",
+        "#.+##",
+        "#..##",
+        "#...#",
+        "#...#",
+        ".....",
+        ".....",
+    ],
+    "O": [
+        ".+++.",
+        "+###+",
+        "#+.+#",
+        "#...#",
+        "#...#",
+        "#...#",
+        "#...#",
+        "#...#",
+        "#+.+#",
+        "+###+",
+        ".....",
+        ".....",
+    ],
+    "T": [
+        ".....",
+        "#####",
+        "..#..",
+        "..#..",
+        "..#..",
+        "..#..",
+        "..#..",
+        "..#..",
+        "..#..",
+        "..#..",
+        ".....",
+        ".....",
+    ],
+    "W": [
+        ".....",
+        "#...#",
+        "#...#",
+        "#...#",
+        "#...#",
+        "#.+.#",
+        "#.#.#",
+        "#.#.#",
+        "#%#%#",
+        "+#.#+",
+        ".....",
+        ".....",
+    ],
+    "h": [
+        "...",
+        "#..",
+        "#..",
+        "#..",
+        "#%#",
+        "#.#",
+        "#.#",
+        "#.#",
+        "#.#",
+        "#.#",
+        "...",
+        "...",
+    ],
+    "x": [
+        "...",
+        "...",
+        "...",
+        "...",
+        "#.#",
+        "#+#",
+        ".#.",
+        ".#.",
+        "#+#",
+        "#.#",
+        "...",
+        "...",
+    ],
+    "z": [
+        "....",
+        "....",
+        "....",
+        "....",
+        "####",
+        "...#",
+        "..#+",
+        ".#+.",
+        "#+..",
+        "####",
+        "....",
+        "....",
+    ],
+    "2": [
+        "....",
+        "+##+",
+        "#..#",
+        "...#",
+        "...#",
+        "..+#",
+        ".+#+",
+        "+#+.",
+        "#...",
+        "####",
+        "....",
+        "....",
+    ],
+    "3": [
+        "....",
+        "+##+",
+        "#..#",
+        "...#",
+        ".+#+",
+        "...#",
+        "...#",
+        "...#",
+        "#..#",
+        "+##+",
+        "....",
+        "....",
+    ],
+    "4": [
+        "....",
+        "..+#",
+        ".+##",
+        "+#.#",
+        "#..#",
+        "####",
+        "...#",
+        "...#",
+        "...#",
+        "...#",
+        "....",
+        "....",
+    ],
+    "6": [
+        "....",
+        "+##+",
+        "#..+",
+        "#...",
+        "###+",
+        "#..#",
+        "#..#",
+        "#..#",
+        "#..#",
+        "+##+",
+        "....",
+        "....",
+    ],
+}
+
+# ---------------------------------------------------------------------------
 # The credits face: the 1px-stroke condensed font of the title screen's
 # copyright lines (sprite 0x802F82C8). Harvested for the port's own third
 # line; the characters the copyright text lacks are drawn in its style.
@@ -711,6 +911,44 @@ def main():
             crd[c] = (x1 - x0, 0, x1 - x0,
                       [[(255, 255 if ch == "#" else 0) for ch in row[x0:x1]] for row in art])
 
+    # Help face: the antialiased help sentences, cut with their alpha
+    # fringe intact. Segmentation at the core threshold gives exactly one
+    # run per character on every sprite; the cell then takes one extra
+    # column each side so the halo travels with the glyph.
+    hlp = {}
+    hpred = make_pred(False)
+    for vram, text in HLP_SOURCES:
+        himg2, hw2, hh2 = decode_sprite(seg, vram)
+        hbands = find_lines(himg2, hw2, hh2, hpred)
+        hlines = text.split("|")
+        if len(hbands) != len(hlines):
+            print(f"help {vram:08X}: {len(hbands)} bands vs {len(hlines)} lines -- SKIP")
+            continue
+        for (y0, y1), line in zip(hbands, hlines):
+            expect = [c for c in line if c != " "]
+            rr = runs_in(himg2, hw2, y0, y1, hpred)
+            if len(rr) != len(expect):
+                print(f"help {vram:08X} '{line}': {len(rr)} runs vs {len(expect)} chars -- SKIP")
+                continue
+            for i, c in enumerate(expect):
+                if c in hlp:
+                    continue
+                s, e = rr[i]
+                x0, x1 = max(0, s - 1), min(hw2, e + 1)
+                cell = []
+                for y in range(y0 - 1, y0 - 1 + HLP_CELL_H):
+                    cell.append([himg2[y][x] if 0 <= y < hh2 else (0, 0) for x in range(x0, x1)])
+                hlp[c] = (x1 - x0, s - x0, e - x0, cell)
+    print("help harvested:", "".join(sorted(hlp.keys())))
+    level_hlp = {"#": 255, "%": 160, "+": 80, ".": 0}
+    for c, art in HLP_SYNTH.items():
+        if c not in hlp:
+            cols = [x for row in art for x, ch in enumerate(row) if ch == "#"]
+            x0 = min(cols, default=0)
+            x1 = max(cols, default=0) + 1
+            hlp[c] = (x1 - x0, 0, x1 - x0,
+                      [[(255, level_hlp[ch]) for ch in row[x0:x1]] for row in art])
+
     have = sorted(glyphs.keys())
     print("harvested:", "".join(have))
     # Audit EVERY string the page stages -- src/menu_assets.cpp is the truth.
@@ -725,6 +963,17 @@ def main():
         need.discard(junk)
     missing = sorted(c for c in need if c not in glyphs)
     print("missing:", "".join(missing) if missing else "(none)")
+    # The help/description sentences render in the help face -- audit them
+    # against it separately.
+    helpneed = set()
+    for m in re.finditer(r'"((?:[^"\\]|\\.)*)"', src):
+        s = m.group(1)
+        if ("." in s) and (len(s) > 10) and any(ch.isalpha() for ch in s) \
+                and ("\\" not in s) and ("_" not in s) and ("/" not in s) and ("%" not in s):
+            helpneed.update(s)
+    helpneed.discard(" ")
+    hmissing = sorted(c for c in helpneed if c not in hlp)
+    print("help missing:", "".join(hmissing) if hmissing else "(none)")
     if gaps:
         from collections import Counter
         print("letter gaps:", sorted(Counter(gaps).items()))
@@ -773,7 +1022,9 @@ def main():
                  ("Anti-Aliasing Graphics Options", None, None),
                  ("1x 2x 3x 4x 5x 6x 7x 8x", None, None),
                  ("New Game 2D Detail Frame Rate", None, None),
-                 ("Press Z Button to focus.", None, None)]
+                 ("Press Z Button to focus.", None, None),
+                 ("Display and renderer settings.", hlp, HLP_CELL_H),
+                 ("The N64 look, W3D 246 hxz Left Original Takes Widens.", hlp, HLP_CELL_H)]
         S = 6
         rows_png = []
         for t, tbl, ch in tests:
@@ -843,13 +1094,20 @@ def main():
             f.write("// Generated by tools/harvest_menu_font.py.\n")
             f.write("constexpr int kMenuFontCellH = %d;\n" % CELL_H)
             f.write("constexpr int kMenuHdrCellH = %d;\n" % HDR_CELL_H)
+            f.write("constexpr int kMenuHlpCellH = %d;\n" % HLP_CELL_H)
             f.write("constexpr int kMenuFontLetterGap = 2;\n")
             f.write("constexpr int kMenuFontSpaceGap = 4;\n")
+            # Measured across all 351 gaps of the twelve help sentences:
+            # intra-letter gaps run 1-3 with mode 2, word spaces 4-7 with
+            # mode 6.
+            f.write("constexpr int kMenuHlpLetterGap = 2;\n")
+            f.write("constexpr int kMenuHlpSpaceGap = 6;\n")
             f.write("struct MenuGlyph { char ch; unsigned char cellW, coreStart, coreW; unsigned short off; };\n")
             n1, b1 = emit_table(f, "MenuFont", glyphs, CELL_H)
             n2, b2 = emit_table(f, "MenuHdr", hdr, HDR_CELL_H)
             n3, b3 = emit_table(f, "MenuCrd", crd, CELL_H)
-        print("wrote src/menu_font.h (%d+%d+%d glyphs, %d+%d+%d bytes)" % (n1, n2, n3, b1, b2, b3))
+            n4, b4 = emit_table(f, "MenuHlp", hlp, HLP_CELL_H)
+        print("wrote src/menu_font.h (%d+%d+%d+%d glyphs, %d+%d+%d+%d bytes)" % (n1, n2, n3, n4, b1, b2, b3, b4))
 
 
 if __name__ == "__main__":

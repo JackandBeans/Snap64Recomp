@@ -240,24 +240,90 @@ Strip compose_hdr(const char* text) {
     return strip;
 }
 
-// Two body-face lines stacked at the stock help sprites' own line pitch of
+// One line in the help face -- the antialiased rendering of the menu
+// letterforms that the stock help sentences use. The labels are hard-edged
+// and the help box is soft; each face keeps to its own rooms.
+Strip compose_help(const char* text) {
+    Strip strip;
+    strip.height = kMenuHlpCellH;
+
+    auto hlp_glyph = [](char c) -> const MenuGlyph* {
+        for (size_t i = 0; i < sizeof(kMenuHlpGlyphs) / sizeof(kMenuHlpGlyphs[0]); i++) {
+            if (kMenuHlpGlyphs[i].ch == c) {
+                return &kMenuHlpGlyphs[i];
+            }
+        }
+        return nullptr;
+    };
+
+    int xc = 1;
+    for (const char* c = text; *c != 0; c++) {
+        if (*c == ' ') {
+            xc += kMenuHlpSpaceGap;
+        }
+        else if (const MenuGlyph* g = hlp_glyph(*c)) {
+            xc += g->coreW + kMenuHlpLetterGap;
+        }
+    }
+    strip.width = (xc + 2 + 63) & ~63;
+    strip.intensity.assign(size_t(strip.width) * strip.height, 0);
+    strip.alpha.assign(size_t(strip.width) * strip.height, 0);
+
+    xc = 1;
+    for (const char* c = text; *c != 0; c++) {
+        if (*c == ' ') {
+            xc += kMenuHlpSpaceGap;
+            continue;
+        }
+        const MenuGlyph* g = hlp_glyph(*c);
+        if (g == nullptr) {
+            continue;
+        }
+        const unsigned char* ia = kMenuHlpIA + size_t(g->off) * 2;
+        for (int gy = 0; gy < kMenuHlpCellH; gy++) {
+            for (int gx = 0; gx < g->cellW; gx++) {
+                const int px = xc - g->coreStart + gx;
+                if ((px < 0) || (px >= strip.width)) {
+                    continue;
+                }
+                const uint8_t i = ia[(gy * g->cellW + gx) * 2 + 0];
+                const uint8_t a = ia[(gy * g->cellW + gx) * 2 + 1];
+                const size_t at = size_t(gy) * strip.width + px;
+                if ((a != 0) && (a >= strip.alpha[at])) {
+                    strip.intensity[at] = std::max(strip.intensity[at], i);
+                    strip.alpha[at] = a;
+                }
+            }
+        }
+        xc += g->coreW + kMenuHlpLetterGap;
+    }
+    return strip;
+}
+
+// Two help-face lines stacked at the stock help sprites' own line pitch of
 // twelve rows -- the settings descriptions in the help box.
 Strip compose_lines(const char* line1, const char* line2) {
-    Strip a = compose(line1);
-    Strip b = compose(line2);
+    Strip a = compose_help(line1);
+    Strip b = compose_help(line2);
     Strip out;
-    out.height = 12 + StripHeight;
+    out.height = 12 + kMenuHlpCellH;
     out.width = std::max(a.width, b.width);
     out.intensity.assign(size_t(out.width) * out.height, 0);
     out.alpha.assign(size_t(out.width) * out.height, 0);
-    for (int y = 0; y < StripHeight; y++) {
+    for (int y = 0; y < kMenuHlpCellH; y++) {
         for (int x = 0; x < a.width; x++) {
-            out.intensity[size_t(y) * out.width + x] = a.intensity[size_t(y) * a.width + x];
-            out.alpha[size_t(y) * out.width + x] = a.alpha[size_t(y) * a.width + x];
+            const size_t dst = size_t(y) * out.width + x;
+            const size_t src = size_t(y) * a.width + x;
+            out.intensity[dst] = a.intensity[src];
+            out.alpha[dst] = a.alpha[src];
         }
-        for (int x = 0; x < b.width; x++) {
-            out.intensity[size_t(y + 12) * out.width + x] = b.intensity[size_t(y) * b.width + x];
-            out.alpha[size_t(y + 12) * out.width + x] = b.alpha[size_t(y) * b.width + x];
+        if (y + 12 < out.height) {
+            for (int x = 0; x < b.width; x++) {
+                const size_t dst = size_t(y + 12) * out.width + x;
+                const size_t src = size_t(y) * b.width + x;
+                out.intensity[dst] = std::max(out.intensity[dst], b.intensity[src]);
+                out.alpha[dst] = std::max(out.alpha[dst], b.alpha[src]);
+            }
         }
     }
     return out;
@@ -822,6 +888,13 @@ void stage_menu_assets(uint8_t* rdram) {
         }
         else if ((overrideNames[id] != nullptr) && load_override(overrideNames[id], strip)) {
             // A hand-made image takes the string's place.
+            w = strip.width;
+            h = strip.height;
+        }
+        else if ((id == 10) || (id == 29)) {
+            // The one-line help sentences render in the help face, soft
+            // edges and all, like the stock sentences sharing the box.
+            strip = compose_help(strings[id]);
             w = strip.width;
             h = strip.height;
         }
