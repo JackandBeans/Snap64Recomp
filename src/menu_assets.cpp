@@ -310,16 +310,30 @@ Strip compose_credits(const char* text) {
         return nullptr;
     };
 
-    // Two pixels between glyphs, not the copyright's one: each glyph wears
-    // a one-pixel border, and across a single-pixel gap the borders fuse
-    // into unreadable blobs.
+    // The copyright's own tracking: one pixel between glyphs, borders
+    // fusing across the gap exactly as the stock lines above fuse.
+    // Punctuation the stock face never sets -- parens, the ampersand,
+    // the middle dot -- takes one extra pixel of air on either side.
+    auto roomy = [](char c) {
+        return (c == '(') || (c == ')') || (c == '&') || (c == '\x01');
+    };
+    auto gap_before = [&roomy](char prev, char cur) {
+        if (prev == 0) {
+            return 0;
+        }
+        return (roomy(prev) || roomy(cur)) ? 2 : 1;
+    };
+
     int xc = 1;
+    char prev = 0;
     for (const char* c = text; *c != 0; c++) {
         if (*c == ' ') {
-            xc += 4;
+            xc += 5;
+            prev = 0;
         }
         else if (const MenuGlyph* g = crd_glyph(*c)) {
-            xc += g->coreW + 2;
+            xc += gap_before(prev, *c) + g->coreW;
+            prev = *c;
         }
     }
     const int visW = xc + 1;
@@ -330,15 +344,19 @@ Strip compose_credits(const char* text) {
     // Centred inside the padded buffer, so placing the strip at
     // 160 - width/2 centres the visible text on screen.
     xc = 1 + (strip.width - visW) / 2;
+    prev = 0;
     for (const char* c = text; *c != 0; c++) {
         if (*c == ' ') {
-            xc += 4;
+            xc += 5;
+            prev = 0;
             continue;
         }
         const MenuGlyph* g = crd_glyph(*c);
         if (g == nullptr) {
             continue;
         }
+        xc += gap_before(prev, *c);
+        prev = *c;
         const unsigned char* ia = kMenuCrdIA + size_t(g->off) * 2;
         for (int gy = 0; gy < kMenuFontCellH; gy++) {
             for (int gx = 0; gx < g->cellW; gx++) {
@@ -355,7 +373,7 @@ Strip compose_credits(const char* text) {
                 }
             }
         }
-        xc += g->coreW + 2;
+        xc += g->coreW;
     }
     return strip;
 }
