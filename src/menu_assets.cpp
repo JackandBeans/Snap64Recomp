@@ -251,7 +251,11 @@ Strip compose_hdr(const char* text) {
 
 // One line in the help face -- the antialiased rendering of the menu
 // letterforms that the stock help sentences use. The labels are hard-edged
-// and the help box is soft; each face keeps to its own rooms.
+// and the help box is soft; each face keeps to its own rooms. The stock
+// sentences were laid out with per-pair kerning ("ay" snugs to one pixel
+// where "sp" takes three), so the gap between two glyphs comes from the
+// pair table harvested off those sentences, with the face's default gap
+// covering pairs the stock text never set.
 Strip compose_help(const char* text) {
     Strip strip;
     strip.height = kMenuHlpCellH;
@@ -264,37 +268,58 @@ Strip compose_help(const char* text) {
         }
         return nullptr;
     };
+    auto kern = [](char a, char b, bool spaced) -> int {
+        const MenuKern* table = spaced ? kMenuHlpSpaceKern : kMenuHlpKern;
+        const size_t count = spaced
+            ? sizeof(kMenuHlpSpaceKern) / sizeof(kMenuHlpSpaceKern[0])
+            : sizeof(kMenuHlpKern) / sizeof(kMenuHlpKern[0]);
+        for (size_t i = 0; i < count; i++) {
+            if ((table[i].a == a) && (table[i].b == b)) {
+                return table[i].gap;
+            }
+        }
+        return spaced ? kMenuHlpSpaceGap : kMenuHlpLetterGap;
+    };
 
-    int xc = 1;
-    for (const char* c = text; *c != 0; c++) {
-        if (*c == ' ') {
-            xc += kMenuHlpSpaceGap;
+    // One walk computes the layout; the second paints it. A character
+    // outside the face still takes room: a silent zero advance would fuse
+    // its neighbours with nothing to show a string edit went too far.
+    auto walk = [&](auto&& place) {
+        int xc = 1;
+        char prev = 0;
+        bool started = false;
+        bool spaced = false;
+        for (const char* c = text; *c != 0; c++) {
+            if (*c == ' ') {
+                spaced = true;
+                continue;
+            }
+            const MenuGlyph* g = hlp_glyph(*c);
+            if (started) {
+                xc += (prev != 0) ? kern(prev, *c, spaced)
+                                  : (spaced ? kMenuHlpSpaceGap : kMenuHlpLetterGap);
+            }
+            started = true;
+            if (g == nullptr) {
+                xc += 6;
+                prev = 0;
+                spaced = false;
+                continue;
+            }
+            place(g, xc);
+            xc += g->coreW;
+            prev = *c;
+            spaced = false;
         }
-        else if (const MenuGlyph* g = hlp_glyph(*c)) {
-            xc += g->coreW + kMenuHlpLetterGap;
-        }
-        else {
-            // A character outside the face still takes room: a silent
-            // zero advance would fuse its neighbours with nothing to
-            // show a string edit went past the harvested set.
-            xc += 6;
-        }
-    }
-    strip.width = (xc + 2 + 63) & ~63;
+        return xc;
+    };
+
+    const int visW = walk([](const MenuGlyph*, int) {});
+    strip.width = (visW + 2 + 63) & ~63;
     strip.intensity.assign(size_t(strip.width) * strip.height, 0);
     strip.alpha.assign(size_t(strip.width) * strip.height, 0);
 
-    xc = 1;
-    for (const char* c = text; *c != 0; c++) {
-        if (*c == ' ') {
-            xc += kMenuHlpSpaceGap;
-            continue;
-        }
-        const MenuGlyph* g = hlp_glyph(*c);
-        if (g == nullptr) {
-            xc += 6;
-            continue;
-        }
+    walk([&](const MenuGlyph* g, int xc) {
         const unsigned char* ia = kMenuHlpIA + size_t(g->off) * 2;
         for (int gy = 0; gy < kMenuHlpCellH; gy++) {
             for (int gx = 0; gx < g->cellW; gx++) {
@@ -311,8 +336,7 @@ Strip compose_help(const char* text) {
                 }
             }
         }
-        xc += g->coreW + kMenuHlpLetterGap;
-    }
+    });
     return strip;
 }
 

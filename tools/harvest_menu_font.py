@@ -914,8 +914,15 @@ def main():
     # Help face: the antialiased help sentences, cut with their alpha
     # fringe intact. Segmentation at the core threshold gives exactly one
     # run per character on every sprite; the cell then takes one extra
-    # column each side so the halo travels with the glyph.
+    # column each side so the halo travels with the glyph. The sentences
+    # were laid out by a real text renderer with per-pair kerning -- the
+    # gap between two letters depends on the pair ("ay" snugs to one
+    # pixel where "sp" takes three) -- so every observed pair's gap is
+    # collected alongside the glyphs and the composer replays it.
     hlp = {}
+    hlp_kern = {}        # (prev, next) -> Counter of intra-word gaps
+    hlp_space_kern = {}  # (prev, next) -> Counter of across-a-space gaps
+    hlp_lines_seen = []  # (line, [(prev, cur, spaced, gap)]) for the self-test
     hpred = make_pred(False)
     for vram, text in HLP_SOURCES:
         himg2, hw2, hh2 = decode_sprite(seg, vram)
@@ -939,7 +946,47 @@ def main():
                 for y in range(y0 - 1, y0 - 1 + HLP_CELL_H):
                     cell.append([himg2[y][x] if 0 <= y < hh2 else (0, 0) for x in range(x0, x1)])
                 hlp[c] = (x1 - x0, s - x0, e - x0, cell)
+            # Kerning: walk the line against its runs, one gap per pair.
+            ri = 0
+            prev_c = None
+            prev_end = None
+            spaced = False
+            pairs_seen = []
+            for c in line:
+                if c == " ":
+                    spaced = True
+                    continue
+                s, e = rr[ri]
+                if prev_c is not None:
+                    gap = s - prev_end
+                    # First occurrence wins, and the canonical box sentence
+                    # is harvested first: the renderer spaced some pairs
+                    # differently in different sentences, and the value
+                    # that matters is the one on screen NEXT to the port's
+                    # own strings.
+                    table = hlp_space_kern if spaced else hlp_kern
+                    table.setdefault((prev_c, c), gap)
+                    pairs_seen.append((prev_c, c, spaced, gap))
+                prev_c = c
+                prev_end = e
+                spaced = False
+                ri += 1
+            hlp_lines_seen.append((line, pairs_seen))
     print("help harvested:", "".join(sorted(hlp.keys())))
+    print(f"help kerning: {len(hlp_kern)} letter pairs, {len(hlp_space_kern)} space pairs")
+    # Self-test: replaying every stock sentence through the reduced tables
+    # should land each pair on the sprite's own gap. A pair the renderer
+    # itself spaced inconsistently shows up here as drift.
+    worst = (0, "")
+    total_drift = 0
+    for line, pairs_seen in hlp_lines_seen:
+        drift = sum(abs((hlp_space_kern if spaced else hlp_kern)[(a, b)] - gap)
+                    for (a, b, spaced, gap) in pairs_seen)
+        total_drift += drift
+        if drift > worst[0]:
+            worst = (drift, line)
+    print(f"help kerning self-test: total drift {total_drift}px across all lines; "
+          f"worst '{worst[1]}' at {worst[0]}px")
     level_hlp = {"#": 255, "%": 160, "+": 80, ".": 0}
     for c, art in HLP_SYNTH.items():
         if c not in hlp:
@@ -1103,11 +1150,23 @@ def main():
             f.write("constexpr int kMenuHlpLetterGap = 2;\n")
             f.write("constexpr int kMenuHlpSpaceGap = 6;\n")
             f.write("struct MenuGlyph { char ch; unsigned char cellW, coreStart, coreW; unsigned short off; };\n")
+            f.write("struct MenuKern { char a, b; unsigned char gap; };\n")
             n1, b1 = emit_table(f, "MenuFont", glyphs, CELL_H)
             n2, b2 = emit_table(f, "MenuHdr", hdr, HDR_CELL_H)
             n3, b3 = emit_table(f, "MenuCrd", crd, CELL_H)
             n4, b4 = emit_table(f, "MenuHlp", hlp, HLP_CELL_H)
-        print("wrote src/menu_font.h (%d+%d+%d+%d glyphs, %d+%d+%d+%d bytes)" % (n1, n2, n3, n4, b1, b2, b3, b4))
+
+            def emit_kern(name, table):
+                f.write("// Per-pair gaps observed in the stock help sentences; pairs the\n")
+                f.write("// sentences never set fall back to the face's default gap.\n")
+                f.write("constexpr MenuKern k%s[] = {\n" % name)
+                for (a, b), gap in sorted(table.items()):
+                    f.write("    { '%s', '%s', %d },\n" % (a.replace("'", "\\'"), b.replace("'", "\\'"), gap))
+                f.write("};\n")
+            emit_kern("MenuHlpKern", hlp_kern)
+            emit_kern("MenuHlpSpaceKern", hlp_space_kern)
+        print("wrote src/menu_font.h (%d+%d+%d+%d glyphs, %d+%d+%d+%d bytes, %d+%d kern pairs)" %
+              (n1, n2, n3, n4, b1, b2, b3, b4, len(hlp_kern), len(hlp_space_kern)))
 
 
 if __name__ == "__main__":
