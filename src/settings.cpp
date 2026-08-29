@@ -35,7 +35,6 @@ void load_settings() {
     try {
         nlohmann::json j;
         f >> j;
-        s_settings.fullscreen         = j.value("fullscreen", s_settings.fullscreen);
         s_settings.widescreen         = j.value("widescreen", s_settings.widescreen);
         s_settings.msaa               = j.value("msaa", s_settings.msaa);
         s_settings.fps_mode           = j.value("fps_mode", s_settings.fps_mode);
@@ -62,6 +61,13 @@ void load_settings() {
     } catch (const std::exception& e) {
         fprintf(stderr, "[SNAP-CFG] failed to parse %s: %s (using defaults)\n", SETTINGS_FILE, e.what());
     }
+
+    // Fullscreen is a session choice, never a boot state: a window created
+    // fullscreen comes up with broken chrome -- no close, no minimize, no
+    // resize -- so every launch starts windowed and fullscreen is entered
+    // through the live path only (the GRAPHICS page, or the window's own
+    // maximize button).
+    s_settings.fullscreen = false;
 }
 
 void save_settings() {

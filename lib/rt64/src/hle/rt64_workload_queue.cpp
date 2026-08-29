@@ -221,6 +221,19 @@ namespace RT64 {
             resolutionMultiplier = std::min(resolutionMultiplier, resolutionCap);
         }
 
+        // Supersampling: the downsample divides at present time, so the
+        // render has to happen that much above the presented scale or the
+        // picture ends up BELOW the window's resolution and stretches back
+        // up as blur. Applied after the cap -- the cap bounds the presented
+        // resolution, and supersampling is an explicit request to render
+        // beyond it -- and bounded by the same overall limit as everything
+        // else so an extreme combination cannot ask for absurd targets.
+        const int ssaa = ext.sharedResources->userConfig.downsampleMultiplier;
+        if (ssaa > 1) {
+            resolutionMultiplier = std::min(resolutionMultiplier * float(ssaa),
+                                            float(UserConfiguration::ResolutionMultiplierLimit));
+        }
+
         uint32_t msaaSampleCount = ext.sharedResources->userConfig.msaaSampleCount();
 
         // Build the resolution scale vector from the configuration.

@@ -149,6 +149,20 @@ static void update_gfx(void* /*gfx_data*/) {
                     ultramodern::quit();
                 }
                 break;
+            case SDL_WINDOWEVENT:
+                // The maximize button is the fullscreen switch: undo the
+                // maximize so the windowed state underneath stays normal,
+                // then enter fullscreen through the same live path the
+                // GRAPHICS page uses. Turning the setting off in that page
+                // (or pressing it again after a menu toggle) returns here.
+                if (event.window.event == SDL_WINDOWEVENT_MAXIMIZED) {
+                    if (sdl_window != nullptr) {
+                        SDL_RestoreWindow(sdl_window);
+                    }
+                    snap::settings().fullscreen = true;
+                    snap::apply_graphics_settings();
+                }
+                break;
             default:
                 break;
         }
