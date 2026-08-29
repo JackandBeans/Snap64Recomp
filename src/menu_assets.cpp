@@ -546,17 +546,23 @@ void stage_menu_assets(uint8_t* rdram) {
                     }
                 }
             }
+            // Drawn size versus staged size: a 64-texel 16-bit chunk row can
+            // carry at most 32 rows through a block load (2048 texels of
+            // TMEM), so the visible mark scales to 92 wide -- proportioned
+            // under the Snap logo -- inside a two-chunk buffer whose spare
+            // columns stay transparent.
+            const int visW = 92;
+            const int visH = std::clamp(int(double(lh) * visW / lw + 0.5), 8, 32);
             const int outW = 128;
-            const int outH = std::clamp(int(double(lh) * outW / lw + 0.5), 8, 64);
             logo.w = outW;
-            logo.h = outH;
-            logo.texels.assign(size_t(outW) * outH, 0);
-            for (int y = 0; y < outH; y++) {
-                const int sy0 = y * lh / outH;
-                const int sy1 = std::max(sy0 + 1, (y + 1) * lh / outH);
-                for (int x = 0; x < outW; x++) {
-                    const int sx0 = x * lw / outW;
-                    const int sx1 = std::max(sx0 + 1, (x + 1) * lw / outW);
+            logo.h = visH;
+            logo.texels.assign(size_t(outW) * visH, 0);
+            for (int y = 0; y < visH; y++) {
+                const int sy0 = y * lh / visH;
+                const int sy1 = std::max(sy0 + 1, (y + 1) * lh / visH);
+                for (int x = 0; x < visW; x++) {
+                    const int sx0 = x * lw / visW;
+                    const int sx1 = std::max(sx0 + 1, (x + 1) * lw / visW);
                     uint32_t r = 0, g = 0, b = 0, a = 0, n = 0;
                     for (int sy = sy0; sy < sy1; sy++) {
                         for (int sx = sx0; sx < sx1; sx++) {

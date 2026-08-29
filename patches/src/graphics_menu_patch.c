@@ -59,11 +59,18 @@ void func_800E7C40_A0F1D0(void);
 void func_800E6C00_A0E190(SObj* sobj, u8 color);
 void func_800E6C14_A0E1A4(SObj* sobj, u8 red, u8 green, u8 blue);
 
-/* Title screen (A08E30): background creation, its attribute and tint
- * helpers, and the GObj slot the background lives in. */
+/* Title screen (A08E30): background creation, its attribute, tint, show
+ * and position helpers, the screen fade, and the two GObj slots the
+ * background and the bouncing letters live in. */
 extern GObj* D_800E82B0_A0F840;
+extern GObj* D_800E82B4_A0F844;
+extern GObj* D_800E82BC_A0F84C;
 void func_800E18A0_A08E30(SObj* sobj, u32 attr);
+void func_800E18AC_A08E3C(SObj* sobj, u8 show);
 void func_800E18E0_A08E70(SObj* sobj, u8 red, u8 green, u8 blue);
+void func_800E18FC_A08E8C(SObj* sobj, s16 x, s16 y);
+void func_800E1930_A08EC0(u8 arg0, u8 red, u8 green, u8 blue, f32 speed);
+void ohRemoveSprite(GObj* obj);
 void func_800BFB90_5CA30(s32 left, s32 top);
 UnkStruct800BEDF8* func_800AA38C(s32);
 
@@ -936,11 +943,111 @@ void func_800E1D44_A092D4(u8 arg0) {
     /* The badge rides the background's own sprite chain, so it is drawn
      * with the title and torn down with the title, wherever the title
      * goes. Dimmed with the background when the title sits behind a menu. */
-    badge = snap_build_sprite(STR_LOGO, 165, 105, G_IM_FMT_RGBA);
+    badge = snap_build_sprite(STR_LOGO, 197, 107, G_IM_FMT_RGBA);
     if (badge != NULL) {
+        /* Born hidden: the title fades in before the logo exists, and the
+         * badge must never be on screen ahead of the mark it belongs to.
+         * It is revealed with the Snap flash on the animated intro, or
+         * with the static logo's creation everywhere else. */
+        badge->attr |= SP_HIDDEN;
         if (arg0 == 0xC) {
             badge->red = badge->green = badge->blue = 0x80;
         }
         omGObjAddSprite(D_800E82B0_A0F840, badge);
     }
+}
+
+/* Reveals the badge riding the title background, if one is there. */
+static void snap_show_badge(void) {
+    if ((D_800E82B0_A0F840 != NULL) && (D_800E82B0_A0F840->data.sobj != NULL)) {
+        SObj* badgeSobj = D_800E82B0_A0F840->data.sobj->next;
+        if (badgeSobj != NULL) {
+            badgeSobj->sprite.attr &= ~SP_HIDDEN;
+        }
+    }
+}
+
+/* Replaces the static title's logo creation: exactly as shipped, plus the
+ * badge appearing in the same moment the Snap logo does. */
+void func_800E2058_A095E8(void) {
+    GObj* gobj;
+    SObj* sobj;
+
+    gobj = D_800E82BC_A0F84C = ohCreateSprite(0xE, ohUpdateDefault, 0, 0x80000000, renDrawSprite, 1, 0x80000000, -1,
+                                              (Sprite*) 0x802F20F0, 0, NULL, 1);
+    sobj = gobj->data.sobj;
+
+    func_800E18FC_A08E8C(sobj, 35, 35);
+    func_800E18A0_A08E30(sobj, SP_TEXSHUF | SP_TRANSPARENT);
+    omGObjAddSprite(gobj, (Sprite*) 0x802F82C8);
+
+    sobj = sobj->next;
+    func_800E18FC_A08E8C(sobj, 74, 198);
+    func_800E18A0_A08E30(sobj, SP_TEXSHUF | SP_TRANSPARENT);
+
+    snap_show_badge();
+}
+
+/* Replaces the title's letter bounce: the eight "Pokemon" pieces land one
+ * by one exactly as shipped, and the badge is revealed in the very moment
+ * the full logo replaces them -- inside the same white flash that brings
+ * "Snap" in, with nothing else about the sequence touched. */
+void func_800E28CC_A09E5C(void) {
+    UnkStruct800BEDF8* temp_v0;
+    s32 reverb;
+    f32 temp_f0;
+    f32 x;
+    f32 y;
+    SObj* sobj;
+    GObj* gobj;
+    u8 j;
+    u8 i;
+
+    reverb = 0;
+    gobj = D_800E82B4_A0F844;
+    sobj = gobj->data.sobj;
+
+    for (i = 0; i < 8; i++) {
+        x = sobj->sprite.x + (sobj->sprite.width / 2);
+        y = sobj->sprite.y + (sobj->sprite.height / 2);
+
+        func_800E18AC_A08E3C(sobj, 1);
+
+        for (j = 0; j < 6; j++) {
+            temp_v0 = func_800AA38C(0);
+            if (temp_v0->pressedButtons & (0x8000 | 0x1000)) {
+                break;
+            }
+            temp_f0 = 1.2 - ((j * 0.2) / 5.0);
+            sobj->sprite.scaley = temp_f0;
+            sobj->sprite.scalex = temp_f0;
+            func_800E18FC_A08E8C(
+                sobj,
+                x - (sobj->sprite.width * temp_f0 * 0.5),
+                y - (sobj->sprite.height * temp_f0 * 0.5));
+            ohWait(1);
+        }
+
+        if (i == 6) {
+            reverb = 10;
+        }
+        if (temp_v0->pressedButtons & (0x8000 | 0x1000)) {
+            break;
+        }
+        if (!(i & 1)) {
+            /* The pan table is four 32-bit entries, one per letter pair. */
+            auPlaySoundWithParams(0, 0x7FFF, ((s32*) 0x800E80D4)[i >> 1], 1.0f, reverb);
+        }
+        sobj = sobj->next;
+    }
+    ohRemoveSprite(gobj);
+    omGObjAddSprite(gobj, (Sprite*) 0x802E8DD0);
+
+    sobj = gobj->data.sobj;
+    func_800E18FC_A08E8C(sobj, 35, 35);
+    func_800E18A0_A08E30(sobj, SP_TEXSHUF | SP_TRANSPARENT);
+    snap_show_badge();
+    func_800E1930_A08EC0(1, 0xFF, 0xFF, 0xFF, 17.0f / 120.0f);
+    omDeleteGObj(gobj);
+    omDeleteGObj(D_800E82B0_A0F840);
 }
