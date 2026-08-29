@@ -990,66 +990,9 @@ void func_800E2058_A095E8(void) {
     snap_show_badge();
 }
 
-/* Replaces the title's letter bounce: the eight "Pokemon" pieces land one
- * by one exactly as shipped, and the badge is revealed in the very moment
- * the full logo replaces them -- inside the same white flash that brings
- * "Snap" in, with nothing else about the sequence touched. */
-void func_800E28CC_A09E5C(void) {
-    UnkStruct800BEDF8* temp_v0;
-    s32 reverb;
-    f32 temp_f0;
-    f32 x;
-    f32 y;
-    SObj* sobj;
-    GObj* gobj;
-    u8 j;
-    u8 i;
-
-    reverb = 0;
-    gobj = D_800E82B4_A0F844;
-    sobj = gobj->data.sobj;
-
-    for (i = 0; i < 8; i++) {
-        x = sobj->sprite.x + (sobj->sprite.width / 2);
-        y = sobj->sprite.y + (sobj->sprite.height / 2);
-
-        func_800E18AC_A08E3C(sobj, 1);
-
-        for (j = 0; j < 6; j++) {
-            temp_v0 = func_800AA38C(0);
-            if (temp_v0->pressedButtons & (0x8000 | 0x1000)) {
-                break;
-            }
-            temp_f0 = 1.2 - ((j * 0.2) / 5.0);
-            sobj->sprite.scaley = temp_f0;
-            sobj->sprite.scalex = temp_f0;
-            func_800E18FC_A08E8C(
-                sobj,
-                x - (sobj->sprite.width * temp_f0 * 0.5),
-                y - (sobj->sprite.height * temp_f0 * 0.5));
-            ohWait(1);
-        }
-
-        if (i == 6) {
-            reverb = 10;
-        }
-        if (temp_v0->pressedButtons & (0x8000 | 0x1000)) {
-            break;
-        }
-        if (!(i & 1)) {
-            /* The pan table is four 32-bit entries, one per letter pair. */
-            auPlaySoundWithParams(0, 0x7FFF, ((s32*) 0x800E80D4)[i >> 1], 1.0f, reverb);
-        }
-        sobj = sobj->next;
-    }
-    ohRemoveSprite(gobj);
-    omGObjAddSprite(gobj, (Sprite*) 0x802E8DD0);
-
-    sobj = gobj->data.sobj;
-    func_800E18FC_A08E8C(sobj, 35, 35);
-    func_800E18A0_A08E30(sobj, SP_TEXSHUF | SP_TRANSPARENT);
-    snap_show_badge();
-    func_800E1930_A08EC0(1, 0xFF, 0xFF, 0xFF, 17.0f / 120.0f);
-    omDeleteGObj(gobj);
-    omDeleteGObj(D_800E82B0_A0F840);
-}
+/* The title's letter bounce is deliberately NOT replaced: the original
+ * recompiled func_800E28CC_A09E5C runs untouched, so the intro is the
+ * factory sequence by construction. The badge needs nothing from it --
+ * the intro's own objects are deleted at its end, and the badge the
+ * player sees arrives with the static title build above, revealed under
+ * the same flash that brings the logo in. */
