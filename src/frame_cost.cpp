@@ -47,6 +47,7 @@
 #include <cstdint>
 
 #include "hle/rt64_snap_diag.h"
+#include "settings.h"
 #include "recomp.h"
 
 extern "C" {
@@ -126,6 +127,10 @@ extern "C" void gtlUpdate(uint8_t* rdram, recomp_context* ctx) {
     // frame by this, so it is no longer only a measurement.
     snap_game_update_count.fetch_add(1, std::memory_order_relaxed);
     snap_logic_steps_pending.fetch_add(1, std::memory_order_relaxed);
+
+    // Anything the in-game GRAPHICS page published since the last tick is
+    // applied here, on the thread the page runs on. One word read when idle.
+    snap::poll_menu_mailbox(rdram);
 
     const bool on = snapdiag::statsEnabled();
     if (!on) {

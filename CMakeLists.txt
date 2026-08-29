@@ -119,6 +119,7 @@ set(SNAP_SOURCES
     src/rect_tags.cpp
     src/rect_census.cpp
     src/fx_tags.cpp
+    src/menu_assets.cpp
     src/anim_steps.cpp
     src/focus_dot.cpp
     src/dl_budget.cpp

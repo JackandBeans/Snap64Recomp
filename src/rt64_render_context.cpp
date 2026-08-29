@@ -203,6 +203,21 @@ public:
         }
         app_->userConfig.resolution = RT64::UserConfiguration::Resolution::WindowIntegerScale;
         app_->userConfig.resolutionMultiplierCap = double(std::clamp(snap::settings().resolution_scale, 0, 8));
+
+        // Boot-time-only choices: the shader library and every render target
+        // are built around the internal color format, and the swap chain is
+        // created once with its image count -- neither has a rebuild path
+        // after setup, so the saved values must be in place here.
+        switch (snap::settings().color_depth) {
+            case 1:  app_->userConfig.internalColorFormat = RT64::UserConfiguration::InternalColorFormat::Standard; break;
+            case 2:  app_->userConfig.internalColorFormat = RT64::UserConfiguration::InternalColorFormat::High; break;
+            default: app_->userConfig.internalColorFormat = RT64::UserConfiguration::InternalColorFormat::Automatic; break;
+        }
+        app_->userConfig.displayBuffering = snap::settings().triple_buffering
+            ? RT64::UserConfiguration::DisplayBuffering::Triple
+            : RT64::UserConfiguration::DisplayBuffering::Double;
+        app_->userConfig.downsampleMultiplier = std::clamp(snap::settings().downsample, 1, 4);
+        app_->userConfig.threePointFiltering = snap::settings().three_point_filtering;
         app_->userConfig.validate();
 
         // Attempt setup.

@@ -43,6 +43,8 @@ void load_settings() {
         s_settings.hq_sound           = j.value("hq_sound", s_settings.hq_sound);
         s_settings.three_point_filtering = j.value("three_point_filtering", s_settings.three_point_filtering);
         s_settings.downsample         = j.value("downsample", s_settings.downsample);
+        s_settings.color_depth        = j.value("color_depth", s_settings.color_depth);
+        s_settings.triple_buffering   = j.value("triple_buffering", s_settings.triple_buffering);
         s_settings.resolution_scale   = std::clamp(j.value("resolution_scale", s_settings.resolution_scale), 0, 8);
         s_settings.present_filter     = std::clamp(j.value("present_filter", s_settings.present_filter), 0, 2);
         s_settings.upscale_2d         = std::clamp(j.value("upscale_2d", s_settings.upscale_2d), 0, 2);
@@ -72,6 +74,8 @@ void save_settings() {
         {"hq_sound",              s_settings.hq_sound},
         {"three_point_filtering", s_settings.three_point_filtering},
         {"downsample",            s_settings.downsample},
+        {"color_depth",           s_settings.color_depth},
+        {"triple_buffering",      s_settings.triple_buffering},
         {"resolution_scale",      s_settings.resolution_scale},
         {"present_filter",        s_settings.present_filter},
         {"upscale_2d",            s_settings.upscale_2d},

@@ -60,6 +60,9 @@ static inline uint32_t read_u32(uint8_t* rdram, uint32_t addr) {
 extern "C" void dmaLoadOverlay(uint8_t* rdram, recomp_context* ctx) {
     snap::g_rdram = rdram;
     snap::apply_game_settings(rdram);
+    // An overlay load is a safe moment for the graphics page's assets and
+    // mailbox: the menu cannot be open while code is being swapped.
+    snap::stage_menu_assets(rdram);
     uint32_t overlay_addr = static_cast<uint32_t>(ctx->r4); // a0 = Overlay*
 
     uint32_t rom_start  = read_u32(rdram, overlay_addr + 0x00);

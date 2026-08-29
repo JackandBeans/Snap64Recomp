@@ -7,6 +7,7 @@
  * calls recomp::start() to launch the game.
  */
 
+#include <atomic>
 #include <cstdio>
 #include <cstdint>
 #include <string>
@@ -216,25 +217,138 @@ static std::string get_game_thread_name(const OSThread* t) {
 // main()
 // ---------------------------------------------------------------------------
 #if defined(_WIN32)
-// Reports the N64-space address behind an access violation. The recompiled code
-// indexes RDRAM as (rdram + n64addr - 0x80000000), so the delta from the RDRAM
-// base recovers the guest address the game actually asked for.
-static LONG CALLBACK snap_veh(EXCEPTION_POINTERS* ep) {
-    if (ep->ExceptionRecord->ExceptionCode == EXCEPTION_ACCESS_VIOLATION) {
-        ULONG_PTR op   = ep->ExceptionRecord->ExceptionInformation[0];
-        ULONG_PTR addr = ep->ExceptionRecord->ExceptionInformation[1];
-        uintptr_t rip  = (uintptr_t)ep->ContextRecord->Rip;
-        uintptr_t base = (uintptr_t)GetModuleHandleW(nullptr);
-        fprintf(stderr, "[SNAP-AV] %s host=0x%llX rva=0x%llX\n",
-                op == 0 ? "read" : (op == 1 ? "write" : "exec"),
-                (unsigned long long)addr, (unsigned long long)(rip - base));
-        if (snap::g_rdram != nullptr) {
-            long long d = (long long)((uintptr_t)addr - (uintptr_t)snap::g_rdram);
-            fprintf(stderr, "[SNAP-AV] rdram_delta=0x%llX  guest_addr=0x%08llX\n",
-                    (unsigned long long)d, (unsigned long long)(0x80000000ll + d));
-        }
-        fflush(stderr);
+// True when every byte of [p, p+len) sits in committed, readable memory right
+// now. The dump below reads heap structures and the faulting thread's stacks,
+// and a fault inside the fault handler would take the report with it.
+static bool snap_veh_readable(const void* p, size_t len) {
+    MEMORY_BASIC_INFORMATION mbi{};
+    const uint8_t* cur = (const uint8_t*)p;
+    const uint8_t* end = cur + len;
+    while (cur < end) {
+        if (VirtualQuery(cur, &mbi, sizeof(mbi)) == 0) return false;
+        if (mbi.State != MEM_COMMIT) return false;
+        if (mbi.Protect & (PAGE_NOACCESS | PAGE_GUARD)) return false;
+        if (!(mbi.Protect & (PAGE_READONLY | PAGE_READWRITE | PAGE_WRITECOPY |
+                             PAGE_EXECUTE_READ | PAGE_EXECUTE_READWRITE | PAGE_EXECUTE_WRITECOPY))) return false;
+        cur = (const uint8_t*)mbi.BaseAddress + mbi.RegionSize;
     }
+    return true;
+}
+
+// Reports everything knowable about an access violation: the raw exception,
+// what the OS says about the faulting page (the protection answer), the host
+// registers, the guest CPU context if one is recoverable, and both stacks as
+// return-address candidates. The recompiled code indexes RDRAM as
+// (rdram + n64addr - 0xFFFFFFFF80000000), so the delta from the RDRAM base
+// recovers the guest address the game actually asked for.
+static LONG CALLBACK snap_veh(EXCEPTION_POINTERS* ep) {
+    if (ep->ExceptionRecord->ExceptionCode != EXCEPTION_ACCESS_VIOLATION) {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+    // A stuck loop that faults every iteration must not turn the log into the
+    // whole story of the hang; the first few faults carry all the information.
+    static std::atomic<int> reported{0};
+    int n = reported.fetch_add(1);
+    if (n >= 4) {
+        return EXCEPTION_CONTINUE_SEARCH;
+    }
+
+    const ULONG_PTR op   = ep->ExceptionRecord->ExceptionInformation[0];
+    const ULONG_PTR addr = ep->ExceptionRecord->ExceptionInformation[1];
+    CONTEXT* c = ep->ContextRecord;
+    const uintptr_t rip  = (uintptr_t)c->Rip;
+    const uintptr_t base = (uintptr_t)GetModuleHandleW(nullptr);
+    fprintf(stderr, "[SNAP-AV] #%d tid=%lu %s host=0x%llX rva=0x%llX flags=0x%lX\n",
+            n, GetCurrentThreadId(),
+            op == 0 ? "read" : (op == 1 ? "write" : "exec"),
+            (unsigned long long)addr, (unsigned long long)(rip - base),
+            ep->ExceptionRecord->ExceptionFlags);
+
+    // What the OS itself says about the faulting page. If State/Protect show
+    // committed readable memory, the exception record and this query disagree
+    // and the fault came from somewhere stranger than a protection miss.
+    {
+        MEMORY_BASIC_INFORMATION mbi{};
+        if (VirtualQuery((void*)addr, &mbi, sizeof(mbi)) != 0) {
+            fprintf(stderr, "[SNAP-AV] page: allocBase=0x%llX state=0x%lX protect=0x%lX regionSize=0x%llX\n",
+                    (unsigned long long)(uintptr_t)mbi.AllocationBase, mbi.State, mbi.Protect,
+                    (unsigned long long)mbi.RegionSize);
+        }
+        if (snap::g_rdram != nullptr) {
+            MEMORY_BASIC_INFORMATION rmbi{};
+            VirtualQuery(snap::g_rdram, &rmbi, sizeof(rmbi));
+            long long d = (long long)((uintptr_t)addr - (uintptr_t)snap::g_rdram);
+            fprintf(stderr, "[SNAP-AV] rdram=0x%llX (allocBase=0x%llX) delta=0x%llX guest=0x%08llX %s\n",
+                    (unsigned long long)(uintptr_t)snap::g_rdram,
+                    (unsigned long long)(uintptr_t)rmbi.AllocationBase,
+                    (unsigned long long)d, (unsigned long long)(0x80000000ll + d),
+                    (mbi.AllocationBase == rmbi.AllocationBase) ? "(inside rdram allocation)" : "(NOT in rdram allocation)");
+        }
+    }
+
+    fprintf(stderr, "[SNAP-AV] rax=%llX rbx=%llX rcx=%llX rdx=%llX rsi=%llX rdi=%llX rbp=%llX rsp=%llX\n",
+            c->Rax, c->Rbx, c->Rcx, c->Rdx, c->Rsi, c->Rdi, c->Rbp, c->Rsp);
+    fprintf(stderr, "[SNAP-AV] r8=%llX r9=%llX r10=%llX r11=%llX r12=%llX r13=%llX r14=%llX r15=%llX\n",
+            c->R8, c->R9, c->R10, c->R11, c->R12, c->R13, c->R14, c->R15);
+
+    // Recompiled functions keep ctx in a callee-saved register; try the usual
+    // suspects and validate by shape: 32 guest GPRs, r0 == 0, r29 looking like
+    // a sign-extended KSEG0 stack pointer.
+    const uint64_t regs[] = { c->Rbx, c->Rsi, c->Rdi, c->R12, c->R13, c->R14, c->R15, c->Rbp };
+    for (uint64_t cand : regs) {
+        if (cand < 0x10000 || !snap_veh_readable((void*)cand, 32 * 8)) continue;
+        const uint64_t* g = (const uint64_t*)cand;
+        const uint64_t sp = g[29];
+        if (g[0] == 0 && (sp >> 32) == 0xFFFFFFFFull && (uint32_t)sp >= 0x80000000u && (uint32_t)sp < 0xC0000000u) {
+            fprintf(stderr, "[SNAP-AV] guest ctx@0x%llX: sp=0x%08X ra=0x%08X a0=0x%08X v0=0x%08X\n",
+                    (unsigned long long)cand, (uint32_t)g[29], (uint32_t)g[31], (uint32_t)g[4], (uint32_t)g[2]);
+            // Return-address candidates on the guest stack place the fault in
+            // the game's own call tree.
+            if (snap::g_rdram != nullptr) {
+                const uint32_t gsp = (uint32_t)sp;
+                const uint8_t* host_sp = snap::g_rdram + (gsp - 0x80000000u);
+                if (snap_veh_readable(host_sp, 0x200)) {
+                    fprintf(stderr, "[SNAP-AV] guest stack @0x%08X:", gsp);
+                    int printed = 0;
+                    for (int i = 0; i < 0x200 / 4 && printed < 16; i++) {
+                        uint32_t w = *(const uint32_t*)(host_sp + i * 4);
+                        if (w >= 0x80000400u && w < 0x80800000u) {
+                            fprintf(stderr, " +%X:%08X", i * 4, w);
+                            printed++;
+                        }
+                    }
+                    fprintf(stderr, "\n");
+                }
+            }
+            break;
+        }
+    }
+
+    // Host return-address candidates: anything on this thread's stack that
+    // points into the executable, symbolizable offline against the .map. The
+    // image extent comes straight from the PE header to avoid a psapi import
+    // inside a fault handler.
+    {
+        const uintptr_t lo = base;
+        const IMAGE_DOS_HEADER* dos = (const IMAGE_DOS_HEADER*)base;
+        const IMAGE_NT_HEADERS* nt = (const IMAGE_NT_HEADERS*)(base + dos->e_lfanew);
+        const uintptr_t hi = lo + nt->OptionalHeader.SizeOfImage;
+        {
+            const uint64_t* sp = (const uint64_t*)c->Rsp;
+            fprintf(stderr, "[SNAP-AV] host stack rvas:");
+            int printed = 0;
+            for (int i = 0; i < 512 && printed < 24; i++) {
+                if (!snap_veh_readable(sp + i, 8)) break;
+                uint64_t v = sp[i];
+                if (v >= lo && v < hi) {
+                    fprintf(stderr, " %llX", (unsigned long long)(v - lo));
+                    printed++;
+                }
+            }
+            fprintf(stderr, "\n");
+        }
+    }
+    fflush(stderr);
     return EXCEPTION_CONTINUE_SEARCH;
 }
 #endif

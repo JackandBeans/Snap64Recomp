@@ -102,6 +102,16 @@ struct Settings {
     // The console's own post-blend dither noise. A look choice.
     bool  dither_noise      = true;
 
+    // Internal render precision: 0 lets RT64 pick per GPU (its Automatic),
+    // 1 forces the console-accurate 8-bit path, 2 forces the high-precision
+    // framebuffer that removes banding in gradients. Boot-time only: the
+    // shader library and every render target are built around it, and RT64
+    // has no rebuild path short of setup itself.
+    int   color_depth       = 0;
+    // Three swap-chain images instead of two: steadier frame delivery for a
+    // little latency. Also boot-time: the swap chain is created once.
+    bool  triple_buffering  = false;
+
     // Diagnostic, not shipped as a feature. RT64 draws every call through a
     // fallback ubershader until the call's specialised pipeline finishes
     // compiling, and Snorlax's sleep symbols are visible during exactly that
@@ -125,6 +135,12 @@ void apply_game_settings(uint8_t* rdram);
 
 // Hotkey handler; returns true if the key was consumed.
 bool handle_settings_hotkey(int scancode);
+
+// The in-game GRAPHICS page (patches/src/graphics_menu_patch.c): stages its
+// font strips into RDRAM and carries its settings mailbox. Both live in
+// src/menu_assets.cpp.
+void stage_menu_assets(uint8_t* rdram);
+void poll_menu_mailbox(uint8_t* rdram);
 
 } // namespace snap
 

@@ -216,6 +216,11 @@ static void snap_input_tap(uint16_t* buttons, float* x, float* y) {
     else if (record != nullptr) {
         struct { uint16_t btn; float rx; float ry; } r{ *buttons, *x, *y };
         fwrite(&r, sizeof(r), 1, record);
+        // Flushed per reading: a recording exists to capture the moments
+        // before a crash, and a crash loses everything still in the stdio
+        // buffer -- measured: a session died with its whole menu navigation
+        // in the unwritten tail, which was the very part under study.
+        fflush(record);
     }
 }
 
