@@ -951,11 +951,11 @@ void func_800E1D44_A092D4(u8 arg0) {
         /* Born hidden: the title fades in before the logo exists, and the
          * badge must never be on screen ahead of the mark it belongs to.
          * It is revealed with the Snap flash on the animated intro, or
-         * with the static logo's creation everywhere else. */
+         * with the static logo's creation everywhere else. Never dimmed:
+         * the title behind a menu is rebuilt dim and then only the
+         * background sprite itself is re-brightened on return, so a dim
+         * tint here would stick to the badge for good. */
         badge->attr |= SP_HIDDEN;
-        if (arg0 == 0xC) {
-            badge->red = badge->green = badge->blue = 0x80;
-        }
         omGObjAddSprite(D_800E82B0_A0F840, badge);
     }
 }

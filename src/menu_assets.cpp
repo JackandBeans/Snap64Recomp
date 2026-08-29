@@ -263,6 +263,39 @@ Strip compose_lines(const char* line1, const char* line2) {
     return out;
 }
 
+// The bold black border the title and help text wear on screen: one pixel
+// of opaque black in every empty 8-neighbourhood cell around a glyph core.
+// The source sprites are pure white texels, so the border is added here to
+// match what the player actually sees above.
+void apply_outline(Strip &strip) {
+    const std::vector<uint8_t> coreA = strip.alpha;
+    const std::vector<uint8_t> coreI = strip.intensity;
+    for (int y = 0; y < strip.height; y++) {
+        for (int x = 0; x < strip.width; x++) {
+            const size_t at = size_t(y) * strip.width + x;
+            if ((coreA[at] >= 128) && (coreI[at] >= 128)) {
+                continue;   // a core pixel stays a core pixel
+            }
+            bool edge = false;
+            for (int dy = -1; dy <= 1 && !edge; dy++) {
+                for (int dx = -1; dx <= 1 && !edge; dx++) {
+                    const int nx = x + dx;
+                    const int ny = y + dy;
+                    if ((nx < 0) || (nx >= strip.width) || (ny < 0) || (ny >= strip.height)) {
+                        continue;
+                    }
+                    const size_t nat = size_t(ny) * strip.width + nx;
+                    edge = (coreA[nat] >= 128) && (coreI[nat] >= 128);
+                }
+            }
+            if (edge) {
+                strip.intensity[at] = 0;
+                strip.alpha[at] = 255;
+            }
+        }
+    }
+}
+
 // One line in the credits face -- the condensed 1px font of the title
 // screen's copyright block, for the port's own line beneath it.
 Strip compose_credits(const char* text) {
@@ -738,6 +771,7 @@ void stage_menu_assets(uint8_t* rdram) {
         }
         else if (id == BaseCount + 23) {
             strip = compose_credits(SNAP_PORT_CREDITS);
+            apply_outline(strip);
             w = strip.width;
             h = strip.height;
         }
@@ -750,6 +784,7 @@ void stage_menu_assets(uint8_t* rdram) {
         else if (id >= BaseCount + 18) {
             // Second-wave setting descriptions.
             strip = compose_lines(extraDescs[id - BaseCount - 18][0], extraDescs[id - BaseCount - 18][1]);
+            apply_outline(strip);
             w = strip.width;
             h = strip.height;
         }
@@ -768,6 +803,7 @@ void stage_menu_assets(uint8_t* rdram) {
         else if (id >= BaseCount) {
             // A two-line setting description for the help box.
             strip = compose_lines(descs[id - BaseCount][0], descs[id - BaseCount][1]);
+            apply_outline(strip);
             w = strip.width;
             h = strip.height;
         }
@@ -783,6 +819,11 @@ void stage_menu_assets(uint8_t* rdram) {
                 // from the original sprite, at the original spacing.
                 strip = add_item_dot(strip);
             }
+            if ((id == 10) || (id == 29)) {
+                // The help-box lines wear the bold border their stock
+                // neighbours display on screen.
+                apply_outline(strip);
+            }
             w = strip.width;
             h = strip.height;
         }
@@ -795,7 +836,13 @@ void stage_menu_assets(uint8_t* rdram) {
             g_credits.addr = cursor;
             g_credits.w = w;
             g_credits.h = h;
-            g_credits.mask = strip.alpha;
+            // Cores only: the animator must never touch the black border.
+            g_credits.mask.assign(size_t(w) * h, 0);
+            for (size_t px = 0; px < g_credits.mask.size(); px++) {
+                if ((strip.alpha[px] >= 128) && (strip.intensity[px] >= 128)) {
+                    g_credits.mask[px] = 255;
+                }
+            }
         }
 
         // Written as contiguous 64-texel column blocks, because the sprite
@@ -816,8 +863,14 @@ void stage_menu_assets(uint8_t* rdram) {
                         texel = logo.texels[size_t(y) * w + (cx + x)];   // RGBA16
                     }
                     else if (id == BaseCount + 23) {
-                        // Initial white; animate_credits() recolours live.
-                        texel = (strip.alpha[size_t(y) * w + (cx + x)] >= 128) ? 0xFFFF : 0;
+                        // Cores start white and are recoloured live by
+                        // animate_credits(); the border stays opaque black.
+                        const size_t src = size_t(y) * w + (cx + x);
+                        if (strip.alpha[src] >= 128) {
+                            texel = (strip.intensity[src] >= 128) ? 0xFFFF : 0x0001;
+                        } else {
+                            texel = 0;
+                        }
                     }
                     else {
                         const size_t src = size_t(y) * w + (cx + x);

@@ -701,8 +701,11 @@ def main():
         print(f"credits: {len(cruns)} runs vs {len(cexpect)} chars -- SKIP")
     for c, art in CRD_SYNTH.items():
         if c not in crd:
-            w = len(art[0])
-            crd[c] = (w, 0, w, [[(255, 255 if ch == "#" else 0) for ch in row] for row in art])
+            # Trim to ink so the advance matches the drawn width -- a cell
+            # padded with empty columns spaces the line apart.
+            ink_w = max((x + 1 for row in art for x, ch in enumerate(row) if ch == "#"), default=1)
+            crd[c] = (ink_w, 0, ink_w,
+                      [[(255, 255 if ch == "#" else 0) for ch in row[:ink_w]] for row in art])
 
     have = sorted(glyphs.keys())
     print("harvested:", "".join(have))
