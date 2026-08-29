@@ -120,13 +120,18 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_DESC2      48   /* ..+3: descriptions for the second-wave rows */
 #define STR_LOGO       52   /* "Recomp" wordmark, RGBA16, for the title */
 #define STR_CREDITS    53   /* the port's credits line, RGBA16, animated */
+#define STR_SCROLL_UP  54   /* the value chevron turned upward */
+#define STR_SCROLL_DN  55   /* and downward: more settings that way */
 
 #define OPT_ITEMS      6    /* Screen, Graphics, Sound, Z, Stick, Return */
 #define OPT_GRAPHICS   1
 #define PAGE_ITEMS     12
-#define PAGE_VISIBLE   8    /* rows shown at once; the rest scroll into view */
-#define PAGE_TOP_Y     56
-#define PAGE_PITCH     14
+/* The stock Options list's own rhythm: first row at 73, sixteen rows of
+ * pitch, six rows on screen -- the Graphics page reads as the same menu.
+ * The rest scroll into view, which the edge arrows announce. */
+#define PAGE_VISIBLE   6
+#define PAGE_TOP_Y     73
+#define PAGE_PITCH     16
 
 #define SEL_R 0xFF
 #define SEL_G 0x82
@@ -288,6 +293,8 @@ static void snap_tint(GObj* gobj, u8 r, u8 g, u8 b) {
 #define PAGE_VALUE(i)  (*(volatile u32*) (SCRATCH_ARRAYS + 0x30 + (i) * 4))   /* GObj*, 12 */
 #define PAGE_HIDDEN(i) (*(volatile u32*) (SCRATCH_ARRAYS + 0x60 + (i) * 4))   /* SObj*, 64 */
 #define LIST_LABEL(i)  (*(volatile u32*) (SCRATCH_ARRAYS + 0x160 + (i) * 4))  /* SObj*, 8 */
+#define PAGE_ARROW_UP  (*(volatile u32*) (SCRATCH_ARRAYS + 0x180))            /* GObj* */
+#define PAGE_ARROW_DN  (*(volatile u32*) (SCRATCH_ARRAYS + 0x184))            /* GObj* */
 #define LIST_HELP(i)   (*(volatile u32*) (SCRATCH_ARRAYS + 0x180 + (i) * 4))  /* SObj*, 8 */
 
 /* The page's twelve rows, in display order. Each row cycles one mailbox
@@ -421,6 +428,25 @@ static void snap_page_layout(s32 top) {
             }
         }
     }
+    /* The edge arrows say which way the hidden rows lie. */
+    {
+        GObj* upArrow = (GObj*) PAGE_ARROW_UP;
+        GObj* dnArrow = (GObj*) PAGE_ARROW_DN;
+        if ((upArrow != NULL) && (upArrow->data.sobj != NULL)) {
+            if (top > 0) {
+                upArrow->data.sobj->sprite.attr &= ~SP_HIDDEN;
+            } else {
+                upArrow->data.sobj->sprite.attr |= SP_HIDDEN;
+            }
+        }
+        if ((dnArrow != NULL) && (dnArrow->data.sobj != NULL)) {
+            if (top + PAGE_VISIBLE < PAGE_ITEMS) {
+                dnArrow->data.sobj->sprite.attr &= ~SP_HIDDEN;
+            } else {
+                dnArrow->data.sobj->sprite.attr |= SP_HIDDEN;
+            }
+        }
+    }
 }
 
 /* Fills LIST_LABEL() with the six item labels in display order. */
@@ -536,6 +562,16 @@ static void snap_graphics_page(void) {
         PAGE_VALUE(i) = (u32) snap_make_strip(snap_value_str(i, v), 163, PAGE_TOP_Y);
         snap_tint((GObj*) PAGE_VALUE(i), SEL_R, SEL_G, SEL_B);
     }
+
+    /* The scroll arrows sit at the list's right edge, level with the top
+     * and bottom rows, in the selection orange the menu already uses for
+     * "this responds to the stick". snap_page_layout owns their
+     * visibility. */
+    PAGE_ARROW_UP = (u32) snap_make_strip(STR_SCROLL_UP, 292, PAGE_TOP_Y);
+    PAGE_ARROW_DN = (u32) snap_make_strip(STR_SCROLL_DN, 292,
+                                          PAGE_TOP_Y + (PAGE_VISIBLE - 1) * PAGE_PITCH);
+    snap_tint((GObj*) PAGE_ARROW_UP, SEL_R, SEL_G, SEL_B);
+    snap_tint((GObj*) PAGE_ARROW_DN, SEL_R, SEL_G, SEL_B);
 
     sel = 0;
     top = 0;
@@ -656,6 +692,14 @@ static void snap_graphics_page(void) {
     }
     if (descStrip != NULL) {
         omDeleteGObj(descStrip);
+    }
+    if (PAGE_ARROW_UP != 0) {
+        omDeleteGObj((GObj*) PAGE_ARROW_UP);
+        PAGE_ARROW_UP = 0;
+    }
+    if (PAGE_ARROW_DN != 0) {
+        omDeleteGObj((GObj*) PAGE_ARROW_DN);
+        PAGE_ARROW_DN = 0;
     }
 
     /* Put the Option list back exactly as it was; the next selection loop

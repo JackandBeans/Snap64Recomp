@@ -340,6 +340,30 @@ Strip compose_help(const char* text) {
     return strip;
 }
 
+// The scroll arrows: the values' own big chevron turned on its side to
+// point up or down, so the Graphics page can say that more settings sit
+// off-screen. Same pixels the player already reads as "more this way".
+Strip compose_scroll_arrow(bool up) {
+    Strip strip;
+    strip.height = kMenuBrkLW;   // rotated: the chevron's width becomes height
+    strip.width = 64;
+    strip.intensity.assign(size_t(strip.width) * strip.height, 0);
+    strip.alpha.assign(size_t(strip.width) * strip.height, 0);
+    for (int y = 0; y < kMenuBrkLH; y++) {
+        for (int x = 0; x < kMenuBrkLW; x++) {
+            const uint8_t i = kMenuBrkLIA[(y * kMenuBrkLW + x) * 2 + 0];
+            const uint8_t a = kMenuBrkLIA[(y * kMenuBrkLW + x) * 2 + 1];
+            // '<' points left; a quarter turn clockwise points it up, the
+            // other way points it down.
+            const int rx = up ? (kMenuBrkLH - 1 - y) : y;
+            const int ry = up ? x : (kMenuBrkLW - 1 - x);
+            strip.intensity[size_t(ry) * strip.width + rx] = i;
+            strip.alpha[size_t(ry) * strip.width + rx] = a;
+        }
+    }
+    return strip;
+}
+
 // Two help-face lines stacked at the stock help sprites' own line pitch of
 // twelve rows -- the settings descriptions in the help box.
 Strip compose_lines(const char* line1, const char* line2) {
@@ -792,7 +816,7 @@ void stage_menu_assets(uint8_t* rdram) {
     };
     // Id BaseCount+23: the title's third credits line, in the copyright
     // block's own condensed face, recoloured live by animate_credits().
-    constexpr uint32_t StringCount = BaseCount + 24;
+    constexpr uint32_t StringCount = BaseCount + 26;
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -897,6 +921,12 @@ void stage_menu_assets(uint8_t* rdram) {
             // patch there is nothing to draw.
             w = logo.w;
             h = logo.h;
+        }
+        else if ((id == BaseCount + 24) || (id == BaseCount + 25)) {
+            // The Graphics page's scroll arrows, up then down.
+            strip = compose_scroll_arrow(id == BaseCount + 24);
+            w = strip.width;
+            h = strip.height;
         }
         else if (id >= BaseCount + 18) {
             // Second-wave setting descriptions. No outline: the stock help
