@@ -313,7 +313,9 @@ Strip compose_credits(const char* text) {
     // The copyright's own tracking: one pixel between glyphs, borders
     // fusing across the gap exactly as the stock lines above fuse.
     // Punctuation the stock face never sets -- parens, the ampersand,
-    // the middle dot -- takes one extra pixel of air on either side.
+    // the middle dot -- takes extra air, and the word spaces run a pixel
+    // wide, which lands the whole line at 168px against the first stock
+    // line's measured 169: the equal length the layout asks for.
     auto roomy = [](char c) {
         return (c == '(') || (c == ')') || (c == '&') || (c == '\x01');
     };
@@ -321,14 +323,14 @@ Strip compose_credits(const char* text) {
         if (prev == 0) {
             return 0;
         }
-        return (roomy(prev) || roomy(cur)) ? 2 : 1;
+        return (roomy(prev) || roomy(cur)) ? 3 : 1;
     };
 
     int xc = 1;
     char prev = 0;
     for (const char* c = text; *c != 0; c++) {
         if (*c == ' ') {
-            xc += 5;
+            xc += 6;
             prev = 0;
         }
         else if (const MenuGlyph* g = crd_glyph(*c)) {
@@ -347,7 +349,7 @@ Strip compose_credits(const char* text) {
     prev = 0;
     for (const char* c = text; *c != 0; c++) {
         if (*c == ' ') {
-            xc += 5;
+            xc += 6;
             prev = 0;
             continue;
         }

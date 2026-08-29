@@ -985,21 +985,27 @@ void func_800E2058_A095E8(void) {
     omGObjAddSprite(gobj, (Sprite*) 0x802F82C8);
 
     sobj = sobj->next;
-    func_800E18FC_A08E8C(sobj, 74, 198);
+    /* Four rows above the stock seat (198): between the second line's
+     * fringe and the overscan crop's last visible row (227) the factory
+     * layout leaves exactly the credits strip's own height, so a third
+     * line could only sit there touching both neighbours. Lifting the
+     * whole block opens two clear rows above AND below the credits --
+     * the equal air the composition needs -- and costs nothing above:
+     * the block still clears PRESS START by twenty rows. */
+    func_800E18FC_A08E8C(sobj, 74, 194);
     func_800E18A0_A08E30(sobj, SP_TEXSHUF | SP_TRANSPARENT);
 
     snap_show_badge();
 
-    /* The port's own credits line, centred, seated on the copyright
-     * block's own rhythm: the stock lines run 11 rows cap-top to cap-top
-     * (cores at 199 and 210), so the third line's core belongs at 220-221.
-     * The strip's ink starts one row into the sprite, and 219 is as low as
-     * it can sit with the whole border inside the default overscan crop
-     * (crop_bottom=12 shows through row 227; the outline ends at 219+8).
-     * The port recolours its texels live, so all the sprite carries is
-     * position. Rides this gobj and leaves with it. */
+    /* The port's own credits line, centred, seated on the block's rhythm
+     * (cores at 195 and 206, so this core lands at 218 via the strip's
+     * one-row inset) with symmetric air: outline rows 217-225, two clear
+     * rows to the fringe above and two to the crop edge below (crop
+     * shows through row 227). The port recolours its texels live, so
+     * all the sprite carries is position. Rides this gobj and leaves
+     * with it. */
     {
-        Sprite* credits = snap_build_sprite(STR_CREDITS, 160 - (DIR_W(STR_CREDITS) / 2), 219, G_IM_FMT_RGBA);
+        Sprite* credits = snap_build_sprite(STR_CREDITS, 160 - (DIR_W(STR_CREDITS) / 2), 217, G_IM_FMT_RGBA);
         if (credits != NULL) {
             omGObjAddSprite(gobj, credits);
         }
