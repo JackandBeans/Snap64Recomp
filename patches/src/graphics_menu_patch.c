@@ -990,11 +990,16 @@ void func_800E2058_A095E8(void) {
 
     snap_show_badge();
 
-    /* The port's own credits line, one row of the copyright cadence below
-     * the block, centred; the port recolours its texels live, so all the
-     * sprite carries is position. Rides this gobj and leaves with it. */
+    /* The port's own credits line, centred, seated on the copyright
+     * block's own rhythm: the stock lines run 11 rows cap-top to cap-top
+     * (cores at 199 and 210), so the third line's core belongs at 220-221.
+     * The strip's ink starts one row into the sprite, and 219 is as low as
+     * it can sit with the whole border inside the default overscan crop
+     * (crop_bottom=12 shows through row 227; the outline ends at 219+8).
+     * The port recolours its texels live, so all the sprite carries is
+     * position. Rides this gobj and leaves with it. */
     {
-        Sprite* credits = snap_build_sprite(STR_CREDITS, 160 - (DIR_W(STR_CREDITS) / 2), 217, G_IM_FMT_RGBA);
+        Sprite* credits = snap_build_sprite(STR_CREDITS, 160 - (DIR_W(STR_CREDITS) / 2), 219, G_IM_FMT_RGBA);
         if (credits != NULL) {
             omGObjAddSprite(gobj, credits);
         }

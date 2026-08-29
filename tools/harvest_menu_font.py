@@ -701,11 +701,15 @@ def main():
         print(f"credits: {len(cruns)} runs vs {len(cexpect)} chars -- SKIP")
     for c, art in CRD_SYNTH.items():
         if c not in crd:
-            # Trim to ink so the advance matches the drawn width -- a cell
-            # padded with empty columns spaces the line apart.
-            ink_w = max((x + 1 for row in art for x, ch in enumerate(row) if ch == "#"), default=1)
-            crd[c] = (ink_w, 0, ink_w,
-                      [[(255, 255 if ch == "#" else 0) for ch in row[:ink_w]] for row in art])
+            # Trim to ink on BOTH sides so the advance matches the drawn
+            # width -- a leading blank column is invisible padding that
+            # shifts the glyph inside its own advance (the parens sat
+            # lopsided against their neighbours for exactly this reason).
+            cols = [x for row in art for x, ch in enumerate(row) if ch == "#"]
+            x0 = min(cols, default=0)
+            x1 = max(cols, default=0) + 1
+            crd[c] = (x1 - x0, 0, x1 - x0,
+                      [[(255, 255 if ch == "#" else 0) for ch in row[x0:x1]] for row in art])
 
     have = sorted(glyphs.keys())
     print("harvested:", "".join(have))
