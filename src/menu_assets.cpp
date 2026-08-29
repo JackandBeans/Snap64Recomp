@@ -483,6 +483,9 @@ void stage_menu_assets(uint8_t* rdram) {
         { "The original console dither pattern.",      "Adds fine noise to smooth gradients." },
         { "Switches between fullscreen and window.",   "" },
     };
+    // Id BaseCount+22: the "Recomp" wordmark drawn under the Snap logo on
+    // the title screen -- the port's one badge. Full colour, RGBA16, loaded
+    // from menu_text/recomp_logo.png; absent file, absent badge.
     // Id BaseCount+8: the page's heading, in the Options title's own face.
     // Ids BaseCount+9..BaseCount+17: the second wave of settings -- labels
     // and values for the rows added when the page grew past the original
@@ -504,7 +507,7 @@ void stage_menu_assets(uint8_t* rdram) {
         { "High reduces banding in gradients.",      "Takes effect after restarting the game." },
         { "Triple buffering smooths frame delivery.","Takes effect after restarting the game." },
     };
-    constexpr uint32_t StringCount = BaseCount + 22;
+    constexpr uint32_t StringCount = BaseCount + 23;
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -514,6 +517,71 @@ void stage_menu_assets(uint8_t* rdram) {
         "original", "display", "classic", "sharp", "point", "smooth", "crisp",
         "page_help",
     };
+
+    // The wordmark: any resolution, box-scaled to 128 texels wide (two
+    // chunks), colours un-premultiplied back out of the average so edges
+    // keep their hue, alpha cut at half for RGBA16's single bit.
+    struct { int w = 0, h = 0; std::vector<uint16_t> texels; } logo;
+    {
+        int lw = 0, lh = 0, comp = 0;
+        stbi_uc* data = stbi_load("menu_text/recomp_logo.png", &lw, &lh, &comp, 4);
+        if ((data != nullptr) && (lw > 0) && (lh > 0)) {
+            // Image generators fight transparency: a fully opaque image is
+            // treated as white-backgrounded, and near-white pixels become
+            // the transparency. The wordmark's own colours are saturated,
+            // so nothing of it gets keyed away.
+            bool opaqueImg = true;
+            for (int i = 0; i < lw * lh; i++) {
+                if (data[size_t(i) * 4 + 3] < 250) {
+                    opaqueImg = false;
+                    break;
+                }
+            }
+            if (opaqueImg) {
+                for (int i = 0; i < lw * lh; i++) {
+                    stbi_uc* px = data + size_t(i) * 4;
+                    const int whiteness = std::min(px[0], std::min(px[1], px[2]));
+                    if (whiteness >= 240) {
+                        px[3] = 0;
+                    }
+                }
+            }
+            const int outW = 128;
+            const int outH = std::clamp(int(double(lh) * outW / lw + 0.5), 8, 64);
+            logo.w = outW;
+            logo.h = outH;
+            logo.texels.assign(size_t(outW) * outH, 0);
+            for (int y = 0; y < outH; y++) {
+                const int sy0 = y * lh / outH;
+                const int sy1 = std::max(sy0 + 1, (y + 1) * lh / outH);
+                for (int x = 0; x < outW; x++) {
+                    const int sx0 = x * lw / outW;
+                    const int sx1 = std::max(sx0 + 1, (x + 1) * lw / outW);
+                    uint32_t r = 0, g = 0, b = 0, a = 0, n = 0;
+                    for (int sy = sy0; sy < sy1; sy++) {
+                        for (int sx = sx0; sx < sx1; sx++) {
+                            const stbi_uc* px = data + (size_t(sy) * lw + sx) * 4;
+                            r += px[0] * px[3] / 255;
+                            g += px[1] * px[3] / 255;
+                            b += px[2] * px[3] / 255;
+                            a += px[3];
+                            n++;
+                        }
+                    }
+                    a /= n;
+                    if (a >= 128) {
+                        r = std::min(255u, r / n * 255 / a);
+                        g = std::min(255u, g / n * 255 / a);
+                        b = std::min(255u, b / n * 255 / a);
+                        logo.texels[size_t(y) * outW + x] =
+                            uint16_t(((r >> 3) << 11) | ((g >> 3) << 6) | ((b >> 3) << 1) | 1);
+                    }
+                }
+            }
+            stbi_image_free(data);
+            printf("[SNAP-MENU] recomp_logo.png staged at %dx%d\n", logo.w, logo.h);
+        }
+    }
 
     uint32_t cursor = PixelsAddr;
     write_u32(DirectoryAddr + 0x4, StringCount);
@@ -526,6 +594,12 @@ void stage_menu_assets(uint8_t* rdram) {
             // whole screen under the page.
             w = 16;
             h = 16;
+        }
+        else if (id == BaseCount + 22) {
+            // The wordmark, staged even when absent: a zero width tells the
+            // patch there is nothing to draw.
+            w = logo.w;
+            h = logo.h;
         }
         else if (id >= BaseCount + 18) {
             // Second-wave setting descriptions.
@@ -584,6 +658,9 @@ void stage_menu_assets(uint8_t* rdram) {
                     uint16_t texel;
                     if (id == 0) {
                         texel = 0x00FF;   // black, opaque
+                    }
+                    else if (id == BaseCount + 22) {
+                        texel = logo.texels[size_t(y) * w + (cx + x)];   // RGBA16
                     }
                     else {
                         const size_t src = size_t(y) * w + (cx + x);

@@ -58,6 +58,12 @@ void func_800E6F68_A0E4F8(void);
 void func_800E7C40_A0F1D0(void);
 void func_800E6C00_A0E190(SObj* sobj, u8 color);
 void func_800E6C14_A0E1A4(SObj* sobj, u8 red, u8 green, u8 blue);
+
+/* Title screen (A08E30): background creation, its attribute and tint
+ * helpers, and the GObj slot the background lives in. */
+extern GObj* D_800E82B0_A0F840;
+void func_800E18A0_A08E30(SObj* sobj, u32 attr);
+void func_800E18E0_A08E70(SObj* sobj, u8 red, u8 green, u8 blue);
 void func_800BFB90_5CA30(s32 left, s32 top);
 UnkStruct800BEDF8* func_800AA38C(s32);
 
@@ -105,6 +111,7 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_DOUBLE     46
 #define STR_TRIPLE     47
 #define STR_DESC2      48   /* ..+3: descriptions for the second-wave rows */
+#define STR_LOGO       52   /* "Recomp" wordmark, RGBA16, for the title */
 
 #define OPT_ITEMS      6    /* Screen, Graphics, Sound, Z, Stick, Return */
 #define OPT_GRAPHICS   1
@@ -118,8 +125,28 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define SEL_B 0x41
 
 /* A staged text strip wrapped in a runtime-built sprite. Strips are staged
- * as whole 64-texel column blocks, so every bitmap is exactly one block. */
+ * as whole 64-texel column blocks, so every bitmap is exactly one block.
+ * Text strips are IA16; the wordmark passes G_IM_FMT_RGBA instead. */
+static GObj* snap_make_strip_fmt(s32 id, s32 x, s32 y, u8 fmt);
+
 static GObj* snap_make_strip(s32 id, s32 x, s32 y) {
+    return snap_make_strip_fmt(id, x, y, G_IM_FMT_IA);
+}
+
+/* Builds the Sprite + Bitmap chain for a staged strip without creating a
+ * GObj, so a strip can also ride an existing object's sprite chain. */
+static Sprite* snap_build_sprite(s32 id, s32 x, s32 y, u8 fmt);
+
+static GObj* snap_make_strip_fmt(s32 id, s32 x, s32 y, u8 fmt) {
+    Sprite* sp = snap_build_sprite(id, x, y, fmt);
+    if (sp == NULL) {
+        return NULL;
+    }
+    return ohCreateSprite(0xE, NULL, 0, 0x80000000, renDrawSprite, 1, 0x80000000, -1,
+                          sp, 0, NULL, 1);
+}
+
+static Sprite* snap_build_sprite(s32 id, s32 x, s32 y, u8 fmt) {
     Sprite* sp;
     Bitmap* bm;
     s32 w, h, chunks, i;
@@ -167,7 +194,7 @@ static GObj* snap_make_strip(s32 id, s32 x, s32 y) {
     sp->ndisplist = 24 + 12 * ((chunks < 4) ? 4 : chunks);
     sp->bmheight = h;
     sp->bmHreal = h;
-    sp->bmfmt = G_IM_FMT_IA;
+    sp->bmfmt = fmt;
     sp->bmsiz = G_IM_SIZ_16b;
     sp->bitmap = bm;
     sp->rsp_dl = NULL;
@@ -187,8 +214,7 @@ static GObj* snap_make_strip(s32 id, s32 x, s32 y) {
         bm[i].LUToffset = 0;
     }
 
-    return ohCreateSprite(0xE, NULL, 0, 0x80000000, renDrawSprite, 1, 0x80000000, -1,
-                          sp, 0, NULL, 1);
+    return sp;
 }
 
 /* Points an existing strip sprite at a different staged string. */
@@ -886,4 +912,35 @@ void func_800E7F98_A0F528(void) {
     }
     SCRATCH_GRAPHICS_GOBJ = 0;
     SCRATCH_HELP_ITEM = 0;
+}
+
+/* Replaces the title screen's background creation: everything the original
+ * did, plus the port's "Recomp" wordmark under the Snap logo -- staged by
+ * the port as RGBA16 from menu_text/recomp_logo.png, drawn only when an
+ * image was actually provided, and dimmed exactly as the background is
+ * when the title sits behind a menu. */
+void func_800E1D44_A092D4(u8 arg0) {
+    SObj* sobj;
+    Sprite* badge;
+
+    D_800E82B0_A0F840 = ohCreateSprite(0xE, ohUpdateDefault, 0, 0x80000000, renDrawSprite, 1, 0x80000000, -1,
+                                       (Sprite*) 0x802DABC0, 0, NULL, 1);
+    sobj = D_800E82B0_A0F840->data.sobj;
+    func_800E18A0_A08E30(sobj, SP_TEXSHUF | SP_SCALE | SP_TRANSPARENT);
+    if (arg0 == 0xD) {
+        func_800E18E0_A08E70(sobj, 0xFF, 0xFF, 0xFF);
+    } else if (arg0 == 0xC) {
+        func_800E18E0_A08E70(sobj, 0x80, 0x80, 0x80);
+    }
+
+    /* The badge rides the background's own sprite chain, so it is drawn
+     * with the title and torn down with the title, wherever the title
+     * goes. Dimmed with the background when the title sits behind a menu. */
+    badge = snap_build_sprite(STR_LOGO, 165, 105, G_IM_FMT_RGBA);
+    if (badge != NULL) {
+        if (arg0 == 0xC) {
+            badge->red = badge->green = badge->blue = 0x80;
+        }
+        omGObjAddSprite(D_800E82B0_A0F840, badge);
+    }
 }
