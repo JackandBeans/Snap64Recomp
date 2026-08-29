@@ -310,13 +310,16 @@ Strip compose_credits(const char* text) {
         return nullptr;
     };
 
+    // Two pixels between glyphs, not the copyright's one: each glyph wears
+    // a one-pixel border, and across a single-pixel gap the borders fuse
+    // into unreadable blobs.
     int xc = 1;
     for (const char* c = text; *c != 0; c++) {
         if (*c == ' ') {
-            xc += 3;
+            xc += 4;
         }
         else if (const MenuGlyph* g = crd_glyph(*c)) {
-            xc += g->coreW + 1;
+            xc += g->coreW + 2;
         }
     }
     const int visW = xc + 1;
@@ -329,7 +332,7 @@ Strip compose_credits(const char* text) {
     xc = 1 + (strip.width - visW) / 2;
     for (const char* c = text; *c != 0; c++) {
         if (*c == ' ') {
-            xc += 3;
+            xc += 4;
             continue;
         }
         const MenuGlyph* g = crd_glyph(*c);
@@ -352,7 +355,7 @@ Strip compose_credits(const char* text) {
                 }
             }
         }
-        xc += g->coreW + 1;
+        xc += g->coreW + 2;
     }
     return strip;
 }
@@ -532,27 +535,12 @@ void animate_credits() {
         return;
     }
     static uint32_t tick = 0;
-    static int breath = 0xFF;
-    static int bState = 0;
-    static int bHold = 0;
     tick++;
 
-    // The Option screen's own breathing: dim by 4 a tick to 0x80, brighten
-    // by 0x1E back to 0xFF, hold thirty ticks, repeat.
-    switch (bState) {
-        case 0:
-            breath -= 4;
-            if (breath <= 0x80) { breath = 0x80; bState = 1; }
-            break;
-        case 1:
-            breath += 0x1E;
-            if (breath >= 0xFF) { breath = 0xFF; bState = 2; bHold = 0; }
-            break;
-        default:
-            if (++bHold > 30) { bState = 0; }
-            break;
-    }
-
+    // A calm scrolling rainbow at constant full brightness -- the classic
+    // era treatment -- drifting one hue degree a tick, roughly a six
+    // second lap. No pulsing: the black border carries the legibility and
+    // the colour quietly moves.
     const int w = g_credits.w;
     const int h = g_credits.h;
     for (int y = 0; y < h; y++) {
@@ -561,7 +549,7 @@ void animate_credits() {
                 continue;
             }
             uint8_t r, g, b;
-            hsv_to_rgb(int((tick * 2 + x * 3) % 360), uint8_t(breath), r, g, b);
+            hsv_to_rgb(int((tick + x * 3) % 360), 0xFF, r, g, b);
             const uint16_t texel = uint16_t(((r >> 3) << 11) | ((g >> 3) << 6) | ((b >> 3) << 1) | 1);
             const int chunk = x / 64;
             const uint32_t off = uint32_t((chunk * 64 * h + y * 64 + (x % 64)) * 2);

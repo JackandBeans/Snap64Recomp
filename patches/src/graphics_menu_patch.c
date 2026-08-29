@@ -994,7 +994,7 @@ void func_800E2058_A095E8(void) {
      * the block, centred; the port recolours its texels live, so all the
      * sprite carries is position. Rides this gobj and leaves with it. */
     {
-        Sprite* credits = snap_build_sprite(STR_CREDITS, 160 - (DIR_W(STR_CREDITS) / 2), 214, G_IM_FMT_RGBA);
+        Sprite* credits = snap_build_sprite(STR_CREDITS, 160 - (DIR_W(STR_CREDITS) / 2), 217, G_IM_FMT_RGBA);
         if (credits != NULL) {
             omGObjAddSprite(gobj, credits);
         }
