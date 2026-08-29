@@ -521,7 +521,9 @@ static void snap_graphics_page(void) {
             itemHelp->data.sobj->sprite.attr |= SP_HIDDEN;
         }
     }
-    descStrip = snap_make_strip(STR_DESC + 0, 50, 172);
+    /* Same seat as the item help: cores at (1,1) inside the strip, so the
+     * sprite sits one up-left of the stock text position (50,172). */
+    descStrip = snap_make_strip(STR_DESC + 0, 49, 171);
 
     for (i = 0; i < PAGE_ITEMS; i++) {
         field = snap_row_field(i);
@@ -846,9 +848,13 @@ void func_800E7F98_A0F528(void) {
          * the items' bullet dot at its start, like every other row. White,
          * like every stock label shows when unselected. */
         graphicsLabel = snap_make_strip(STR_ITEM_LABEL, 43, 89);
-        /* At the stock help sprites' own text inset: their strips bake nine
-         * columns and four rows of padding; this strip bakes none. */
-        itemHelp = snap_make_strip(STR_ITEM_HELP, 50, 172);
+        /* At the stock help sprites' own text inset: their sheets bake
+         * nine columns and four rows of padding before the ink, so the
+         * stock cores sit at (50,172). This strip's cores sit at its own
+         * (1,1) -- one fringe column and one faint row in -- so the sprite
+         * seats at (49,171) for the cores to land on the same pixels. A
+         * flip between the stock sentence and this one must not move. */
+        itemHelp = snap_make_strip(STR_ITEM_HELP, 49, 171);
         if (itemHelp != NULL) {
             itemHelp->data.sobj->sprite.attr |= SP_HIDDEN;
         }
