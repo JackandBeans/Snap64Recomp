@@ -263,10 +263,13 @@ Strip compose_lines(const char* line1, const char* line2) {
     return out;
 }
 
-// The bold black border the title and help text wear on screen: one pixel
+// The bold black border of the title screen's copyright block: one pixel
 // of opaque black in every empty 8-neighbourhood cell around a glyph core.
-// The source sprites are pure white texels, so the border is added here to
-// match what the player actually sees above.
+// That block bakes its ring into RGBA16 texel data (0x0001 black around
+// 0xFFFF white -- decoded straight from the ROM sprite), so the credits
+// line bakes the identical ring. Menu text gets none of this: the stock
+// IA sprites are plain white whose only edge is their antialiased fringe,
+// and the draw path has no border facility at all.
 void apply_outline(Strip &strip) {
     const std::vector<uint8_t> coreA = strip.alpha;
     const std::vector<uint8_t> coreI = strip.intensity;
@@ -790,9 +793,11 @@ void stage_menu_assets(uint8_t* rdram) {
             h = logo.h;
         }
         else if (id >= BaseCount + 18) {
-            // Second-wave setting descriptions.
+            // Second-wave setting descriptions. No outline: the stock help
+            // sprites are plain white IA texels whose only edge is their own
+            // antialiased fringe -- a baked ring here reads bolder than any
+            // stock line in the menu.
             strip = compose_lines(extraDescs[id - BaseCount - 18][0], extraDescs[id - BaseCount - 18][1]);
-            apply_outline(strip);
             w = strip.width;
             h = strip.height;
         }
@@ -809,9 +814,9 @@ void stage_menu_assets(uint8_t* rdram) {
             h = strip.height;
         }
         else if (id >= BaseCount) {
-            // A two-line setting description for the help box.
+            // A two-line setting description for the help box; borderless
+            // like every stock help sprite.
             strip = compose_lines(descs[id - BaseCount][0], descs[id - BaseCount][1]);
-            apply_outline(strip);
             w = strip.width;
             h = strip.height;
         }
@@ -826,11 +831,6 @@ void stage_menu_assets(uint8_t* rdram) {
                 // The list item carries the stock items' bullet dot, taken
                 // from the original sprite, at the original spacing.
                 strip = add_item_dot(strip);
-            }
-            if ((id == 10) || (id == 29)) {
-                // The help-box lines wear the bold border their stock
-                // neighbours display on screen.
-                apply_outline(strip);
             }
             w = strip.width;
             h = strip.height;
