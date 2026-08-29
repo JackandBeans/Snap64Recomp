@@ -138,6 +138,11 @@ static void update_gfx(void* /*gfx_data*/) {
     while (SDL_PollEvent(&event)) {
         switch (event.type) {
             case SDL_QUIT:
+                // Named in the log because an unattended session was seen
+                // exiting gracefully with no one at the keyboard; whichever
+                // path fires is the lead.
+                printf("[SNAP] quit: SDL_QUIT event\n");
+                fflush(stdout);
                 ultramodern::quit();
                 break;
             case SDL_KEYDOWN:
@@ -146,6 +151,9 @@ static void update_gfx(void* /*gfx_data*/) {
                     break;
                 }
                 if (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
+                    printf("[SNAP] quit: Escape (repeat=%d timestamp=%u)\n",
+                           event.key.repeat, event.key.timestamp);
+                    fflush(stdout);
                     ultramodern::quit();
                 }
                 break;

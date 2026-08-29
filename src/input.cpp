@@ -406,13 +406,19 @@ ultramodern::input::connected_device_info_t input_get_connected_device_info(int 
     // every player in every session, controller plugged in or not.
     try_open_controller();
 
-    // Report what is actually plugged in. Claiming a Rumble Pak with no
-    // controller attached sends the game down pak init and probe paths that
-    // never run on hardware without one.
+    // Port one is NEVER empty on PC: the keyboard is always attached, and
+    // the game samples this exactly once at boot to pick its whole session's
+    // shape -- controller present means title-first boot with the letter
+    // bounce, absent means the dimmed no-controller flow. Reporting the SDL
+    // pad's true state here made every boot a race against SDL's device
+    // enumeration: some sessions got the real intro and some quietly lost
+    // it, which also made the same input recording take different routes on
+    // different boots. Only the Rumble Pak claim follows the physical pad,
+    // because pak probing paths should not run against hardware that is not
+    // there.
     const bool attached = (game_controller != nullptr) && SDL_GameControllerGetAttached(game_controller);
     return {
-        .connected_device = attached ? ultramodern::input::Device::Controller
-                                     : ultramodern::input::Device::None,
+        .connected_device = ultramodern::input::Device::Controller,
         .connected_pak    = attached ? ultramodern::input::Pak::RumblePak
                                      : ultramodern::input::Pak::None,
     };

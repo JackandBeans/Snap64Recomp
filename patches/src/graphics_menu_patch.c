@@ -273,6 +273,8 @@ static void snap_tint(GObj* gobj, u8 r, u8 g, u8 b) {
 #define SCRATCH_GRAPHICS_GOBJ (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x18))
 #define SCRATCH_HELP_ITEM     (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x1C))
 #define SCRATCH_HELP_PAGE     (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x20))
+/* Diagnostic heartbeat the port prints when it changes. */
+#define MBOX_DBG              (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x28))
 
 /* Pointer arrays live in the mailbox block's spare space, NOT on the stack.
  * These functions run on a GObj process coroutine, and those threads get a
