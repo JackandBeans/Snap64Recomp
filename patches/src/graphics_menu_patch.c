@@ -132,6 +132,12 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define PAGE_VISIBLE   6
 #define PAGE_TOP_Y     73
 #define PAGE_PITCH     16
+/* Scroll arrows: inside the widest value's right edge, scaled 1.5x
+ * (10x11 texels draw 15x16), the down arrow's bob kept clear of the
+ * help box frame at y=168. */
+#define ARROW_X        282
+#define ARROW_UP_Y     73
+#define ARROW_DN_Y     146
 
 #define SEL_R 0xFF
 #define SEL_G 0x82
@@ -485,7 +491,7 @@ static void snap_graphics_page(void) {
     GObj* descStrip;
     s32 sel, i, moved, hiddenCount;
     s32 v, top, field;
-    u8 pulseState, pulseCounter;
+    u8 pulseState, pulseCounter, bobTick;
 
     if (DIR_MAGIC != 0x53474130) {
         return;
@@ -535,9 +541,11 @@ static void snap_graphics_page(void) {
             sobj = sobj->next;
         }
     }
-    /* Five left of the stock header sprite's anchor: measured against the
-     * rendered "Options" title, this lands the G where the O sits. */
-    hdrStrip = snap_make_strip(STR_HDR, 40, 41);
+    /* The stock title sprite draws at (43,40) and its O core sits three
+     * columns and two rows into the texture -- screen (46,42). This
+     * strip's cores sit at its own (1,1), so it seats at (45,41) for the
+     * G to land exactly where the O does. */
+    hdrStrip = snap_make_strip(STR_HDR, 45, 41);
 
     /* The help box shows what the selected setting does; the list's item
      * help hides while the page is open. */
@@ -563,21 +571,31 @@ static void snap_graphics_page(void) {
         snap_tint((GObj*) PAGE_VALUE(i), SEL_R, SEL_G, SEL_B);
     }
 
-    /* The scroll arrows sit at the list's right edge, level with the top
-     * and bottom rows, in the selection orange the menu already uses for
-     * "this responds to the stick". snap_page_layout owns their
+    /* The scroll arrows sit at the list's right edge, drawn half again
+     * their size and bobbing a couple of pixels in the main loop: colour
+     * alone at the screen's edge went unnoticed, and motion is the one
+     * thing the eye cannot ignore. Selection orange, like everything
+     * else here that answers the stick. snap_page_layout owns their
      * visibility. */
-    PAGE_ARROW_UP = (u32) snap_make_strip(STR_SCROLL_UP, 292, PAGE_TOP_Y);
-    PAGE_ARROW_DN = (u32) snap_make_strip(STR_SCROLL_DN, 292,
-                                          PAGE_TOP_Y + (PAGE_VISIBLE - 1) * PAGE_PITCH);
+    PAGE_ARROW_UP = (u32) snap_make_strip(STR_SCROLL_UP, ARROW_X, ARROW_UP_Y);
+    PAGE_ARROW_DN = (u32) snap_make_strip(STR_SCROLL_DN, ARROW_X, ARROW_DN_Y);
     snap_tint((GObj*) PAGE_ARROW_UP, SEL_R, SEL_G, SEL_B);
     snap_tint((GObj*) PAGE_ARROW_DN, SEL_R, SEL_G, SEL_B);
+    for (i = 0; i < 2; i++) {
+        GObj* arrow = (GObj*) ((i == 0) ? PAGE_ARROW_UP : PAGE_ARROW_DN);
+        if ((arrow != NULL) && (arrow->data.sobj != NULL)) {
+            arrow->data.sobj->sprite.attr |= SP_SCALE;
+            arrow->data.sobj->sprite.scalex = 1.5f;
+            arrow->data.sobj->sprite.scaley = 1.5f;
+        }
+    }
 
     sel = 0;
     top = 0;
     snap_page_layout(top);
     pulseState = 0;
     pulseCounter = 0;
+    bobTick = 0;
 
     ohWait(2);
 
@@ -674,6 +692,22 @@ static void snap_graphics_page(void) {
                         pulseState = 0;
                     }
                     break;
+            }
+        }
+
+        /* The arrows breathe: two pixels of travel on a slow beat, away
+         * from the list, the way an arrow that means "more this way"
+         * should lean. */
+        bobTick++;
+        {
+            const s16 off = ((bobTick >> 4) & 1) ? 2 : 0;
+            GObj* upArrow = (GObj*) PAGE_ARROW_UP;
+            GObj* dnArrow = (GObj*) PAGE_ARROW_DN;
+            if ((upArrow != NULL) && (upArrow->data.sobj != NULL)) {
+                upArrow->data.sobj->sprite.y = ARROW_UP_Y - off;
+            }
+            if ((dnArrow != NULL) && (dnArrow->data.sobj != NULL)) {
+                dnArrow->data.sobj->sprite.y = ARROW_DN_Y + off;
             }
         }
         ohWait(1);
