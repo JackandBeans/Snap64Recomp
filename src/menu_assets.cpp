@@ -753,6 +753,7 @@ void seed_mailbox() {
     write_u8(MailboxAddr + 0x11, s.three_point_filtering ? 0 : 1);
     write_u8(MailboxAddr + 0x12, uint8_t(std::clamp(s.color_depth, 0, 2)));
     write_u8(MailboxAddr + 0x13, s.triple_buffering ? 1 : 0);
+    write_u8(MailboxAddr + 0x14, s.spawn_fade ? 1 : 0);
     write_u32(MailboxAddr + 0x4, 0);
     // The SOUND bank: its own sequence word and six value bytes, read live
     // by the patched audio functions (volumes as straight percentages) and
@@ -879,7 +880,9 @@ void stage_menu_assets(uint8_t* rdram) {
         { "Stereo suits speakers and headphones.",    "Mono mixes both sides together." },
         { "Silences the game while another",          "window is in front." },
     };
-    constexpr uint32_t StringCount = BaseCount + 52;
+    // Ids BaseCount+52/+53: the Graphics page's thirteenth row -- the spawn
+    // fade -- label and description.
+    constexpr uint32_t StringCount = BaseCount + 54;
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -994,6 +997,17 @@ void stage_menu_assets(uint8_t* rdram) {
         else if (id == BaseCount + 26) {
             // The SOUND page's heading, in the header face.
             strip = compose_hdr("Sound");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 52) {
+            strip = compose("Spawn Fade");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 53) {
+            strip = compose_lines("Spawning Pokemon blend into view.",
+                                  "The console popped them in at once.");
             w = strip.width;
             h = strip.height;
         }
@@ -1186,6 +1200,7 @@ void poll_menu_mailbox(uint8_t* rdram) {
     s.three_point_filtering = read_u8_mail(MailboxAddr + 0x11) == 0;
     s.color_depth = std::min<int>(read_u8_mail(MailboxAddr + 0x12), 2);
     s.triple_buffering = read_u8_mail(MailboxAddr + 0x13) != 0;
+    s.spawn_fade = read_u8_mail(MailboxAddr + 0x14) != 0;
 
     apply_graphics_settings();
     save_settings();

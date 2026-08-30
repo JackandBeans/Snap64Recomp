@@ -50,6 +50,11 @@
 #include "settings.h"
 #include "recomp.h"
 
+namespace snap {
+// src/spawn_fade.cpp; takes the spawn wrapper's context for the return value.
+void spawn_fade_on_spawn(uint8_t* rdram, recomp_context* ctx);
+}
+
 extern "C" {
 #include "funcs.h"
 }
@@ -131,6 +136,8 @@ extern "C" void gtlUpdate(uint8_t* rdram, recomp_context* ctx) {
     // Anything the in-game GRAPHICS page published since the last tick is
     // applied here, on the thread the page runs on. One word read when idle.
     snap::poll_menu_mailbox(rdram);
+    // Steps any Pokemon mid fade-in; a no-op when the table is empty.
+    snap::spawn_fade_tick(rdram);
 
     const bool on = snapdiag::statsEnabled();
     if (!on) {
@@ -187,6 +194,8 @@ extern "C" void Pokemon_SpawnOnGround(uint8_t* rdram, recomp_context* ctx) {
     const bool on = snapdiag::statsEnabled();
     if (!on) {
         __real_Pokemon_SpawnOnGround(rdram, ctx);
+        // The spawn fade begins here, with the constructed object in v0.
+        snap::spawn_fade_on_spawn(rdram, ctx);
         return;
     }
 
@@ -194,6 +203,7 @@ extern "C" void Pokemon_SpawnOnGround(uint8_t* rdram, recomp_context* ctx) {
         CostScope scope(true, snap_spawn_nanos);
         __real_Pokemon_SpawnOnGround(rdram, ctx);
     }
+    snap::spawn_fade_on_spawn(rdram, ctx);
 
     snap_spawn_count.fetch_add(1, std::memory_order_relaxed);
 }

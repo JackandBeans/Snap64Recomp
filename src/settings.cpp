@@ -47,6 +47,7 @@ void load_settings() {
         s_settings.sfx_volume         = std::clamp(j.value("sfx_volume", s_settings.sfx_volume), 0, 100);
         s_settings.shutter_volume     = std::clamp(j.value("shutter_volume", s_settings.shutter_volume), 0, 100);
         s_settings.mute_unfocused     = j.value("mute_unfocused", s_settings.mute_unfocused);
+        s_settings.spawn_fade         = j.value("spawn_fade", s_settings.spawn_fade);
         s_settings.three_point_filtering = j.value("three_point_filtering", s_settings.three_point_filtering);
         s_settings.downsample         = j.value("downsample", s_settings.downsample);
         s_settings.color_depth        = j.value("color_depth", s_settings.color_depth);
@@ -90,6 +91,7 @@ void save_settings() {
         {"sfx_volume",            s_settings.sfx_volume},
         {"shutter_volume",        s_settings.shutter_volume},
         {"mute_unfocused",        s_settings.mute_unfocused},
+        {"spawn_fade",            s_settings.spawn_fade},
         {"three_point_filtering", s_settings.three_point_filtering},
         {"downsample",            s_settings.downsample},
         {"color_depth",           s_settings.color_depth},

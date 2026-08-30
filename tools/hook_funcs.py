@@ -53,6 +53,11 @@ HOOKED = [
     # once per Pokemon in the block being created, and that frame is the
     # worst of a ride.
     'Pokemon_SpawnOnGround',
+    # The photo-score screen rebuilding the photographed Pokemon as fresh
+    # objects to re-render for pixel counting. The spawn fade must know it
+    # is happening: fading a score-render object would collapse its depth
+    # coverage and zero the photo's score.
+    'initObjectsOnPhoto',
     # The camera focus indicator: the game draws it into RDRAM, which HLE
     # presentation never shows, so the port observes it and redraws it.
     'PokemonDetector_PostProcessImage',
