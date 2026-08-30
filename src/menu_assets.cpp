@@ -345,14 +345,13 @@ void apply_outline(Strip &strip);
 // The scroll arrows: the values' own big chevron turned on its side to
 // point up or down, so the Graphics page can say that more settings sit
 // off-screen. Same pixels the player already reads as "more this way",
-// wearing the credits line's own treatment: rainbow cores in a baked
-// black ring, recoloured live by the same animator. The doubling is
-// baked into the texels -- a clean integer scale drawn 1:1 -- because a
-// fractional draw-time scale doubled some pixels and not others and the
-// arrows came out lumpy beside the crisp chevrons they quote.
+// at the chevrons' own 1:1 scale -- an indicator must not outrank the
+// controls it serves -- wearing the credits line's treatment: rainbow
+// cores in a baked black ring, recoloured live by the same animator.
+// One row and column of padding so the ring fits around the chevron.
 Strip compose_scroll_arrow(bool up) {
     Strip strip;
-    strip.height = kMenuBrkLW * 2 + 2;   // rotated and doubled, plus the ring
+    strip.height = kMenuBrkLW + 2;   // rotated: width becomes height, plus ring
     strip.width = 64;
     strip.intensity.assign(size_t(strip.width) * strip.height, 0);
     strip.alpha.assign(size_t(strip.width) * strip.height, 0);
@@ -362,15 +361,10 @@ Strip compose_scroll_arrow(bool up) {
             const uint8_t a = kMenuBrkLIA[(y * kMenuBrkLW + x) * 2 + 1];
             // '<' points left; a quarter turn clockwise points it up, the
             // other way points it down.
-            const int rx = up ? (kMenuBrkLH - 1 - y) : y;
-            const int ry = up ? x : (kMenuBrkLW - 1 - x);
-            for (int dy = 0; dy < 2; dy++) {
-                for (int dx = 0; dx < 2; dx++) {
-                    const size_t at = size_t(1 + ry * 2 + dy) * strip.width + (1 + rx * 2 + dx);
-                    strip.intensity[at] = i;
-                    strip.alpha[at] = a;
-                }
-            }
+            const int rx = 1 + (up ? (kMenuBrkLH - 1 - y) : y);
+            const int ry = 1 + (up ? x : (kMenuBrkLW - 1 - x));
+            strip.intensity[size_t(ry) * strip.width + rx] = i;
+            strip.alpha[size_t(ry) * strip.width + rx] = a;
         }
     }
     apply_outline(strip);

@@ -132,13 +132,14 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define PAGE_VISIBLE   6
 #define PAGE_TOP_Y     73
 #define PAGE_PITCH     16
-/* Scroll arrows: the chevron doubled in its own texels and drawn 1:1
- * (22x24 with the ring), flush to the overscan crop's right edge
- * (visible through column 303), the down arrow's bob kept clear of
- * the help box frame at y=168. */
-#define ARROW_X        279
+/* Scroll arrows: the chevron at its native 1:1 scale (12x13 with the
+ * ring), bracketing the list -- level with the first and last visible
+ * rows -- and tucked inside the help box frame's column (its right
+ * rule sits at 293), clear of the widest value's end at 278. The
+ * down arrow's travel stays above the box frame at y=168. */
+#define ARROW_X        280
 #define ARROW_UP_Y     72
-#define ARROW_DN_Y     138
+#define ARROW_DN_Y     151
 
 #define SEL_R 0xFF
 #define SEL_G 0x82
@@ -493,6 +494,7 @@ static void snap_graphics_page(void) {
     s32 sel, i, moved, hiddenCount;
     s32 v, top, field;
     u8 pulseState, pulseCounter, bobTick;
+    u8 nudgeUp, nudgeDn;
 
     if (DIR_MAGIC != 0x53474130) {
         return;
@@ -588,6 +590,8 @@ static void snap_graphics_page(void) {
     pulseState = 0;
     pulseCounter = 0;
     bobTick = 0;
+    nudgeUp = 0;
+    nudgeDn = 0;
 
     ohWait(2);
 
@@ -607,10 +611,12 @@ static void snap_graphics_page(void) {
             if (sel < top) {
                 top = sel;
                 snap_page_layout(top);
+                nudgeUp = 6;
             }
             else if (sel >= top + PAGE_VISIBLE) {
                 top = sel - (PAGE_VISIBLE - 1);
                 snap_page_layout(top);
+                nudgeUp = 6;
             }
             snap_swap_strip(descStrip, snap_row_desc(sel));
             auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
@@ -622,10 +628,12 @@ static void snap_graphics_page(void) {
             if (sel < top) {
                 top = sel;
                 snap_page_layout(top);
+                nudgeDn = 6;
             }
             else if (sel >= top + PAGE_VISIBLE) {
                 top = sel - (PAGE_VISIBLE - 1);
                 snap_page_layout(top);
+                nudgeDn = 6;
             }
             snap_swap_strip(descStrip, snap_row_desc(sel));
             auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
@@ -687,19 +695,30 @@ static void snap_graphics_page(void) {
             }
         }
 
-        /* The arrows breathe: two pixels of travel on a slow beat, away
-         * from the list, the way an arrow that means "more this way"
-         * should lean. */
+        /* The arrows breathe on an eased four-phase sway (0-1-2-1, not a
+         * hard toggle), each leaning the way it points -- and they hop
+         * two pixels further when the list actually scrolls past them,
+         * the acknowledgement every era menu owes the hand on the stick.
+         * No table: patch .data never loads. */
         bobTick++;
+        if (nudgeUp > 0) {
+            nudgeUp--;
+        }
+        if (nudgeDn > 0) {
+            nudgeDn--;
+        }
         {
-            const s16 off = ((bobTick >> 4) & 1) ? 2 : 0;
+            const s32 phase = (bobTick >> 3) & 3;
+            const s16 sway = (s16) ((phase == 3) ? 1 : phase);
+            const s16 offUp = (nudgeUp > 0) ? 3 : sway;
+            const s16 offDn = (nudgeDn > 0) ? 3 : sway;
             GObj* upArrow = (GObj*) PAGE_ARROW_UP;
             GObj* dnArrow = (GObj*) PAGE_ARROW_DN;
             if ((upArrow != NULL) && (upArrow->data.sobj != NULL)) {
-                upArrow->data.sobj->sprite.y = ARROW_UP_Y - off;
+                upArrow->data.sobj->sprite.y = ARROW_UP_Y - offUp;
             }
             if ((dnArrow != NULL) && (dnArrow->data.sobj != NULL)) {
-                dnArrow->data.sobj->sprite.y = ARROW_DN_Y + off;
+                dnArrow->data.sobj->sprite.y = ARROW_DN_Y + offDn;
             }
         }
         ohWait(1);
