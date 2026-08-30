@@ -136,6 +136,55 @@ namespace RT64 {
         blobCache->open(path, device);
     }
 
+    // Pokemon Snap port: replay every shader this machine has ever needed,
+    // before the game needs any of them. The DXIL blob cache and the driver
+    // pipeline library make each replayed compile near-free on a warm
+    // machine; on a cold one the work happens during the boot logos on idle
+    // threads instead of as a present stall the first time a Pokemon walks
+    // on screen. The file is raw packed ShaderDescriptions behind a version
+    // guard; a size mismatch discards it wholesale.
+    void RasterShaderCache::openSeenList(const std::filesystem::path &path) {
+        if (path.empty()) {
+            return;
+        }
+        seenListPath = path;
+
+        FILE *f = nullptr;
+#if defined(_WIN32)
+        _wfopen_s(&f, path.wstring().c_str(), L"rb");
+#else
+        f = fopen(path.string().c_str(), "rb");
+#endif
+        if (f == nullptr) {
+            return;
+        }
+        uint32_t magic = 0;
+        uint32_t descSize = 0;
+        size_t replayed = 0;
+        bool headerOk = (fread(&magic, 4, 1, f) == 1) && (magic == 0x314E5353u) &&
+                        (fread(&descSize, 4, 1, f) == 1) && (descSize == uint32_t(sizeof(ShaderDescription)));
+        if (headerOk) {
+            ShaderDescription desc;
+            replayingSeenList = true;
+            while (fread(&desc, sizeof(desc), 1, f) == 1) {
+                submit(desc);
+                replayed++;
+            }
+            replayingSeenList = false;
+        }
+        fclose(f);
+        if (!headerOk) {
+            // A stale layout must not keep collecting appends behind a bad
+            // header; recording restarts clean.
+            std::error_code ec;
+            std::filesystem::remove(path, ec);
+        }
+        if (replayed > 0) {
+            fprintf(stdout, "[SNAP-SHADER] warming %zu shaders from the seen list\n", replayed);
+            fflush(stdout);
+        }
+    }
+
     void RasterShaderCache::submit(const ShaderDescription &desc) {
         {
             std::unique_lock<std::mutex> queueLock(submissionMutex);
@@ -149,6 +198,28 @@ namespace RT64 {
 
             found = true;
             snapdiag::shaderAskedCounter().fetch_add(1, std::memory_order_relaxed);
+
+            // A genuinely new shader joins the seen list, so the next launch
+            // warms it. Replayed submissions are already in the file.
+            if (!replayingSeenList && !seenListPath.empty()) {
+                const bool fresh = !std::filesystem::exists(seenListPath);
+                FILE *f = nullptr;
+#if defined(_WIN32)
+                _wfopen_s(&f, seenListPath.wstring().c_str(), L"ab");
+#else
+                f = fopen(seenListPath.string().c_str(), "ab");
+#endif
+                if (f != nullptr) {
+                    if (fresh) {
+                        const uint32_t magic = 0x314E5353u;
+                        const uint32_t descSize = uint32_t(sizeof(ShaderDescription));
+                        fwrite(&magic, 4, 1, f);
+                        fwrite(&descSize, 4, 1, f);
+                    }
+                    fwrite(&desc, sizeof(desc), 1, f);
+                    fclose(f);
+                }
+            }
 
             // Pokemon Snap port, diagnostic: every draw whose specialised
             // pipeline is still compiling renders through the ubershader,

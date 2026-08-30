@@ -323,7 +323,13 @@ namespace RT64 {
         
         const bool createSet = (descTextureSet == nullptr) || (descTextureSet->textureCacheSize < (textureCacheSize + 1));
         if (createSet) {
-            descTextureSet = std::make_unique<FramebufferRendererDescriptorTextureSet>(worker->device, ((textureCacheSize + 1) * 3) / 2);
+            // Pokemon Snap port: a generous floor, because crossing the old
+            // 1.5x growth threshold rebuilt the whole shader-visible texture
+            // set mid-game -- exactly when a spawn burst brings new textures,
+            // on the workload thread, under the mutex the present waits on.
+            // Descriptors are cheap; a mid-course rebuild is a stall.
+            const uint32_t grown = ((textureCacheSize + 1) * 3) / 2;
+            descTextureSet = std::make_unique<FramebufferRendererDescriptorTextureSet>(worker->device, std::max<uint32_t>(grown, 2048));
         }
 
         if (createSet || (descriptorTextureReplacementMapEnabled != textureCacheReplacementMapEnabled)) {

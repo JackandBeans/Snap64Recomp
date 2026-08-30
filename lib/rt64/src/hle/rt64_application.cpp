@@ -436,6 +436,12 @@ namespace RT64 {
         rasterShaderCache = std::make_unique<RasterShaderCache>(rasterShaderThreads, ubershaderThreads);
         rasterShaderCache->setup(device.get(), renderInterface->getCapabilities().shaderFormat, shaderLibrary.get(), multisampling);
         rasterShaderCache->openBlobCache(userPaths.isEmpty() ? std::filesystem::path() : userPaths.shaderCachePath);
+        // Pokemon Snap port: warm every shader this machine has ever seen,
+        // during boot on the idle compile workers, so a Pokemon's first
+        // steps on screen never pay for pipeline creation.
+        if (!userPaths.isEmpty()) {
+            rasterShaderCache->openSeenList(userPaths.shaderCachePath.parent_path() / "rt64-seen-shaders.bin");
+        }
 
 #   if RT_ENABLED
         if (device->getCapabilities().raytracing) {
