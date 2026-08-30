@@ -60,6 +60,9 @@ extern "C" std::atomic<uint32_t> snap_rom_read_count;
 
 extern "C" std::atomic<int64_t> snap_thread_create_nanos;
 extern "C" std::atomic<uint32_t> snap_thread_create_count;
+// Per-guest-thread running time between ticks, keyed by entrypoint
+// (ultramodern threads.cpp). Take resets the table.
+extern "C" uint32_t snap_run_table_take(uint32_t* entries, int64_t* nanos, uint32_t* wakes, uint32_t cap);
 #include <chrono>
 
 #if defined(_WIN32)
@@ -605,10 +608,46 @@ public:
                         blockMs,
                         snap_spawn_count.load(std::memory_order_relaxed), spawnMs,
                         tickMs - waitMs - threadMs - dlMs - romMs - animMs - updateMs - drawMs);
+                    // Who owned the tick: running time per guest thread
+                    // entrypoint, from the scheduler's own handoff points
+                    // (ultramodern threads.cpp). This covers the object
+                    // processes and loaders the main-thread meters cannot see.
+                    {
+                        uint32_t rtEntry[48]; int64_t rtNanos[48]; uint32_t rtWakes[48];
+                        uint32_t rtCount = snap_run_table_take(rtEntry, rtNanos, rtWakes, 48);
+                        for (uint32_t a = 0; a + 1 < rtCount; a++) {
+                            for (uint32_t b = a + 1; b < rtCount; b++) {
+                                if (rtNanos[b] > rtNanos[a]) {
+                                    std::swap(rtNanos[a], rtNanos[b]);
+                                    std::swap(rtEntry[a], rtEntry[b]);
+                                    std::swap(rtWakes[a], rtWakes[b]);
+                                }
+                            }
+                        }
+                        double shownMs = 0.0, totalMs = 0.0;
+                        char line[256] = {0}; int pos = 0;
+                        for (uint32_t i = 0; i < rtCount; i++) {
+                            totalMs += double(rtNanos[i]) / 1.0e6;
+                        }
+                        for (uint32_t i = 0; i < rtCount && i < 6; i++) {
+                            const double ms = double(rtNanos[i]) / 1.0e6;
+                            shownMs += ms;
+                            pos += snprintf(line + pos, sizeof(line) - pos, "%s%08X %.1f/%u",
+                                (i == 0) ? "" : ", ", rtEntry[i], ms, rtWakes[i]);
+                        }
+                        printf("[SNAP-SLOWTICK]   ran: %s, other %.1f ms (guest total %.1f ms)\n",
+                            line, totalMs - shownMs, totalMs);
+                    }
                     fflush(stdout);
                 }
             }
             // The totals describe one tick, slow or not.
+            {
+                // Drain the run table every tick so a slow one reports only
+                // its own span.
+                uint32_t rtEntry[48]; int64_t rtNanos[48]; uint32_t rtWakes[48];
+                snap_run_table_take(rtEntry, rtNanos, rtWakes, 48);
+            }
             snap_game_update_nanos.store(0, std::memory_order_relaxed);
             snap_game_update_count.store(0, std::memory_order_relaxed);
             snap_game_parked_nanos.store(0, std::memory_order_relaxed);

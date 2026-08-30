@@ -52,9 +52,17 @@ void dequeue_external_messages(RDRAM_ARG1) {
     }
 }
 
+// Pokemon Snap port: the per-guest-thread run clock (threads.cpp) must not
+// bill these blocking host dequeues as running -- this is where the game
+// waits for vblank.
+extern "C" void snap_run_clock_pause();
+extern "C" void snap_run_clock_resume();
+
 void ultramodern::wait_for_external_message(RDRAM_ARG1) {
     QueuedMessage to_send;
+    snap_run_clock_pause();
     external_messages.wait_dequeue(to_send);
+    snap_run_clock_resume();
     if (!do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false) && to_send.requeue_if_blocked) {
         external_messages.enqueue(to_send);
     }
@@ -62,7 +70,10 @@ void ultramodern::wait_for_external_message(RDRAM_ARG1) {
 
 void ultramodern::wait_for_external_message_timed(RDRAM_ARG u32 millis) {
     QueuedMessage to_send;
-    if (external_messages.wait_dequeue_timed(to_send, std::chrono::milliseconds{millis})) {
+    snap_run_clock_pause();
+    const bool got = external_messages.wait_dequeue_timed(to_send, std::chrono::milliseconds{millis});
+    snap_run_clock_resume();
+    if (got) {
         if (!do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false) && to_send.requeue_if_blocked) {
             external_messages.enqueue(to_send);
         }

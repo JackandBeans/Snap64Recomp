@@ -183,12 +183,89 @@ extern "C" uint32_t snap_switch_take_count() {
     return taken;
 }
 
+// Pokemon Snap port: which guest thread the tick's time actually belongs to.
+// The slow-frame report meters the main thread's update and draw, but the
+// game runs a process per object on its own guest thread, and their work --
+// spawning, block loading, decompression -- lands in no meter. Every guest
+// thread passes through wait_for_resumed to run, so the span from one wake to
+// the next wait is exactly the time that thread held the (cooperative) CPU.
+// Buckets are keyed by guest entrypoint; the low bit tags a claimed slot so
+// the adopted main thread (entrypoint zero) still gets one. Blocking host
+// dequeues in wait_for_external_message pause the clock through the exported
+// pause/resume pair, so vblank idle is not billed as running.
+struct SnapRunBucket {
+    std::atomic<uint32_t> entry{0};
+    std::atomic<int64_t> nanos{0};
+    std::atomic<uint32_t> wakes{0};
+};
+static SnapRunBucket snap_run_buckets[48];
+static thread_local uint32_t snap_tls_entrypoint = 0;
+static thread_local std::chrono::steady_clock::time_point snap_tls_run_start{};
+
+static void snap_run_mark_stop(std::chrono::steady_clock::time_point now) {
+    if (snap_tls_run_start.time_since_epoch().count() == 0) {
+        return;
+    }
+    const int64_t ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now - snap_tls_run_start).count();
+    snap_tls_run_start = {};
+    const uint32_t tag = snap_tls_entrypoint | 1u;
+    for (auto& bucket : snap_run_buckets) {
+        uint32_t e = bucket.entry.load(std::memory_order_relaxed);
+        if (e == 0) {
+            uint32_t expected = 0;
+            if (bucket.entry.compare_exchange_strong(expected, tag, std::memory_order_relaxed)) {
+                e = tag;
+            }
+            else {
+                e = expected;
+            }
+        }
+        if (e != tag) {
+            continue;
+        }
+        bucket.nanos.fetch_add(ns, std::memory_order_relaxed);
+        bucket.wakes.fetch_add(1, std::memory_order_relaxed);
+        return;
+    }
+}
+
+static void snap_run_mark_start(std::chrono::steady_clock::time_point now) {
+    snap_tls_run_start = now;
+}
+
+extern "C" void snap_run_clock_pause() {
+    snap_run_mark_stop(std::chrono::steady_clock::now());
+}
+
+extern "C" void snap_run_clock_resume() {
+    snap_run_mark_start(std::chrono::steady_clock::now());
+}
+
+extern "C" uint32_t snap_run_table_take(uint32_t* entries, int64_t* nanos, uint32_t* wakes, uint32_t cap) {
+    uint32_t written = 0;
+    for (auto& bucket : snap_run_buckets) {
+        const uint32_t e = bucket.entry.exchange(0, std::memory_order_relaxed);
+        const int64_t ns = bucket.nanos.exchange(0, std::memory_order_relaxed);
+        const uint32_t w = bucket.wakes.exchange(0, std::memory_order_relaxed);
+        if (e != 0 && written < cap) {
+            entries[written] = e & ~1u;
+            nanos[written] = ns;
+            wakes[written] = w;
+            written++;
+        }
+    }
+    return written;
+}
+
 void wait_for_resumed(RDRAM_ARG UltraThreadContext* thread_context) {
     const auto snapSwitchStart = std::chrono::steady_clock::now();
+    snap_run_mark_stop(snapSwitchStart);
     thread_context->running.wait();
+    const auto snapSwitchEnd = std::chrono::steady_clock::now();
     snap_tls_switch_nanos += std::chrono::duration_cast<std::chrono::nanoseconds>(
-        std::chrono::steady_clock::now() - snapSwitchStart).count();
+        snapSwitchEnd - snapSwitchStart).count();
     snap_tls_switch_count++;
+    snap_run_mark_start(snapSwitchEnd);
     // If this thread's context was replaced by another thread or deleted, destroy it again from its own context.
     // This will trigger thread cleanup instead.
     if (TO_PTR(OSThread, ultramodern::this_thread())->context != thread_context) {
@@ -228,6 +305,11 @@ static void _thread_func(RDRAM_ARG PTR(OSThread) self_, PTR(thread_func_t) entry
     debug_printf("[Thread] Thread created: %d\n", self->id);
     thread_self = self_;
     is_game_thread = true;
+    // Attribute this guest thread's running time to its entrypoint. Cleared
+    // start so a pooled worker's park time is never billed to the coroutine
+    // it picks up next.
+    snap_tls_entrypoint = (uint32_t)entrypoint;
+    snap_tls_run_start = {};
 
     // Signal the initialized semaphore to indicate that this thread can be started.
     //
@@ -273,6 +355,10 @@ static void _thread_func(RDRAM_ARG PTR(OSThread) self_, PTR(thread_func_t) entry
         run_next_thread(PASS_RDRAM1);
     }
 
+    // Close this coroutine's final running leg (wake to return) before the
+    // worker parks, so the time is charged to the thread that spent it.
+    snap_run_mark_stop(std::chrono::steady_clock::now());
+
     // Dispose of this thread now that it's completed or terminated.
     ultramodern::cleanup_thread(thread_context);
 }
@@ -292,6 +378,16 @@ struct PooledHostThread {
 };
 static std::mutex pool_mutex;
 static std::vector<PooledHostThread*> pool_parked;
+// Course coroutines hold their workers for as long as the object lives, and
+// a block crossing spawns the new block's objects before the old block's
+// despawns return theirs -- so the parked supply can run dry mid-course (a
+// later crossing measured 22 synchronous creates in one tick, 36ms). The
+// replenisher keeps a float of parked workers topped up from its own thread:
+// every take pokes it, and creation cost lands here instead of on a game
+// thread. The synchronous path below remains only as a fallback for a burst
+// deeper than the float.
+static constexpr size_t pool_float_target = 32;
+static moodycamel::LightweightSemaphore pool_replenish_wake;
 
 static void _pooled_thread_main(PooledHostThread* self) {
     while (true) {
@@ -302,29 +398,59 @@ static void _pooled_thread_main(PooledHostThread* self) {
     }
 }
 
-static PooledHostThread* pool_take_or_create() {
-    {
-        std::lock_guard<std::mutex> lock(pool_mutex);
-        if (!pool_parked.empty()) {
-            PooledHostThread* worker = pool_parked.back();
-            pool_parked.pop_back();
-            return worker;
-        }
-    }
+static PooledHostThread* pool_make_worker() {
     PooledHostThread* worker = new PooledHostThread();
     worker->thread = std::thread{_pooled_thread_main, worker};
     worker->thread.detach();
     return worker;
 }
 
+static void _pool_replenisher_main() {
+    ultramodern::set_native_thread_name("Pool Replenisher");
+    while (true) {
+        pool_replenish_wake.wait();
+        while (true) {
+            {
+                std::lock_guard<std::mutex> lock(pool_mutex);
+                if (pool_parked.size() >= pool_float_target) {
+                    break;
+                }
+            }
+            PooledHostThread* worker = pool_make_worker();
+            std::lock_guard<std::mutex> lock(pool_mutex);
+            pool_parked.push_back(worker);
+        }
+    }
+}
+
+static PooledHostThread* pool_take_or_create() {
+    PooledHostThread* worker = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(pool_mutex);
+        if (!pool_parked.empty()) {
+            worker = pool_parked.back();
+            pool_parked.pop_back();
+        }
+    }
+    pool_replenish_wake.signal();
+    if (worker != nullptr) {
+        return worker;
+    }
+    return pool_make_worker();
+}
+
 void ultramodern::prewarm_thread_pool(uint32_t count) {
+    // Detached like the workers: it parks in a semaphore wait for the life of
+    // the process, and a joinable static thread would terminate() at exit.
+    static const bool replenisher_started = [] {
+        std::thread{_pool_replenisher_main}.detach();
+        return true;
+    }();
+    (void)replenisher_started;
     std::vector<PooledHostThread*> made;
     made.reserve(count);
     for (uint32_t i = 0; i < count; i++) {
-        PooledHostThread* worker = new PooledHostThread();
-        worker->thread = std::thread{_pooled_thread_main, worker};
-        worker->thread.detach();
-        made.push_back(worker);
+        made.push_back(pool_make_worker());
     }
     std::lock_guard<std::mutex> lock(pool_mutex);
     for (PooledHostThread* worker : made) {
@@ -481,7 +607,7 @@ void ultramodern::init_thread_cleanup() {
     thread_cleaner_thread = std::thread{thread_cleaner_func};
     // The game creates a dozen coroutine threads at every course block
     // boundary; have that many workers parked before it ever asks.
-    ultramodern::prewarm_thread_pool(16);
+    ultramodern::prewarm_thread_pool(48);
 }
 
 void ultramodern::cleanup_thread(UltraThreadContext *cur_context) {
