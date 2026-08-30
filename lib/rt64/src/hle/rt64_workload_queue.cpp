@@ -1305,7 +1305,59 @@ namespace RT64 {
                 // reports two logic steps per frame and zero skips -- so this was
                 // a risky remedy for something rare. The counters stay because
                 // they are what established that.
-                const int64_t snapSpanTicks = workloadConfig.targetRate;
+                //
+                // The second attempt below answers both killers instead of
+                // inferring. Nothing is learned from history: the stretch fires
+                // only for the exact authored signature of a course block
+                // crossing -- three logic steps on a frame whose nominal
+                // cadence is two fields (viOriginalRate 30), outside any
+                // cutscene or cut hold, corroborated by the frame actually
+                // arriving a skipped draw late on the wall clock. Menus run a
+                // different cadence and fail the rate gate; loading frames
+                // fail the step gate; a cut fails the cutscene gate; a
+                // renderer hiccup that delays arrival without a game-side
+                // skipped draw fails the step gate. And the renderer is no
+                // longer the reason for the skip: the crossing frame's delay
+                // is the game's own transition (the renderer waits measured
+                // near zero there), so asking it for one more sub-frame costs
+                // a few milliseconds against thirty of slack -- and the
+                // sub-frame budget below is widened by the same ratio so the
+                // extra sub-frame is not immediately dropped as over budget.
+                // Without the stretch, three fields of motion play back in a
+                // two-field window: the fast-forward lurch after every
+                // crossing hold. With it, on-screen velocity stays constant
+                // and the one-sub-frame backlog it creates is unwound by the
+                // existing frameReduction catch-up.
+                int64_t snapSpanTicks = workloadConfig.targetRate;
+                {
+                    static std::chrono::steady_clock::time_point snapLastArrival{};
+                    const auto snapArrival = std::chrono::steady_clock::now();
+                    const double snapGapMs = (snapLastArrival.time_since_epoch().count() != 0)
+                        ? std::chrono::duration<double, std::milli>(snapArrival - snapLastArrival).count()
+                        : 0.0;
+                    snapLastArrival = snapArrival;
+                    const bool snapCrossingFrame =
+                        generateInterpolatedFrames &&
+                        (workload.snapLogicSteps == 3) &&
+                        (workload.viOriginalRate == 30) &&
+                        !workload.snapCutscene &&
+                        !workload.snapCutHold &&
+                        (snapGapMs > 40.0) && (snapGapMs < 70.0);
+                    if (snapCrossingFrame) {
+                        snapSpanTicks = (int64_t(workloadConfig.targetRate) * 3) / 2;
+                        if (snapdiag::statsEnabled()) {
+                            fprintf(stdout, "[SNAP-STRETCH] crossing frame spread over three fields (arrived %.1f ms late of nominal)\n",
+                                snapGapMs - (2000.0 / 60.0));
+                            fflush(stdout);
+                        }
+                    }
+                    else if ((workload.snapLogicSteps == 3) && snapdiag::statsEnabled()) {
+                        fprintf(stdout, "[SNAP-STRETCH] three-step frame NOT stretched: rate %u cutscene %d hold %d gap %.1f ms\n",
+                            workload.viOriginalRate, workload.snapCutscene ? 1 : 0,
+                            workload.snapCutHold ? 1 : 0, snapGapMs);
+                        fflush(stdout);
+                    }
+                }
 
                 if (snapdiag::statsEnabled()) {
                     snapdiag::logicStepCounter().fetch_add(snapSteps, std::memory_order_relaxed);
@@ -1624,7 +1676,14 @@ namespace RT64 {
                     fflush(stdout);
                 }
 
-                const int64_t originalTimeMicro = (workload.viOriginalRate > 0) ? (1000000 / workload.viOriginalRate) : 0;
+                // The wall window this frame's sub-frames must fit is its own
+                // span, not the nominal one: a stretched crossing frame owns
+                // three fields of display time, and judging its three
+                // sub-frames against a two-field budget would drop the third
+                // on arrival -- the second killer of the reverted attempt.
+                const int64_t originalTimeMicro = (workload.viOriginalRate > 0)
+                    ? ((1000000 * snapSpanTicks) / (int64_t(workload.viOriginalRate) * int64_t(workloadConfig.targetRate)))
+                    : 0;
                 const int64_t setupTimeMicro = workloadTimer.elapsedMicroseconds();
                 const int64_t adjustedTimeWindowMicro = originalTimeMicro - setupTimeMicro;
                 const int64_t maxTimePerFrameMicro = adjustedTimeWindowMicro / displayFrames;
