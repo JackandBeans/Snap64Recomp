@@ -1104,9 +1104,17 @@ static void snap_sound_page(void) {
     s32 sel, i, moved, hiddenCount;
     s32 v;
     u8 pulseState, pulseCounter;
+    u8 entryFields[6];
 
     if (DIR_MAGIC != 0x53474130) {
         return;
+    }
+
+    /* The header promises A OK and B Cancel, and here B keeps the
+     * promise: the values as they stood at entry, restored and re-applied
+     * on the way out. The stock Sound row cancelled the same way. */
+    for (i = 0; i < 6; i++) {
+        entryFields[i] = SND_FIELD(i);
     }
 
     /* Hide the Option list's rows, remembering exactly what was visible --
@@ -1189,6 +1197,19 @@ static void snap_sound_page(void) {
 
         if (gContInputPressedButtons & B_BUTTON) {
             auPlaySoundWithParams(0x43, 0x7FFF, 0x40, 1.0f, 0);
+            for (i = 0; i < 6; i++) {
+                SND_FIELD(i) = entryFields[i];
+            }
+            SND_SEQ = SND_SEQ + 1;
+            snap_apply_music_volume();
+            auSetSoundQuality(entryFields[4]);
+            D_800E8394_A0F924 = entryFields[4] ? 0 : 1;
+            break;
+        }
+
+        if (gContInputPressedButtons & A_BUTTON) {
+            /* A accepts what is on screen and leaves, as the header says. */
+            auPlaySoundWithParams(0x42, 0x7FFF, 0x40, 1.0f, 0);
             break;
         }
 
@@ -1206,8 +1227,7 @@ static void snap_sound_page(void) {
             snap_swap_strip(descStrip, STR_SND_DESC + sel);
             auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
         }
-        else if ((input->pressedButtons & STICK_SLOW_RIGHT) ||
-                 (gContInputPressedButtons & A_BUTTON)) {
+        else if (input->pressedButtons & STICK_SLOW_RIGHT) {
             v = (sel < 4) ? (SND_FIELD(sel) / 10) : SND_FIELD(sel);
             v = (v + 1) % snap_snd_value_count(sel);
             SND_FIELD(sel) = (sel < 4) ? (v * 10) : v;
@@ -1328,13 +1348,26 @@ void func_800E7F98_A0F528(void) {
         }
 
         /* The Sound row opens a page now, like Screen and Graphics do, so
-         * its inline Stereo/Mono value pair retires from the root list.
-         * Hidden, not deleted: the screen's teardown owns the chain. */
+         * its inline Stereo/Mono value pair retires from the root list --
+         * and so does its colon, which lives on a different chain (the
+         * screen chrome's three colons sit at x=158, one per value row;
+         * Sound's is the one the shift just moved to y=107). Hidden, not
+         * deleted: the screen's teardown owns the chains. */
         if ((D_800E8358_A0F8E8 != NULL) && (D_800E8358_A0F8E8->data.sobj != NULL)) {
             SObj* pair = D_800E8358_A0F8E8->data.sobj;
             pair->sprite.attr |= SP_HIDDEN;
             if (pair->next != NULL) {
                 pair->next->sprite.attr |= SP_HIDDEN;
+            }
+        }
+        for (i = 0; i < 12; i++) {
+            GObj* chain = snap_chain(i);
+            SObj* sobj = (chain != NULL) ? chain->data.sobj : NULL;
+            while (sobj != NULL) {
+                if ((sobj->sprite.x == 158) && (sobj->sprite.y == 107)) {
+                    sobj->sprite.attr |= SP_HIDDEN;
+                }
+                sobj = sobj->next;
             }
         }
 

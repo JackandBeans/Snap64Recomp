@@ -872,12 +872,12 @@ void stage_menu_assets(uint8_t* rdram) {
         "< Mono >",                            // +45
     };
     static const char* const sndDescs[6][2] = {
-        { "Scales all sound the game makes.",         "Applied outside the game mix." },
+        { "Scales all sound the game makes.",         "The other sliders sit under it." },
         { "Sets the background music level.",         "Changes apply right away." },
         { "Sets the sound effects level.",            "Changes apply right away." },
         { "Sets the camera shutter volume.",          "The photo still scores the same." },
         { "Stereo suits speakers and headphones.",    "Mono mixes both sides together." },
-        { "Silences the game when another",           "window holds the focus." },
+        { "Silences the game while another",          "window is in front." },
     };
     constexpr uint32_t StringCount = BaseCount + 52;
 
