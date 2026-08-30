@@ -35,7 +35,7 @@ namespace {
     // instead of spending its file budget on every block boundary on the way.
     bool snapPcapScheduled() {
         static const bool scheduled = (std::getenv("SNAP_PCAP_EVERY") != nullptr) || (std::getenv("SNAP_PCAP_AT") != nullptr) ||
-            (std::getenv("SNAP_PCAP_FX") != nullptr);
+            (std::getenv("SNAP_PCAP_FX") != nullptr) || (std::getenv("SNAP_PCAP_SPAWN") != nullptr);
         return scheduled;
     }
 

@@ -39,12 +39,17 @@
  * every write is preceded by an identity check and a mismatch drops the
  * entry without touching memory.
  */
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 
 #include "recomp.h"
 #include "settings.h"
 #include "hle/rt64_snap_diag.h"
+
+// The presented-frame capture window (consumed by the present queue).
+extern "C" std::atomic<int32_t> snap_frame_dump_pending;
 
 namespace snap {
 
@@ -195,6 +200,24 @@ void spawn_fade_on_spawn(uint8_t* rdram, recomp_context* ctx) {
     if (snapdiag::statsEnabled()) {
         printf("[SNAP-FADE] gobj %08X species %u fading in\n",
                gobj, rd_u32(userData + POKE_ID));
+    }
+
+    // SNAP_PCAP_SPAWN=<species> arms a presented-frame capture burst when
+    // that species starts fading (0 arms on any species), photographing the
+    // fade as the player would see it. The burst length covers the whole
+    // third-of-a-second ramp at replay present rates.
+    {
+        static const long pcapSpecies = []() {
+            const char* env = std::getenv("SNAP_PCAP_SPAWN");
+            return (env != nullptr) ? strtol(env, nullptr, 10) : -1L;
+        }();
+        const long species = long(rd_u32(userData + POKE_ID));
+        if ((pcapSpecies >= 0) && ((pcapSpecies == 0) || (pcapSpecies == species)) &&
+            (snap_frame_dump_pending.load(std::memory_order_relaxed) <= 0)) {
+            snap_frame_dump_pending.store(90);
+            printf("[SNAP-PCAP] armed on species %ld fade start\n", species);
+            fflush(stdout);
+        }
     }
 }
 
