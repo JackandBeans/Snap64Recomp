@@ -139,7 +139,7 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  * down arrow's travel stays above the box frame at y=168. */
 #define ARROW_X        280
 #define ARROW_UP_Y     72
-#define ARROW_DN_Y     150
+#define ARROW_DN_Y     151
 
 #define SEL_R 0xFF
 #define SEL_G 0x82

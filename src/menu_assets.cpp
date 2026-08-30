@@ -358,13 +358,16 @@ Strip compose_scroll_arrow(bool up) {
     for (int y = 0; y < kMenuBrkLH; y++) {
         for (int x = 0; x < kMenuBrkLW; x++) {
             const uint8_t a = kMenuBrkLIA[(y * kMenuBrkLW + x) * 2 + 1];
-            // '<' points left; a quarter turn clockwise points it up, the
-            // other way points it down. The chevron's antialiasing was
-            // authored for horizontal reading and the RGBA16 staging can
-            // only keep or drop a texel, so the strong fringe joins the
-            // silhouette outright: full symmetric limbs instead of edges
-            // nibbled differently on each side.
-            const int rx = 1 + (up ? (kMenuBrkLH - 1 - y) : y);
+            // '<' points left; a quarter turn clockwise points it up, and
+            // the down arrow is that up arrow's exact vertical mirror --
+            // twins by construction, where opposite rotations would each
+            // inherit a different side of the source glyph's asymmetry.
+            // The chevron's antialiasing was authored for horizontal
+            // reading and the RGBA16 staging can only keep or drop a
+            // texel, so the strong fringe joins the silhouette outright:
+            // full symmetric limbs instead of edges nibbled differently
+            // on each side.
+            const int rx = 1 + (kMenuBrkLH - 1 - y);
             const int ry = 1 + (up ? x : (kMenuBrkLW - 1 - x));
             if (a >= 96) {
                 strip.intensity[size_t(ry) * strip.width + rx] = 255;
