@@ -330,9 +330,9 @@ static void snap_tint(GObj* gobj, u8 r, u8 g, u8 b) {
 #define PAGE_VALUE(i)  (*(volatile u32*) (SCRATCH_ARRAYS + 0x40 + (i) * 4))   /* GObj*, 16 */
 #define PAGE_HIDDEN(i) (*(volatile u32*) (SCRATCH_ARRAYS + 0x80 + (i) * 4))   /* SObj*, 64 */
 #define LIST_LABEL(i)  (*(volatile u32*) (SCRATCH_ARRAYS + 0x180 + (i) * 4))  /* SObj*, 8 */
-#define PAGE_ARROW_UP  (*(volatile u32*) (SCRATCH_ARRAYS + 0x1A0))            /* GObj* */
-#define PAGE_ARROW_DN  (*(volatile u32*) (SCRATCH_ARRAYS + 0x1A4))            /* GObj* */
-#define LIST_HELP(i)   (*(volatile u32*) (SCRATCH_ARRAYS + 0x180 + (i) * 4))  /* SObj*, 8 */
+#define LIST_HELP(i)   (*(volatile u32*) (SCRATCH_ARRAYS + 0x1A0 + (i) * 4))  /* SObj*, 8 */
+#define PAGE_ARROW_UP  (*(volatile u32*) (SCRATCH_ARRAYS + 0x1C0))            /* GObj* */
+#define PAGE_ARROW_DN  (*(volatile u32*) (SCRATCH_ARRAYS + 0x1C4))            /* GObj* */
 
 /* The page's twelve rows, in display order. Each row cycles one mailbox
  * field and shows one label, one value set and one description; the maps
