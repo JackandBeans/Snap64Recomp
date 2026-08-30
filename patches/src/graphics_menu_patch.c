@@ -139,7 +139,7 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  * down arrow's travel stays above the box frame at y=168. */
 #define ARROW_X        280
 #define ARROW_UP_Y     72
-#define ARROW_DN_Y     151
+#define ARROW_DN_Y     150
 
 #define SEL_R 0xFF
 #define SEL_G 0x82
@@ -611,12 +611,12 @@ static void snap_graphics_page(void) {
             if (sel < top) {
                 top = sel;
                 snap_page_layout(top);
-                nudgeUp = 6;
+                nudgeUp = 12;
             }
             else if (sel >= top + PAGE_VISIBLE) {
                 top = sel - (PAGE_VISIBLE - 1);
                 snap_page_layout(top);
-                nudgeUp = 6;
+                nudgeUp = 12;
             }
             snap_swap_strip(descStrip, snap_row_desc(sel));
             auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
@@ -628,12 +628,12 @@ static void snap_graphics_page(void) {
             if (sel < top) {
                 top = sel;
                 snap_page_layout(top);
-                nudgeDn = 6;
+                nudgeDn = 12;
             }
             else if (sel >= top + PAGE_VISIBLE) {
                 top = sel - (PAGE_VISIBLE - 1);
                 snap_page_layout(top);
-                nudgeDn = 6;
+                nudgeDn = 12;
             }
             snap_swap_strip(descStrip, snap_row_desc(sel));
             auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
@@ -708,10 +708,15 @@ static void snap_graphics_page(void) {
             nudgeDn--;
         }
         {
+            /* A spring, not a shim: the hop starts at four pixels and
+             * settles through two and one, so a scroll reads as a kick
+             * even when the idle sway was already leaning. */
             const s32 phase = (bobTick >> 3) & 3;
             const s16 sway = (s16) ((phase == 3) ? 1 : phase);
-            const s16 offUp = (nudgeUp > 0) ? 3 : sway;
-            const s16 offDn = (nudgeDn > 0) ? 3 : sway;
+            const s16 hopUp = (s16) ((nudgeUp >= 7) ? 4 : ((nudgeUp >= 3) ? 2 : 1));
+            const s16 hopDn = (s16) ((nudgeDn >= 7) ? 4 : ((nudgeDn >= 3) ? 2 : 1));
+            const s16 offUp = (nudgeUp > 0) ? hopUp : sway;
+            const s16 offDn = (nudgeDn > 0) ? hopDn : sway;
             GObj* upArrow = (GObj*) PAGE_ARROW_UP;
             GObj* dnArrow = (GObj*) PAGE_ARROW_DN;
             if ((upArrow != NULL) && (upArrow->data.sobj != NULL)) {
