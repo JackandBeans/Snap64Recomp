@@ -465,6 +465,24 @@ namespace RT64 {
             return;
         }
 
+        // Pokemon Snap port diagnostic: while the fog color holds the spawn
+        // fade's marker value (230,250,180), print the other mode every draw
+        // actually carries, to see what the model's materials did to the
+        // bracket's state. SNAP_STATS gated, capped.
+        if (snapdiag::statsEnabled()) {
+            const auto &fog = drawCall.rdpParams.fogColor;
+            const bool marker = (fabsf(fog[0] - 230.0f / 255.0f) < 0.004f) &&
+                                (fabsf(fog[1] - 250.0f / 255.0f) < 0.004f) &&
+                                (fabsf(fog[2] - 180.0f / 255.0f) < 0.004f);
+            static int printed = 0;
+            if (marker && (printed < 40)) {
+                printed++;
+                fprintf(stdout, "[SNAP-FADEMODE] tris %u otherL %08X otherH %08X fogA %.2f\n",
+                    drawCall.triangleCount, drawCall.otherMode.L, drawCall.otherMode.H, (float)fog[3]);
+                fflush(stdout);
+            }
+        }
+
         // Assign some parameters to the draw call.
         const int workloadCursor = ext.workloadQueue->writeCursor;
         Workload &workload = ext.workloadQueue->workloads[workloadCursor];

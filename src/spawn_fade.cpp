@@ -50,6 +50,8 @@
 
 // The presented-frame capture window (consumed by the present queue).
 extern "C" std::atomic<int32_t> snap_frame_dump_pending;
+// Monotonic drawn-frame counter (src/frame_cost.cpp's gtlDraw wrapper).
+extern "C" std::atomic<uint32_t> snap_draw_serial;
 
 namespace snap {
 
@@ -82,14 +84,21 @@ constexpr uint32_t GOBJ_USERDATA  = 0x58;  // u32 -> Pokemon
 constexpr uint32_t POKE_ID        = 0x00;  // s32 species
 constexpr uint32_t POKE_ALPHA     = 0xE4;  // u8, the fade byte
 
-// A third of a second of logic ticks: quick enough that a snapped photo a
-// beat later sees a fully-drawn subject, slow enough to read as arrival.
-constexpr int FadeTicks = 20;
+// Fade length in DRAWN frames (30 per second), advanced only when the game
+// actually presented one -- a crossing's triple-update burst cannot consume
+// steps the player never sees. Twenty-four drawn frames is 0.8s: quick
+// enough that a snapped photo a beat later sees a fully-drawn subject, slow
+// enough to read as deliberate arrival. The ramp is quadratic -- the first
+// third is barely a shimmer, then the body condenses -- because a linear
+// ramp put a quarter-opacity model on screen in its first visible frame,
+// which still read as a pop.
+constexpr int FadeTicks = 24;
 
 struct Fade {
     uint32_t gobj = 0;
     uint32_t userData = 0;
     int tick = 0;
+    uint8_t lastWritten = 0;
 };
 
 Fade g_fades[64];
@@ -203,22 +212,8 @@ void spawn_fade_on_spawn(uint8_t* rdram, recomp_context* ctx) {
     }
 
     // SNAP_PCAP_SPAWN=<species> arms a presented-frame capture burst when
-    // that species starts fading (0 arms on any species), photographing the
-    // fade as the player would see it. The burst length covers the whole
-    // third-of-a-second ramp at replay present rates.
-    {
-        static const long pcapSpecies = []() {
-            const char* env = std::getenv("SNAP_PCAP_SPAWN");
-            return (env != nullptr) ? strtol(env, nullptr, 10) : -1L;
-        }();
-        const long species = long(rd_u32(userData + POKE_ID));
-        if ((pcapSpecies >= 0) && ((pcapSpecies == 0) || (pcapSpecies == species)) &&
-            (snap_frame_dump_pending.load(std::memory_order_relaxed) <= 0)) {
-            snap_frame_dump_pending.store(90);
-            printf("[SNAP-PCAP] armed on species %ld fade start\n", species);
-            fflush(stdout);
-        }
-    }
+    // that species reaches mid-fade (0 arms on any species) -- see the arm
+    // in spawn_fade_tick.
 }
 
 void spawn_fade_tick(uint8_t* rdram) {
@@ -226,6 +221,13 @@ void spawn_fade_tick(uint8_t* rdram) {
         return;
     }
     g_rdram_local = rdram;
+
+    // Advance only when a frame was actually drawn since the last update;
+    // undrawn updates (the block-crossing burst) hold the ramp still.
+    static uint32_t lastDrawSerial = 0;
+    const uint32_t drawSerial = snap_draw_serial.load(std::memory_order_relaxed);
+    const bool advance = (drawSerial != lastDrawSerial);
+    lastDrawSerial = drawSerial;
 
     for (int i = 0; i < g_fadeCount;) {
         Fade& f = g_fades[i];
@@ -237,14 +239,69 @@ void spawn_fade_tick(uint8_t* rdram) {
             drop_fade(i);
             continue;
         }
+        if (!advance) {
+            i++;
+            continue;
+        }
         f.tick++;
         if (f.tick >= FadeTicks) {
             wr_u8(f.userData + POKE_ALPHA, 255);
             drop_fade(i);
             continue;
         }
-        wr_u8(f.userData + POKE_ALPHA, uint8_t(255 * f.tick / FadeTicks));
+        // Linear byte; the fogged types' double blend squares it on screen,
+        // which is the ease-in.
+        const uint8_t alpha = uint8_t((255 * f.tick) / FadeTicks);
+        wr_u8(f.userData + POKE_ALPHA, alpha);
+        f.lastWritten = alpha;
+        if (snapdiag::statsEnabled() && ((f.tick % 6) == 0)) {
+            printf("[SNAP-FADE] gobj %08X species %u tick %d alpha %u (byte now %u)\n",
+                   f.gobj, rd_u32(f.userData + POKE_ID), f.tick, alpha,
+                   rd_u8(f.userData + POKE_ALPHA));
+        }
+        // Mid-fade capture arm: photograph the SECOND half of the ramp,
+        // where a broken blend is unmistakable.
+        if ((f.tick == 12)) {
+            static const long pcapSpecies = []() {
+                const char* env = std::getenv("SNAP_PCAP_SPAWN");
+                return (env != nullptr) ? strtol(env, nullptr, 10) : -1L;
+            }();
+            const long species = long(rd_u32(f.userData + POKE_ID));
+            if ((pcapSpecies >= 0) && ((pcapSpecies == 0) || (pcapSpecies == species)) &&
+                (snap_frame_dump_pending.load(std::memory_order_relaxed) <= 0)) {
+                snap_frame_dump_pending.store(90);
+                printf("[SNAP-PCAP] armed on species %ld mid-fade\n", species);
+                fflush(stdout);
+            }
+        }
         i++;
+    }
+}
+
+// Called just before the game's draw pass builds the display list: whatever
+// the alpha byte holds HERE is what the render wrappers will read. If it no
+// longer holds what the ticker wrote, something in the game's update pass
+// rewrote it, and that writer is the bug to find.
+void spawn_fade_predraw_check(uint8_t* rdram) {
+    if ((g_fadeCount == 0) || (rdram == nullptr) || !snapdiag::statsEnabled()) {
+        return;
+    }
+    g_rdram_local = rdram;
+    for (int i = 0; i < g_fadeCount; i++) {
+        const Fade& f = g_fades[i];
+        if (!fade_still_valid(f)) {
+            continue;
+        }
+        const uint8_t now = rd_u8(f.userData + POKE_ALPHA);
+        if (now != f.lastWritten) {
+            printf("[SNAP-FADE] PREDRAW MISMATCH gobj %08X species %u wrote %u draw sees %u\n",
+                   f.gobj, rd_u32(f.userData + POKE_ID), f.lastWritten, now);
+        }
+        const uint32_t fnRender = rd_u32(f.gobj + GOBJ_FNRENDER);
+        if (!is_pokemon_render(fnRender)) {
+            printf("[SNAP-FADE] PREDRAW RENDER SWAP gobj %08X species %u now renders via %08X\n",
+                   f.gobj, rd_u32(f.userData + POKE_ID), fnRender);
+        }
     }
 }
 

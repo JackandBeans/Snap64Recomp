@@ -49,87 +49,58 @@ void renderModelTypeDFogged(GObj* obj);
 
 extern Gfx* gMainGfxPos[];
 
-/* The lessons of two wrong brackets, so nobody builds a third:
- *
- * The game's own fader (pokemon.c D_8038A3D0) blends fog-by-SHADE-alpha in
- * its first cycle, and TypeB/TypeJ models leave shade alpha saturated -- the
- * whole model painted as the fog color, a flat pale-yellow silhouette. And a
- * one-cycle bracket breaks differently: the fogged composites run their
- * models in TWO-cycle with a two-cycle combiner installed, and dropping to
- * one cycle makes the RDP reinterpret that combiner -- black bodies, one
- * yellow wing (captured frame by frame both times).
- *
- * So the rule the brackets below follow: keep exactly the cycle count and
- * geometry state the stock path runs the model in, and change ONE thing --
- * the final blender cycle becomes model-color times the fog-alpha register
- * against the framebuffer. No combiner writes, no shade involvement; the
- * materials draw their textured selves at partial opacity. Structural flags
- * (Z compare, no Z write -- which is what the photo-score gate in
- * src/spawn_fade.cpp guards) match the game's own fade mode. */
-#define SNAP_FADE_BLEND GBL_c2(G_BL_CLR_IN, G_BL_A_FOG, G_BL_CLR_MEM, G_BL_1MA)
-#define SNAP_FADE_C2_OPA                                                    \
-    (Z_CMP | IM_RD | CVG_DST_FULL | ZMODE_XLU | FORCE_BL | SNAP_FADE_BLEND)
-#define SNAP_FADE_C2_XLU                                                    \
-    (AA_EN | Z_CMP | IM_RD | CVG_DST_WRAP | CLR_ON_CVG | FORCE_BL |         \
-     ZMODE_XLU | SNAP_FADE_BLEND)
+/* The game's own fog set/clear pair (4CDB0.c). The restore replays them so
+ * the COURSE fog color returns after the bracket's own fog-alpha write --
+ * without this, far fogged world geometry drawn after a fading Pokemon
+ * picked up the bracket's fog color (a pale blob where the fog band ate a
+ * bush, captured). */
+extern Gfx DListRMFogOpaSet[];
+extern Gfx DListRMFogOpaClear[];
 
-/* Unfogged stock path runs the model in the one-cycle ambient state; the
- * fade does too, with the blend in both halves (one-cycle reads c2). */
-#define SNAP_FADE_RM_1C(clk)                                                \
+/* The lessons of three wrong brackets, so nobody builds a fourth. All three
+ * were caught in presented-frame pixels, and each failed differently:
+ *
+ * (1) The game's own fader DLs (pokemon.c D_8038A3D0): its first blender
+ * cycle mixes the FOG COLOR in by vertex SHADE alpha, and TypeB/TypeJ
+ * models leave that alpha saturated -- the model painted flat fog-yellow.
+ * (2) One-cycle blend with the inherited combiner: the blend WORKED (a
+ * ramping translucent ghost), but the fogged composites author their
+ * materials as two-cycle combiner programs and one cycle reinterprets
+ * them -- black bodies. Overriding the combiner does not help; the model's
+ * own material commands simply install theirs again (dark navy, capture
+ * three).
+ * (3) Two-cycle with a pass-through first blender cycle: textures right,
+ * but the blend never engaged -- drawn opaque from the first frame.
+ *
+ * So the rule: the model must run in its authored cycle count with its own
+ * combiners untouched, and the blend must be a shape the renderer provably
+ * executes. For one-cycle (the unfogged types), that is the plain
+ * fog-alpha blend -- pixel-proven by (2). For two-cycle (the fogged
+ * types), it is the SAME fog-alpha blend in BOTH blender cycles: color
+ * times fog-alpha over the framebuffer, twice -- a form the renderer's
+ * blender emulation supports outright, with an effective factor of alpha
+ * squared, which only steepens the ease-in. No combiner writes, no
+ * geometry writes, no shade involvement anywhere. Structural flags (Z
+ * compare, no Z write -- which is what the photo-score gate in
+ * src/spawn_fade.cpp guards) match the game's own fade mode. Fog tint is
+ * absent for the fade's under-a-second run. */
+#define SNAP_FADE_RM(clk)                                                   \
     (Z_CMP | IM_RD | CVG_DST_FULL | ZMODE_XLU | FORCE_BL |                  \
      GBL_c##clk(G_BL_CLR_IN, G_BL_A_FOG, G_BL_CLR_MEM, G_BL_1MA))
 
-#define SNAP_FADE_DRAW(obj, inner)                                          \
+#define SNAP_FADE_BRACKET(obj, inner, cyc)                                  \
     {                                                                       \
         gDPPipeSync(gMainGfxPos[0]++);                                      \
-        gDPSetCycleType(gMainGfxPos[0]++, G_CYC_1CYCLE);                    \
-        gDPSetRenderMode(gMainGfxPos[0]++, SNAP_FADE_RM_1C(1), SNAP_FADE_RM_1C(2)); \
+        gDPSetCycleType(gMainGfxPos[0]++, cyc);                             \
+        gDPSetRenderMode(gMainGfxPos[0]++, SNAP_FADE_RM(1), SNAP_FADE_RM(2)); \
         gDPSetFogColor(gMainGfxPos[0]++, 230, 250, 180,                     \
                        GET_POKEMON(obj)->unk_E4);                           \
         inner(obj);                                                         \
-        gDPPipeSync(gMainGfxPos[0]++);                                      \
-        gDPSetCycleType(gMainGfxPos[0]++, G_CYC_1CYCLE);                    \
-        gDPSetRenderMode(gMainGfxPos[0]++, G_RM_AA_ZB_OPA_SURF, G_RM_NOOP2); \
+        gSPDisplayList(gMainGfxPos[0]++, DListRMFogOpaSet);                 \
+        gSPDisplayList(gMainGfxPos[0]++, DListRMFogOpaClear);               \
     }
 
-/* Fogged stock path (enableFog/disableFog): two-cycle, G_FOG geometry. The
- * fade keeps both and swaps the fog-shade first cycle for a pass-through,
- * so no shade alpha ever reaches the blender. Restores mirror the game's
- * DListRMFogOpaClear. */
-#define SNAP_FADE_DRAW_FOG(obj, inner)                                      \
-    {                                                                       \
-        gDPPipeSync(gMainGfxPos[0]++);                                      \
-        gDPSetCycleType(gMainGfxPos[0]++, G_CYC_2CYCLE);                    \
-        gDPSetRenderMode(gMainGfxPos[0]++, G_RM_PASS, SNAP_FADE_C2_OPA);    \
-        gSPSetGeometryMode(gMainGfxPos[0]++, G_FOG);                        \
-        gDPSetFogColor(gMainGfxPos[0]++, 230, 250, 180,                     \
-                       GET_POKEMON(obj)->unk_E4);                           \
-        inner(obj);                                                         \
-        gDPPipeSync(gMainGfxPos[0]++);                                      \
-        gDPSetCycleType(gMainGfxPos[0]++, G_CYC_1CYCLE);                    \
-        gDPSetRenderMode(gMainGfxPos[0]++, G_RM_AA_ZB_OPA_SURF, G_RM_NOOP2); \
-        gSPClearGeometryMode(gMainGfxPos[0]++, G_FOG);                      \
-    }
-
-/* TypeJ/TypeD fogged stock paths also arm the deferred transparency list
- * (enableFogTrasparent on gMainGfxPos[1]); any of the model's translucent
- * pieces would otherwise draw at full authored strength mid-fade. Same
- * swap there: pass-through first cycle, fade blend with the XLU structural
- * flags second; restore mirrors DListRMFogXluClear. */
-#define SNAP_FADE_DRAW_FOG_XLU(obj, inner)                                  \
-    {                                                                       \
-        gDPPipeSync(gMainGfxPos[1]++);                                      \
-        gDPSetCycleType(gMainGfxPos[1]++, G_CYC_2CYCLE);                    \
-        gDPSetRenderMode(gMainGfxPos[1]++, G_RM_PASS, SNAP_FADE_C2_XLU);    \
-        gSPSetGeometryMode(gMainGfxPos[1]++, G_FOG);                        \
-        gDPSetFogColor(gMainGfxPos[1]++, 230, 250, 180,                     \
-                       GET_POKEMON(obj)->unk_E4);                           \
-        SNAP_FADE_DRAW_FOG(obj, inner)                                      \
-        gDPPipeSync(gMainGfxPos[1]++);                                      \
-        gDPSetCycleType(gMainGfxPos[1]++, G_CYC_1CYCLE);                    \
-        gDPSetRenderMode(gMainGfxPos[1]++, G_RM_AA_ZB_XLU_SURF, G_RM_AA_ZB_XLU_SURF2); \
-        gSPClearGeometryMode(gMainGfxPos[1]++, G_FOG);                      \
-    }
+#define SNAP_FADE_DRAW(obj, inner)     SNAP_FADE_BRACKET(obj, inner, G_CYC_1CYCLE)
 
 #define SNAP_POKEMON_RENDER(obj, fadeDraw, inner, stock)                    \
     {                                                                       \
@@ -146,30 +117,49 @@ extern Gfx* gMainGfxPos[];
         }                                                                   \
     }
 
+/* Stock wrapper, byte-for-byte the pokemon_detect.c original. The B, D and
+ * J families resist every display-list-level blend tried so far -- the mode
+ * dump proved the bracket's blend survives to the draw untouched and the
+ * output is still wrong (fog-tinted wings), so the interference is below
+ * the display list. Until the renderer grows a forced-translucency path,
+ * those types draw stock and their marquee pop (the Beach Butterfree) is
+ * covered by the fly-in approach instead (butterfree_approach_patch.c).
+ * Only the TypeI family fades: the geometry class the game's own fader was
+ * written for, proven on Pidgey and Lapras. */
+#define SNAP_POKEMON_RENDER_STOCK(obj, stock)                               \
+    {                                                                       \
+        if (!Pokemon_GetFlag100(obj) && !PokemonDetector_ReturnFalse(obj)) {\
+            stock(obj);                                                     \
+            if (PokemonDetector_IsEnabled) {                                \
+                PokemonDetector_SaveRegion(obj);                            \
+            }                                                               \
+        }                                                                   \
+    }
+
 void renderPokemonModelTypeI(GObj* obj) {
     SNAP_POKEMON_RENDER(obj, SNAP_FADE_DRAW, renRenderModelTypeI, renRenderModelTypeI)
 }
 
 void renderPokemonModelTypeIFogged(GObj* obj) {
-    SNAP_POKEMON_RENDER(obj, SNAP_FADE_DRAW_FOG, renRenderModelTypeI, renderModelTypeIFogged)
+    SNAP_POKEMON_RENDER(obj, SNAP_FADE_DRAW, renRenderModelTypeI, renderModelTypeIFogged)
 }
 
 void renderPokemonModelTypeJFogged(GObj* obj) {
-    SNAP_POKEMON_RENDER(obj, SNAP_FADE_DRAW_FOG_XLU, renRenderModelTypeJ, renderModelTypeJFogged)
+    SNAP_POKEMON_RENDER_STOCK(obj, renderModelTypeJFogged)
 }
 
 void renderPokemonModelTypeB(GObj* obj) {
-    SNAP_POKEMON_RENDER(obj, SNAP_FADE_DRAW, renRenderModelTypeB, renRenderModelTypeB)
+    SNAP_POKEMON_RENDER_STOCK(obj, renRenderModelTypeB)
 }
 
 void renderPokemonModelTypeBFogged(GObj* obj) {
-    SNAP_POKEMON_RENDER(obj, SNAP_FADE_DRAW_FOG, renRenderModelTypeB, renderModelTypeBFogged)
+    SNAP_POKEMON_RENDER_STOCK(obj, renderModelTypeBFogged)
 }
 
 void renderPokemonModelTypeD(GObj* obj) {
-    SNAP_POKEMON_RENDER(obj, SNAP_FADE_DRAW, renRenderModelTypeD, renRenderModelTypeD)
+    SNAP_POKEMON_RENDER_STOCK(obj, renRenderModelTypeD)
 }
 
 void renderPokemonModelTypeDFogged(GObj* obj) {
-    SNAP_POKEMON_RENDER(obj, SNAP_FADE_DRAW_FOG_XLU, renRenderModelTypeD, renderModelTypeDFogged)
+    SNAP_POKEMON_RENDER_STOCK(obj, renderModelTypeDFogged)
 }

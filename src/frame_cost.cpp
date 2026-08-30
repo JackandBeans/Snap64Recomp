@@ -53,6 +53,7 @@
 namespace snap {
 // src/spawn_fade.cpp; takes the spawn wrapper's context for the return value.
 void spawn_fade_on_spawn(uint8_t* rdram, recomp_context* ctx);
+void spawn_fade_predraw_check(uint8_t* rdram);
 }
 
 extern "C" {
@@ -81,6 +82,10 @@ extern "C" {
     std::atomic<uint32_t> snap_game_parked_count{0};
     std::atomic<int64_t>  snap_game_draw_nanos{0};
     std::atomic<uint32_t> snap_game_draw_count{0};
+    // Monotonic, never reset: lets the spawn fade advance only on ticks that
+    // actually produced a drawn frame, so a crossing's update burst cannot
+    // consume fade steps the player never sees.
+    std::atomic<uint32_t> snap_draw_serial{0};
     std::atomic<int64_t>  snap_block_change_nanos{0};
     std::atomic<int64_t>  snap_spawn_nanos{0};
     std::atomic<uint32_t> snap_spawn_count{0};
@@ -178,12 +183,14 @@ extern "C" void gtlDraw(uint8_t* rdram, recomp_context* ctx) {
         return;
     }
 
+    snap::spawn_fade_predraw_check(rdram);
     {
         CostScope scope(true, snap_game_draw_nanos);
         __real_gtlDraw(rdram, ctx);
     }
 
     snap_game_draw_count.fetch_add(1, std::memory_order_relaxed);
+    snap_draw_serial.fetch_add(1, std::memory_order_relaxed);
 }
 
 // One Pokemon coming into existence: its object, its model tree, its matrices,
