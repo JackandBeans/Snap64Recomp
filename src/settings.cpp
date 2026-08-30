@@ -39,7 +39,14 @@ void load_settings() {
         s_settings.msaa               = j.value("msaa", s_settings.msaa);
         s_settings.fps_mode           = j.value("fps_mode", s_settings.fps_mode);
         s_settings.fps_manual_target  = j.value("fps_manual_target", s_settings.fps_manual_target);
-        s_settings.hq_sound           = j.value("hq_sound", s_settings.hq_sound);
+        // "stereo" is the honest name; "hq_sound" was the same flag before
+        // the SOUND page existed, so an old file still reads correctly.
+        s_settings.stereo             = j.value("stereo", j.value("hq_sound", s_settings.stereo));
+        s_settings.master_volume      = std::clamp(j.value("master_volume", s_settings.master_volume), 0, 100);
+        s_settings.music_volume       = std::clamp(j.value("music_volume", s_settings.music_volume), 0, 100);
+        s_settings.sfx_volume         = std::clamp(j.value("sfx_volume", s_settings.sfx_volume), 0, 100);
+        s_settings.shutter_volume     = std::clamp(j.value("shutter_volume", s_settings.shutter_volume), 0, 100);
+        s_settings.mute_unfocused     = j.value("mute_unfocused", s_settings.mute_unfocused);
         s_settings.three_point_filtering = j.value("three_point_filtering", s_settings.three_point_filtering);
         s_settings.downsample         = j.value("downsample", s_settings.downsample);
         s_settings.color_depth        = j.value("color_depth", s_settings.color_depth);
@@ -77,7 +84,12 @@ void save_settings() {
         {"msaa",                  s_settings.msaa},
         {"fps_mode",              s_settings.fps_mode},
         {"fps_manual_target",     s_settings.fps_manual_target},
-        {"hq_sound",              s_settings.hq_sound},
+        {"stereo",                s_settings.stereo},
+        {"master_volume",         s_settings.master_volume},
+        {"music_volume",          s_settings.music_volume},
+        {"sfx_volume",            s_settings.sfx_volume},
+        {"shutter_volume",        s_settings.shutter_volume},
+        {"mute_unfocused",        s_settings.mute_unfocused},
         {"three_point_filtering", s_settings.three_point_filtering},
         {"downsample",            s_settings.downsample},
         {"color_depth",           s_settings.color_depth},
@@ -135,7 +147,9 @@ void apply_game_settings(uint8_t* rdram) {
         return;
     }
     // MEM_W-equivalent write of the 32-bit flag (sign-extended address form).
-    MEM_W(0, (gpr)(int32_t)AU_SOUND_QUALITY) = s_settings.hq_sound ? 1 : 0;
+    // Zero makes auThreadMain average every L/R pair of the finished mix --
+    // the game's own Stereo/Mono option, owned by the SOUND page now.
+    MEM_W(0, (gpr)(int32_t)AU_SOUND_QUALITY) = s_settings.stereo ? 1 : 0;
 }
 
 bool handle_settings_hotkey(int scancode) {
@@ -157,9 +171,9 @@ bool handle_settings_hotkey(int scancode) {
             apply_graphics_settings();
             return true;
         case SDL_SCANCODE_F7:
-            s_settings.hq_sound = !s_settings.hq_sound;
+            s_settings.stereo = !s_settings.stereo;
             apply_game_settings(g_rdram);
-            printf("[SNAP-CFG] HQ sound: %s\n", s_settings.hq_sound ? "on" : "off");
+            printf("[SNAP-CFG] speaker output: %s\n", s_settings.stereo ? "stereo" : "mono");
             return true;
         case SDL_SCANCODE_F3:
             s_settings.ubershaders_only = !s_settings.ubershaders_only;

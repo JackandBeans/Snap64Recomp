@@ -171,6 +171,15 @@ static void update_gfx(void* /*gfx_data*/) {
                     snap::settings().fullscreen = true;
                     snap::apply_graphics_settings();
                 }
+                // The SOUND page's background mute follows these; the mute
+                // itself zero-fills in the audio sink so the queue keeps
+                // draining and the game's pacing never notices.
+                else if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
+                    snap::set_window_focused(false);
+                }
+                else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
+                    snap::set_window_focused(true);
+                }
                 break;
             default:
                 break;
@@ -434,6 +443,8 @@ int main(int argc, char* argv[]) {
 
     snap::load_settings();
     snap::apply_graphics_settings();
+    snap::set_master_volume(snap::settings().master_volume);
+    snap::set_mute_unfocused(snap::settings().mute_unfocused);
 
     // -----------------------------------------------------------------------
     // 1. Register overlay sections

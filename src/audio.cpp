@@ -42,6 +42,26 @@ static std::vector<int16_t> swap_buffer;
 // (samples dropped, zero backlog reported).
 static uint32_t failed_open_frequency = 0;
 
+// The SOUND page's host-side knobs, written by the settings side and read
+// by the audio thread each buffer: master gain in Q8 (256 = unity) and the
+// focus-follows mute.
+static std::atomic<int> g_master_gain{256};
+static std::atomic<bool> g_window_focused{true};
+static std::atomic<bool> g_mute_unfocused{false};
+
+void set_master_volume(int percent) {
+    percent = std::clamp(percent, 0, 100);
+    g_master_gain.store(percent * 256 / 100, std::memory_order_relaxed);
+}
+
+void set_window_focused(bool focused) {
+    g_window_focused.store(focused, std::memory_order_relaxed);
+}
+
+void set_mute_unfocused(bool mute) {
+    g_mute_unfocused.store(mute, std::memory_order_relaxed);
+}
+
 // ---------------------------------------------------------------------------
 // SDL audio device management
 // ---------------------------------------------------------------------------
@@ -127,8 +147,20 @@ void audio_queue_samples(int16_t* samples, size_t count) {
     // game sees -- which matters when the thing being measured is a stutter.
     // Set SNAP_MUTE to run the game silently.
     static const bool muted = (std::getenv("SNAP_MUTE") != nullptr);
-    if (muted) {
+    const bool focus_muted = g_mute_unfocused.load(std::memory_order_relaxed) &&
+                             !g_window_focused.load(std::memory_order_relaxed);
+    if (muted || focus_muted) {
         std::fill(swap_buffer.begin(), swap_buffer.end(), int16_t(0));
+    }
+    else {
+        // Master volume, as a Q8 multiply on the final stream -- the same
+        // spot the mute proves safe: rate and backlog are untouched.
+        const int gain = g_master_gain.load(std::memory_order_relaxed);
+        if (gain != 256) {
+            for (size_t i = 0; i < count; i++) {
+                swap_buffer[i] = int16_t((int32_t(swap_buffer[i]) * gain) >> 8);
+            }
+        }
     }
 
     const size_t byte_count = count * sizeof(int16_t);

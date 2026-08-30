@@ -29,6 +29,7 @@
 #include <string>
 #include <vector>
 
+#include "audio.h"
 #include "settings.h"
 #include "version.h"
 
@@ -668,6 +669,7 @@ bool load_override(const char* name, Strip &strip) {
 }
 
 uint32_t g_last_applied_seq = 0;
+uint32_t g_last_applied_snd_seq = 0;
 bool g_staged = false;
 
 // The rainbow strips keep their alpha masks host-side so their staged
@@ -752,8 +754,19 @@ void seed_mailbox() {
     write_u8(MailboxAddr + 0x12, uint8_t(std::clamp(s.color_depth, 0, 2)));
     write_u8(MailboxAddr + 0x13, s.triple_buffering ? 1 : 0);
     write_u32(MailboxAddr + 0x4, 0);
+    // The SOUND bank: its own sequence word and six value bytes, read live
+    // by the patched audio functions (volumes as straight percentages) and
+    // edited by the SOUND page.
+    write_u8(MailboxAddr + 0x28, uint8_t(std::clamp(s.master_volume, 0, 100)));
+    write_u8(MailboxAddr + 0x29, uint8_t(std::clamp(s.music_volume, 0, 100)));
+    write_u8(MailboxAddr + 0x2A, uint8_t(std::clamp(s.sfx_volume, 0, 100)));
+    write_u8(MailboxAddr + 0x2B, uint8_t(std::clamp(s.shutter_volume, 0, 100)));
+    write_u8(MailboxAddr + 0x2C, s.stereo ? 1 : 0);
+    write_u8(MailboxAddr + 0x2D, s.mute_unfocused ? 1 : 0);
+    write_u32(MailboxAddr + 0x20, 0);
     write_u32(MailboxAddr + 0x0, MailboxMagic);
     g_last_applied_seq = 0;
+    g_last_applied_snd_seq = 0;
 }
 
 } // namespace
@@ -841,7 +854,32 @@ void stage_menu_assets(uint8_t* rdram) {
     };
     // Id BaseCount+23: the title's third credits line, in the copyright
     // block's own condensed face, recoloured live by animate_credits().
-    constexpr uint32_t StringCount = BaseCount + 26;
+    // Ids BaseCount+24/+25: the Graphics page's scroll arrows.
+    // Id BaseCount+26: the SOUND page's heading. Ids +27..+45: its labels
+    // and values (six labels, the eleven shared volume steps, Stereo and
+    // Mono). Ids +46..+51: its six descriptions.
+    static const char* const sndStrings[19] = {
+        "Master Volume",                       // +27
+        "Music Volume",                        // +28
+        "Sound Effects",                       // +29
+        "Shutter Volume",                      // +30
+        "Speaker Output",                      // +31
+        "Background Mute",                     // +32
+        "< 0 >", "< 10 >", "< 20 >", "< 30 >", "< 40 >",   // +33..+37
+        "< 50 >", "< 60 >", "< 70 >", "< 80 >", "< 90 >",  // +38..+42
+        "< 100 >",                             // +43
+        "< Stereo >",                          // +44
+        "< Mono >",                            // +45
+    };
+    static const char* const sndDescs[6][2] = {
+        { "Scales all sound the game makes.",         "Applied outside the game mix." },
+        { "Sets the background music level.",         "Changes apply right away." },
+        { "Sets the sound effects level.",            "Changes apply right away." },
+        { "Sets the camera shutter volume.",          "The photo still scores the same." },
+        { "Stereo suits speakers and headphones.",    "Mono mixes both sides together." },
+        { "Silences the game when another",           "window holds the focus." },
+    };
+    constexpr uint32_t StringCount = BaseCount + 52;
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -950,6 +988,24 @@ void stage_menu_assets(uint8_t* rdram) {
         else if ((id == BaseCount + 24) || (id == BaseCount + 25)) {
             // The Graphics page's scroll arrows, up then down.
             strip = compose_scroll_arrow(id == BaseCount + 24);
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 26) {
+            // The SOUND page's heading, in the header face.
+            strip = compose_hdr("Sound");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id >= BaseCount + 46) {
+            // The SOUND page's setting descriptions.
+            strip = compose_lines(sndDescs[id - BaseCount - 46][0], sndDescs[id - BaseCount - 46][1]);
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id >= BaseCount + 27) {
+            // The SOUND page's labels and values, in the body face.
+            strip = compose(sndStrings[id - BaseCount - 27]);
             w = strip.width;
             h = strip.height;
         }
@@ -1091,6 +1147,25 @@ void poll_menu_mailbox(uint8_t* rdram) {
         return;
     }
     animate_credits();
+
+    // The SOUND bank first: the patched audio functions read its bytes
+    // live, so all the host adds is persistence and its own knobs.
+    const uint32_t sndSeq = read_u32_mail(MailboxAddr + 0x20);
+    if (sndSeq != g_last_applied_snd_seq) {
+        g_last_applied_snd_seq = sndSeq;
+        Settings &snd = settings();
+        snd.master_volume = std::min<int>(read_u8_mail(MailboxAddr + 0x28), 100);
+        snd.music_volume = std::min<int>(read_u8_mail(MailboxAddr + 0x29), 100);
+        snd.sfx_volume = std::min<int>(read_u8_mail(MailboxAddr + 0x2A), 100);
+        snd.shutter_volume = std::min<int>(read_u8_mail(MailboxAddr + 0x2B), 100);
+        snd.stereo = read_u8_mail(MailboxAddr + 0x2C) != 0;
+        snd.mute_unfocused = read_u8_mail(MailboxAddr + 0x2D) != 0;
+        set_master_volume(snd.master_volume);
+        set_mute_unfocused(snd.mute_unfocused);
+        apply_game_settings(rdram);
+        save_settings();
+    }
+
     const uint32_t seq = read_u32_mail(MailboxAddr + 0x4);
     if (seq == g_last_applied_seq) {
         return;

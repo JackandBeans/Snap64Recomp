@@ -30,7 +30,22 @@ struct Settings {
     // it anyway for a look at high-refresh motion, at that cost.
     int   fps_mode          = 0;
     int   fps_manual_target = 120;
-    bool  hq_sound          = true;   // pins the game's auSoundQuality flag to 1
+    // The game's auSoundQuality flag IS its Stereo/Mono option: zero makes
+    // the audio thread average every L/R pair of the finished mix. The
+    // port's SOUND page owns it now (the old name for this was hq_sound).
+    bool  stereo            = true;
+
+    // The SOUND page. Volumes are percentages in steps of ten. Master is a
+    // host-side multiply on the final stream; music, effects and shutter
+    // scale inside the game through patched setters that read the sound
+    // mailbox bank. Background mute silences the stream while another
+    // window holds focus, by zero-filling -- never by pausing the device,
+    // because the game paces itself against the queue's backlog.
+    int   master_volume     = 100;
+    int   music_volume      = 100;
+    int   sfx_volume        = 100;
+    int   shutter_volume    = 100;
+    bool  mute_unfocused    = false;
     bool  three_point_filtering = true;
     // RT64 writes each rendered frame back into RDRAM, which this game needs:
     // photo scoring reads the framebuffer it just drew. Interpolated frames

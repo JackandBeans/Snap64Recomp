@@ -32,6 +32,7 @@
 
 #include "sys/om.h"
 #include "PR/sp.h"
+#include "PR/libaudio.h"
 
 /* Option screen globals, resolved from the reference symbols. */
 extern s8 D_800E8374_A0F904;                 /* selected item index */
@@ -122,9 +123,23 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_CREDITS    53   /* the port's credits line, RGBA16, animated */
 #define STR_SCROLL_UP  54   /* the value chevron turned upward */
 #define STR_SCROLL_DN  55   /* and downward: more settings that way */
+#define STR_SND_HDR    56   /* "Sound" in the header face */
+#define STR_SND_LABEL  57   /* ..62: the SOUND page's six labels */
+#define STR_VOL0       63   /* ..73: the shared volume steps, 0..100 by 10 */
+#define STR_STEREO     74
+#define STR_MONO       75
+#define STR_SND_DESC   76   /* ..81: the SOUND page's descriptions */
+
+/* The SOUND bank of the mailbox: its own sequence word and value bytes
+ * (percent volumes; stereo and background-mute booleans). The patched
+ * audio functions below read the bytes live on every call. */
+#define MBOX_MAGIC   (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x0))
+#define SND_SEQ      (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x20))
+#define SND_FIELD(i) (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x28 + (i)))
 
 #define OPT_ITEMS      6    /* Screen, Graphics, Sound, Z, Stick, Return */
 #define OPT_GRAPHICS   1
+#define OPT_SOUND      2
 #define PAGE_ITEMS     12
 /* The stock Options list's own rhythm: first row at 73, sixteen rows of
  * pitch, six rows on screen -- the Graphics page reads as the same menu.
@@ -909,6 +924,376 @@ s8 func_800E7700_A0EC90(void) {
     return OPT_ITEMS - 1;   /* B backs out through Return */
 }
 
+/* ---------------------------------------------------------------------------
+ * The SOUND page's live volume plumbing.
+ *
+ * The game's audio has two clean choke points and three doors: every BGM
+ * volume write in the game -- direct sets and the audio thread's smooth
+ * fades alike -- flows through alCSPSetVol, and every sound effect enters
+ * through one of the three play functions, which only fill the voice's
+ * slot arrays. The replacements below scale at exactly those places and
+ * read their percentages live from the mailbox's SOUND bank, so a slider
+ * change is heard on the very next note or call. The game's own volume
+ * bookkeeping (auBGMVolume, the level-end fades through the global sound
+ * volume) stays untouched and unscaled.
+ */
+
+/* Percent from the SOUND bank; full volume until the port has staged. */
+static s32 snap_snd_pct(s32 i) {
+    if (MBOX_MAGIC != 0x53474658) {
+        return 100;
+    }
+    return SND_FIELD(i);
+}
+
+/* The shutter is its own slider on top of the effects slider: the two
+ * take-photo sounds, and nothing else. */
+static u16 snap_scaled_sfx(u32 soundID, s32 vol) {
+    s32 pct = snap_snd_pct(2);
+    if ((soundID == 0) || (soundID == 16)) {   /* SOUND_ID_TAKE_PHOTO(_2) */
+        pct = (pct * snap_snd_pct(3)) / 100;
+    }
+    return (u16) ((vol * pct) / 100);
+}
+
+/* auCurrentSettings is file-local to the game's audio.c; the one field the
+ * play functions need sits fourteen bytes in. */
+#define AU_NUM_SOUNDS (*(volatile u8*) (0x80096930 + 0x0E))
+
+extern u8 auSoundPriorities[400];
+extern u8* auSoundIdleCounter;
+extern s32* auPlayingSound;
+extern s32* auStartingSound;
+void auSetSoundQuality(s32 quality);
+extern u8* auSoundPriority;
+extern f32* auSoundPitch;
+extern u16* auSoundVolume;
+extern u8* auSoundPan;
+extern u8* auSoundReverbAmt;
+extern ALInstrument* auSFXPlayer;
+extern ALCSPlayer* auBGMPlayers[2];
+extern f32 auBGMVolume[2];
+s32 auStealSound(u8 priority);
+
+/* Replaces the sequence players' volume setter: the body the library
+ * shipped, with the music percentage applied to the argument. The stored
+ * game state upstream keeps the unscaled value, so ramps and restores
+ * interpolate the numbers the game believes in. */
+void alCSPSetVol(ALCSPlayer* seqp, s16 vol) {
+    ALEvent evt;
+
+    evt.type = AL_SEQP_VOL_EVT;
+    evt.msg.spvol.vol = (s16) (((s32) vol * snap_snd_pct(1)) / 100);
+
+    alEvtqPostEvent(&seqp->evtq, &evt, 0);
+}
+
+/* The three sound-effect doors, each the stock body with the volume slot
+ * scaled as it is filled. The audio thread reads the slot next tick, so
+ * the scaled value is what the voice starts at. */
+s32 auPlaySound(u32 soundID) {
+    s32 i;
+
+    for (i = 0; i < AU_NUM_SOUNDS; i++) {
+        if (auSoundIdleCounter[i] < 255) {
+            auSoundIdleCounter[i]++;
+        }
+    }
+
+    if (soundID < auSFXPlayer->soundCount) {
+        i = auStealSound(auSoundPriorities[soundID]);
+        if (i >= 0) {
+            OSIntMask mask = osSetIntMask(OS_IM_NONE);
+            auPlayingSound[i] = soundID;
+            auStartingSound[i] = soundID;
+            auSoundIdleCounter[i] = 0;
+            auSoundPriority[i] = auSoundPriorities[soundID];
+            auSoundPitch[i] = 1.0f;
+            auSoundVolume[i] = snap_scaled_sfx(soundID, 0x7FFF);
+            auSoundPan[i] = 64;
+            auSoundReverbAmt[i] = 0;
+            osSetIntMask(mask);
+        }
+        return i;
+    } else {
+        return -1;
+    }
+}
+
+s32 auPlaySoundWithParams(u32 soundID, s32 volume, s32 pan, f32 pitch, s32 reverbAmt) {
+    s32 i;
+    OSIntMask mask = osSetIntMask(OS_IM_NONE);
+
+    i = auPlaySound(soundID);
+
+    if (i >= 0) {
+        auSoundPitch[i] = pitch;
+        auSoundVolume[i] = snap_scaled_sfx(soundID, volume);
+        auSoundPan[i] = pan;
+        auSoundReverbAmt[i] = reverbAmt;
+        osSetIntMask(mask);
+        return i;
+    } else {
+        osSetIntMask(mask);
+        return -1;
+    }
+}
+
+s32 auPlaySoundWithVolume(u32 soundID, s32 vol) {
+    s32 i;
+
+    for (i = 0; i < AU_NUM_SOUNDS; i++) {
+        if (auSoundIdleCounter[i] < 255) {
+            auSoundIdleCounter[i]++;
+        }
+    }
+
+    if (soundID < auSFXPlayer->soundCount) {
+        i = auStealSound(auSoundPriorities[soundID]);
+        if (i >= 0) {
+            OSIntMask mask = osSetIntMask(OS_IM_NONE);
+            auPlayingSound[i] = soundID;
+            auStartingSound[i] = soundID;
+            auSoundIdleCounter[i] = 0;
+            auSoundPriority[i] = auSoundPriorities[soundID];
+            auSoundPitch[i] = 1.0f;
+            auSoundVolume[i] = snap_scaled_sfx(soundID, vol);
+            auSoundPan[i] = 64;
+            auSoundReverbAmt[i] = 0;
+            osSetIntMask(mask);
+        }
+        return i;
+    } else {
+        return -1;
+    }
+}
+
+/* Re-applies the music scale to whatever the game believes both BGM
+ * players are set to -- called when the slider moves, so the change is
+ * heard without waiting for the game's next volume write. */
+static void snap_apply_music_volume(void) {
+    s32 i;
+    for (i = 0; i < 2; i++) {
+        if (auBGMPlayers[i] != NULL) {
+            alCSPSetVol(auBGMPlayers[i], (s16) auBGMVolume[i]);
+        }
+    }
+}
+
+/* The SOUND page: six rows in the Graphics page's dress, no scrolling --
+ * the list fits whole. Values live in the mailbox's SOUND bank; the
+ * patched audio functions above read them on every call. */
+static s32 snap_snd_value_count(s32 row) {
+    return (row < 4) ? 11 : 2;
+}
+
+static s32 snap_snd_value_str(s32 row, s32 v) {
+    if (row < 4) {
+        return STR_VOL0 + v;
+    }
+    if (row == 4) {
+        return v ? STR_STEREO : STR_MONO;
+    }
+    return v ? STR_ON : STR_OFF;
+}
+
+static void snap_sound_page(void) {
+    UnkStruct800BEDF8* input;
+    GObj* hdrStrip;
+    GObj* descStrip;
+    s32 sel, i, moved, hiddenCount;
+    s32 v;
+    u8 pulseState, pulseCounter;
+
+    if (DIR_MAGIC != 0x53474130) {
+        return;
+    }
+
+    /* Hide the Option list's rows, remembering exactly what was visible --
+     * the same discipline the Graphics page keeps. */
+    hiddenCount = 0;
+    for (i = 0; i < 12; i++) {
+        GObj* chain = snap_chain(i);
+        SObj* sobj = (chain != NULL) ? chain->data.sobj : NULL;
+        while (sobj != NULL) {
+            const s32 y = sobj->sprite.y;
+            if ((y >= 56) && (y < 164) && !(sobj->sprite.attr & SP_HIDDEN) &&
+                (hiddenCount < 64)) {
+                sobj->sprite.attr |= SP_HIDDEN;
+                PAGE_HIDDEN(hiddenCount) = (u32) sobj;
+                hiddenCount++;
+            }
+            sobj = sobj->next;
+        }
+    }
+    {
+        GObj* mine = (GObj*) SCRATCH_GRAPHICS_GOBJ;
+        if ((mine != NULL) && (mine->data.sobj != NULL) &&
+            !(mine->data.sobj->sprite.attr & SP_HIDDEN) && (hiddenCount < 64)) {
+            mine->data.sobj->sprite.attr |= SP_HIDDEN;
+            PAGE_HIDDEN(hiddenCount) = (u32) mine->data.sobj;
+            hiddenCount++;
+        }
+    }
+    {
+        GObj* chain = snap_chain(2);
+        SObj* sobj = (chain != NULL) ? chain->data.sobj : NULL;
+        while (sobj != NULL) {
+            if ((sobj->sprite.y == 40) && !(sobj->sprite.attr & SP_HIDDEN) &&
+                (hiddenCount < 64)) {
+                sobj->sprite.attr |= SP_HIDDEN;
+                PAGE_HIDDEN(hiddenCount) = (u32) sobj;
+                hiddenCount++;
+            }
+            sobj = sobj->next;
+        }
+    }
+    hdrStrip = snap_make_strip(STR_SND_HDR, 45, 41);
+    {
+        GObj* itemHelp = (GObj*) SCRATCH_HELP_ITEM;
+        if ((itemHelp != NULL) && (itemHelp->data.sobj != NULL)) {
+            itemHelp->data.sobj->sprite.attr |= SP_HIDDEN;
+        }
+    }
+    descStrip = snap_make_strip(STR_SND_DESC + 0, 49, 171);
+
+    /* Six fixed rows on the stock seats; PAGE_LABEL/PAGE_VALUE scratch is
+     * free while the Graphics page is closed. */
+    for (i = 0; i < 6; i++) {
+        v = SND_FIELD(i);
+        if (i < 4) {
+            v = v / 10;
+            if (v > 10) {
+                v = 10;
+                SND_FIELD(i) = 100;
+            }
+        }
+        else if (v > 1) {
+            v = 1;
+            SND_FIELD(i) = 1;
+        }
+        PAGE_LABEL(i) = (u32) snap_make_strip(STR_SND_LABEL + i, 50, PAGE_TOP_Y + i * PAGE_PITCH);
+        PAGE_VALUE(i) = (u32) snap_make_strip(snap_snd_value_str(i, v), 163, PAGE_TOP_Y + i * PAGE_PITCH);
+        snap_tint((GObj*) PAGE_VALUE(i), SEL_R, SEL_G, SEL_B);
+    }
+
+    sel = 0;
+    pulseState = 0;
+    pulseCounter = 0;
+
+    ohWait(2);
+
+    while (1) {
+        input = func_800AA38C(0);
+        moved = 0;
+
+        if (gContInputPressedButtons & B_BUTTON) {
+            auPlaySoundWithParams(0x43, 0x7FFF, 0x40, 1.0f, 0);
+            break;
+        }
+
+        if (input->pressedButtons & STICK_SLOW_UP) {
+            snap_tint((GObj*) PAGE_LABEL(sel), 0xFF, 0xFF, 0xFF);
+            sel = (sel == 0) ? 5 : (sel - 1);
+            pulseState = 0;
+            snap_swap_strip(descStrip, STR_SND_DESC + sel);
+            auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
+        }
+        else if (input->pressedButtons & STICK_SLOW_DOWN) {
+            snap_tint((GObj*) PAGE_LABEL(sel), 0xFF, 0xFF, 0xFF);
+            sel = (sel + 1) % 6;
+            pulseState = 0;
+            snap_swap_strip(descStrip, STR_SND_DESC + sel);
+            auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
+        }
+        else if ((input->pressedButtons & STICK_SLOW_RIGHT) ||
+                 (gContInputPressedButtons & A_BUTTON)) {
+            v = (sel < 4) ? (SND_FIELD(sel) / 10) : SND_FIELD(sel);
+            v = (v + 1) % snap_snd_value_count(sel);
+            SND_FIELD(sel) = (sel < 4) ? (v * 10) : v;
+            moved = 1;
+        }
+        else if (input->pressedButtons & STICK_SLOW_LEFT) {
+            v = (sel < 4) ? (SND_FIELD(sel) / 10) : SND_FIELD(sel);
+            v = (v == 0) ? (snap_snd_value_count(sel) - 1) : (v - 1);
+            SND_FIELD(sel) = (sel < 4) ? (v * 10) : v;
+            moved = 1;
+        }
+
+        if (moved) {
+            auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
+            snap_swap_strip((GObj*) PAGE_VALUE(sel), snap_snd_value_str(sel, v));
+            SND_SEQ = SND_SEQ + 1;
+            if (sel == 1) {
+                /* Music applies to what is already playing. */
+                snap_apply_music_volume();
+            }
+            else if (sel == 4) {
+                /* The game's own Stereo/Mono flag, live, plus the save
+                 * snapshot the screen's exit path writes into PFID_9
+                 * (zero there means Stereo). */
+                auSetSoundQuality(v);
+                D_800E8394_A0F924 = v ? 0 : 1;
+            }
+        }
+
+        /* The stock label pulse, on the selected row. */
+        if (PAGE_LABEL(sel) != 0) {
+            SObj* sobj = ((GObj*) PAGE_LABEL(sel))->data.sobj;
+            switch (pulseState) {
+                case 0:
+                    if (sobj->sprite.red >= 0x84) {
+                        sobj->sprite.red -= 4;
+                        func_800E6C00_A0E190(sobj, sobj->sprite.red);
+                    } else {
+                        func_800E6C00_A0E190(sobj, 0x80);
+                        pulseState = 1;
+                    }
+                    break;
+                case 1:
+                    if (sobj->sprite.red < 0xE2) {
+                        sobj->sprite.red += 0x1E;
+                        func_800E6C00_A0E190(sobj, sobj->sprite.red);
+                    } else {
+                        pulseCounter = 0;
+                        func_800E6C00_A0E190(sobj, 0xFF);
+                        pulseState = 2;
+                    }
+                    break;
+                case 2:
+                    if (pulseCounter++ > 30) {
+                        pulseState = 0;
+                    }
+                    break;
+            }
+        }
+        ohWait(1);
+    }
+
+    for (i = 0; i < 6; i++) {
+        if (PAGE_LABEL(i) != 0) {
+            omDeleteGObj((GObj*) PAGE_LABEL(i));
+            PAGE_LABEL(i) = 0;
+        }
+        if (PAGE_VALUE(i) != 0) {
+            omDeleteGObj((GObj*) PAGE_VALUE(i));
+            PAGE_VALUE(i) = 0;
+        }
+    }
+    if (hdrStrip != NULL) {
+        omDeleteGObj(hdrStrip);
+    }
+    if (descStrip != NULL) {
+        omDeleteGObj(descStrip);
+    }
+
+    for (i = 0; i < hiddenCount; i++) {
+        SObj* sobj = (SObj*) PAGE_HIDDEN(i);
+        sobj->sprite.attr &= ~SP_HIDDEN;
+    }
+    ohWait(1);
+}
+
 /* Replaces the Option screen loop: makes room for the sixth item, creates
  * its label and help line, and dispatches -- translating the three stock
  * toggles back to the indices their code was compiled against. */
@@ -939,6 +1324,17 @@ void func_800E7F98_A0F528(void) {
                     sobj->sprite.y += 16;
                 }
                 sobj = sobj->next;
+            }
+        }
+
+        /* The Sound row opens a page now, like Screen and Graphics do, so
+         * its inline Stereo/Mono value pair retires from the root list.
+         * Hidden, not deleted: the screen's teardown owns the chain. */
+        if ((D_800E8358_A0F8E8 != NULL) && (D_800E8358_A0F8E8->data.sobj != NULL)) {
+            SObj* pair = D_800E8358_A0F8E8->data.sobj;
+            pair->sprite.attr |= SP_HIDDEN;
+            if (pair->next != NULL) {
+                pair->next->sprite.attr |= SP_HIDDEN;
             }
         }
 
@@ -992,7 +1388,9 @@ void func_800E7F98_A0F528(void) {
                 case OPT_GRAPHICS:
                     snap_graphics_page();
                     break;
-                case 2:
+                case OPT_SOUND:
+                    snap_sound_page();
+                    break;
                 case 3:
                 case 4:
                     /* The stock cycling code indexes its sprites by the

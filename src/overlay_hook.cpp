@@ -22,6 +22,14 @@ extern "C" {
 #include "funcs.h"
 }
 
+// The patch recompile emits plain recomp-style calls to the OS functions it
+// uses, while librecomp exports them under the _recomp suffix the game's own
+// recompile was configured to call. One bridge per function the patches need.
+extern "C" void osSetIntMask_recomp(uint8_t* rdram, recomp_context* ctx);
+extern "C" void osSetIntMask(uint8_t* rdram, recomp_context* ctx) {
+    osSetIntMask_recomp(rdram, ctx);
+}
+
 namespace snap {
     extern uint8_t* g_rdram;
     // True while the code a ride runs from is the code that is loaded.
