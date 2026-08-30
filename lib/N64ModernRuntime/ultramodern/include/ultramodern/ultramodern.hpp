@@ -37,6 +37,9 @@ void init_saving(RDRAM_ARG1);
 void init_events(RDRAM_ARG renderer::WindowHandle window_handle);
 void init_timers(RDRAM_ARG1);
 void init_thread_cleanup();
+// Pokemon Snap port: park this many pooled host threads ahead of demand,
+// so the first course's spawn bursts find workers already breathing.
+void prewarm_thread_pool(uint32_t count);
 
 // Saving
 void change_save_file(const std::u8string& subfolder, const std::u8string& name);

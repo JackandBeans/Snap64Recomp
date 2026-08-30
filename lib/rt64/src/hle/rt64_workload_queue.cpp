@@ -13,6 +13,7 @@
 #include "rt64_snap_diag.h"
 
 #include <atomic>
+#include <chrono>
 
 // Pokemon Snap port: defined in src/frame_dump.cpp on the game side. Setting
 // it asks the game to save the next few frames' framebuffers as images.
@@ -410,7 +411,12 @@ namespace RT64 {
         bool interpolationSubFrame)
     {
 #   if ENABLE_HIGH_RESOLUTION_RENDERER
+        // A present gap is exactly the length of the slowest sub-frame
+        // render, so a slow one names its phase here: the mutex wait, the
+        // recording, the uploader fence, or the GPU itself.
+        const auto snapT0 = std::chrono::steady_clock::now();
         std::scoped_lock<std::mutex> managerLock(ext.sharedResources->workloadMutex);
+        const auto snapTLock = std::chrono::steady_clock::now();
         FramebufferManager &fbManager = ext.sharedResources->framebufferManager;
         RenderTargetManager &targetManager = ext.sharedResources->renderTargetManager;
         const bool usingMSAA = (targetManager.multisampling.sampleCount > 1);
@@ -1031,10 +1037,26 @@ namespace RT64 {
 
             ext.workloadGraphicsWorker->commandList->writeTimestamp(queryPool.get(), 1);
             ext.workloadGraphicsWorker->commandList->end();
+            const auto snapTRecord = std::chrono::steady_clock::now();
             framebufferRenderer->waitForUploaders();
+            const auto snapTUpload = std::chrono::steady_clock::now();
             ext.workloadGraphicsWorker->execute();
             ext.workloadGraphicsWorker->wait();
             workerMutex.unlock();
+
+            if (snapdiag::statsEnabled()) {
+                const auto snapTEnd = std::chrono::steady_clock::now();
+                const double totalMs = std::chrono::duration<double, std::milli>(snapTEnd - snapT0).count();
+                if (totalMs > 8.0) {
+                    fprintf(stdout, "[SNAP-RFRAME] %.1f ms: lock %.1f record %.1f uploadWait %.1f gpu %.1f\n",
+                        totalMs,
+                        std::chrono::duration<double, std::milli>(snapTLock - snapT0).count(),
+                        std::chrono::duration<double, std::milli>(snapTRecord - snapTLock).count(),
+                        std::chrono::duration<double, std::milli>(snapTUpload - snapTRecord).count(),
+                        std::chrono::duration<double, std::milli>(snapTEnd - snapTUpload).count());
+                    fflush(stdout);
+                }
+            }
 
             // Update the GPU profiler with the results from the timestamps of the frame.
             queryPool->queryResults();

@@ -11,6 +11,7 @@
 #include "rt64_snap_diag.h"
 
 #include <atomic>
+#include <chrono>
 #include <condition_variable>
 #include <deque>
 #include <mutex>
@@ -358,6 +359,12 @@ namespace {
     }
 
     void PresentQueue::threadPresent(const Present &present, bool &swapChainValid) {
+        // Stall hunt, pre-loop half: everything before the per-frame loop
+        // can execute and fence on the present worker (fb operations, the
+        // depth-to-color copy, the RAM upload path) or block on the
+        // workload mutex. A slow setup names itself.
+        const auto snapSetup0 = std::chrono::steady_clock::now();
+        auto snapSetupFbOps = snapSetup0;
         FramebufferManager &fbManager = ext.sharedResources->framebufferManager;
         RenderTargetManager &targetManager = ext.sharedResources->renderTargetManager;
         const bool usingMSAA = (targetManager.multisampling.sampleCount > 1);
@@ -403,6 +410,7 @@ namespace {
                     present.fbOperations, targetManager, resolutionScale, 0, 0, nullptr);
             }
         }
+        snapSetupFbOps = std::chrono::steady_clock::now();
 
         // Present the VI specified by the event.
         // Attempt to find the matching framebuffer for the VI based on the origin address.
@@ -574,7 +582,25 @@ namespace {
             }
         }
         
+        if (snapdiag::statsEnabled()) {
+            const auto snapSetupEnd = std::chrono::steady_clock::now();
+            const double setupMs = std::chrono::duration<double, std::milli>(snapSetupEnd - snapSetup0).count();
+            if (setupMs > 8.0) {
+                fprintf(stdout, "[SNAP-PSETUP] %.1f ms: fbOps %.1f rest %.1f\n",
+                    setupMs,
+                    std::chrono::duration<double, std::milli>(snapSetupFbOps - snapSetup0).count(),
+                    std::chrono::duration<double, std::milli>(snapSetupEnd - snapSetupFbOps).count());
+                fflush(stdout);
+            }
+        }
+
         for (int32_t i = 0; i < framesToPresent; i++) {
+            // Phase clocks for the stall hunt: a slow present names which of
+            // its phases ate the time.
+            const auto snapPT0 = std::chrono::steady_clock::now();
+            auto snapPTInterp = snapPT0;
+            auto snapPTAcquire = snapPT0;
+            auto snapPTWork = snapPT0;
             uint32_t frameCountersNextPresented = 0;
             if ((framesToPresent > 1) && (usingMSAA || (i > 0))) {
                 // Stall until the interpolated color target is available.
@@ -605,11 +631,13 @@ namespace {
                 frameCountersNextPresented = frameCounters.count;
             }
 
+            snapPTInterp = std::chrono::steady_clock::now();
             uint32_t swapChainIndex = 0;
             const bool presentFrame = (i < framesToPresent) && swapChainValid;
             if (presentFrame) {
                 swapChainValid = ext.swapChain->acquireTexture(acquiredSemaphore.get(), &swapChainIndex);
             }
+            snapPTAcquire = std::chrono::steady_clock::now();
 
             if (presentFrame && swapChainValid) {
                 // Draw the framebuffer with the VI renderer.
@@ -703,6 +731,7 @@ namespace {
                 }
             }
 
+            snapPTWork = std::chrono::steady_clock::now();
             if (lockedWorkloadMutex) {
                 ext.sharedResources->workloadMutex.unlock();
                 lockedWorkloadMutex = false;
@@ -756,6 +785,20 @@ namespace {
                 presentTimestamp = Timer::current();
                 swapChainValid = ext.swapChain->present(swapChainIndex, &waitSemaphore, 1);
                 presentProfiler.logAndRestart();
+
+                if (snapdiag::statsEnabled()) {
+                    const auto snapPTEnd = std::chrono::steady_clock::now();
+                    const double totalMs = std::chrono::duration<double, std::milli>(snapPTEnd - snapPT0).count();
+                    if (totalMs > 8.0) {
+                        fprintf(stdout, "[SNAP-PFRAME] %.1f ms: interpWait %.1f acquire %.1f work %.1f pace+present %.1f\n",
+                            totalMs,
+                            std::chrono::duration<double, std::milli>(snapPTInterp - snapPT0).count(),
+                            std::chrono::duration<double, std::milli>(snapPTAcquire - snapPTInterp).count(),
+                            std::chrono::duration<double, std::milli>(snapPTWork - snapPTAcquire).count(),
+                            std::chrono::duration<double, std::milli>(snapPTEnd - snapPTWork).count());
+                        fflush(stdout);
+                    }
+                }
 
                 // Pokemon Snap port: how evenly frames actually reach the
                 // screen, which is what stutter is. Judged here rather than

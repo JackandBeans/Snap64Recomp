@@ -4,6 +4,9 @@
 #include <string>
 #include <atomic>
 #include <chrono>
+#include <functional>
+#include <mutex>
+#include <vector>
 
 #include "ultramodern/ultra64.h"
 #include "ultramodern/ultramodern.hpp"
@@ -274,6 +277,61 @@ static void _thread_func(RDRAM_ARG PTR(OSThread) self_, PTR(thread_func_t) entry
     ultramodern::cleanup_thread(thread_context);
 }
 
+// Pokemon Snap port: a pool of parked host threads for the game's
+// coroutines. This game creates an OS thread per object process, and a
+// course block boundary creates a dozen in one tick; a real host thread
+// birth plus its initialization handshake measured ~3ms apiece, which put
+// 37ms of thread creation inside single game ticks -- the largest single
+// component of the block-crossing stutter. A parked worker turns the same
+// handshake into a semaphore wake. Workers are detached and live for the
+// process: a parked thread costs a stack, and destroying one buys nothing.
+struct PooledHostThread {
+    moodycamel::LightweightSemaphore taskReady;
+    std::function<void()> task;
+    std::thread thread;
+};
+static std::mutex pool_mutex;
+static std::vector<PooledHostThread*> pool_parked;
+
+static void _pooled_thread_main(PooledHostThread* self) {
+    while (true) {
+        self->taskReady.wait();
+        self->task();
+        std::lock_guard<std::mutex> lock(pool_mutex);
+        pool_parked.push_back(self);
+    }
+}
+
+static PooledHostThread* pool_take_or_create() {
+    {
+        std::lock_guard<std::mutex> lock(pool_mutex);
+        if (!pool_parked.empty()) {
+            PooledHostThread* worker = pool_parked.back();
+            pool_parked.pop_back();
+            return worker;
+        }
+    }
+    PooledHostThread* worker = new PooledHostThread();
+    worker->thread = std::thread{_pooled_thread_main, worker};
+    worker->thread.detach();
+    return worker;
+}
+
+void ultramodern::prewarm_thread_pool(uint32_t count) {
+    std::vector<PooledHostThread*> made;
+    made.reserve(count);
+    for (uint32_t i = 0; i < count; i++) {
+        PooledHostThread* worker = new PooledHostThread();
+        worker->thread = std::thread{_pooled_thread_main, worker};
+        worker->thread.detach();
+        made.push_back(worker);
+    }
+    std::lock_guard<std::mutex> lock(pool_mutex);
+    for (PooledHostThread* worker : made) {
+        pool_parked.push_back(worker);
+    }
+}
+
 extern "C" void osStartThread(RDRAM_ARG PTR(OSThread) t_) {
     OSThread* t = TO_PTR(OSThread, t_);
     debug_printf("[os] Start Thread %d\n", t->id);
@@ -303,11 +361,18 @@ extern "C" void osCreateThread(RDRAM_ARG PTR(OSThread) t_, OSId id, PTR(thread_f
     t->state = OSThreadState::STOPPED;
     t->sp = sp - 0x10; // Set up the first stack frame
 
-    // Spawn a new thread, which will immediately pause itself and wait until it's been started.
-    // Pass the context as an argument to the thread function to ensure that it can't get cleared before the thread captures its value.
+    // Hand the thread body to a parked pool worker instead of birthing a
+    // host thread: the handshake below used to include a real thread
+    // creation and measured ~3ms; a semaphore wake is microseconds. The
+    // context's host_thread member stays default-constructed -- pooled
+    // workers are never owned by a context and never joined.
     UltraThreadContext* context = new UltraThreadContext{};
     t->context = context;
-    context->host_thread = std::thread{_thread_func, PASS_RDRAM t_, entrypoint, arg, t->context};
+    PooledHostThread* worker = pool_take_or_create();
+    worker->task = [=]() {
+        _thread_func(PASS_RDRAM t_, entrypoint, arg, context);
+    };
+    worker->taskReady.signal();
 
     // Wait until the thread is initialized to indicate that it's ready to be started.
     context->initialized.wait();
@@ -402,7 +467,11 @@ void thread_cleaner_func() {
         if (deleted_threads.wait_dequeue_timed(to_delete, 10ms)) {
             debug_printf("[Cleanup] Deleting thread context %p\n", to_delete);
 
-            to_delete->host_thread.join();
+            // Pooled contexts never own a host thread; joining a default
+            // std::thread throws.
+            if (to_delete->host_thread.joinable()) {
+                to_delete->host_thread.join();
+            }
             delete to_delete;
         }
     }
@@ -410,6 +479,9 @@ void thread_cleaner_func() {
 
 void ultramodern::init_thread_cleanup() {
     thread_cleaner_thread = std::thread{thread_cleaner_func};
+    // The game creates a dozen coroutine threads at every course block
+    // boundary; have that many workers parked before it ever asks.
+    ultramodern::prewarm_thread_pool(16);
 }
 
 void ultramodern::cleanup_thread(UltraThreadContext *cur_context) {
