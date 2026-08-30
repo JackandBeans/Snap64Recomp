@@ -133,10 +133,10 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define PAGE_TOP_Y     73
 #define PAGE_PITCH     16
 /* Scroll arrows: inside the widest value's right edge, scaled 1.5x
- * (10x11 texels draw 15x16), the down arrow's bob kept clear of the
- * help box frame at y=168. */
+ * (12x13 texels with their ring draw 18x19.5), the down arrow's bob
+ * kept clear of the help box frame at y=168. */
 #define ARROW_X        282
-#define ARROW_UP_Y     73
+#define ARROW_UP_Y     72
 #define ARROW_DN_Y     146
 
 #define SEL_R 0xFF
@@ -574,13 +574,12 @@ static void snap_graphics_page(void) {
     /* The scroll arrows sit at the list's right edge, drawn half again
      * their size and bobbing a couple of pixels in the main loop: colour
      * alone at the screen's edge went unnoticed, and motion is the one
-     * thing the eye cannot ignore. Selection orange, like everything
-     * else here that answers the stick. snap_page_layout owns their
-     * visibility. */
-    PAGE_ARROW_UP = (u32) snap_make_strip(STR_SCROLL_UP, ARROW_X, ARROW_UP_Y);
-    PAGE_ARROW_DN = (u32) snap_make_strip(STR_SCROLL_DN, ARROW_X, ARROW_DN_Y);
-    snap_tint((GObj*) PAGE_ARROW_UP, SEL_R, SEL_G, SEL_B);
-    snap_tint((GObj*) PAGE_ARROW_DN, SEL_R, SEL_G, SEL_B);
+     * thing the eye cannot ignore. RGBA like the credits line, wearing
+     * the same live rainbow inside the same baked ring -- the port's
+     * marks speak one language. White prim so the texel colours pass
+     * through. snap_page_layout owns their visibility. */
+    PAGE_ARROW_UP = (u32) snap_make_strip_fmt(STR_SCROLL_UP, ARROW_X, ARROW_UP_Y, G_IM_FMT_RGBA);
+    PAGE_ARROW_DN = (u32) snap_make_strip_fmt(STR_SCROLL_DN, ARROW_X, ARROW_DN_Y, G_IM_FMT_RGBA);
     for (i = 0; i < 2; i++) {
         GObj* arrow = (GObj*) ((i == 0) ? PAGE_ARROW_UP : PAGE_ARROW_DN);
         if ((arrow != NULL) && (arrow->data.sobj != NULL)) {

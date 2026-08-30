@@ -340,12 +340,17 @@ Strip compose_help(const char* text) {
     return strip;
 }
 
+void apply_outline(Strip &strip);
+
 // The scroll arrows: the values' own big chevron turned on its side to
 // point up or down, so the Graphics page can say that more settings sit
-// off-screen. Same pixels the player already reads as "more this way".
+// off-screen. Same pixels the player already reads as "more this way",
+// wearing the credits line's own treatment: rainbow cores in a baked
+// black ring, recoloured live by the same animator. One row and column
+// of padding so the ring fits around the chevron.
 Strip compose_scroll_arrow(bool up) {
     Strip strip;
-    strip.height = kMenuBrkLW;   // rotated: the chevron's width becomes height
+    strip.height = kMenuBrkLW + 2;   // rotated: width becomes height
     strip.width = 64;
     strip.intensity.assign(size_t(strip.width) * strip.height, 0);
     strip.alpha.assign(size_t(strip.width) * strip.height, 0);
@@ -355,12 +360,13 @@ Strip compose_scroll_arrow(bool up) {
             const uint8_t a = kMenuBrkLIA[(y * kMenuBrkLW + x) * 2 + 1];
             // '<' points left; a quarter turn clockwise points it up, the
             // other way points it down.
-            const int rx = up ? (kMenuBrkLH - 1 - y) : y;
-            const int ry = up ? x : (kMenuBrkLW - 1 - x);
+            const int rx = 1 + (up ? (kMenuBrkLH - 1 - y) : y);
+            const int ry = 1 + (up ? x : (kMenuBrkLW - 1 - x));
             strip.intensity[size_t(ry) * strip.width + rx] = i;
             strip.alpha[size_t(ry) * strip.width + rx] = a;
         }
     }
+    apply_outline(strip);
     return strip;
 }
 
@@ -655,16 +661,19 @@ bool load_override(const char* name, Strip &strip) {
 uint32_t g_last_applied_seq = 0;
 bool g_staged = false;
 
-// The credits line keeps its alpha mask host-side so its staged RGBA16
-// texels can be recoloured live: the Option screen's breathing cadence
-// over a slow rainbow sweep, exactly the kind of colour-cycled flourish
-// the era loved. The sprite reads RDRAM every frame, so rewriting the
-// texels is the whole animation.
-struct {
+// The rainbow strips keep their alpha masks host-side so their staged
+// RGBA16 texels can be recoloured live -- exactly the kind of
+// colour-cycled flourish the era loved. The sprite reads RDRAM every
+// frame, so rewriting the texels is the whole animation. The credits
+// line wears it as the port's signature, and the Graphics page's scroll
+// arrows wear the same one: the port's marks speak one language.
+struct RainbowStrip {
     uint32_t addr = 0;
     int w = 0, h = 0;
     std::vector<uint8_t> mask;
-} g_credits;
+};
+RainbowStrip g_credits;
+RainbowStrip g_arrows[2];
 
 void hsv_to_rgb(int hue, uint8_t value, uint8_t &r, uint8_t &g, uint8_t &b) {
     // Saturation fixed at ~0.72 so every hue stays luminous on screen.
@@ -683,22 +692,19 @@ void hsv_to_rgb(int hue, uint8_t value, uint8_t &r, uint8_t &g, uint8_t &b) {
     }
 }
 
-void animate_credits() {
-    if (g_credits.addr == 0) {
+// A calm scrolling rainbow at constant full brightness -- the classic
+// era treatment -- drifting one hue degree a tick, roughly a six second
+// lap. No pulsing: the black border carries the legibility and the
+// colour quietly moves.
+void animate_rainbow(const RainbowStrip& s, uint32_t tick) {
+    if (s.addr == 0) {
         return;
     }
-    static uint32_t tick = 0;
-    tick++;
-
-    // A calm scrolling rainbow at constant full brightness -- the classic
-    // era treatment -- drifting one hue degree a tick, roughly a six
-    // second lap. No pulsing: the black border carries the legibility and
-    // the colour quietly moves.
-    const int w = g_credits.w;
-    const int h = g_credits.h;
+    const int w = s.w;
+    const int h = s.h;
     for (int y = 0; y < h; y++) {
         for (int x = 0; x < w; x++) {
-            if (g_credits.mask[size_t(y) * w + x] < 128) {
+            if (s.mask[size_t(y) * w + x] < 128) {
                 continue;
             }
             uint8_t r, g, b;
@@ -706,9 +712,19 @@ void animate_credits() {
             const uint16_t texel = uint16_t(((r >> 3) << 11) | ((g >> 3) << 6) | ((b >> 3) << 1) | 1);
             const int chunk = x / 64;
             const uint32_t off = uint32_t((chunk * 64 * h + y * 64 + (x % 64)) * 2);
-            write_u16(g_credits.addr + off, texel);
+            write_u16(s.addr + off, texel);
         }
     }
+}
+
+void animate_credits() {
+    static uint32_t tick = 0;
+    tick++;
+    animate_rainbow(g_credits, tick);
+    // The scroll arrows sweep on the same clock; their few rows cost
+    // nothing when the Graphics page is closed and their sprite hidden.
+    animate_rainbow(g_arrows[0], tick);
+    animate_rainbow(g_arrows[1], tick);
 }
 
 void seed_mailbox() {
@@ -983,15 +999,17 @@ void stage_menu_assets(uint8_t* rdram) {
         write_u16(DirectoryAddr + 0xC + id * 8, uint16_t(w));
         write_u16(DirectoryAddr + 0xE + id * 8, uint16_t(h));
 
-        if (id == BaseCount + 23) {
-            g_credits.addr = cursor;
-            g_credits.w = w;
-            g_credits.h = h;
+        if ((id == BaseCount + 23) || (id == BaseCount + 24) || (id == BaseCount + 25)) {
+            RainbowStrip& rs = (id == BaseCount + 23) ? g_credits
+                                                      : g_arrows[id - BaseCount - 24];
+            rs.addr = cursor;
+            rs.w = w;
+            rs.h = h;
             // Cores only: the animator must never touch the black border.
-            g_credits.mask.assign(size_t(w) * h, 0);
-            for (size_t px = 0; px < g_credits.mask.size(); px++) {
+            rs.mask.assign(size_t(w) * h, 0);
+            for (size_t px = 0; px < rs.mask.size(); px++) {
                 if ((strip.alpha[px] >= 128) && (strip.intensity[px] >= 128)) {
-                    g_credits.mask[px] = 255;
+                    rs.mask[px] = 255;
                 }
             }
         }
@@ -1022,9 +1040,10 @@ void stage_menu_assets(uint8_t* rdram) {
                     else if (id == BaseCount + 22) {
                         texel = logo.texels[size_t(y) * w + (cx + x)];   // RGBA16
                     }
-                    else if (id == BaseCount + 23) {
-                        // Cores start white and are recoloured live by
-                        // animate_credits(); the border stays opaque black.
+                    else if ((id == BaseCount + 23) || (id == BaseCount + 24) ||
+                             (id == BaseCount + 25)) {
+                        // Cores start white and are recoloured live by the
+                        // rainbow animator; the border stays opaque black.
                         const size_t src = size_t(y) * w + (cx + x);
                         if (strip.alpha[src] >= 128) {
                             texel = (strip.intensity[src] >= 128) ? 0xFFFF : 0x0001;
