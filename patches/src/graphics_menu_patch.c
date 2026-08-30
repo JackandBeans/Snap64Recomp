@@ -133,11 +133,15 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define PAGE_TOP_Y     73
 #define PAGE_PITCH     16
 /* Scroll arrows: the chevron at its native 1:1 scale (12x13 with the
- * ring), bracketing the list -- level with the first and last visible
- * rows -- and tucked inside the help box frame's column (its right
- * rule sits at 293), clear of the widest value's end at 278. The
- * down arrow's travel stays above the box frame at y=168. */
-#define ARROW_X        280
+ * ring), bracketing the list level with the first and last visible
+ * rows, in the LEFT gutter where this menu already hangs its row
+ * marks (the root page's bullet dots): every label starts at 50, so
+ * the arrow keeps a constant four pixels to the text column on every
+ * row. The right rail floated instead -- the values end at different
+ * widths, so over there the arrow's distance to the nearest content
+ * changed row by row and the pair read as unanchored. The down
+ * arrow's travel stays above the help box frame at y=168. */
+#define ARROW_X        34
 #define ARROW_UP_Y     72
 #define ARROW_DN_Y     151
 
