@@ -309,7 +309,9 @@ static void snap_tint(GObj* gobj, u8 r, u8 g, u8 b) {
 #define SCRATCH_HELP_ITEM     (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x1C))
 #define SCRATCH_HELP_PAGE     (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x20))
 /* Diagnostic heartbeat the port prints when it changes. */
-#define MBOX_DBG              (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x28))
+/* Moved off +0x28 when the SOUND bank claimed +0x28..0x2D: a debug write
+ * there would have silently zeroed the volume sliders. Unused today. */
+#define MBOX_DBG              (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x30))
 
 /* Pointer arrays live in the mailbox block's spare space, NOT on the stack.
  * These functions run on a GObj process coroutine, and those threads get a
@@ -318,12 +320,18 @@ static void snap_tint(GObj* gobj, u8 r, u8 g, u8 b) {
  * screen ("gobjthread stack over"), which on the port is a silent freeze.
  * Measured: the page's original ~600 bytes of local arrays killed it. */
 #define SCRATCH_ARRAYS        (SNAP_GFX_MAILBOX + 0x100)
-#define PAGE_LABEL(i)  (*(volatile u32*) (SCRATCH_ARRAYS + 0x00 + (i) * 4))   /* GObj*, 12 */
-#define PAGE_VALUE(i)  (*(volatile u32*) (SCRATCH_ARRAYS + 0x30 + (i) * 4))   /* GObj*, 12 */
-#define PAGE_HIDDEN(i) (*(volatile u32*) (SCRATCH_ARRAYS + 0x60 + (i) * 4))   /* SObj*, 64 */
-#define LIST_LABEL(i)  (*(volatile u32*) (SCRATCH_ARRAYS + 0x160 + (i) * 4))  /* SObj*, 8 */
-#define PAGE_ARROW_UP  (*(volatile u32*) (SCRATCH_ARRAYS + 0x180))            /* GObj* */
-#define PAGE_ARROW_DN  (*(volatile u32*) (SCRATCH_ARRAYS + 0x184))            /* GObj* */
+/* Sixteen slots for the page rows even though thirteen exist: the day the
+ * page gained its thirteenth row, twelve-slot arrays silently aliased --
+ * label 12 landed on value 0 and value 12 landed on hidden 0, which
+ * corrupted value swaps, leaked strips onto the root list, and left the
+ * teardown restoring sprites through a clobbered pointer. Headroom is
+ * cheaper than that afternoon. */
+#define PAGE_LABEL(i)  (*(volatile u32*) (SCRATCH_ARRAYS + 0x00 + (i) * 4))   /* GObj*, 16 */
+#define PAGE_VALUE(i)  (*(volatile u32*) (SCRATCH_ARRAYS + 0x40 + (i) * 4))   /* GObj*, 16 */
+#define PAGE_HIDDEN(i) (*(volatile u32*) (SCRATCH_ARRAYS + 0x80 + (i) * 4))   /* SObj*, 64 */
+#define LIST_LABEL(i)  (*(volatile u32*) (SCRATCH_ARRAYS + 0x180 + (i) * 4))  /* SObj*, 8 */
+#define PAGE_ARROW_UP  (*(volatile u32*) (SCRATCH_ARRAYS + 0x1A0))            /* GObj* */
+#define PAGE_ARROW_DN  (*(volatile u32*) (SCRATCH_ARRAYS + 0x1A4))            /* GObj* */
 #define LIST_HELP(i)   (*(volatile u32*) (SCRATCH_ARRAYS + 0x180 + (i) * 4))  /* SObj*, 8 */
 
 /* The page's twelve rows, in display order. Each row cycles one mailbox
