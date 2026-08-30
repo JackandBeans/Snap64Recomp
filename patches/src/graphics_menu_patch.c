@@ -1069,29 +1069,28 @@ void func_800E2058_A095E8(void) {
     omGObjAddSprite(gobj, (Sprite*) 0x802F82C8);
 
     sobj = sobj->next;
-    /* Two rows above the stock seat (198): between the second line's
-     * border and the overscan crop's last visible row (227) the factory
-     * layout leaves exactly the credits strip's own height, so a third
-     * line could only sit there touching both neighbours. Lifted just
-     * enough that the block's own internal rhythm -- one clear row
-     * between the lines' borders -- continues through the credits and
-     * on to the screen edge. */
-    func_800E18FC_A08E8C(sobj, 74, 196);
+    /* Four rows above the stock seat (198), so the whole stack can hold
+     * ONE gap: the stock pair keeps three empty rows of ink between its
+     * lines, and with the block at 194 (line 2's ink ends at 213) the
+     * same three rows fit between line 2 and the credits, and again
+     * between the credits' lowest ink and the overscan crop's last
+     * visible row (227). */
+    func_800E18FC_A08E8C(sobj, 74, 194);
     func_800E18A0_A08E30(sobj, SP_TEXSHUF | SP_TRANSPARENT);
 
     snap_show_badge();
 
-    /* The port's own credits line, centred, on the block's exact
-     * internal rhythm: the stock pair keeps one clear row between
-     * borders, and with the block at 196 (line 2's border ends at 216)
-     * the credits' outline at 218 keeps that same single row above --
-     * and one more to the crop edge below (outline ends 226, the crop
-     * shows through 227). Border, gap, border, gap, border, gap, edge:
-     * one cadence for the whole stack. The port recolours its texels
-     * live, so all the sprite carries is position. Rides this gobj and
-     * leaves with it. */
+    /* The port's own credits line, centred, seated by what the eye can
+     * see: ink to ink, the stock pair keeps three empty rows between its
+     * lines, and this line keeps the same three on both sides. At 216
+     * the coloured cores start at 217, three rows below line 2's ink
+     * (214-216), and the lowest ink -- the p descender at 224 -- keeps
+     * three rows to the crop's last visible row (225-227). One gap,
+     * three times, ending at the screen edge. The port recolours its
+     * texels live, so all the sprite carries is position. Rides this
+     * gobj and leaves with it. */
     {
-        Sprite* credits = snap_build_sprite(STR_CREDITS, 160 - (DIR_W(STR_CREDITS) / 2), 218, G_IM_FMT_RGBA);
+        Sprite* credits = snap_build_sprite(STR_CREDITS, 160 - (DIR_W(STR_CREDITS) / 2), 216, G_IM_FMT_RGBA);
         if (credits != NULL) {
             omGObjAddSprite(gobj, credits);
         }
