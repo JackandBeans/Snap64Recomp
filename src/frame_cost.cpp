@@ -177,6 +177,13 @@ extern "C" void gtlUpdate(uint8_t* rdram, recomp_context* ctx) {
 // every second tick, and it skips the draw outright if it cannot take the
 // graphics context, which doubles a frame's length with no extra work done.
 extern "C" void gtlDraw(uint8_t* rdram, recomp_context* ctx) {
+    // Counted whatever the diagnostics are doing: the spawn fade advances
+    // its ramp by this, so it is no longer only a measurement. Behind the
+    // stats gate it once stranded every fading Pokemon invisible at alpha
+    // zero in real play, while every instrumented verification run -- which
+    // is all of them -- looked perfect.
+    snap_draw_serial.fetch_add(1, std::memory_order_relaxed);
+
     const bool on = snapdiag::statsEnabled();
     if (!on) {
         __real_gtlDraw(rdram, ctx);
@@ -190,7 +197,6 @@ extern "C" void gtlDraw(uint8_t* rdram, recomp_context* ctx) {
     }
 
     snap_game_draw_count.fetch_add(1, std::memory_order_relaxed);
-    snap_draw_serial.fetch_add(1, std::memory_order_relaxed);
 }
 
 // One Pokemon coming into existence: its object, its model tree, its matrices,
