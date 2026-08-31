@@ -65,6 +65,11 @@ namespace RT64 {
         uint32_t forceUpscale2D : 1;
         uint32_t forceTrueBilerp : 2;
         uint32_t forceScaleLOD : 1;
+        // Pokemon Snap port: G_EX_OBJECTFADE_V1. While snapFadeOn is set the
+        // draws are rendered at snapFadeAlpha of their opacity by the forced
+        // translucency path (rt64_state.cpp). Zero-initialised means off.
+        uint32_t snapFadeOn : 1;
+        uint32_t snapFadeAlpha : 8;
     };
 
     struct DrawCall {

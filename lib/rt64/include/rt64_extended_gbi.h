@@ -93,7 +93,14 @@
 // the previous particle's still-open group and pair across frames with
 // whichever particle happened to follow.
 #define G_EX_RECTGROUP_ONE_V1       0x000036
-#define G_EX_MAX                        0x000037
+// Pokemon Snap port: forces the draws that follow to render at a fraction of
+// their opacity, at the renderer level, where the display list's own state
+// cannot override it. Payload word: bit 8 set means a fade is active, bits
+// 0-7 carry the alpha. A payload of zero ends the span. Built for the spawn
+// fade after six attempts to fade models through RDP state all failed: the
+// pixels of this game's materials are decided below the display list.
+#define G_EX_OBJECTFADE_V1          0x000037
+#define G_EX_MAX                        0x000038
 
 #define G_EX_ORIGIN_NONE            0x800
 #define G_EX_ORIGIN_LEFT            0x0
