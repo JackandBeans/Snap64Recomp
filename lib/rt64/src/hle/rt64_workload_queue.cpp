@@ -924,6 +924,12 @@ namespace RT64 {
 
                             if (colorFbChange != nullptr) {
                                 colorTarget->copyFromChanges(ext.workloadGraphicsWorker, *colorFbChange, colorFb->width, readRowCount, colorFb->readHeight, ext.shaderLibrary);
+                                if (snapdiag::statsEnabled()) {
+                                    fprintf(stdout, "[SNAP-FBRELOAD] color rows %u..%u (fb %08X h %u) at frame %u\n",
+                                        colorFb->readHeight, colorFb->height, colorFb->addressStart, colorFb->height,
+                                        snapdiag::gameFrameCounter().load(std::memory_order_relaxed));
+                                    fflush(stdout);
+                                }
                             }
 
                             colorFb->readHeight = colorFb->height;

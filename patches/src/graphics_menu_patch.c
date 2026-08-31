@@ -307,7 +307,9 @@ static void snap_tint(GObj* gobj, u8 r, u8 g, u8 b) {
  * Z Button, Control Stick, Return. */
 #define SCRATCH_GRAPHICS_GOBJ (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x18))
 #define SCRATCH_HELP_ITEM     (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x1C))
-#define SCRATCH_HELP_PAGE     (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x20))
+/* +0x20 belongs to SND_SEQ; a scratch slot briefly defined here collided
+ * with it and was never used -- any write would have faked a sound-bank
+ * sequence bump every tick and spammed apply+save. Left retired. */
 /* Diagnostic heartbeat the port prints when it changes. */
 /* Moved off +0x28 when the SOUND bank claimed +0x28..0x2D: a debug write
  * there would have silently zeroed the volume sliders. Unused today. */
@@ -636,6 +638,17 @@ static void snap_graphics_page(void) {
             break;
         }
 
+        if (gContInputPressedButtons & A_BUTTON) {
+            /* A accepts what is on screen and leaves, matching the SOUND
+             * page. A used to cycle the selected row's value instead --
+             * which silently edited AND saved a setting on the button
+             * everyone presses to mean "yes": that is how a player's 2D
+             * Detail ended up on Classic without them knowing, reported as
+             * a pixelation bug. Edits belong to the stick alone. */
+            auPlaySoundWithParams(0x42, 0x7FFF, 0x40, 1.0f, 0);
+            break;
+        }
+
         if (input->pressedButtons & STICK_SLOW_UP) {
             snap_tint((GObj*) PAGE_LABEL(sel), 0xFF, 0xFF, 0xFF);
             sel = (sel == 0) ? (PAGE_ITEMS - 1) : (sel - 1);
@@ -670,8 +683,7 @@ static void snap_graphics_page(void) {
             snap_swap_strip(descStrip, snap_row_desc(sel));
             auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
         }
-        else if ((input->pressedButtons & STICK_SLOW_RIGHT) ||
-                 (gContInputPressedButtons & A_BUTTON)) {
+        else if (input->pressedButtons & STICK_SLOW_RIGHT) {
             field = snap_row_field(sel);
             v = MBOX_FIELD(field) + 1;
             if (v >= snap_value_count(sel)) {
