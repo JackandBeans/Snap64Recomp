@@ -1,48 +1,44 @@
 /**
  * @file spawn_fade.cpp
- * @brief Fades constructor-time Pokemon spawns into view, using the game's
- *        own cut fade machinery -- and ONLY that machinery.
+ * @brief Fades constructor-time Pokemon spawns into view -- the host half
+ *        of the renderer-level forced-translucency fade.
  *
- * The game ships a whole-model fader it never calls: every Pokemon carries
- * an alpha byte (Pokemon+0xE4, initialised 255 and then written by nothing)
- * and pokemon.c contains a render wrapper (func_80360074) that draws the
- * model through a fog-register alpha blend. It hard-calls
- * renderPokemonModelTypeI, so it only understands the TypeI geometry
- * family -- and five attempts to generalise the fade to the B, J and D
- * families through replacement render wrappers all failed in presented-
- * frame captures (fog silhouettes, black bodies, giant untextured wing
- * shards at course start). A state-level mode dump proved the replacement
- * brackets' blend modes survive to the draw untouched and the output is
- * still wrong: whatever interferes lives below the display list, and no
- * display-list bracket can fix it. The chronicle lives in the git history
- * of patches/src/spawn_fade_patch.c (deleted with commit "the pixel court
- * adjourns").
+ * Six attempts to fade Pokemon by rewriting RDP state around their models
+ * failed in presented-frame captures -- fog silhouettes, black bodies,
+ * untextured wing shards -- and even the game's own dormant fader
+ * (func_80360074) draws models half-untextured under HLE. A state-level
+ * mode dump proved injected state reaches the draw intact while the output
+ * is still wrong: the pixels are decided below the display list. So the
+ * fade lives below it too, in three layers:
  *
- * So this module does exactly what the game's own machinery supports:
- * when a TypeI-family Pokemon is constructed in view of the settings
- * toggle, its render callback is swapped to the game's own fade renderer,
- * the alpha starts at zero, and the per-drawn-frame stepper ramps it to
- * opaque before restoring the original callback. Pidgey and Lapras on the
- * Beach fade this way, exactly as the feature first shipped. The other
- * families draw stock; their marquee pop -- the Beach Butterfree -- is
- * covered by the fly-in approach patch instead
- * (patches/src/butterfree_approach_patch.c), which starts them above the
- * view frustum and glides them down onto their authored path. Full
- * coverage for the remaining families needs a forced-translucency path
- * inside the renderer itself; until then this module stays inside proven
- * ground.
+ *   1. This module owns the Pokemon alpha byte (Pokemon+0xE4, initialised
+ *      255 by the constructor and written by nothing else): alpha starts
+ *      at zero on an eligible spawn and ramps to opaque over 24 drawn
+ *      frames, advanced only on frames the player actually sees.
+ *   2. The patch wrappers (patches/src/spawn_fade_patch.c) replace the
+ *      seven pokemon_detect.c render callbacks with byte-for-byte stock
+ *      bodies that additionally write a marker fog color -- the dormant
+ *      fader's palette (230,250,180), used by no course -- carrying the
+ *      alpha, around the model. Semantically inert to the RDP.
+ *   3. The renderer detects the marker (rt64_state.cpp), forces the
+ *      shader's view of that draw onto a standard translucent blend --
+ *      colors, combiners, cycle types untouched -- and RasterPS.hlsl
+ *      multiplies the marker's alpha into the blend, where nothing a
+ *      display list says can override it.
  *
  * Deliberately NOT faded: scripted HIDE/SHOW reveals (Diglett popping from
  * the ground and the sand-dwellers' timed emergence are authored beats,
  * not artifacts), model-less controller objects, and props, gates and the
- * evolution flash (species id >= 1000).
+ * evolution flash (species id >= 1000). The Beach Butterfree additionally
+ * fly in from above the view frustum
+ * (patches/src/butterfree_approach_patch.c).
  *
  * The one hard gate: the photo-score screen re-creates photographed
  * Pokemon as fresh objects and derives the entire score from their
- * depth-buffer coverage. The fade renderer draws without depth writes, so
+ * depth-buffer coverage. The forced translucent path writes no depth, so
  * a fade there would zero every photo. initObjectsOnPhoto is wrapped to
  * raise a flag, no fade starts while it is up, and entering it drives
- * every live fade to opaque and restores its render callback first.
+ * every live fade to opaque first.
  *
  * Everything runs on the game thread (the spawn wrapper and the gtlUpdate
  * tick), so the table needs no locks. GObj addresses recycle instantly, so
@@ -70,10 +66,31 @@ namespace {
 // Game addresses (build/pokemonsnap.map). The app_level overlay is loaded
 // whenever any course -- or the score screen that re-renders its Pokemon --
 // is running, and these addresses are fixed within it.
-constexpr uint32_t RenderTypeI       = 0x8035958Cu;
-constexpr uint32_t RenderTypeIFogged = 0x8035942Cu;
-constexpr uint32_t RenderFade        = 0x80360074u;   // the game's cut fade renderer
-constexpr uint32_t PokemonUpdate     = 0x80362C50u;
+constexpr uint32_t PokemonUpdate = 0x80362C50u;
+
+// The seven Pokemon render callbacks (pokemon_detect.c), one per geometry
+// type and fog mode -- all replaced by the marker-writing wrappers in
+// patches/src/spawn_fade_patch.c, so any species drawing through them is
+// eligible. Anything else on fnRender is a controller or special-effect
+// object that must not fade.
+constexpr uint32_t RenderTypes[] = {
+    0x8035942Cu,   // renderPokemonModelTypeIFogged
+    0x80359484u,   // renderPokemonModelTypeJFogged
+    0x803594DCu,   // renderPokemonModelTypeBFogged
+    0x80359534u,   // renderPokemonModelTypeDFogged
+    0x8035958Cu,   // renderPokemonModelTypeI
+    0x803595E4u,   // renderPokemonModelTypeB
+    0x8035963Cu,   // renderPokemonModelTypeD
+};
+
+bool is_pokemon_render(uint32_t fnRender) {
+    for (uint32_t candidate : RenderTypes) {
+        if (fnRender == candidate) {
+            return true;
+        }
+    }
+    return false;
+}
 
 // GObj field offsets (include/sys/om.h) and the Pokemon alpha byte.
 constexpr uint32_t GOBJ_LINK      = 0x0C;  // u8, LINK_POKEMON == 3
@@ -92,7 +109,6 @@ constexpr int FadeTicks = 24;
 struct Fade {
     uint32_t gobj = 0;
     uint32_t userData = 0;
-    uint32_t origRender = 0;
     int tick = 0;
 };
 
@@ -103,9 +119,6 @@ uint8_t* g_rdram_local = nullptr;
 
 uint32_t rd_u32(uint32_t addr) {
     return *reinterpret_cast<uint32_t*>(g_rdram_local + (addr - 0x80000000u));
-}
-void wr_u32(uint32_t addr, uint32_t v) {
-    *reinterpret_cast<uint32_t*>(g_rdram_local + (addr - 0x80000000u)) = v;
 }
 uint8_t rd_u8(uint32_t addr) {
     return g_rdram_local[(addr - 0x80000000u) ^ 3u];
@@ -119,24 +132,19 @@ void drop_fade(int i) {
 }
 
 // The entry is still the object it was created for exactly when the update
-// callback, the userData pointer and our own render swap all still match.
-// A recycled slot re-ran the constructor, which rewrote all three.
+// callback and the userData pointer both still match. A recycled slot
+// re-ran the constructor, which rewrote both (and reset the alpha).
 bool fade_still_valid(const Fade& f) {
     return (rd_u32(f.gobj + GOBJ_FNUPDATE) == PokemonUpdate) &&
-           (rd_u32(f.gobj + GOBJ_USERDATA) == f.userData) &&
-           (rd_u32(f.gobj + GOBJ_FNRENDER) == RenderFade);
+           (rd_u32(f.gobj + GOBJ_USERDATA) == f.userData);
 }
 
-// A dropped entry must never strand a live Pokemon translucent or hooked:
-// when the object is still the one the fade started for, it leaves opaque
-// with its own renderer back in place. A recycled slot re-ran the
-// constructor, which already owns every byte involved.
+// A dropped entry must never strand a live Pokemon translucent: the ticker
+// is the only thing that would ever bring it back to 255. Only written when
+// the Pokemon struct is still the one the fade was started for.
 void finish_fade(const Fade& f) {
     if (rd_u32(f.gobj + GOBJ_USERDATA) == f.userData) {
         wr_u8(f.userData + POKE_ALPHA, 255);
-        if (rd_u32(f.gobj + GOBJ_FNRENDER) == RenderFade) {
-            wr_u32(f.gobj + GOBJ_FNRENDER, f.origRender);
-        }
     }
 }
 
@@ -178,12 +186,9 @@ void spawn_fade_on_spawn(uint8_t* rdram, recomp_context* ctx) {
         return;
     }
     const uint32_t fnRender = rd_u32(gobj + GOBJ_FNRENDER);
-    if ((fnRender != RenderTypeI) && (fnRender != RenderTypeIFogged)) {
-        // The game's fader only understands TypeI geometry; the other
-        // families draw stock (see the header). Logged so a ride's log
-        // still names every pop the fade cannot cover.
+    if (!is_pokemon_render(fnRender)) {
         if (snapdiag::statsEnabled()) {
-            printf("[SNAP-FADE] gobj %08X species %u beyond the fader: render %08X\n",
+            printf("[SNAP-FADE] gobj %08X species %u rejected: render %08X\n",
                    gobj, rd_u32(userData + POKE_ID), fnRender);
         }
         return;
@@ -200,9 +205,8 @@ void spawn_fade_on_spawn(uint8_t* rdram, recomp_context* ctx) {
         return;
     }
 
-    wr_u32(gobj + GOBJ_FNRENDER, RenderFade);
     wr_u8(userData + POKE_ALPHA, 0);
-    g_fades[g_fadeCount++] = { gobj, userData, fnRender, 0 };
+    g_fades[g_fadeCount++] = { gobj, userData, 0 };
 
     if (snapdiag::statsEnabled()) {
         printf("[SNAP-FADE] gobj %08X species %u fading in\n",
@@ -240,7 +244,6 @@ void spawn_fade_tick(uint8_t* rdram) {
         f.tick++;
         if (f.tick >= FadeTicks) {
             wr_u8(f.userData + POKE_ALPHA, 255);
-            wr_u32(f.gobj + GOBJ_FNRENDER, f.origRender);
             drop_fade(i);
             continue;
         }

@@ -245,6 +245,16 @@ LIBRARY_EXPORT bool RasterPS(const RenderParams rp, float4 vertexPosition, float
     const bool alphaBlend = (otherMode.cycleType() != G_CYC_COPY) && Blender::usesAlphaBlend(otherMode);
     if (alphaBlend) {
         resultAlpha.a = resultColor.a;
+
+        // Pokemon Snap port: a fog color holding the spawn fade's marker
+        // palette (230,250,180, alpha below opaque) names a fading Pokemon
+        // (rt64_state.cpp forced this draw onto the translucent path); the
+        // marker's alpha is the fade level, multiplied into the blend here
+        // where no display list state can override it.
+        const float4 snapFog = blInputs.fogColor;
+        if (all(abs(snapFog.rgb - float3(230.0f / 255.0f, 250.0f / 255.0f, 180.0f / 255.0f)) < 0.004f) && (snapFog.a < 0.999f)) {
+            resultAlpha.a *= snapFog.a;
+        }
     }
     
     // Preserve the value in the destination.

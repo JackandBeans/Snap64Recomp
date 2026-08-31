@@ -1015,9 +1015,34 @@ namespace RT64 {
                     shaderDesc.otherMode = callDesc.otherMode;
                     shaderDesc.flags = {};
 
+                    // Pokemon Snap port: forced translucency. A draw whose fog
+                    // color is the spawn fade's marker (230,250,180 -- the
+                    // game's own dormant fader palette, used by no course)
+                    // with a non-opaque alpha is a fading Pokemon. Six
+                    // attempts to fade these through RDP state around the
+                    // model all failed -- the materials' pixels are decided
+                    // below the display list -- so the fade is applied here,
+                    // where nothing the display list says can fight it: the
+                    // SHADER's view of the render mode becomes a standard
+                    // translucent blend (colors, combiners and cycle type
+                    // untouched; texture cutout coverage bits preserved), and
+                    // RasterPS multiplies the marker's alpha into the blend.
+                    // The RDP record in callDesc keeps the authored mode.
+                    {
+                        const auto &snapFog = callDesc.rdpParams.fogColor;
+                        const bool snapFadeMarker =
+                            (fabsf(float(snapFog[0]) - 230.0f / 255.0f) < 0.004f) &&
+                            (fabsf(float(snapFog[1]) - 250.0f / 255.0f) < 0.004f) &&
+                            (fabsf(float(snapFog[2]) - 180.0f / 255.0f) < 0.004f) &&
+                            (float(snapFog[3]) < 0.999f);
+                        if (snapFadeMarker) {
+                            shaderDesc.otherMode.L = (shaderDesc.otherMode.L & 0x3007u) | 0x00504A50u;
+                        }
+                    }
+
                     // Check if the blender uses a standard fog cycle. We override it and indicate it on
                     // the material for the RT path to use its own fog handling.
-                    interop::Blender::EmulationRequirements blenderEmuReqs = interop::Blender::checkEmulationRequirements(callDesc.otherMode);
+                    interop::Blender::EmulationRequirements blenderEmuReqs = interop::Blender::checkEmulationRequirements(shaderDesc.otherMode);
 #               ifdef ASSERT_ON_BLENDER_EMULATION
                     assert(blenderEmuReqs.simpleEmulation || (blenderEmuReqs.approximateEmulation != interop::Blender::Approximation::None));
 #               endif
@@ -1037,8 +1062,8 @@ namespace RT64 {
                     auto &flags = shaderDesc.flags;
                     flags.rect = (proj.type == Projection::Type::Rectangle);
                     flags.linearFiltering = linearFiltering || forceLinearFiltering;
-                    flags.usesTexture0 = callDesc.colorCombiner.usesTexture(callDesc.otherMode, 0, oneCycleHardwareBug);
-                    flags.usesTexture1 = callDesc.colorCombiner.usesTexture(callDesc.otherMode, 1, oneCycleHardwareBug);
+                    flags.usesTexture0 = callDesc.colorCombiner.usesTexture(shaderDesc.otherMode, 0, oneCycleHardwareBug);
+                    flags.usesTexture1 = callDesc.colorCombiner.usesTexture(shaderDesc.otherMode, 1, oneCycleHardwareBug);
                     flags.blenderApproximation = static_cast<unsigned>(blenderEmuReqs.approximateEmulation);
                     flags.usesHDR = usesHDR;
                     flags.sampleCount = renderFlagSampleCount;
