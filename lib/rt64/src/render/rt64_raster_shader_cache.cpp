@@ -169,6 +169,26 @@ namespace RT64 {
             while (fread(&desc, sizeof(desc), 1, f) == 1) {
                 submit(desc);
                 replayed++;
+
+                // Pokemon Snap port: also warm the spawn fade's variant of
+                // this shader. The fade rewrites a draw's blend at the state
+                // layer (interop::snapFadeRewriteL), which makes a shader the
+                // seen list has never seen until a fade actually happens --
+                // and it happens at the spawn moment, which is exactly when a
+                // compile stall hurts. Deriving the sibling here means the
+                // first fade of a species compiles nothing. Rects never fade,
+                // and a shader the rewrite leaves unchanged needs no twin;
+                // submit() deduplicates the rest by hash. Siblings are
+                // regenerated each boot rather than appended to the file.
+                const uint32_t fadeL = interop::snapFadeRewriteL(desc.otherMode.L);
+                if (!desc.flags.rect && (fadeL != desc.otherMode.L)) {
+                    ShaderDescription fadeDesc = desc;
+                    fadeDesc.otherMode.L = fadeL;
+                    interop::Blender::EmulationRequirements fadeReqs = interop::Blender::checkEmulationRequirements(fadeDesc.otherMode);
+                    fadeDesc.flags.blenderApproximation = static_cast<unsigned>(fadeReqs.approximateEmulation);
+                    fadeDesc.maskUnusedParameters();
+                    submit(fadeDesc);
+                }
             }
             replayingSeenList = false;
         }

@@ -1032,7 +1032,7 @@ namespace RT64 {
                     // keeps the authored mode and the true fog color is
                     // irrelevant to the rewritten blend.
                     if (callDesc.extendedFlags.snapFadeOn && (callDesc.extendedFlags.snapFadeAlpha < 255)) {
-                        shaderDesc.otherMode.L = (shaderDesc.otherMode.L & 0x3007u) | 0x00504A50u;
+                        shaderDesc.otherMode.L = interop::snapFadeRewriteL(shaderDesc.otherMode.L);
                         callDesc.rdpParams.fogColor = hlslpp::float4(
                             230.0f / 255.0f, 250.0f / 255.0f, 180.0f / 255.0f,
                             float(callDesc.extendedFlags.snapFadeAlpha) / 255.0f);
