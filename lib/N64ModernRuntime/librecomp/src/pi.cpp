@@ -132,22 +132,15 @@ void set_save_file_path(const std::u8string& subfolder, const std::u8string& nam
 }
 
 void update_save_file() {
-    bool saving_failed = false;
+    // Copy the buffer out under the lock so the game's writes only wait for a memcpy, not for the
+    // disk write and flush.
+    std::vector<char> save_contents;
     {
-        std::ofstream save_file = recomp::open_output_file_with_backup(ultramodern::get_save_file_path(), std::ios_base::binary);
+        std::lock_guard lock{ save_context.save_buffer_mutex };
+        save_contents = save_context.save_buffer;
+    }
 
-        if (save_file.good()) {
-            std::lock_guard lock{ save_context.save_buffer_mutex };
-            save_file.write(save_context.save_buffer.data(), save_context.save_buffer.size());
-        }
-        else {
-            saving_failed = true;
-        }
-    }
-    if (!saving_failed) {
-        saving_failed = !recomp::finalize_output_file_with_backup(ultramodern::get_save_file_path());
-    }
-    if (saving_failed) {
+    if (!recomp::write_file_with_backup(ultramodern::get_save_file_path(), save_contents)) {
         ultramodern::error_handling::message_box("Failed to write to the save file. Check your file permissions and whether the save folder has been moved to Dropbox or similar, as this can cause issues.");
     }
 }
@@ -248,13 +241,9 @@ void read_save_file() {
     // Ensure the save file directory exists.
     std::filesystem::create_directories(save_file_path.parent_path());
 
-    // Read the save file if it exists.
-    std::ifstream save_file = recomp::open_input_file_with_backup(save_file_path, std::ios_base::binary);
-    if (save_file.good()) {
-        save_file.read(save_context.save_buffer.data(), save_context.save_buffer.size());
-    }
-    else {
-        // Otherwise clear the save file to all zeroes.
+    // Read the save file, or its backup when the save file is missing or not a complete image.
+    if (!recomp::read_file_with_backup(save_file_path, save_context.save_buffer)) {
+        // Neither is usable (first run, or both damaged): start from an all-zero save.
         std::fill(save_context.save_buffer.begin(), save_context.save_buffer.end(), 0);
     }
 }
