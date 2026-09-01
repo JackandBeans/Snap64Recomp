@@ -416,7 +416,10 @@ static GObj* snap_chain(s32 i) {
 static s32 snap_value_count(s32 row) {
     switch (row) {
         case 0:  return 9;   /* Render Scale: Auto, 1x..8x */
-        case 1:  return 4;   /* Super Sampling: Off, 2x, 3x, 4x */
+        case 1:  return 8;   /* Super Sampling: Off, 2x..8x. The only lever
+                              * against texture aliasing in a game that never
+                              * enables mipmaps; RT64 accepts far more than the
+                              * 4 this row used to stop at. */
         case 2:  return 4;   /* Anti-Aliasing: Off, 2x, 4x, 8x */
         case 5:  return 3;   /* 2D Detail */
         case 6:  return 3;   /* Filter */
@@ -430,7 +433,7 @@ static s32 snap_value_count(s32 row) {
 static s32 snap_value_str(s32 row, s32 v) {
     switch (row) {
         case 0: return (v == 0) ? STR_AUTO : (STR_1X + v - 1);
-        case 1: return (v == 0) ? STR_OFF : (STR_1X + v);          /* 2x 3x 4x */
+        case 1: return (v == 0) ? STR_OFF : (STR_1X + v);          /* 2x..8x */
         case 2: return (v == 0) ? STR_OFF
                      : (v == 1) ? (STR_1X + 1)
                      : (v == 2) ? (STR_1X + 3) : (STR_1X + 7);

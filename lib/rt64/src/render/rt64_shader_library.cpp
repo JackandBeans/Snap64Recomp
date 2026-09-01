@@ -573,7 +573,7 @@ namespace RT64 {
         {
             TextureDecodeDescriptorSet descriptorSet;
             layoutBuilder.begin();
-            layoutBuilder.addPushConstant(0, 0, sizeof(uint32_t) * 8, RenderShaderStageFlag::COMPUTE);
+            layoutBuilder.addPushConstant(0, 0, sizeof(uint32_t) * 10, RenderShaderStageFlag::COMPUTE);
             layoutBuilder.addDescriptorSet(descriptorSet);
             layoutBuilder.end();
             textureDecode.pipelineLayout = layoutBuilder.create(device);

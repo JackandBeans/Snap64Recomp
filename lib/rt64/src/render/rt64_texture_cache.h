@@ -31,6 +31,8 @@ namespace interop {
         uint stride;
         uint tlut;
         uint palette;
+        uint mipLevel;
+        uint mipPad;
     };
 };
 
@@ -204,6 +206,10 @@ namespace RT64 {
         std::vector<StreamResult> streamResultQueue;
         std::vector<std::unique_ptr<RenderBuffer>> tmemUploadResources;
         std::vector<std::unique_ptr<RenderBuffer>> replacementUploadResources;
+        // Pokemon Snap port: one single-level storage view per mip of each
+        // texture being decoded. They only have to outlive the dispatches, so
+        // they are released with the upload resources.
+        std::vector<std::unique_ptr<RenderTextureView>> snapMipViews;
         std::vector<std::unique_ptr<TextureDecodeDescriptorSet>> descriptorSets;
         std::mutex uploadQueueMutex;
         std::condition_variable uploadQueueChanged;

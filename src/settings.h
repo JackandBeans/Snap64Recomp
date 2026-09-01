@@ -120,6 +120,16 @@ struct Settings {
     // What resolution 2D rectangles render at: 0 original chunky pixels,
     // 1 only content that scales anyway, 2 everything sharp.
     int   upscale_2d        = 1;
+    // Mipmaps for the game's own textures, which it never asked the hardware
+    // to build. Without them a repeating texture seen edge-on -- the rails,
+    // most of all -- samples roughly one texel per pixel far down its length
+    // and dissolves into crawling moire. The console aliased identically and
+    // hid it behind 240 lines and a blurry composite signal; drawn sharp and
+    // large, there is nothing left to hide it. On, distant surfaces filter
+    // down properly and close ones keep the console's own three-point look
+    // untouched. Off is what the hardware did, and stays the default.
+    bool  texture_mipmaps   = false;
+
     // The console's own post-blend dither noise. A look choice.
     bool  dither_noise      = true;
 

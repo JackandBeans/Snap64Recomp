@@ -749,7 +749,7 @@ void seed_mailbox() {
     write_u8(MailboxAddr + 0xD, uint8_t(s.present_filter));
     write_u8(MailboxAddr + 0xE, s.dither_noise ? 1 : 0);
     write_u8(MailboxAddr + 0xF, s.fullscreen ? 1 : 0);
-    write_u8(MailboxAddr + 0x10, uint8_t(std::clamp(s.downsample, 1, 4) - 1));
+    write_u8(MailboxAddr + 0x10, uint8_t(std::clamp(s.downsample, 1, 8) - 1));
     write_u8(MailboxAddr + 0x11, s.three_point_filtering ? 0 : 1);
     write_u8(MailboxAddr + 0x12, uint8_t(std::clamp(s.color_depth, 0, 2)));
     write_u8(MailboxAddr + 0x13, s.triple_buffering ? 1 : 0);
@@ -1196,7 +1196,7 @@ void poll_menu_mailbox(uint8_t* rdram) {
     s.present_filter = std::min<int>(read_u8_mail(MailboxAddr + 0xD), 2);
     s.dither_noise = read_u8_mail(MailboxAddr + 0xE) != 0;
     s.fullscreen = read_u8_mail(MailboxAddr + 0xF) != 0;
-    s.downsample = int(read_u8_mail(MailboxAddr + 0x10)) + 1;
+    s.downsample = std::clamp(int(read_u8_mail(MailboxAddr + 0x10)) + 1, 1, 8);
     s.three_point_filtering = read_u8_mail(MailboxAddr + 0x11) == 0;
     s.color_depth = std::min<int>(read_u8_mail(MailboxAddr + 0x12), 2);
     s.triple_buffering = read_u8_mail(MailboxAddr + 0x13) != 0;
