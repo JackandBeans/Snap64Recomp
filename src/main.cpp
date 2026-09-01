@@ -209,14 +209,12 @@ static void gfx_init_callback() {
         if (recomp::is_rom_valid(game_id)) {
             recomp::start_game(game_id);
         } else {
-            // Said where it can be seen. stdout and stderr are invisible on
-            // the launch path a player actually uses, and without this the
-            // window simply stays black forever with nothing explaining it --
-            // the most likely first run a public release ever has.
-            error_message_box(
-                "Pokemon Snap ROM not found.\n\n"
-                "Place a US copy named pokemonsnap.z64 next to the executable "
-                "and start the game again.");
+            // The ROM check in recomp::start already told the player exactly
+            // what is wrong with pokemonsnap.z64 (missing, unreadable, not a
+            // ROM, or the wrong dump with both hashes) in a dialog shown
+            // before this window existed. A second, vaguer dialog here would
+            // only bury that report. The window stays up until they close it.
+            fprintf(stderr, "[SNAP] ROM check failed at startup; the game was not started.\n");
         }
     }).detach();
 }
@@ -228,7 +226,19 @@ static void error_message_box(const char* msg) {
     fprintf(stderr, "[SNAP] ERROR: %s\n", msg);
     if (sdl_window) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Pokemon Snap - Error", msg, sdl_window);
+        return;
     }
+#if defined(_WIN32)
+    // Before the window exists (the ROM check in recomp::start runs first)
+    // there is nothing for SDL to parent a dialog to, and stderr is invisible
+    // on the launch path a player uses, so show a plain Win32 dialog instead.
+    int wide_len = MultiByteToWideChar(CP_UTF8, 0, msg, -1, nullptr, 0);
+    if (wide_len > 0) {
+        std::wstring wide(static_cast<size_t>(wide_len), L'\0');
+        MultiByteToWideChar(CP_UTF8, 0, msg, -1, wide.data(), wide_len);
+        MessageBoxW(nullptr, wide.c_str(), L"Pokemon Snap - Error", MB_OK | MB_ICONERROR);
+    }
+#endif
 }
 
 // ---------------------------------------------------------------------------
