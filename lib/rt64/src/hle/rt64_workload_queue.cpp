@@ -1687,9 +1687,24 @@ namespace RT64 {
                 // three fields of display time, and judging its three
                 // sub-frames against a two-field budget would drop the third
                 // on arrival -- the second killer of the reverted attempt.
-                const int64_t originalTimeMicro = (workload.viOriginalRate > 0)
-                    ? ((1000000 * snapSpanTicks) / (int64_t(workload.viOriginalRate) * int64_t(workloadConfig.targetRate)))
-                    : 0;
+                //
+                // targetRate is ZERO at the native rate, which is this port's
+                // shipping default and what the Options page writes when a
+                // player turns interpolation off -- so the ratio must not be
+                // formed at all there. The guard this replaced tested only
+                // viOriginalRate, which stops protecting within a few frames
+                // of boot, and the result was an integer divide by zero in the
+                // default configuration: every fresh install killed the
+                // renderer, while this machine survived on a saved config that
+                // happened to have interpolation on. At the native rate there
+                // is no interpolation and no span to scale by, so the window is
+                // exactly the field it always was.
+                const int64_t snapNominalTicks = int64_t(workloadConfig.targetRate);
+                const int64_t originalTimeMicro =
+                    (workload.viOriginalRate <= 0) ? 0 :
+                    (snapNominalTicks > 0)
+                        ? ((1000000 * snapSpanTicks) / (int64_t(workload.viOriginalRate) * snapNominalTicks))
+                        : (1000000 / int64_t(workload.viOriginalRate));
                 const int64_t setupTimeMicro = workloadTimer.elapsedMicroseconds();
                 const int64_t adjustedTimeWindowMicro = originalTimeMicro - setupTimeMicro;
                 const int64_t maxTimePerFrameMicro = adjustedTimeWindowMicro / displayFrames;
