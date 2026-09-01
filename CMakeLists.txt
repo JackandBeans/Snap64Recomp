@@ -124,6 +124,7 @@ set(SNAP_SOURCES
     src/focus_dot.cpp
     src/dl_budget.cpp
     src/frame_cost.cpp
+    src/sfx_volume_probe.cpp
     src/patch_shims.cpp
     src/settings.cpp
     rsp/aspMain.cpp

@@ -950,15 +950,22 @@ s8 func_800E7700_A0EC90(void) {
 /* ---------------------------------------------------------------------------
  * The SOUND page's live volume plumbing.
  *
- * The game's audio has two clean choke points and three doors: every BGM
- * volume write in the game -- direct sets and the audio thread's smooth
- * fades alike -- flows through alCSPSetVol, and every sound effect enters
- * through one of the three play functions, which only fill the voice's
- * slot arrays. The replacements below scale at exactly those places and
- * read their percentages live from the mailbox's SOUND bank, so a slider
- * change is heard on the very next note or call. The game's own volume
- * bookkeeping (auBGMVolume, the level-end fades through the global sound
- * volume) stays untouched and unscaled.
+ * Music has one choke point: every BGM volume write in the game -- direct
+ * sets and the audio thread's smooth fades alike -- flows through
+ * alCSPSetVol, and the replacement below scales there. Sound effects have
+ * none. A voice's volume is a slot in auSoundVolume[]: the audio thread
+ * reads it once when it starts the voice, the global-volume fades re-read
+ * it, and four functions write it -- the three play functions here, which
+ * fill the slot as a sound starts, and auSetSoundVolume, which rewrites it
+ * while the sound plays (every positional sound, every tick, from
+ * EnvSound_Update, plus each course's own ambience ramps). The effects
+ * scale is applied wherever the slot is written, so the slot always holds
+ * the scaled value and every reader sees the scale exactly once; the
+ * auSetSoundVolume replacement lives in sfx_volume_patch.c with a copy of
+ * the two helpers below. Every percentage is read live from the mailbox's
+ * SOUND bank, so a slider change is heard on the very next note or call.
+ * The game's BGM bookkeeping (auBGMVolume) and the global sound volume the
+ * level-end fades drive stay untouched and unscaled.
  */
 
 /* Percent from the SOUND bank; full volume until the port has staged. */
@@ -970,7 +977,9 @@ static s32 snap_snd_pct(s32 i) {
 }
 
 /* The shutter is its own slider on top of the effects slider: the two
- * take-photo sounds, and nothing else. */
+ * take-photo sounds, and nothing else. Mirrored verbatim in
+ * sfx_volume_patch.c (a shared helper would land in the patch section and
+ * be refused); a change here is a change there. */
 static u16 snap_scaled_sfx(u32 soundID, s32 vol) {
     s32 pct = snap_snd_pct(2);
     if ((soundID == 0) || (soundID == 16)) {   /* SOUND_ID_TAKE_PHOTO(_2) */
@@ -1011,9 +1020,10 @@ void alCSPSetVol(ALCSPlayer* seqp, s16 vol) {
     alEvtqPostEvent(&seqp->evtq, &evt, 0);
 }
 
-/* The three sound-effect doors, each the stock body with the volume slot
- * scaled as it is filled. The audio thread reads the slot next tick, so
- * the scaled value is what the voice starts at. */
+/* Three of the four writers of the volume slot, each the stock body with
+ * the slot scaled as it is filled. The audio thread reads the slot next
+ * tick, so the scaled value is what the voice starts at. The fourth,
+ * auSetSoundVolume, is in sfx_volume_patch.c. */
 s32 auPlaySound(u32 soundID) {
     s32 i;
 

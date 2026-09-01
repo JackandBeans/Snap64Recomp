@@ -77,6 +77,11 @@ HOOKED = [
     # The menu overlay's private copy of the sprite library, and the camera's
     # own background fills.
     'func_80373670_846E20',
+    # Every volume that reaches a sound-player voice after it has started:
+    # the patched auSetSoundVolume (positional sounds every tick, ambience
+    # ramps) and the level-end global fades. Logged under SNAP_STATS so the
+    # Effects slider can be proven at the voice, not at the slot.
+    'alSndpSetVol',
     'func_803719B0_845160',
     'renInitCamera',
     'renInitCameraEx',
