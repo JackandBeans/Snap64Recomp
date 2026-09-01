@@ -130,8 +130,6 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_MONO       75
 #define STR_SND_DESC   76   /* ..81: the SOUND page's descriptions */
 #define STR_FADE_LABEL 82   /* "Spawn Fade", the thirteenth Graphics row */
-#define STR_MIP_LABEL  84   /* "Mipmaps", the fourteenth */
-#define STR_MIP_DESC   85
 #define STR_FADE_DESC  83
 
 /* The SOUND bank of the mailbox: its own sequence word and value bytes
@@ -144,7 +142,7 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define OPT_ITEMS      6    /* Screen, Graphics, Sound, Z, Stick, Return */
 #define OPT_GRAPHICS   1
 #define OPT_SOUND      2
-#define PAGE_ITEMS     14
+#define PAGE_ITEMS     13
 /* The stock Options list's own rhythm: first row at 73, sixteen rows of
  * pitch, six rows on screen -- the Graphics page reads as the same menu.
  * The rest scroll into view, which the edge arrows announce. */
@@ -355,8 +353,7 @@ static s32 snap_row_field(s32 row) {
         case 9:  return 11;   /* Buffering */
         case 10: return 6;    /* Dither */
         case 11: return 7;    /* Fullscreen */
-        case 12: return 12;   /* Spawn Fade */
-        default: return 13;   /* Mipmaps */
+        default: return 12;   /* Spawn Fade */
     }
 }
 
@@ -374,8 +371,7 @@ static s32 snap_row_label(s32 row) {
         case 9:  return STR_BUF_LABEL;
         case 10: return STR_L_SCALE + 6;
         case 11: return STR_L_SCALE + 7;
-        case 12: return STR_FADE_LABEL;
-        default: return STR_MIP_LABEL;
+        default: return STR_FADE_LABEL;
     }
 }
 
@@ -393,8 +389,7 @@ static s32 snap_row_desc(s32 row) {
         case 9:  return STR_DESC2 + 3;
         case 10: return STR_DESC + 6;
         case 11: return STR_DESC + 7;
-        case 12: return STR_FADE_DESC;
-        default: return STR_MIP_DESC;
+        default: return STR_FADE_DESC;
     }
 }
 
@@ -423,8 +418,8 @@ static s32 snap_value_count(s32 row) {
         case 0:  return 9;   /* Render Scale: Auto, 1x..8x */
         case 1:  return 8;   /* Super Sampling: Off, 2x..8x. The only lever
                               * against texture aliasing in a game that never
-                              * enables mipmaps; RT64 accepts far more than the
-                              * 4 this row used to stop at. */
+                              * enables the hardware's texture LOD, and the one
+                              * every other N64 project leans on for it. */
         case 2:  return 4;   /* Anti-Aliasing: Off, 2x, 4x, 8x */
         case 5:  return 3;   /* 2D Detail */
         case 6:  return 3;   /* Filter */
@@ -438,7 +433,7 @@ static s32 snap_value_count(s32 row) {
 static s32 snap_value_str(s32 row, s32 v) {
     switch (row) {
         case 0: return (v == 0) ? STR_AUTO : (STR_1X + v - 1);
-        case 1: return (v == 0) ? STR_OFF : (STR_1X + v);          /* 2x..8x */
+        case 1: return (v == 0) ? STR_OFF : (STR_1X + v);          /* 2x 3x 4x */
         case 2: return (v == 0) ? STR_OFF
                      : (v == 1) ? (STR_1X + 1)
                      : (v == 2) ? (STR_1X + 3) : (STR_1X + 7);

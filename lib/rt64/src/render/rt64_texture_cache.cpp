@@ -23,19 +23,6 @@
 #define ONLY_USE_LOW_MIP_CACHE 0
 
 namespace RT64 {
-    // Pokemon Snap port: how deep a generated mip chain goes for native N64
-    // textures, and whether to generate one at all. Four levels takes a 64x64
-    // tile down to 8x8, which is past the point where a surface is a few
-    // pixels tall; going further buys nothing and costs cache. The flag is
-    // driven by the port's Texture Detail setting and is read only while a
-    // texture is being decoded.
-    static constexpr uint32_t SnapMaxMipLevels = 4;
-    static bool snapNativeMipmaps = false;
-
-    void snapSetNativeMipmaps(bool enabled) {
-        snapNativeMipmaps = enabled;
-    }
-
     // ReplacementMap
     
     static const interop::float2 IdentityScale = { 1.0f, 1.0f };
@@ -253,8 +240,7 @@ namespace RT64 {
 
         hashMap[hash] = textureIndex;
         textures[textureIndex] = texture;
-        // z carries the level count: the sampler reads it as the deepest mip.
-        cachedTextureDimensions[textureIndex] = interop::float3(float(texture->width), float(texture->height), float(std::max(texture->mipmaps, 1U)));
+        cachedTextureDimensions[textureIndex] = interop::float3(float(texture->width), float(texture->height), 1.0f);
         textureReplacements[textureIndex] = nullptr;
         textureReplacementShiftedByHalf[textureIndex] = false;
         textureReplacementReferenceCounted[textureIndex] = false;
@@ -325,7 +311,6 @@ namespace RT64 {
         }
         else {
             textureDimensions = cachedTextureDimensions[textureIndex];
-            hasMipmaps = (textureDimensions.z > 1.0f);
         }
 
         // Remove the existing entry from the list if it exists.
@@ -1065,9 +1050,7 @@ namespace RT64 {
                     }
                 }
 
-                // One descriptor set per mip level of each upload: every level
-                // binds its own storage view of the destination texture.
-                for (size_t i = descriptorSets.size(); i < queueSize * SnapMaxMipLevels; i++) {
+                for (size_t i = descriptorSets.size(); i < queueSize; i++) {
                     descriptorSets.emplace_back(std::make_unique<TextureDecodeDescriptorSet>(directWorker->device));
                 }
 
@@ -1120,40 +1103,12 @@ namespace RT64 {
 
                     if (upload.decodeTMEM) {
                         static uint32_t TextureGlobalCounter = 0;
+                        TextureDecodeDescriptorSet *descSet = descriptorSets[i].get();
                         dstTexture->format = RenderFormat::R8G8B8A8_UNORM;
-
-                        // Pokemon Snap port: a generated mip chain, so distant
-                        // surfaces have something to filter down to. Power of two
-                        // only, and never shrunk past a few texels: every tile
-                        // whose axis wraps is power of two by construction, and
-                        // that is exactly the class which tiles across a surface
-                        // and shimmers, so the restriction costs nothing where it
-                        // matters and keeps every box aligned to the tile.
-                        uint32_t mipLevels = 1;
-                        if (snapNativeMipmaps && ((upload.width & (upload.width - 1)) == 0) && ((upload.height & (upload.height - 1)) == 0) &&
-                            (upload.width >= 16) && (upload.height >= 16)) {
-                            while ((mipLevels < SnapMaxMipLevels) && ((upload.width >> mipLevels) >= 4) && ((upload.height >> mipLevels) >= 4)) {
-                                mipLevels++;
-                            }
-                        }
-
-                        dstTexture->mipmaps = mipLevels;
-                        dstTexture->texture = directWorker->device->createTexture(RenderTextureDesc::Texture2D(upload.width, upload.height, mipLevels, dstTexture->format, RenderTextureFlag::STORAGE | RenderTextureFlag::UNORDERED_ACCESS));
+                        dstTexture->texture = directWorker->device->createTexture(RenderTextureDesc::Texture2D(upload.width, upload.height, 1, dstTexture->format, RenderTextureFlag::STORAGE | RenderTextureFlag::UNORDERED_ACCESS));
                         dstTexture->texture->setName("Texture Cache RGBA32 #" + std::to_string(TextureGlobalCounter++));
-
-                        // Each level needs an explicit single-level storage view:
-                        // binding the whole resource as a storage image once it
-                        // has more than one level is not valid.
-                        for (uint32_t level = 0; level < mipLevels; level++) {
-                            RenderTextureViewDesc viewDesc = RenderTextureViewDesc::Texture2D(dstTexture->format);
-                            viewDesc.mipSlice = level;
-                            viewDesc.mipLevels = 1;
-                            snapMipViews.emplace_back(dstTexture->texture->createTextureView(viewDesc));
-                            TextureDecodeDescriptorSet *levelSet = descriptorSets[i * SnapMaxMipLevels + level].get();
-                            levelSet->setTexture(levelSet->TMEM, dstTexture->tmem.get(), RenderTextureLayout::SHADER_READ);
-                            levelSet->setTexture(levelSet->RGBA32, dstTexture->texture.get(), RenderTextureLayout::GENERAL, snapMipViews.back().get());
-                        }
-
+                        descSet->setTexture(descSet->TMEM, dstTexture->tmem.get(), RenderTextureLayout::SHADER_READ);
+                        descSet->setTexture(descSet->RGBA32, dstTexture->texture.get(), RenderTextureLayout::GENERAL);
                         beforeDecodeBarriers.emplace_back(dstTexture->texture.get(), RenderTextureLayout::GENERAL);
                     }
 
@@ -1241,32 +1196,23 @@ namespace RT64 {
                             directWorker->commandList->setComputePipelineLayout(textureDecode.pipelineLayout.get());
                         }
 
-                        // One dispatch per level. Level 0 is the decode this
-                        // always did; deeper levels box the same TMEM texels, so
-                        // no level is ever read back and none need a barrier
-                        // between them.
-                        const uint32_t levelCount = std::max(textureMapAdditions[i].texture->mipmaps, 1U);
-                        for (uint32_t level = 0; level < levelCount; level++) {
-                            interop::TextureDecodeCB decodeCB;
-                            decodeCB.Resolution.x = std::max(upload.width >> level, 1U);
-                            decodeCB.Resolution.y = std::max(upload.height >> level, 1U);
-                            decodeCB.fmt = upload.loadTile.fmt;
-                            decodeCB.siz = upload.loadTile.siz;
-                            decodeCB.address = interop::uint(upload.loadTile.tmem) << 3;
-                            decodeCB.stride = interop::uint(upload.loadTile.line) << 3;
-                            decodeCB.tlut = upload.tlut;
-                            decodeCB.palette = upload.loadTile.palette;
-                            decodeCB.mipLevel = level;
-                            decodeCB.mipPad = 0;
+                        interop::TextureDecodeCB decodeCB;
+                        decodeCB.Resolution.x = upload.width;
+                        decodeCB.Resolution.y = upload.height;
+                        decodeCB.fmt = upload.loadTile.fmt;
+                        decodeCB.siz = upload.loadTile.siz;
+                        decodeCB.address = interop::uint(upload.loadTile.tmem) << 3;
+                        decodeCB.stride = interop::uint(upload.loadTile.line) << 3;
+                        decodeCB.tlut = upload.tlut;
+                        decodeCB.palette = upload.loadTile.palette;
 
-                            // Dispatch compute shader for decoding texture.
-                            const uint32_t ThreadGroupSize = 8;
-                            const uint32_t dispatchX = (decodeCB.Resolution.x + ThreadGroupSize - 1) / ThreadGroupSize;
-                            const uint32_t dispatchY = (decodeCB.Resolution.y + ThreadGroupSize - 1) / ThreadGroupSize;
-                            directWorker->commandList->setComputePushConstants(0, &decodeCB);
-                            directWorker->commandList->setComputeDescriptorSet(descriptorSets[i * SnapMaxMipLevels + level]->get(), 0);
-                            directWorker->commandList->dispatch(dispatchX, dispatchY, 1);
-                        }
+                        // Dispatch compute shader for decoding texture.
+                        const uint32_t ThreadGroupSize = 8;
+                        const uint32_t dispatchX = (decodeCB.Resolution.x + ThreadGroupSize - 1) / ThreadGroupSize;
+                        const uint32_t dispatchY = (decodeCB.Resolution.y + ThreadGroupSize - 1) / ThreadGroupSize;
+                        directWorker->commandList->setComputePushConstants(0, &decodeCB);
+                        directWorker->commandList->setComputeDescriptorSet(descriptorSets[i]->get(), 0);
+                        directWorker->commandList->dispatch(dispatchX, dispatchY, 1);
 
                         afterDecodeBarriers.emplace_back(RenderTextureBarrier(textureMapAdditions[i].texture->texture.get(), RenderTextureLayout::SHADER_READ));
                     }
@@ -1284,7 +1230,6 @@ namespace RT64 {
 
                 // Delete all the resources used during the upload of replacements.
                 replacementUploadResources.clear();
-                snapMipViews.clear();
                 
                 // Add all the textures to the map once they're ready.
                 {

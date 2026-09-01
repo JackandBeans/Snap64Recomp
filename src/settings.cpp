@@ -56,7 +56,6 @@ void load_settings() {
         s_settings.present_filter     = std::clamp(j.value("present_filter", s_settings.present_filter), 0, 2);
         s_settings.upscale_2d         = std::clamp(j.value("upscale_2d", s_settings.upscale_2d), 0, 2);
         s_settings.dither_noise       = j.value("dither_noise", s_settings.dither_noise);
-        s_settings.texture_mipmaps    = j.value("texture_mipmaps", s_settings.texture_mipmaps);
         s_settings.interpolate_camera = j.value("interpolate_camera", s_settings.interpolate_camera);
         s_settings.render_to_ram      = j.value("render_to_ram", s_settings.render_to_ram);
         s_settings.ubershaders_only   = j.value("ubershaders_only", s_settings.ubershaders_only);
@@ -101,7 +100,6 @@ void save_settings() {
         {"present_filter",        s_settings.present_filter},
         {"upscale_2d",            s_settings.upscale_2d},
         {"dither_noise",          s_settings.dither_noise},
-        {"texture_mipmaps",       s_settings.texture_mipmaps},
         {"interpolate_camera",    s_settings.interpolate_camera},
         {"render_to_ram",         s_settings.render_to_ram},
         {"ubershaders_only",      s_settings.ubershaders_only},

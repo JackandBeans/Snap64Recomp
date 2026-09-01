@@ -264,35 +264,6 @@ float4 sampleTexture(OtherMode otherMode, RenderFlags renderFlags, float2 inputU
     const bool usesHDR = renderFlagUsesHDR(renderFlags);
     const uint nativeSampler = rdpTile.nativeSampler;
     const bool flagHasMipmaps = gpuTileFlagHasMipmaps(gpuTile.flags);
-    const bool flagHighRes = gpuTileFlagHighRes(gpuTile.flags);
-
-    // Pokemon Snap port: native N64 textures can carry a generated mip chain
-    // (see the texture cache), which is the only defence against the shimmer
-    // of a repeating texture seen edge-on -- this game never enables the RDP's
-    // own LOD, so every distant surface samples one texel per pixel and
-    // aliases. The chain is taken ONLY where it is both correct and invisible
-    // to the console's filter model:
-    //   - through a hardware sampler, so wrap/mirror/clamp is the sampler's
-    //     job and the tile-window math is never asked to run on a smaller
-    //     level;
-    //   - on geometry, never on a rectangle (2D never minifies here);
-    //   - only when the tile is bilerped, so a point-sampled tile is never
-    //     silently smoothed;
-    //   - only while MINIFYING. Magnification is where the three-point
-    //     triangle filter is actually visible, and it stays bit-identical to
-    //     the console path there. Shimmer and the N64 look never contend for
-    //     the same pixel, so neither has to be traded for the other.
-    // Replacement packs keep the behaviour they already had.
-    bool useMipmaps = flagHasMipmaps;
-    if (flagHasMipmaps && !flagHighRes) {
-        const float2 ddxUVMip = ddxUV * gpuTile.tcScale;
-        const float2 ddyUVMip = ddyUV * gpuTile.tcScale;
-        const float ddMaxMip = max(dot(ddxUVMip, ddxUVMip), dot(ddyUVMip, ddyUVMip));
-        useMipmaps = (nativeSampler != NATIVE_SAMPLER_NONE)
-                  && !renderFlagRect(renderFlags)
-                  && filterBilerp
-                  && (ddMaxMip > 1.0f);
-    }
     uint numRDPSamples = 0;
     uint RDPMipLevels[2];
     RDPMipLevels[0] = 0;
@@ -300,7 +271,7 @@ float4 sampleTexture(OtherMode otherMode, RenderFlags renderFlags, float2 inputU
     float mip;
 
     // Determine the RDP sample count and mip levels.
-    if (useMipmaps) {
+    if (flagHasMipmaps) {
         // Retrieve the dimensions of the texture for either type of sampler.
         Texture2D texture = gTextures[NonUniformResourceIndex(gpuTile.textureIndex)];
         if (nativeSampler == NATIVE_SAMPLER_NONE) {
@@ -369,7 +340,7 @@ float4 sampleTexture(OtherMode otherMode, RenderFlags renderFlags, float2 inputU
 
     // Compute the result from the RDP samples.
     float4 textureColor;
-    if (!useMipmaps) {
+    if (!flagHasMipmaps) {
         textureColor = textureSamples[0];
     }
     else {

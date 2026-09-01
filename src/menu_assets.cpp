@@ -754,7 +754,6 @@ void seed_mailbox() {
     write_u8(MailboxAddr + 0x12, uint8_t(std::clamp(s.color_depth, 0, 2)));
     write_u8(MailboxAddr + 0x13, s.triple_buffering ? 1 : 0);
     write_u8(MailboxAddr + 0x14, s.spawn_fade ? 1 : 0);
-    write_u8(MailboxAddr + 0x15, s.texture_mipmaps ? 1 : 0);
     write_u32(MailboxAddr + 0x4, 0);
     // The SOUND bank: its own sequence word and six value bytes, read live
     // by the patched audio functions (volumes as straight percentages) and
@@ -883,7 +882,7 @@ void stage_menu_assets(uint8_t* rdram) {
     };
     // Ids BaseCount+52/+53: the Graphics page's thirteenth row -- the spawn
     // fade -- label and description.
-    constexpr uint32_t StringCount = BaseCount + 56;
+    constexpr uint32_t StringCount = BaseCount + 54;
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -1009,17 +1008,6 @@ void stage_menu_assets(uint8_t* rdram) {
         else if (id == BaseCount + 53) {
             strip = compose_lines("Spawning Pokemon blend into view.",
                                   "The console popped them in at once.");
-            w = strip.width;
-            h = strip.height;
-        }
-        else if (id == BaseCount + 54) {
-            strip = compose("Mipmaps");
-            w = strip.width;
-            h = strip.height;
-        }
-        else if (id == BaseCount + 55) {
-            strip = compose_lines("Distant textures stop shimmering.",
-                                  "The console had none and shimmered.");
             w = strip.width;
             h = strip.height;
         }
@@ -1213,7 +1201,6 @@ void poll_menu_mailbox(uint8_t* rdram) {
     s.color_depth = std::min<int>(read_u8_mail(MailboxAddr + 0x12), 2);
     s.triple_buffering = read_u8_mail(MailboxAddr + 0x13) != 0;
     s.spawn_fade = read_u8_mail(MailboxAddr + 0x14) != 0;
-    s.texture_mipmaps = read_u8_mail(MailboxAddr + 0x15) != 0;
 
     apply_graphics_settings();
     save_settings();

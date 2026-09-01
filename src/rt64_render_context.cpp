@@ -70,7 +70,6 @@ extern "C" uint32_t snap_run_table_take(uint32_t* entries, int64_t* nanos, uint3
 #include <objidl.h>
 #endif
 #include "hle/rt64_application.h"
-namespace RT64 { void snapSetNativeMipmaps(bool enabled); }
 #include "render/rt64_texture_cache.h"
 #include "common/rt64_replacement_database.h"
 
@@ -221,12 +220,11 @@ public:
             ? RT64::UserConfiguration::DisplayBuffering::Triple
             : RT64::UserConfiguration::DisplayBuffering::Double;
         // Super sampling: renders at this multiple of the chosen scale and
-        // averages down, which is the only lever that touches texture
-        // aliasing -- this game never enables mipmaps, so distant repeating
-        // detail (the rails) has nothing but sample count to defend it.
-        // RT64 itself accepts far more than the 4 this was pinned to.
+        // averages down. It is the lever every other N64 project leans on for
+        // texture aliasing, because this game never enables the hardware's own
+        // texture LOD and so has no mip chain to filter with. RT64 accepts far
+        // more than the 4 this was pinned to.
         app_->userConfig.downsampleMultiplier = std::clamp(snap::settings().downsample, 1, 8);
-        RT64::snapSetNativeMipmaps(snap::settings().texture_mipmaps);
         app_->userConfig.threePointFiltering = snap::settings().three_point_filtering;
         app_->userConfig.validate();
 
@@ -350,7 +348,6 @@ public:
         }
         app_->userConfig.refreshRateTarget = new_config.rr_manual_value;
         app_->userConfig.downsampleMultiplier = std::clamp(new_config.ds_option, 1, 8);
-        RT64::snapSetNativeMipmaps(snap::settings().texture_mipmaps);
         app_->userConfig.threePointFiltering = snap::settings().three_point_filtering;
 
         // Render scale: zero follows the window as before; a nonzero value
