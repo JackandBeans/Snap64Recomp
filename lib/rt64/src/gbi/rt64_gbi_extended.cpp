@@ -195,12 +195,6 @@ namespace RT64 {
             state->snapRectGroupCommand((*dl)->w1, true);
         }
 
-        // Pokemon Snap port: the draws that follow render at a fraction of
-        // their opacity -- the renderer-level spawn fade.
-        void objectFadeV1(State *state, DisplayList **dl) {
-            state->snapObjectFadeCommand((*dl)->w1);
-        }
-
         void matrixGroupV1(State *state, DisplayList **dl) {
             matrixGroupCommand(state, dl, false, false);
         }
@@ -451,7 +445,6 @@ namespace RT64 {
             Map[G_EX_VERTEXZTEST_V1] = &vertexZTestV1;
             Map[G_EX_ENDVERTEXZTEST_V1] = &endVertexZTestV1;
             Map[G_EX_AUTHOREDSTEP_V1] = &authoredStepV1;
-            Map[G_EX_OBJECTFADE_V1] = &objectFadeV1;
             Map[G_EX_RECTGROUP_V1] = &rectGroupV1;
             Map[G_EX_RECTGROUP_ONE_V1] = &rectGroupOneV1;
             Map[G_EX_MATRIXGROUP_V1] = &matrixGroupV1;

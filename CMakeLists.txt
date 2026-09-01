@@ -126,7 +126,6 @@ set(SNAP_SOURCES
     src/frame_cost.cpp
     src/patch_shims.cpp
     src/settings.cpp
-    src/spawn_fade.cpp
     rsp/aspMain.cpp
 )
 

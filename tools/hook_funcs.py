@@ -57,7 +57,6 @@ HOOKED = [
     # objects to re-render for pixel counting. The spawn fade must know it
     # is happening: fading a score-render object would collapse its depth
     # coverage and zero the photo's score.
-    'initObjectsOnPhoto',
     # The camera focus indicator: the game draws it into RDRAM, which HLE
     # presentation never shows, so the port observes it and redraws it.
     'PokemonDetector_PostProcessImage',

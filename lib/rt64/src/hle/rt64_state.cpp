@@ -465,24 +465,6 @@ namespace RT64 {
             return;
         }
 
-        // Pokemon Snap port diagnostic: while the fog color holds the spawn
-        // fade's marker value (230,250,180), print the other mode every draw
-        // actually carries, to see what the model's materials did to the
-        // bracket's state. SNAP_STATS gated, capped.
-        if (snapdiag::statsEnabled()) {
-            const auto &fog = drawCall.rdpParams.fogColor;
-            const bool marker = (fabsf(fog[0] - 230.0f / 255.0f) < 0.004f) &&
-                                (fabsf(fog[1] - 250.0f / 255.0f) < 0.004f) &&
-                                (fabsf(fog[2] - 180.0f / 255.0f) < 0.004f);
-            static int printed = 0;
-            if (marker && (printed < 40)) {
-                printed++;
-                fprintf(stdout, "[SNAP-FADEMODE] tris %u otherL %08X otherH %08X fogA %.2f\n",
-                    drawCall.triangleCount, drawCall.otherMode.L, drawCall.otherMode.H, (float)fog[3]);
-                fflush(stdout);
-            }
-        }
-
         // Assign some parameters to the draw call.
         const int workloadCursor = ext.workloadQueue->writeCursor;
         Workload &workload = ext.workloadQueue->workloads[workloadCursor];
@@ -1014,29 +996,6 @@ namespace RT64 {
                     shaderDesc.colorCombiner = callDesc.colorCombiner;
                     shaderDesc.otherMode = callDesc.otherMode;
                     shaderDesc.flags = {};
-
-                    // Pokemon Snap port: forced translucency. A draw inside a
-                    // G_EX_OBJECTFADE_V1 span is a fading Pokemon. Six
-                    // attempts to fade these through RDP state around the
-                    // model all failed -- the materials' pixels are decided
-                    // below the display list -- so the fade is applied here,
-                    // where nothing the display list says can fight it: the
-                    // SHADER's view of the render mode becomes a standard
-                    // translucent blend (colors, combiners and cycle type
-                    // untouched; texture cutout coverage bits preserved), and
-                    // RasterPS multiplies the fade alpha into the blend. The
-                    // alpha rides to the shader in the per-instance fog color
-                    // under the dormant fader's palette (230,250,180) --
-                    // stamped HERE, never by the display list, so the only
-                    // writer of that signature is this block. The RDP record
-                    // keeps the authored mode and the true fog color is
-                    // irrelevant to the rewritten blend.
-                    if (callDesc.extendedFlags.snapFadeOn && (callDesc.extendedFlags.snapFadeAlpha < 255)) {
-                        shaderDesc.otherMode.L = interop::snapFadeRewriteL(shaderDesc.otherMode.L);
-                        callDesc.rdpParams.fogColor = hlslpp::float4(
-                            230.0f / 255.0f, 250.0f / 255.0f, 180.0f / 255.0f,
-                            float(callDesc.extendedFlags.snapFadeAlpha) / 255.0f);
-                    }
 
                     // Check if the blender uses a standard fog cycle. We override it and indicate it on
                     // the material for the RT path to use its own fog handling.
@@ -2839,16 +2798,6 @@ namespace RT64 {
         rdp->extended.global.snapRectId = id;
         rdp->extended.global.snapRectOrdinal = 0;
         rdp->extended.global.snapRectSingle = single;
-    }
-
-    // G_EX_OBJECTFADE_V1: bit 8 arms the fade for the draws that follow,
-    // bits 0-7 carry the alpha; zero ends the span. Travels on the extended
-    // flags attribute so the draw call batcher splits on it like any other
-    // per-draw state.
-    void State::snapObjectFadeCommand(uint32_t payload) {
-        rdp->extended.drawExtendedFlags.snapFadeOn = (payload >> 8) & 0x1;
-        rdp->extended.drawExtendedFlags.snapFadeAlpha = payload & 0xFF;
-        updateDrawStatusAttribute(DrawAttribute::ExtendedFlags);
     }
 
     void State::snapCutHoldCommand() {

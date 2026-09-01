@@ -102,15 +102,3 @@ namespace interop {
 #ifdef HLSL_CPU
 };
 #endif
-#ifdef HLSL_CPU
-namespace interop {
-    // Pokemon Snap port: the forced-translucency rewrite applied to a draw's
-    // otherMode L word by the spawn fade (rt64_state.cpp): a standard
-    // translucent blend in both cycles, alpha-compare and coverage-cutout
-    // bits preserved, everything else authored. Kept here so the state layer
-    // and the shader warmer can never drift apart.
-    static inline uint32_t snapFadeRewriteL(uint32_t L) {
-        return (L & 0x3007u) | 0x00504A50u;
-    }
-};
-#endif

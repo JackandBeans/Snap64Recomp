@@ -47,11 +47,6 @@ struct Settings {
     int   shutter_volume    = 100;
     bool  mute_unfocused    = false;
 
-    // Fades constructor-time Pokemon spawns into view over a third of a
-    // second, using the game's own cut fade renderer (src/spawn_fade.cpp).
-    // Off by default: the console popped them in at once, and this port's
-    // default posture is the console's. Scripted reveals are never faded.
-    bool  spawn_fade        = false;
     bool  three_point_filtering = true;
     // RT64 writes each rendered frame back into RDRAM, which this game needs:
     // photo scoring reads the framebuffer it just drew. Interpolated frames
@@ -162,12 +157,6 @@ bool handle_settings_hotkey(int scancode);
 // src/menu_assets.cpp.
 void stage_menu_assets(uint8_t* rdram);
 void poll_menu_mailbox(uint8_t* rdram);
-
-// The spawn fade (src/spawn_fade.cpp): steps any Pokemon mid fade-in, once
-// per logic tick. The spawn-time entry point takes a recomp_context and is
-// declared beside its caller in frame_cost.cpp.
-void spawn_fade_tick(uint8_t* rdram);
-void spawn_fade_set_scoring(bool scoring);
 
 } // namespace snap
 

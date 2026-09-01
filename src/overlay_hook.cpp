@@ -1,11 +1,13 @@
-﻿/**
+/**
  * @file overlay_hook.cpp
  * @brief Registers Pokemon Snap's overlays with librecomp as the game loads them.
  *
  * Every code overlay in Snap is loaded through dmaLoadOverlay(Overlay*), where
- * the struct provides the ROM range and destination VRAM. The linker --wrap
- * option routes all calls here; we run the real (recompiled) loader first,
- * then update librecomp's function tables for the newly resident code.
+ * the struct provides the ROM range and destination VRAM. MSVC has no linker
+ * --wrap, so tools/hook_funcs.py renames the recompiled definition to
+ * __real_dmaLoadOverlay and this file defines dmaLoadOverlay in its place:
+ * we run the real (recompiled) loader first, then update librecomp's
+ * function tables for the newly resident code.
  */
 #include <atomic>
 #include <cstdint>

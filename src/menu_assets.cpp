@@ -5,8 +5,9 @@
  * The in-game GRAPHICS page (patches/src/graphics_menu_patch.c) draws with
  * the game's own UI font, but the font's code lives in the window overlay,
  * which the main menu unloads -- so the glyphs have to arrive as pixels, not
- * as calls. This file reads the font straight out of the ROM -- the same
- * 4-bit atlas the game's photo-review interface draws with -- composites
+ * as calls. The glyphs are the interface font's own pre-rendered sprites,
+ * harvested once by tools/menu_glyphs.py into src/menu_font.h; nothing is
+ * read from the ROM at runtime. This file composites
  * every string the page needs into an IA16 strip with the interface's own
  * two-pixel drop shadow, and writes the strips into otherwise-unused RDRAM
  * where the patch wraps them in sprites.
@@ -753,7 +754,6 @@ void seed_mailbox() {
     write_u8(MailboxAddr + 0x11, s.three_point_filtering ? 0 : 1);
     write_u8(MailboxAddr + 0x12, uint8_t(std::clamp(s.color_depth, 0, 2)));
     write_u8(MailboxAddr + 0x13, s.triple_buffering ? 1 : 0);
-    write_u8(MailboxAddr + 0x14, s.spawn_fade ? 1 : 0);
     write_u32(MailboxAddr + 0x4, 0);
     // The SOUND bank: its own sequence word and six value bytes, read live
     // by the patched audio functions (volumes as straight percentages) and
@@ -882,7 +882,7 @@ void stage_menu_assets(uint8_t* rdram) {
     };
     // Ids BaseCount+52/+53: the Graphics page's thirteenth row -- the spawn
     // fade -- label and description.
-    constexpr uint32_t StringCount = BaseCount + 54;
+    constexpr uint32_t StringCount = BaseCount + 52;
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -997,17 +997,6 @@ void stage_menu_assets(uint8_t* rdram) {
         else if (id == BaseCount + 26) {
             // The SOUND page's heading, in the header face.
             strip = compose_hdr("Sound");
-            w = strip.width;
-            h = strip.height;
-        }
-        else if (id == BaseCount + 52) {
-            strip = compose("Spawn Fade");
-            w = strip.width;
-            h = strip.height;
-        }
-        else if (id == BaseCount + 53) {
-            strip = compose_lines("Spawning Pokemon blend into view.",
-                                  "The console popped them in at once.");
             w = strip.width;
             h = strip.height;
         }
@@ -1200,7 +1189,6 @@ void poll_menu_mailbox(uint8_t* rdram) {
     s.three_point_filtering = read_u8_mail(MailboxAddr + 0x11) == 0;
     s.color_depth = std::min<int>(read_u8_mail(MailboxAddr + 0x12), 2);
     s.triple_buffering = read_u8_mail(MailboxAddr + 0x13) != 0;
-    s.spawn_fade = read_u8_mail(MailboxAddr + 0x14) != 0;
 
     apply_graphics_settings();
     save_settings();

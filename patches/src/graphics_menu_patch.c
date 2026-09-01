@@ -129,8 +129,6 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_STEREO     74
 #define STR_MONO       75
 #define STR_SND_DESC   76   /* ..81: the SOUND page's descriptions */
-#define STR_FADE_LABEL 82   /* "Spawn Fade", the thirteenth Graphics row */
-#define STR_FADE_DESC  83
 
 /* The SOUND bank of the mailbox: its own sequence word and value bytes
  * (percent volumes; stereo and background-mute booleans). The patched
@@ -142,7 +140,7 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define OPT_ITEMS      6    /* Screen, Graphics, Sound, Z, Stick, Return */
 #define OPT_GRAPHICS   1
 #define OPT_SOUND      2
-#define PAGE_ITEMS     13
+#define PAGE_ITEMS     12
 /* The stock Options list's own rhythm: first row at 73, sixteen rows of
  * pitch, six rows on screen -- the Graphics page reads as the same menu.
  * The rest scroll into view, which the edge arrows announce. */
@@ -322,8 +320,8 @@ static void snap_tint(GObj* gobj, u8 r, u8 g, u8 b) {
  * screen ("gobjthread stack over"), which on the port is a silent freeze.
  * Measured: the page's original ~600 bytes of local arrays killed it. */
 #define SCRATCH_ARRAYS        (SNAP_GFX_MAILBOX + 0x100)
-/* Sixteen slots for the page rows even though thirteen exist: the day the
- * page gained its thirteenth row, twelve-slot arrays silently aliased --
+/* Sixteen slots for the page rows, more than exist: the day the page
+ * once gained a thirteenth row, twelve-slot arrays silently aliased --
  * label 12 landed on value 0 and value 12 landed on hidden 0, which
  * corrupted value swaps, leaked strips onto the root list, and left the
  * teardown restoring sprites through a clobbered pointer. Headroom is
@@ -352,8 +350,7 @@ static s32 snap_row_field(s32 row) {
         case 8:  return 10;   /* Color Depth */
         case 9:  return 11;   /* Buffering */
         case 10: return 6;    /* Dither */
-        case 11: return 7;    /* Fullscreen */
-        default: return 12;   /* Spawn Fade */
+        default: return 7;    /* Fullscreen */
     }
 }
 
@@ -370,8 +367,7 @@ static s32 snap_row_label(s32 row) {
         case 8:  return STR_DEPTH_LABEL;
         case 9:  return STR_BUF_LABEL;
         case 10: return STR_L_SCALE + 6;
-        case 11: return STR_L_SCALE + 7;
-        default: return STR_FADE_LABEL;
+        default: return STR_L_SCALE + 7;
     }
 }
 
@@ -388,8 +384,7 @@ static s32 snap_row_desc(s32 row) {
         case 8:  return STR_DESC2 + 2;
         case 9:  return STR_DESC2 + 3;
         case 10: return STR_DESC + 6;
-        case 11: return STR_DESC + 7;
-        default: return STR_FADE_DESC;
+        default: return STR_DESC + 7;
     }
 }
 
