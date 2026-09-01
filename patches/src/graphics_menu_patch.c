@@ -130,6 +130,8 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_MONO       75
 #define STR_SND_DESC   76   /* ..81: the SOUND page's descriptions */
 #define STR_FADE_LABEL 82   /* "Spawn Fade", the thirteenth Graphics row */
+#define STR_MIP_LABEL  84   /* "Mipmaps", the fourteenth */
+#define STR_MIP_DESC   85
 #define STR_FADE_DESC  83
 
 /* The SOUND bank of the mailbox: its own sequence word and value bytes
@@ -142,7 +144,7 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define OPT_ITEMS      6    /* Screen, Graphics, Sound, Z, Stick, Return */
 #define OPT_GRAPHICS   1
 #define OPT_SOUND      2
-#define PAGE_ITEMS     13
+#define PAGE_ITEMS     14
 /* The stock Options list's own rhythm: first row at 73, sixteen rows of
  * pitch, six rows on screen -- the Graphics page reads as the same menu.
  * The rest scroll into view, which the edge arrows announce. */
@@ -353,7 +355,8 @@ static s32 snap_row_field(s32 row) {
         case 9:  return 11;   /* Buffering */
         case 10: return 6;    /* Dither */
         case 11: return 7;    /* Fullscreen */
-        default: return 12;   /* Spawn Fade */
+        case 12: return 12;   /* Spawn Fade */
+        default: return 13;   /* Mipmaps */
     }
 }
 
@@ -371,7 +374,8 @@ static s32 snap_row_label(s32 row) {
         case 9:  return STR_BUF_LABEL;
         case 10: return STR_L_SCALE + 6;
         case 11: return STR_L_SCALE + 7;
-        default: return STR_FADE_LABEL;
+        case 12: return STR_FADE_LABEL;
+        default: return STR_MIP_LABEL;
     }
 }
 
@@ -389,7 +393,8 @@ static s32 snap_row_desc(s32 row) {
         case 9:  return STR_DESC2 + 3;
         case 10: return STR_DESC + 6;
         case 11: return STR_DESC + 7;
-        default: return STR_FADE_DESC;
+        case 12: return STR_FADE_DESC;
+        default: return STR_MIP_DESC;
     }
 }
 
