@@ -1,48 +1,49 @@
 /**
- * Replaces func_beach_802C52EC from src/beach/55D1C0.c -- the Beach course
+ * Replaces func_802E22E4_6CA0C4 from src/river/6C9EB0.c -- the River course
  * intro's hand-off to first person.
  *
- * The original eases the camera from the cinematic pose back to the gameplay
- * pose in eleven steps, waiting a tick after each, and only THEN resets the
- * camera and deletes the ZERO-ONE model:
+ * This is the Beach intro's script with River's symbols (see
+ * beach_intro_patch.c for the full account): a 290-tick wait on the camera
+ * animation, then an eleven-step ease from the cinematic pose back to the
+ * first-person eye, waiting a tick after each, and only THEN the hand-off
+ * that resets the camera and deletes the ZERO-ONE model:
  *
  *     for (i = 0; i <= 10; i++) { pose(i); ohWait(1); }
- *     func_beach_802C5214();               // reset camera, delete the model
+ *     func_802E2194_6C9F74();              // reset camera, delete the model
  *
- * At i == 10 the pose IS the first-person eye position -- and the wait inside
- * that last iteration draws one full frame with the camera sitting inside the
- * back of Todd's head while his model is still on screen. The console showed
- * that frame too: one 30Hz tick of clipped hair and shirt polygons, invisible
- * on a CRT in motion, unmistakable at high resolution and refresh. It is an
- * off-by-one in the game's own script -- the model needed to be gone on the
- * frame the camera reached the eyes, not the frame after.
+ * So River has the same off-by-one: at i == 10 the camera sits at the eye
+ * position for a full frame with Todd's model still drawn, and i == 9 is one
+ * step short of it. The console drew both.
  *
- * Whether those frames are drawn is the player's choice, carried in mailbox
- * byte 0x80C00015 and read once when the intro starts. 0, the default, runs
- * the eleven-step loop and the hand-off exactly as the ROM does, clipped
- * frames included. 1 draws the dive through i == 8, the last pose from which
- * the model still reads as a shot, then lands the final pose and the hand-off
- * in one tick, so the model is gone before the camera is anywhere it could
- * cut into it. Every other frame, the skip path, the timeout and the sound
- * are the same in both modes.
+ * Mailbox byte 0x80C00015, read once when the intro starts, chooses. 0, the
+ * default, runs the loop and the hand-off exactly as the ROM does. 1 draws
+ * the dive through i == 8, then lands the final pose and the hand-off in one
+ * tick, so the model is gone before the camera is anywhere it could cut into
+ * it. Every other frame, the skip path, the timeout and the sounds are the
+ * same in both modes.
  *
- * The River intro's hand-off is the same script with River's symbols; see
- * river_intro_patch.c, which reads the same byte.
+ * River's hand-off stops two sounds where Beach's stops one. That function is
+ * the ROM's own and is not replaced; only the glide is.
  */
 
 #include "common.h"
-#include "beach/beach.h"
+#include "river/river.h"
 #include "app_level/app_level.h"
 
-void func_beach_802C51A0(DObj* dobj, s32 arg1, f32 arg2);
-void func_beach_802C5214(void);
-void func_beach_802C527C(GObj* obj);
+extern AnimCmd* D_8014A660_2BA730;
+extern AnimCmd** D_8014B450_2BB520;
+extern AnimCmd D_8014BF30_2BC000;
+extern s32 D_802E4B80_6CC960;
+
+void func_802E2120_6C9F00(DObj* dobj, s32 arg1, f32 arg2);
+void func_802E2194_6C9F74(void);
+void func_802E222C_6CA00C(GObj* obj);
 
 /* The port's settings mailbox at 0x80C00000; this byte is the hand-off
  * choice, seeded by the port from its saved settings. */
 #define SNAP_INTRO_HANDOFF_FIX (*(volatile u8*) 0x80C00015)
 
-void func_beach_802C52EC(GObj* obj) {
+void func_802E22E4_6CA0C4(GObj* obj) {
     s32 unused[4];
     GObj* gobj;
     f32 baseAtX, baseAtY;
@@ -70,18 +71,18 @@ void func_beach_802C52EC(GObj* obj) {
     startAtZ = cam->viewMtx.lookAt.at.z;
 
     cam->animSpeed = 0.5f;
-    animSetCameraAnimation(cam, &D_8013DA90_C9F20, 0.0f);
+    animSetCameraAnimation(cam, &D_8014BF30_2BC000, 0.0f);
     proc = omCreateProcess(gobj, animUpdateCameraAnimation, 1, 1);
-    PlayerModel_SetAnimation(&D_8013C580_C8A10, &D_8013CEA0_C9330, 0.0f, 0.5f);
-    D_beach_802CC0E0 = 0;
-    obj->fnAnimCallback = func_beach_802C51A0;
-    omCreateProcess(obj, func_beach_802C527C, 0, 1);
+    PlayerModel_SetAnimation(&D_8014A660_2BA730, &D_8014B450_2BB520, 0.0f, 0.5f);
+    D_802E4B80_6CC960 = 0;
+    obj->fnAnimCallback = func_802E2120_6C9F00;
+    omCreateProcess(obj, func_802E222C_6CA00C, 0, 1);
 
     i = 0;
-    while (D_beach_802CC0E0 == 0 && i < 290) {
+    while (D_802E4B80_6CC960 == 0 && i < 290) {
         if (gContInputPressedButtons & (A_BUTTON | START_BUTTON)) {
             omEndProcess(proc);
-            func_beach_802C5214();
+            func_802E2194_6C9F74();
         }
         ohWait(1);
         i++;
@@ -103,7 +104,7 @@ void func_beach_802C52EC(GObj* obj) {
      * eye pose is landed below, in the hand-off's own tick. */
     for (i = 0; i <= lastPose; i++) {
         if (gContInputPressedButtons & (A_BUTTON | START_BUTTON)) {
-            func_beach_802C5214();
+            func_802E2194_6C9F74();
         }
         cam->viewMtx.lookAt.eye.x = (((f32) i * (startEyeX - baseEyeX)) / 10.0f) + baseEyeX;
         cam->viewMtx.lookAt.eye.y = (((f32) i * (startEyeY - baseEyeY)) / 10.0f) + baseEyeY;
@@ -125,6 +126,6 @@ void func_beach_802C52EC(GObj* obj) {
         cam->viewMtx.lookAt.at.y = startAtY;
         cam->viewMtx.lookAt.at.z = startAtZ;
     }
-    func_beach_802C5214();
+    func_802E2194_6C9F74();
     ohWait(1);
 }
