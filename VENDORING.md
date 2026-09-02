@@ -91,7 +91,7 @@ the shader seen-list warmer (`render/rt64_raster_shader_cache.cpp`,
 
 ### plume (inside the ignored contrib tree)
 
-`lib/rt64/src/contrib/plume/plume_d3d12.cpp` is force-tracked (commit `35bcba0`)
+`lib/rt64/src/contrib/plume/plume_d3d12.cpp` is force-tracked (commit `7d704d4`; it was `35bcba0` before the history rewrite of 2026-09-02)
 because it carries a fix the port cannot run without, and the file that
 documents it (`lib/rt64/src/contrib/PLUME_PATCHES.md`) sits in the ignored
 directory, so the substance is repeated here:
