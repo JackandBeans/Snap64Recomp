@@ -97,6 +97,13 @@ uint Float4ToRGBA16(float4 i, uint dither, bool usesHDR) {
     uint r = round(clamp(i.r * 255.0f, 0.0f, 255.0f));
     uint g = round(clamp(i.g * 255.0f, 0.0f, 255.0f));
     uint b = round(clamp(i.b * 255.0f, 0.0f, 255.0f));
+
+    // The visible low bit of an RGBA16 pixel is the most significant of the RDP's three coverage
+    // bits (the other two live in the hidden bits RT64 does not keep). A color target's alpha
+    // channel holds coverage scaled into the channel's range, so that bit is bit 2 of the coverage.
+    // A pixel read back from memory (RGBA16ToFloat4), a fill color, and a texel a copy-mode rect
+    // wrote verbatim carry the bit as an alpha of exactly 1.0 instead: that is the channel maximum,
+    // 255 or 65535, both 7 modulo 8, so the same arithmetic reads it back as set.
     int cvgModulo = round(i.a * cvgRange) % 8;
     uint a = (cvgModulo & 0x4) ? 1 : 0;
     r = min(r + dither, 255) >> 3;

@@ -247,8 +247,17 @@ LIBRARY_EXPORT bool RasterPS(const RenderParams rp, float4 vertexPosition, float
         resultAlpha.a = resultColor.a;
     }
     
+    // Copy mode skips the coverage pipeline along with the combiner and blender: the RDP writes the
+    // fetched texel's bits into the framebuffer verbatim, so the low bit of a 16-bit pixel is the
+    // texel's alpha bit, not a coverage bit. The combiner and blender passed that alpha through
+    // untouched above, and Float4ToRGBA16 stores an alpha of exactly 1.0 or 0.0 as that bit the same
+    // way it stores a pixel read back from memory, so keep it. The coverage encodings below would
+    // replace it with a value that has no meaning in this mode.
+    if (otherMode.cycleType() == G_CYC_COPY) {
+        resultColor.a = combinerColor.a;
+    }
     // Preserve the value in the destination.
-    if (otherMode.cvgDst() == CVG_DST_SAVE) {
+    else if (otherMode.cvgDst() == CVG_DST_SAVE) {
         resultColor.a = 0.0f;
     }
     // Write a full coverage value regardless of the computed coverage.

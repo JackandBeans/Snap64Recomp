@@ -82,6 +82,9 @@ HOOKED = [
     # ramps) and the level-end global fades. Logged under SNAP_STATS so the
     # Effects slider can be proven at the voice, not at the slot.
     'alSndpSetVol',
+    # The photo scorer's render-and-count routine: read its buffers back after
+    # it returns, so the copy-mode low bit is checked in the game's own data.
+    'func_800A007C',
     # The two ends of a course intro's hand-off glide, for measuring the
     # Cutscene Fix toggle in drawn frames (src/intro_probe.cpp).
     'PlayerModel_SetAnimation',

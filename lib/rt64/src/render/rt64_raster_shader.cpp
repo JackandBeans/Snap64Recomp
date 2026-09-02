@@ -313,7 +313,11 @@ namespace RT64 {
         // duplicated surfaces is seen. Permissive is the safe direction: it can only add a
         // surface, never drop one.
         creation.zCmpEqual = (desc.otherMode.zMode() != ZMODE_XLU);
-        creation.cvgAdd = (desc.otherMode.cvgDst() == CVG_DST_WRAP) || (desc.otherMode.cvgDst() == CVG_DST_SAVE);
+        // The copy pipeline neither reads nor accumulates the destination's coverage: the fetched
+        // texel replaces the pixel outright, so the coverage bits the RDP's other cycle types
+        // would wrap or preserve are just the texel's own bits. Additive alpha would fold the
+        // old coverage into them.
+        creation.cvgAdd = !copyMode && ((desc.otherMode.cvgDst() == CVG_DST_WRAP) || (desc.otherMode.cvgDst() == CVG_DST_SAVE));
         creation.NoN = desc.flags.NoN;
         creation.usesHDR = desc.flags.usesHDR;
 #ifdef __APPLE__
