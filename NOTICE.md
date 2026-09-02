@@ -62,7 +62,7 @@ entry, with what its files say:
 | `project64` | **no license text in the tree** (two headers, `Base.h` and `Video.h`) | **no**: nothing outside `contrib` references them (checked by grep); not compiled |
 | `re-spirv` | MIT (renderbag and contributors, 2024) | yes, compiled and linked |
 | `spirv-cross` | Apache-2.0 (`LICENSE`), with Khronos free-use terms for some files | **no on Windows**: only RT64's macOS `spirv_cross_msl` tool builds it |
-| `stb` | dual MIT / public domain (`LICENSE`) | yes, header-only; `stb_image.h` is also used by this port's `src/menu_assets.cpp` to load the title badge |
+| `stb` | dual MIT / public domain (`LICENSE`) | yes, header-only; `stb_image.h` is also used by this port's `src/menu_assets.cpp` to load the title badge, and `stb_image_write.h` by `src/photo_export.cpp` to write photos as PNG |
 | `utf8conv` | **no license statement in the files** (`utf8conv.h`, `utf8except.h`, "Copyright (C) by Giovanni Dicanio") | included by four RT64 files; terms unverified |
 | `xxHash` | BSD 2-Clause (`LICENSE`); `cli/COPYING` GPLv2 covers only the unused command-line tool | yes, header-only |
 | `zstd` | dual BSD 3-Clause (`LICENSE`) / GPLv2 (`COPYING`); the BSD terms apply here | yes, `libzstd_static` is compiled and linked |

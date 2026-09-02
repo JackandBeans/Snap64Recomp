@@ -18,6 +18,7 @@
 #include "json/json.hpp"
 #include "librecomp/files.hpp"
 #include "paths.h"
+#include "photo_export.h"
 #include "ultramodern/config.hpp"
 #include "recomp.h"
 
@@ -448,6 +449,21 @@ bool handle_settings_hotkey(int scancode) {
             const bool on = toggle_locked(&Settings::crop_enabled);
             settings_mark_dirty();
             printf("[SNAP-CFG] overscan crop: %s\n", on ? "on" : "off");
+            return true;
+        }
+        case SDL_SCANCODE_P: {
+            // Saves the photo on screen (photo_export.h). Not a setting:
+            // nothing is marked dirty. A held key repeats at the OS rate and
+            // main.cpp hands every repeat here, so a press within a short
+            // window of the last one is the same press; a second photo of
+            // the same screen is one deliberate press away.
+            static std::chrono::steady_clock::time_point last{};
+            const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
+            if (now - last < std::chrono::milliseconds(300)) {
+                return true;
+            }
+            last = now;
+            export_photo(g_rdram);
             return true;
         }
         default:

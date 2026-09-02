@@ -21,6 +21,11 @@
  *   C-Left  = Right stick left / Keyboard J
  *   C-Right = Right stick right / Keyboard L
  *   Analog  = Left stick / Keyboard WASD
+ *
+ * Not an N64 button: SDL_CONTROLLER_BUTTON_BACK (Select on most pads) saves
+ * the photo on screen, as the same button did on the Wii Virtual Console
+ * release (src/photo_export.cpp). The keyboard's P does the same, through
+ * the hotkey table in src/settings.cpp.
  */
 
 #include "input.h"
@@ -31,6 +36,8 @@
 #include <cstring>
 #include <cmath>
 #include <SDL2/SDL.h>
+
+#include "photo_export.h"
 
 // Pokemon Snap port: how many more presented images to photograph. Lives in
 // RT64's present queue, where the pictures actually leave for the screen;
@@ -58,12 +65,35 @@ extern "C" std::atomic<int32_t> snap_frame_dump_pending;
 
 namespace snap {
 
+// settings.cpp; set by the overlay hook on the first overlay load, which is
+// long before any photo can exist.
+extern uint8_t* g_rdram;
+
 // ---------------------------------------------------------------------------
 // Internal state
 // ---------------------------------------------------------------------------
 
 static SDL_GameController* game_controller = nullptr;
 static bool controller_initialized = false;
+
+// The Back button's press, taken from SDL's event stream rather than from
+// the state polled below. The game reads button STATE (input_get, on the
+// thread the game reads its controller on), and a photo is saved on a
+// press, on the main thread, where the hotkeys run and where the settings
+// file is written. SDL already turns the press into an
+// SDL_CONTROLLERBUTTONDOWN event on the thread that pumps events -- the
+// main thread, in main.cpp's update_gfx, which then ignores controller
+// events -- and an event watch is SDL's hook into that same delivery: it
+// runs synchronously, on the pumping thread, as the event is queued. So
+// this callback IS main-thread code, without a poll or a queue of its own.
+// The return value of a watch is ignored by SDL.
+static int SDLCALL photo_button_watch(void* /*userdata*/, SDL_Event* event) {
+    if ((event->type == SDL_CONTROLLERBUTTONDOWN) &&
+        (event->cbutton.button == SDL_CONTROLLER_BUTTON_BACK)) {
+        export_photo(g_rdram);
+    }
+    return 1;
+}
 
 static void try_open_controller() {
     // Drop a handle whose device is gone, otherwise the stale pointer blocks
@@ -97,6 +127,10 @@ void input_poll() {
         // SDL_Init should have been called by the gfx create callback.
         // Try to open a game controller if we haven't yet.
         try_open_controller();
+        // Registered once, after SDL_Init, for the life of the process.
+        // SDL_AddEventWatch is thread-safe, so the thread this runs on does
+        // not matter; the thread the watch runs on is the one that pumps.
+        SDL_AddEventWatch(photo_button_watch, nullptr);
         controller_initialized = true;
     }
 
@@ -183,6 +217,12 @@ static void snap_input_tap(uint16_t* buttons, float* x, float* y) {
     }
 
     readingIndex++;
+    // The photo export's clock, and under SNAP_STATS with
+    // SNAP_PHOTO_AUTOEXPORT the hands-free save that lets a replay prove the
+    // export. Readings are the right clock for it for the same reason they
+    // are the capture schedule's: a rendered photo is complete before the
+    // reading after it begins.
+    photo_export_on_reading(g_rdram);
     bool armCapture = false;
     if ((pcapEvery > 0) && (readingIndex >= pcapStart) &&
         (((readingIndex - pcapStart) % pcapEvery) == 0)) {

@@ -95,6 +95,11 @@ HOOKED = [
     'func_beach_802C5214',
     'func_802E2194_6C9F74',
     'func_803719B0_845160',
+    # The two camera set-ups, counted by src/rect_census.cpp for their
+    # background and depth fills. renInitCameraEx is also where every photo
+    # the game shows is rendered into the window library's own buffer, so its
+    # wrapper hands the call to src/photo_export.cpp first, which records the
+    # buffer the P key and the controller's Back button save from.
     'renInitCamera',
     'renInitCameraEx',
     # The viewfinder's scorer: one framebuffer tile copy per Pokemon drawn, up

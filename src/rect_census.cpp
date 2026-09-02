@@ -25,6 +25,7 @@
 
 #include "recomp.h"
 #include "hle/rt64_snap_diag.h"
+#include "photo_export.h"
 
 extern "C" {
 #include "funcs.h"
@@ -108,7 +109,22 @@ SNAP_CENSUS(func_8009E3D0, rectsFromPhotoCounter)
 // Background and depth clears, counted so they can be discounted: they fill the
 // same place every frame and interpolating them would achieve nothing.
 SNAP_CENSUS(renInitCamera, rectsFromCameraFillCounter)
-SNAP_CENSUS(renInitCameraEx, rectsFromCameraFillCounter)
+// The Ex variant is also where every photo the game shows is rendered into
+// the window library's own buffer. The observer runs first, before the real
+// call clobbers a0..a3, and records the buffer that src/photo_export.cpp saves
+// from; the census is unchanged.
+extern "C" void renInitCameraEx(uint8_t* rdram, recomp_context* ctx) {
+    snap_photo_note_render_target(rdram, ctx);
+    if (!snapdiag::statsEnabled()) {
+        __real_renInitCameraEx(rdram, ctx);
+        return;
+    }
+    const uint32_t before = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)snap::GMainGfxPos));
+    __real_renInitCameraEx(rdram, ctx);
+    const uint32_t after = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)snap::GMainGfxPos));
+    snapdiag::rectsFromCameraFillCounter().fetch_add(snap_count_rects(rdram, before, after),
+                                                     std::memory_order_relaxed);
+}
 
 // Counted by calls, not by scanning what it wrote.
 //

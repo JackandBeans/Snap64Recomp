@@ -219,6 +219,7 @@ set(SNAP_SOURCES
     src/intro_probe.cpp
     src/patch_shims.cpp
     src/settings.cpp
+    src/photo_export.cpp
     "${SNAP_ASPMAIN_CPP}"
 )
 
