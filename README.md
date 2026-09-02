@@ -77,6 +77,7 @@ Everything is in the folder with the executable.
 | `pokemonsnap.z64` | your ROM (you provide it) |
 | `snapsettings.json`, `snapsettings.json.bak` | settings, written by the in-game Graphics and Sound pages and by the hotkeys |
 | `saves/pokemonsnap.bin`, `saves/pokemonsnap.bin.bak` | the game's save data (its EEPROM image) |
+| `photos/` | the photos you save with P or the controller's Back button (see "Photos"); created on the first save |
 | `cache/` | RT64's compiled shaders, the driver's pipeline cache and the seen-shader list; safe to delete, the next start is slower |
 | `mods/`, `mod_config/` | the runtime's mod folders; created empty, unused by this release |
 | `menu_text/recomp_logo.png` | the "Recomp" wordmark on the title screen |
@@ -105,7 +106,9 @@ Keyboard (`src/input.cpp`):
 Any SDL game controller overrides the keyboard while attached: left stick is
 the control stick, A is A, B or X is B, the left shoulder button is Z, Start
 is Start, the D-pad is the D-pad, the triggers are L and R, and the right stick
-is the C buttons.
+is the C buttons. The Back button (Select, View or Share on most pads) is not
+an N64 button: it saves the photo on screen, as P does on the keyboard (see
+"Photos").
 
 ### The rule the port follows
 
@@ -134,8 +137,9 @@ Original is the default because it is the console's rate.
 
 Options > **Graphics**: Render Scale, Anti-Aliasing, Widescreen, Frame Rate,
 2D Detail, Filter, Dither, Fullscreen, Super Sampling, Texture Filter, Color
-Depth, Buffering, Overscan Crop, Cutscene Fix. Color Depth and Buffering take
-effect after a restart; everything else applies while the page is open.
+Depth, Buffering, Overscan Crop, Cutscene Fix, Photo Detail, VC Recolour.
+Color Depth and Buffering take effect after a restart; everything else
+applies while the page is open.
 
 Options > **Sound**: Master Volume, Music Volume, Sound Effects, Shutter
 Volume, Speaker Output (Stereo/Mono), Background Mute.
@@ -162,7 +166,28 @@ the renderer and are not features.
 | F12 | *diagnostic* Mark the moment in the statistics log (needs `SNAP_STATS=1`) |
 | Home | *diagnostic* 2D rectangle interpolation on/off |
 | End | *diagnostic* Effect-sprite naming on/off |
+| P | Save the photo on screen as a PNG in `photos/` (see "Photos") |
 | Esc | Quit |
+
+### Photos
+
+Every photo the game shows you -- the picks after a course, Oak's check, the
+album, the report -- is drawn the same way: the game rebuilds the photo's saved
+state as objects and renders them once into a 320x210 buffer in memory (the
+size it asks for varies by screen, up to that), then shows that buffer as a
+sprite. With render-to-RAM on, which it is unless you turn it off, the rendered
+pixels are written back into that buffer, which is what lets the game score
+photos at all. **P**, or the controller's **Back** button, saves that buffer's
+rendered region as a PNG: the photo at the game's own resolution, pixel for
+pixel, with no scaling, no frame and no text over it. Files go to `photos/`
+next to the executable, named `snap_YYYYMMDD_HHMMSS_<course>_NN.png` (the
+course is left out if the game's own record of it cannot be read), and the log
+prints `[SNAP] photo saved: <path>` or the reason it was not: no photo has been
+rendered yet, no photo is on screen, or render-to-RAM is off. Nintendo's 2007
+Wii Virtual Console release added the same thing -- Select in the album posted
+the photo on screen to the Wii Message Board -- so this is an enhancement with
+a precedent, and one that draws nothing on screen. The code is
+`src/photo_export.cpp`.
 
 ### Settings file
 
@@ -186,6 +211,8 @@ the defaults below are that file's.
 | `crop_enabled` | `false` | Overscan Crop |
 | `crop_left`, `crop_right`, `crop_top`, `crop_bottom` | `16`, `16`, `12`, `12` | pixels hidden per side when the crop is on |
 | `intro_fix` | `false` | Cutscene Fix: skips the one frame the console drew from inside the player model at the end of the Beach and River intros |
+| `photo_detail` | `false` | Photo Detail: Off draws Oak's photos and the album at native pixels as the console did; On serves them from the renderer's full-resolution render |
+| `jynx_vc` | `false` | VC Recolour, Jynx's face and hands: Off: the cartridge's black; On: the purple of the re-releases, from the official artwork |
 | `interpolate_camera` | `true` | interpolate the view as well as objects (F4) |
 | `downsample` | `1` | Super Sampling factor |
 | `resolution_scale` | `0` | 0 follows the window; 1-8 caps the render scale in multiples of 320x240 |
@@ -200,9 +227,11 @@ the defaults below are that file's.
 
 Environment variables the executable reads: `SNAP_WINDOW` (window size),
 `SNAP_STATS` (statistics and the diagnostic keys), `SNAP_MUTE`, `SNAP_RECORD`
-and `SNAP_REPLAY` (input recording and replay), and the `SNAP_PCAP_*` family
-(presented-frame capture). They are development switches; the source is their
-documentation.
+and `SNAP_REPLAY` (input recording and replay), the `SNAP_PCAP_*` family
+(presented-frame capture), and `SNAP_PHOTO_AUTOEXPORT` (with `SNAP_STATS`:
+every photo the game renders is saved to `photos/` without a key press, so a
+replay can prove the export). They are development switches; the source is
+their documentation.
 
 ## What has been verified, and what has not
 
@@ -213,6 +242,10 @@ documentation.
 * There is no test suite, no CI run, and no build on any other machine
   recorded in this repository. Anything not listed here should be assumed
   untried.
+* The photo export (P, the controller's Back button, `photos/`) is checked
+  by `SNAP_PHOTO_AUTOEXPORT` on an input replay that reaches Oak's check,
+  not by hand: saving from the keyboard and from the controller has not been
+  tried.
 * The recompiled game is generated from a specific decompilation build; the
   chain of tools and inputs is spelled out in `BUILDING.md`, including one
   stale input on the developer's machine that must be regenerated before the

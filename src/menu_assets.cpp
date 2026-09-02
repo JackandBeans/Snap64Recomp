@@ -783,6 +783,10 @@ void seed_mailbox() {
     // reaches the game whether or not the page is ever opened, on every
     // overlay load's re-seed.
     write_u8(MailboxAddr + 0x15, s.intro_fix ? 1 : 0);
+    // Fields 14 and 15 fill the bank: +0x18 is the patch's own pointer
+    // word (the byte map at SNAP_GFX_MAILBOX in the patch).
+    write_u8(MailboxAddr + 0x16, s.photo_detail ? 1 : 0);
+    write_u8(MailboxAddr + 0x17, s.jynx_vc ? 1 : 0);
     write_u32(MailboxAddr + 0x4, 0);
     // The SOUND bank: its own sequence word and six value bytes, read live
     // by the patched audio functions (volumes as straight percentages) and
@@ -928,9 +932,10 @@ void stage_menu_strings(uint8_t* rdram) {
         { "Stereo suits speakers and headphones.",    "Mono mixes both sides together." },
         { "Silences the game while another",          "window is in front." },
     };
-    // Ids BaseCount+52..+55: the Graphics page's last two rows -- Overscan
-    // Crop, then Cutscene Fix -- a label and a description apiece.
-    constexpr uint32_t StringCount = BaseCount + 56;
+    // Ids BaseCount+52..+59: the Graphics page's last four rows -- Overscan
+    // Crop, Cutscene Fix, Photo Detail, VC Recolour -- a label and a
+    // description apiece.
+    constexpr uint32_t StringCount = BaseCount + 60;
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -1069,6 +1074,34 @@ void stage_menu_strings(uint8_t* rdram) {
         else if (id == BaseCount + 55) {
             strip = compose_lines("Skips the clipped frame the console drew",
                                   "as a course intro hands off the camera.");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 56) {
+            strip = compose("Photo Detail");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 57) {
+            // No apostrophe in the help face, so not "Oak's photos".
+            strip = compose_lines("Oak and the album show your photos at",
+                                  "full resolution, not console pixels.");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 58) {
+            // No capital J in the body face (see STR_JYNX_LABEL in the
+            // patch): named for the releases whose look it borrows.
+            strip = compose("VC Recolour");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 59) {
+            // The help face has no J, no V and no hyphen: the description
+            // says what turns purple and where to see it (Jynx dance in
+            // the Cave), not the name, "VC" or "re-release".
+            strip = compose_lines("Purple face and hands in the Cave, as",
+                                  "every release since the Wii draws them.");
             w = strip.width;
             h = strip.height;
         }
@@ -1290,6 +1323,13 @@ void poll_menu_mailbox(uint8_t* rdram) {
         // the mailbox; the field only carries it to the file.
         s.crop_enabled = read_u8_mail(MailboxAddr + 0x14) != 0;
         s.intro_fix = read_u8_mail(MailboxAddr + 0x15) != 0;
+        // Both consumed by RT64: apply_graphics_settings below always
+        // queues an UpdateConfigAction (set_graphics_config never compares
+        // the config), and RT64Context::update_config copies these two
+        // into app_->userConfig and calls updateUserConfig, so a page edit
+        // is on screen at the next display list.
+        s.photo_detail = read_u8_mail(MailboxAddr + 0x16) != 0;
+        s.jynx_vc = read_u8_mail(MailboxAddr + 0x17) != 0;
     }
 
     apply_graphics_settings();

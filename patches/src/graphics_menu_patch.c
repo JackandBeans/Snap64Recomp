@@ -22,7 +22,8 @@
  * RDRAM, so every table below lives on the stack and one scratch byte of the
  * staging area carries the selection index between coroutines.
  *
- * Settings travel through the 16-byte mailbox at 0x80C00000: the port seeds
+ * Settings travel through the mailbox at 0x80C00000 (its byte map is at
+ * SNAP_GFX_MAILBOX below): the port seeds
  * it with saved values, the page edits bytes and bumps a sequence counter,
  * and the port applies on each bump and writes the file once the edits
  * pause (src/settings.h, settings_flush_if_due) -- every change is live
@@ -79,14 +80,43 @@ void func_800BFB90_5CA30(s32 left, s32 top);
 UnkStruct800BEDF8* func_800AA38C(s32);
 
 /* The staged-asset directory and the settings mailbox, shared with
- * src/menu_assets.cpp. One extra byte of the mailbox block is scratch for
- * the patch itself: the current selection, readable from every coroutine. */
+ * src/menu_assets.cpp (seed_mailbox and poll_menu_mailbox own the host
+ * side). The mailbox block, byte by byte:
+ *
+ *   +0x00  u32  magic 'SGFX', written last by the seed
+ *   +0x04  u32  GRAPHICS sequence word: the page bumps it, the host applies
+ *   +0x08  u8   GRAPHICS fields 0..15, one setting apiece, through +0x17:
+ *                0 Render Scale, 1 Anti-Aliasing, 2 Widescreen, 3 Frame
+ *                Rate, 4 2D Detail, 5 Filter, 6 Dither, 7 Fullscreen,
+ *                8 Super Sampling, 9 Texture Filter, 10 Color Depth,
+ *                11 Buffering, 12 Overscan Crop, 13 Cutscene Fix (also
+ *                read by the intro patches), 14 Photo Detail, 15 VC
+ *                Recolour. The bank is full: field 16 would be the
+ *                pointer word below.
+ *   +0x18  u32  SCRATCH_GRAPHICS_GOBJ, the patch's own (see below)
+ *   +0x1C  u32  SCRATCH_HELP_ITEM, the patch's own
+ *   +0x20  u32  SOUND sequence word
+ *   +0x28  u8   SOUND fields 0..5, through +0x2D (sfx_volume_patch.c reads
+ *               them too)
+ *   +0x30  u32  MBOX_DBG, retired
+ *   +0x34  u8   MBOX_SEL, the patch's own: the current selection,
+ *               readable from every coroutine
+ *   +0x100      SCRATCH_ARRAYS, the page's pointer and snapshot arrays
+ *
+ * The host never touches anything the map calls the patch's own. */
 #define SNAP_GFX_MAILBOX   0x80C00000
 #define SNAP_GFX_ASSETS    0x80C01000
 
 #define MBOX_SEQ     (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x4))
 #define MBOX_FIELD(i) (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x8 + (i)))
-#define MBOX_SEL     (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x16))
+/* Moved off +0x16 when the GRAPHICS bank grew to sixteen fields (+0x08..
+ * +0x17): field 14 (Photo Detail) now lives where the selection byte did.
+ * Not +0x1F, the first free-looking byte -- that is the low byte of the
+ * SCRATCH_HELP_ITEM pointer word at +0x1C, and writing a selection index
+ * into it would corrupt the help sprite's GObj pointer. +0x34 is the
+ * byte after the retired debug word, in the hole nothing claims before
+ * SCRATCH_ARRAYS at +0x100. */
+#define MBOX_SEL     (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x34))
 
 #define DIR_MAGIC    (*(volatile u32*) (SNAP_GFX_ASSETS + 0x0))
 #define DIR_COUNT    (*(volatile u32*) (SNAP_GFX_ASSETS + 0x4))
@@ -138,6 +168,14 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  * "Intro Fix" -- the body face the labels are set in has no capital I. */
 #define STR_INTRO_LABEL 84
 #define STR_INTRO_DESC  85
+#define STR_PHOTO_LABEL 86  /* "Photo Detail" (settings.h photo_detail) */
+#define STR_PHOTO_DESC  87
+/* "VC Recolour": the purple Jynx of the re-releases (settings.h jynx_vc).
+ * Not "Jynx Recolour" -- the body face has no capital J either, and the
+ * help face the description is set in has no J, no V and no hyphen, so
+ * the description says what changes and where, never the name. */
+#define STR_JYNX_LABEL  88
+#define STR_JYNX_DESC   89
 
 /* The SOUND bank of the mailbox: its own sequence word and value bytes
  * (percent volumes; stereo and background-mute booleans). The patched
@@ -149,7 +187,7 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define OPT_ITEMS      6    /* Screen, Graphics, Sound, Z, Stick, Return */
 #define OPT_GRAPHICS   1
 #define OPT_SOUND      2
-#define PAGE_ITEMS     14
+#define PAGE_ITEMS     16
 /* The stock Options list's own rhythm: first row at 73, sixteen rows of
  * pitch, six rows on screen -- the Graphics page reads as the same menu.
  * The rest scroll into view, which the edge arrows announce. */
@@ -329,12 +367,14 @@ static void snap_tint(GObj* gobj, u8 r, u8 g, u8 b) {
  * screen ("gobjthread stack over"), which on the port is a silent freeze.
  * Measured: the page's original ~600 bytes of local arrays killed it. */
 #define SCRATCH_ARRAYS        (SNAP_GFX_MAILBOX + 0x100)
-/* Sixteen slots for the page rows, more than exist: the day the page
- * once gained a thirteenth row, twelve-slot arrays silently aliased --
- * label 12 landed on value 0 and value 12 landed on hidden 0, which
- * corrupted value swaps, leaked strips onto the root list, and left the
- * teardown restoring sprites through a clobbered pointer. Headroom is
- * cheaper than that afternoon. */
+/* Sixteen slots for the page rows, and sixteen rows now use them: the
+ * day the page once gained a thirteenth row, twelve-slot arrays silently
+ * aliased -- label 12 landed on value 0 and value 12 landed on hidden 0,
+ * which corrupted value swaps, leaked strips onto the root list, and left
+ * the teardown restoring sprites through a clobbered pointer. A
+ * seventeenth row needs wider arrays here, a seventeenth PAGE_ENTRY byte,
+ * and a mailbox field past +0x17 -- which is the pointer word at +0x18,
+ * so the field bank has to move first (see the byte map above). */
 #define PAGE_LABEL(i)  (*(volatile u32*) (SCRATCH_ARRAYS + 0x00 + (i) * 4))   /* GObj*, 16 */
 #define PAGE_VALUE(i)  (*(volatile u32*) (SCRATCH_ARRAYS + 0x40 + (i) * 4))   /* GObj*, 16 */
 #define PAGE_HIDDEN(i) (*(volatile u32*) (SCRATCH_ARRAYS + 0x80 + (i) * 4))   /* SObj*, 64 */
@@ -343,11 +383,11 @@ static void snap_tint(GObj* gobj, u8 r, u8 g, u8 b) {
 #define PAGE_ARROW_UP  (*(volatile u32*) (SCRATCH_ARRAYS + 0x1C0))            /* GObj* */
 #define PAGE_ARROW_DN  (*(volatile u32*) (SCRATCH_ARRAYS + 0x1C4))            /* GObj* */
 /* The Graphics page's entry snapshot of the mailbox value bytes, by field
- * index, for B to restore. Sixteen bytes for fourteen fields, the same
- * headroom as the row arrays; nothing else lives past the arrow slots. */
+ * index, for B to restore. Sixteen bytes for sixteen fields, one per row
+ * array slot; nothing else lives past the arrow slots. */
 #define PAGE_ENTRY(i)  (*(volatile u8*)  (SCRATCH_ARRAYS + 0x1C8 + (i)))       /* u8, 16 */
 
-/* The page's fourteen rows, in display order. Each row cycles one mailbox
+/* The page's sixteen rows, in display order. Each row cycles one mailbox
  * field and shows one label, one value set and one description; the maps
  * below are functions so nothing needs a table in a coroutine frame. */
 static s32 snap_row_field(s32 row) {
@@ -365,7 +405,9 @@ static s32 snap_row_field(s32 row) {
         case 10: return 6;    /* Dither */
         case 11: return 7;    /* Fullscreen */
         case 12: return 12;   /* Overscan Crop */
-        default: return 13;   /* Cutscene Fix */
+        case 13: return 13;   /* Cutscene Fix */
+        case 14: return 14;   /* Photo Detail */
+        default: return 15;   /* VC Recolour */
     }
 }
 
@@ -384,7 +426,9 @@ static s32 snap_row_label(s32 row) {
         case 10: return STR_L_SCALE + 6;
         case 11: return STR_L_SCALE + 7;
         case 12: return STR_CROP_LABEL;
-        default: return STR_INTRO_LABEL;
+        case 13: return STR_INTRO_LABEL;
+        case 14: return STR_PHOTO_LABEL;
+        default: return STR_JYNX_LABEL;
     }
 }
 
@@ -403,7 +447,9 @@ static s32 snap_row_desc(s32 row) {
         case 10: return STR_DESC + 6;
         case 11: return STR_DESC + 7;
         case 12: return STR_CROP_DESC;
-        default: return STR_INTRO_DESC;
+        case 13: return STR_INTRO_DESC;
+        case 14: return STR_PHOTO_DESC;
+        default: return STR_JYNX_DESC;
     }
 }
 
@@ -458,7 +504,8 @@ static s32 snap_value_str(s32 row, s32 v) {
         case 8: return (v == 0) ? STR_AUTO : (v == 1) ? STR_STANDARD : STR_HIGH;
         case 9: return (v == 0) ? STR_DOUBLE : STR_TRIPLE;
         default: return v ? STR_ON : STR_OFF;  /* Widescreen, Dither, Fullscreen,
-                                                * Overscan Crop, Cutscene Fix */
+                                                * Overscan Crop, Cutscene Fix,
+                                                * Photo Detail, VC Recolour */
     }
 }
 
@@ -629,7 +676,7 @@ static void snap_graphics_page(void) {
     /* The header promises A OK and B Cancel, and B keeps the promise the
      * way the SOUND page's does: the values as they stood at entry, put
      * back and re-published on the way out. Every mailbox byte the host
-     * reads (fourteen, one per field, whichever row shows it) is
+     * reads (sixteen, one per field, whichever row shows it) is
      * snapshotted by field index -- after the range check above, so a
      * Cancel republishes exactly what the page showed, never a byte it
      * refused to display. */
