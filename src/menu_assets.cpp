@@ -16,9 +16,11 @@
  * word, a sequence counter, one byte per graphics setting, and a second
  * bank for sound): this side
  * seeds it with the saved values, the page edits bytes and bumps a sequence
- * counter, and the poll below applies and persists on each bump -- so every
- * change takes effect while the menu is still open, through exactly the same
- * path the hotkeys use.
+ * counter, and the poll below applies on each bump -- so every change takes
+ * effect while the menu is still open, through exactly the same path the
+ * hotkeys use -- and marks the settings dirty. The disk write is the main
+ * thread's, debounced (settings_flush_if_due in settings.h), never this
+ * thread's.
  *
  * All RDRAM writes go through the recompiler's addressing (words direct,
  * halves XOR 2, bytes XOR 3), which also matches what a DMA from ROM would
@@ -29,6 +31,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 #include <string>
 #include <vector>
 
@@ -1171,8 +1174,12 @@ void stage_menu_assets(uint8_t* rdram) {
         StringCount, cursor - PixelsAddr);
 }
 
-// Called every game tick. Applies and saves whatever the GRAPHICS page
-// published since the last look -- the same live path the hotkeys use.
+// Called every game tick. Applies whatever the GRAPHICS page published
+// since the last look -- the same live path the hotkeys use -- and marks
+// the settings dirty. The disk write is not this thread's: a stick held on
+// a slider bumps the sequence once per notch, and writing here made every
+// notch a file write on the game tick. Mutations hold settings_mutex(); the
+// apply calls read the struct after it is released, on this same thread.
 void poll_menu_mailbox(uint8_t* rdram) {
     if ((rdram == nullptr) || !g_staged) {
         return;
@@ -1188,17 +1195,24 @@ void poll_menu_mailbox(uint8_t* rdram) {
     const uint32_t sndSeq = read_u32_mail(MailboxAddr + 0x20);
     if (sndSeq != g_last_applied_snd_seq) {
         g_last_applied_snd_seq = sndSeq;
-        Settings &snd = settings();
-        snd.master_volume = std::min<int>(read_u8_mail(MailboxAddr + 0x28), 100);
-        snd.music_volume = std::min<int>(read_u8_mail(MailboxAddr + 0x29), 100);
-        snd.sfx_volume = std::min<int>(read_u8_mail(MailboxAddr + 0x2A), 100);
-        snd.shutter_volume = std::min<int>(read_u8_mail(MailboxAddr + 0x2B), 100);
-        snd.stereo = read_u8_mail(MailboxAddr + 0x2C) != 0;
-        snd.mute_unfocused = read_u8_mail(MailboxAddr + 0x2D) != 0;
-        set_master_volume(snd.master_volume);
-        set_mute_unfocused(snd.mute_unfocused);
+        int master = 0;
+        bool mute = false;
+        {
+            std::lock_guard<std::mutex> lock(settings_mutex());
+            Settings &snd = settings();
+            snd.master_volume = std::min<int>(read_u8_mail(MailboxAddr + 0x28), 100);
+            snd.music_volume = std::min<int>(read_u8_mail(MailboxAddr + 0x29), 100);
+            snd.sfx_volume = std::min<int>(read_u8_mail(MailboxAddr + 0x2A), 100);
+            snd.shutter_volume = std::min<int>(read_u8_mail(MailboxAddr + 0x2B), 100);
+            snd.stereo = read_u8_mail(MailboxAddr + 0x2C) != 0;
+            snd.mute_unfocused = read_u8_mail(MailboxAddr + 0x2D) != 0;
+            master = snd.master_volume;
+            mute = snd.mute_unfocused;
+        }
+        set_master_volume(master);
+        set_mute_unfocused(mute);
         apply_game_settings(rdram);
-        save_settings();
+        settings_mark_dirty();
     }
 
     const uint32_t seq = read_u32_mail(MailboxAddr + 0x4);
@@ -1207,29 +1221,32 @@ void poll_menu_mailbox(uint8_t* rdram) {
     }
     g_last_applied_seq = seq;
 
-    Settings &s = settings();
-    s.resolution_scale = std::min<int>(read_u8_mail(MailboxAddr + 0x8), 8);
-    const uint8_t msaaIndex = read_u8_mail(MailboxAddr + 0x9);
-    s.msaa = (msaaIndex >= 3) ? 8 : (msaaIndex == 2) ? 4 : (msaaIndex == 1) ? 2 : 0;
-    s.widescreen = read_u8_mail(MailboxAddr + 0xA) != 0;
-    s.fps_mode = (read_u8_mail(MailboxAddr + 0xB) != 0) ? 1 : 0;
-    s.upscale_2d = std::min<int>(read_u8_mail(MailboxAddr + 0xC), 2);
-    s.present_filter = std::min<int>(read_u8_mail(MailboxAddr + 0xD), 2);
-    s.dither_noise = read_u8_mail(MailboxAddr + 0xE) != 0;
-    s.fullscreen = read_u8_mail(MailboxAddr + 0xF) != 0;
-    s.downsample = std::clamp(int(read_u8_mail(MailboxAddr + 0x10)) + 1, 1, 8);
-    s.three_point_filtering = read_u8_mail(MailboxAddr + 0x11) == 0;
-    s.color_depth = std::min<int>(read_u8_mail(MailboxAddr + 0x12), 2);
-    s.triple_buffering = read_u8_mail(MailboxAddr + 0x13) != 0;
-    // The crop is consumed where F2's flip is: rt64_render_context.cpp reads
-    // crop_enabled on every display list, so setting the field is the whole
-    // apply. The intro byte is read by the patch straight from the mailbox;
-    // the field only carries it to the file.
-    s.crop_enabled = read_u8_mail(MailboxAddr + 0x14) != 0;
-    s.intro_fix = read_u8_mail(MailboxAddr + 0x15) != 0;
+    {
+        std::lock_guard<std::mutex> lock(settings_mutex());
+        Settings &s = settings();
+        s.resolution_scale = std::min<int>(read_u8_mail(MailboxAddr + 0x8), 8);
+        const uint8_t msaaIndex = read_u8_mail(MailboxAddr + 0x9);
+        s.msaa = (msaaIndex >= 3) ? 8 : (msaaIndex == 2) ? 4 : (msaaIndex == 1) ? 2 : 0;
+        s.widescreen = read_u8_mail(MailboxAddr + 0xA) != 0;
+        s.fps_mode = (read_u8_mail(MailboxAddr + 0xB) != 0) ? 1 : 0;
+        s.upscale_2d = std::min<int>(read_u8_mail(MailboxAddr + 0xC), 2);
+        s.present_filter = std::min<int>(read_u8_mail(MailboxAddr + 0xD), 2);
+        s.dither_noise = read_u8_mail(MailboxAddr + 0xE) != 0;
+        s.fullscreen = read_u8_mail(MailboxAddr + 0xF) != 0;
+        s.downsample = std::clamp(int(read_u8_mail(MailboxAddr + 0x10)) + 1, 1, 8);
+        s.three_point_filtering = read_u8_mail(MailboxAddr + 0x11) == 0;
+        s.color_depth = std::min<int>(read_u8_mail(MailboxAddr + 0x12), 2);
+        s.triple_buffering = read_u8_mail(MailboxAddr + 0x13) != 0;
+        // The crop is consumed where F2's flip is: rt64_render_context.cpp
+        // reads crop_enabled on every display list, so setting the field is
+        // the whole apply. The intro byte is read by the patch straight from
+        // the mailbox; the field only carries it to the file.
+        s.crop_enabled = read_u8_mail(MailboxAddr + 0x14) != 0;
+        s.intro_fix = read_u8_mail(MailboxAddr + 0x15) != 0;
+    }
 
     apply_graphics_settings();
-    save_settings();
+    settings_mark_dirty();
 }
 
 } // namespace snap

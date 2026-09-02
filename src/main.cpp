@@ -16,6 +16,7 @@
 #include <utility>
 #include <chrono>
 #include <cstdlib>
+#include <mutex>
 
 #include "librecomp/game.hpp"
 #include "librecomp/overlays.hpp"
@@ -168,7 +169,10 @@ static void update_gfx(void* /*gfx_data*/) {
                     if (sdl_window != nullptr) {
                         SDL_RestoreWindow(sdl_window);
                     }
-                    snap::settings().fullscreen = true;
+                    {
+                        std::lock_guard<std::mutex> lock(snap::settings_mutex());
+                        snap::settings().fullscreen = true;
+                    }
                     snap::apply_graphics_settings();
                 }
                 // The SOUND page's background mute follows these; the mute
@@ -185,6 +189,11 @@ static void update_gfx(void* /*gfx_data*/) {
                 break;
         }
     }
+
+    // The GRAPHICS and SOUND pages and the hotkeys only mark the settings
+    // dirty; the file is written here, on the main thread, once the edits
+    // have stopped for the debounce interval (settings.h).
+    snap::settings_flush_if_due(std::chrono::steady_clock::now());
 }
 
 // ---------------------------------------------------------------------------
@@ -552,8 +561,13 @@ int main(int argc, char* argv[]) {
     recomp::register_config_path(std::filesystem::current_path());
     recomp::start(config);
 
-    // Persist hotkey-driven settings changes (F7-F11) so they survive the exit.
-    snap::save_settings();
+    // An edit inside the last debounce window (a hotkey, or a page edit on
+    // the game thread) has not reached the disk yet; write it now. Nothing
+    // dirty, nothing written: a file edited by hand while the game ran is
+    // left alone, and a clean exit does not churn the .bak.
+    if (snap::settings_dirty()) {
+        snap::save_settings();
+    }
 
     // Cleanup
     if (sdl_window) {

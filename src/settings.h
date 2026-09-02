@@ -9,7 +9,9 @@
 #ifndef SNAP_SETTINGS_H
 #define SNAP_SETTINGS_H
 
+#include <chrono>
 #include <cstdint>
+#include <mutex>
 
 namespace snap {
 
@@ -48,14 +50,20 @@ struct Settings {
     bool  mute_unfocused    = false;
 
     bool  three_point_filtering = true;
-    // RT64 writes each rendered frame back into RDRAM, which this game needs:
-    // photo scoring reads the framebuffer it just drew. Interpolated frames
-    // are synthetic, so writing those back feeds invented pixels to game
-    // logic. F6 toggles it to test whether that is behind an artifact.
-    // Also what puts the camera's focus indicator on screen: the game draws
-    // that dot into the framebuffer in RDRAM, and src/focus_dot.cpp can only
-    // see it there because the rendered frame was copied back first. Turning
-    // this off takes the indicator with it.
+    // Session-only diagnostic, never a saved setting. RT64 writes each
+    // rendered frame back into RDRAM, and this game needs that: photo
+    // scoring reads the framebuffer it just drew, and the camera's focus
+    // indicator is drawn into that same framebuffer (src/focus_dot.cpp can
+    // only see the dot because the rendered frame was copied back first).
+    // With this off the readback never runs, every photo scores zero and
+    // the indicator vanishes, and the game says nothing about either. So:
+    // it is never written to snapsettings.json and never read from it (a
+    // key left in an old file is ignored, and the next write drops it);
+    // every boot starts with it on; and F6, which flips it to test whether
+    // the readback is behind an artifact, only works when
+    // snapdiag::statsEnabled() is true (SNAP_STATS=1) -- without that it
+    // prints one line saying it is a diagnostic key and does nothing. While
+    // it is off the window title carries " - render-to-RAM OFF (F6)".
     bool  render_to_ram     = true;
     // Overscan crop, in framebuffer pixels per side. The game never draws its
     // full 320x240 buffer: gameplay leaves dead margins (measured left 14,
@@ -157,10 +165,53 @@ struct Settings {
     bool  ubershaders_only  = false;
 };
 
+// Threading. Three threads touch the struct. The main thread -- recomp::start's
+// loop, which pumps SDL events through update_gfx in src/main.cpp -- runs
+// the hotkeys, the window's maximize handler, load_settings at boot and every
+// disk write. The game thread runs poll_menu_mailbox once per tick. RT64's
+// graphics thread reads fields on every display list
+// (src/rt64_render_context.cpp).
+//
+// Every mutation holds settings_mutex(): handle_settings_hotkey,
+// poll_menu_mailbox, load_settings and the maximize handler take it, and
+// save_settings copies the struct under it, then serialises and writes the
+// copy with the lock released. Readers go through settings() without the
+// lock. In the language's terms that is a data race; it is tolerated on
+// purpose because every field is a bool or an int, which x86-64 and ARM64
+// store whole with one instruction, so a reader sees each field either
+// before or after its write and never torn. What a reader can see is a mix
+// of old and new fields for one frame -- a GraphicsConfig built from this
+// edit's msaa and the last edit's widescreen -- and the next read corrects
+// it. A std::string, or any field wider than a machine word, would break
+// that promise: such a field needs the lock on the read side too.
 Settings& settings();
+std::mutex& settings_mutex();
 
+// Reads snapsettings.json, or snapsettings.json.bak when the primary cannot
+// be opened or the parser rejects it. The session-only fields (fullscreen,
+// render_to_ram) are forced to their boot values afterwards, whatever either
+// file says.
 void load_settings();
-void save_settings();
+
+// Writes the file now, through recomp::write_file_with_backup: a temporary
+// file, forced to disk, then two atomic renames, so a crash at any point
+// leaves either the old file or the new one complete. The previous file
+// survives as snapsettings.json.bak beside it -- a side effect of that
+// mechanism, and what load_settings falls back to. Returns false after
+// printing "[SNAP-CFG] failed to save ..." when any step fails, and prints
+// "[SNAP-CFG] saved ..." only on success. Main thread only.
+bool save_settings();
+
+// The disk write is debounced off the game tick. A page edit on the game
+// thread (poll_menu_mailbox) or a hotkey marks the settings dirty; the main
+// loop calls settings_flush_if_due once per iteration, and it writes when
+// the settings are dirty and at least 750 ms have passed since the last
+// mark, so a slider dragged through ten notches costs one write, not ten.
+// F5 and the exit write without waiting (the exit only when dirty). A write
+// that failed is not retried until the next mark, F5 or the exit.
+void settings_mark_dirty();
+bool settings_dirty();
+bool settings_flush_if_due(std::chrono::steady_clock::time_point now);
 
 // Pushes the current settings into ultramodern's GraphicsConfig.
 void apply_graphics_settings();
