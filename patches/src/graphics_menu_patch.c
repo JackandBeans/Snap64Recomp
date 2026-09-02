@@ -129,6 +129,12 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_STEREO     74
 #define STR_MONO       75
 #define STR_SND_DESC   76   /* ..81: the SOUND page's descriptions */
+#define STR_CROP_LABEL 82   /* "Overscan Crop", the thirteenth Graphics row */
+#define STR_CROP_DESC  83
+/* "Cutscene Fix": the intro hand-off fix (settings.h intro_fix). Not
+ * "Intro Fix" -- the body face the labels are set in has no capital I. */
+#define STR_INTRO_LABEL 84
+#define STR_INTRO_DESC  85
 
 /* The SOUND bank of the mailbox: its own sequence word and value bytes
  * (percent volumes; stereo and background-mute booleans). The patched
@@ -140,7 +146,7 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define OPT_ITEMS      6    /* Screen, Graphics, Sound, Z, Stick, Return */
 #define OPT_GRAPHICS   1
 #define OPT_SOUND      2
-#define PAGE_ITEMS     12
+#define PAGE_ITEMS     14
 /* The stock Options list's own rhythm: first row at 73, sixteen rows of
  * pitch, six rows on screen -- the Graphics page reads as the same menu.
  * The rest scroll into view, which the edge arrows announce. */
@@ -334,7 +340,7 @@ static void snap_tint(GObj* gobj, u8 r, u8 g, u8 b) {
 #define PAGE_ARROW_UP  (*(volatile u32*) (SCRATCH_ARRAYS + 0x1C0))            /* GObj* */
 #define PAGE_ARROW_DN  (*(volatile u32*) (SCRATCH_ARRAYS + 0x1C4))            /* GObj* */
 
-/* The page's twelve rows, in display order. Each row cycles one mailbox
+/* The page's fourteen rows, in display order. Each row cycles one mailbox
  * field and shows one label, one value set and one description; the maps
  * below are functions so nothing needs a table in a coroutine frame. */
 static s32 snap_row_field(s32 row) {
@@ -350,7 +356,9 @@ static s32 snap_row_field(s32 row) {
         case 8:  return 10;   /* Color Depth */
         case 9:  return 11;   /* Buffering */
         case 10: return 6;    /* Dither */
-        default: return 7;    /* Fullscreen */
+        case 11: return 7;    /* Fullscreen */
+        case 12: return 12;   /* Overscan Crop */
+        default: return 13;   /* Cutscene Fix */
     }
 }
 
@@ -367,7 +375,9 @@ static s32 snap_row_label(s32 row) {
         case 8:  return STR_DEPTH_LABEL;
         case 9:  return STR_BUF_LABEL;
         case 10: return STR_L_SCALE + 6;
-        default: return STR_L_SCALE + 7;
+        case 11: return STR_L_SCALE + 7;
+        case 12: return STR_CROP_LABEL;
+        default: return STR_INTRO_LABEL;
     }
 }
 
@@ -384,7 +394,9 @@ static s32 snap_row_desc(s32 row) {
         case 8:  return STR_DESC2 + 2;
         case 9:  return STR_DESC2 + 3;
         case 10: return STR_DESC + 6;
-        default: return STR_DESC + 7;
+        case 11: return STR_DESC + 7;
+        case 12: return STR_CROP_DESC;
+        default: return STR_INTRO_DESC;
     }
 }
 
@@ -438,7 +450,8 @@ static s32 snap_value_str(s32 row, s32 v) {
         case 7: return (v == 0) ? STR_AUTHENTIC : STR_SMOOTH;
         case 8: return (v == 0) ? STR_AUTO : (v == 1) ? STR_STANDARD : STR_HIGH;
         case 9: return (v == 0) ? STR_DOUBLE : STR_TRIPLE;
-        default: return v ? STR_ON : STR_OFF;  /* Widescreen, Dither, Fullscreen */
+        default: return v ? STR_ON : STR_OFF;  /* Widescreen, Dither, Fullscreen,
+                                                * Overscan Crop, Cutscene Fix */
     }
 }
 
@@ -1553,28 +1566,28 @@ void func_800E2058_A095E8(void) {
     omGObjAddSprite(gobj, (Sprite*) 0x802F82C8);
 
     sobj = sobj->next;
-    /* Four rows above the stock seat (198), so the whole stack can hold
-     * ONE gap: the stock pair keeps three empty rows of ink between its
-     * lines, and with the block at 194 (line 2's ink ends at 213) the
-     * same three rows fit between line 2 and the credits, and again
-     * between the credits' lowest ink and the overscan crop's last
-     * visible row (227). */
-    func_800E18FC_A08E8C(sobj, 74, 194);
+    /* The stock seat, exactly: Nintendo's copyright block draws where the
+     * ROM draws it (src/main_menu/A08E30.c, func_800E2058_A095E8). */
+    func_800E18FC_A08E8C(sobj, 74, 198);
     func_800E18A0_A08E30(sobj, SP_TEXSHUF | SP_TRANSPARENT);
 
     snap_show_badge();
 
-    /* The port's own credits line, centred, seated by what the eye can
-     * see: ink to ink, the stock pair keeps three empty rows between its
-     * lines, and this line keeps the same three on both sides. At 216
-     * the coloured cores start at 217, three rows below line 2's ink
-     * (214-216), and the lowest ink -- the p descender at 224 -- keeps
-     * three rows to the crop's last visible row (225-227). One gap,
-     * three times, ending at the screen edge. The port recolours its
-     * texels live, so all the sprite carries is position. Rides this
-     * gobj and leaves with it. */
+    /* The port's own credits line, centred, in the rows under the block
+     * that nothing on the title uses: no sprite of this screen seats below
+     * 198, and the main menu's icons stop at 174. The block's second line
+     * ends its coloured cores at 216 (one stray comma pixel at 217) and its
+     * black ring at 218; this strip's cores sit one row inside its ring, so
+     * at 219 they start at 220 with two clear rows between the two texts.
+     * Its letters' cores end at 226 and their ring at 227 -- the last row
+     * the overscan crop leaves visible when a player turns it on -- and
+     * only the p descender's ring, at 228, falls under that crop. The
+     * block's own three-row rhythm would seat this at 220 and lose every
+     * letter's bottom ring to the crop instead. The port recolours its
+     * texels live, so all the sprite carries is position. Rides this gobj
+     * and leaves with it. */
     {
-        Sprite* credits = snap_build_sprite(STR_CREDITS, 160 - (DIR_W(STR_CREDITS) / 2), 216, G_IM_FMT_RGBA);
+        Sprite* credits = snap_build_sprite(STR_CREDITS, 160 - (DIR_W(STR_CREDITS) / 2), 219, G_IM_FMT_RGBA);
         if (credits != NULL) {
             omGObjAddSprite(gobj, credits);
         }

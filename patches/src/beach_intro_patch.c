@@ -20,7 +20,7 @@
  * Whether those frames are drawn is the player's choice, carried in mailbox
  * byte 0x80C00015 and read once when the intro starts. 0, the default, runs
  * the eleven-step loop and the hand-off exactly as the ROM does, clipped
- * frames included. 1 draws the dive through i == 8, the last pose from which
+ * frame included. 1 draws the dive through i == 8, the last pose from which
  * the model still reads as a shot, then lands the final pose and the hand-off
  * in one tick, so the model is gone before the camera is anywhere it could
  * cut into it. Every other frame, the skip path, the timeout and the sound
@@ -97,10 +97,14 @@ void func_beach_802C52EC(GObj* obj) {
     baseAtZ = cam->viewMtx.lookAt.at.z;
 
     /* The ROM's ease, verbatim, up to lastPose. Its last two poses are the
-     * degenerate ones: i == 10 IS the first-person eye position -- a full
-     * frame drawn from inside the back of Todd's head -- and i == 9 sits one
-     * step short of it. With the fix on, the loop stops at i == 8 and the
-     * eye pose is landed below, in the hand-off's own tick. */
+     * degenerate ones: i == 10 IS the first-person eye position -- drawn
+     * from inside the back of Todd's head -- and i == 9 sits one step short
+     * of it. The ease steps once per retrace and the game draws every other
+     * retrace, so the two share one drawn frame: measured on the port, the
+     * fix shortens the intro by exactly one drawn frame (150 to 149 between
+     * PlayerModel_SetAnimation and the hand-off). With the fix on, the loop
+     * stops at i == 8 and the eye pose is landed below, in the hand-off's
+     * own tick. */
     for (i = 0; i <= lastPose; i++) {
         if (gContInputPressedButtons & (A_BUTTON | START_BUTTON)) {
             func_beach_802C5214();

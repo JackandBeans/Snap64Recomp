@@ -65,6 +65,7 @@ void load_settings() {
         s_settings.crop_right         = std::clamp(j.value("crop_right", s_settings.crop_right), 0, 80);
         s_settings.crop_top           = std::clamp(j.value("crop_top", s_settings.crop_top), 0, 60);
         s_settings.crop_bottom        = std::clamp(j.value("crop_bottom", s_settings.crop_bottom), 0, 60);
+        s_settings.intro_fix          = j.value("intro_fix", s_settings.intro_fix);
     } catch (const std::exception& e) {
         fprintf(stderr, "[SNAP-CFG] failed to parse %s: %s (using defaults)\n", SETTINGS_FILE, e.what());
     }
@@ -106,6 +107,7 @@ void save_settings() {
         {"crop_right",            s_settings.crop_right},
         {"crop_top",              s_settings.crop_top},
         {"crop_bottom",           s_settings.crop_bottom},
+        {"intro_fix",             s_settings.intro_fix},
     };
     std::ofstream f(SETTINGS_FILE);
     f << j.dump(2) << "\n";

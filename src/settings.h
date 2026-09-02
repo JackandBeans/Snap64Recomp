@@ -62,16 +62,35 @@ struct Settings {
     // right 16, top 12, bottom 8) and the intro's cinematics up to 30 on the
     // left, black in scenes and stale bytes in menus. Its single VI mode
     // never compensates, because every CRT it was authored for cropped the
-    // picture's edges. These defaults hide the gameplay margins completely,
-    // matching the classic 288x216 safe area; the intro's cinematic frame
-    // keeps a slim authored border, as it did on original hardware.
-    // F2 toggles the crop live; the per-side values stay in the file so a
-    // custom measurement survives turning it off and on.
-    bool  crop_enabled      = true;
+    // picture's edges.
+    //
+    // Off by default: the port shows every pixel the game draws, margins
+    // included, and hiding rows is an opt-in. The GRAPHICS page's Overscan
+    // Crop row (mailbox byte 0x80C00014) and F2 both flip it live;
+    // rt64_render_context.cpp reads the flag on every display list. The
+    // per-side values are what the crop hides when it is on: the gameplay
+    // margins completely, matching the classic 288x216 safe area, while the
+    // intro's cinematic frame keeps a slim authored border, as it did on
+    // original hardware. They stay in the file so a custom measurement
+    // survives turning the crop off and on.
+    bool  crop_enabled      = false;
     int   crop_left         = 16;
     int   crop_right        = 16;
     int   crop_top          = 12;
     int   crop_bottom       = 12;
+    // The Beach and River intros' hand-off to first person, as the ROM
+    // scripts it, eases the camera into the eye position one retrace before
+    // it deletes the player model. The ease steps every retrace and the game
+    // draws every other one, so the console drew one frame from inside the
+    // back of Todd's head (measured: 150 drawn frames off, 149 on). Off, the
+    // port draws it too, as shipped. On, the game-side patches
+    // (patches/src/beach_intro_patch.c and river_intro_patch.c) end the ease
+    // two poses early and land the eye pose in the hand-off's own tick. Off
+    // by default: that frame is the game's own. Each patch reads this once,
+    // as its intro starts, from
+    // mailbox byte 0x80C00015 -- seeded from here and edited by the GRAPHICS
+    // page's Cutscene Fix row.
+    bool  intro_fix         = false;
     // Interpolate the view and projection as well as object transforms.
     //
     // On, and it has to be: this game's camera lives in the projection stack,

@@ -98,10 +98,14 @@ void func_802E22E4_6CA0C4(GObj* obj) {
     baseAtZ = cam->viewMtx.lookAt.at.z;
 
     /* The ROM's ease, verbatim, up to lastPose. Its last two poses are the
-     * degenerate ones: i == 10 IS the first-person eye position -- a full
-     * frame drawn from inside the back of Todd's head -- and i == 9 sits one
-     * step short of it. With the fix on, the loop stops at i == 8 and the
-     * eye pose is landed below, in the hand-off's own tick. */
+     * degenerate ones: i == 10 IS the first-person eye position -- drawn
+     * from inside the back of Todd's head -- and i == 9 sits one step short
+     * of it. The ease steps once per retrace and the game draws every other
+     * retrace, so the two share one drawn frame: measured on the port, the
+     * fix shortens the intro by exactly one drawn frame (150 to 149 between
+     * PlayerModel_SetAnimation and the hand-off). With the fix on, the loop
+     * stops at i == 8 and the eye pose is landed below, in the hand-off's
+     * own tick. */
     for (i = 0; i <= lastPose; i++) {
         if (gContInputPressedButtons & (A_BUTTON | START_BUTTON)) {
             func_802E2194_6C9F74();

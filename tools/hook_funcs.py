@@ -82,6 +82,11 @@ HOOKED = [
     # ramps) and the level-end global fades. Logged under SNAP_STATS so the
     # Effects slider can be proven at the voice, not at the slot.
     'alSndpSetVol',
+    # The two ends of a course intro's hand-off glide, for measuring the
+    # Cutscene Fix toggle in drawn frames (src/intro_probe.cpp).
+    'PlayerModel_SetAnimation',
+    'func_beach_802C5214',
+    'func_802E2194_6C9F74',
     'func_803719B0_845160',
     'renInitCamera',
     'renInitCameraEx',

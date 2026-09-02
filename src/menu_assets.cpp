@@ -12,7 +12,9 @@
  * two-pixel drop shadow, and writes the strips into otherwise-unused RDRAM
  * where the patch wraps them in sprites.
  *
- * Settings cross the same boundary through a 16-byte mailbox: this side
+ * Settings cross the same boundary through a mailbox at 0x80C00000 (a magic
+ * word, a sequence counter, one byte per graphics setting, and a second
+ * bank for sound): this side
  * seeds it with the saved values, the page edits bytes and bumps a sequence
  * counter, and the poll below applies and persists on each bump -- so every
  * change takes effect while the menu is still open, through exactly the same
@@ -754,6 +756,12 @@ void seed_mailbox() {
     write_u8(MailboxAddr + 0x11, s.three_point_filtering ? 0 : 1);
     write_u8(MailboxAddr + 0x12, uint8_t(std::clamp(s.color_depth, 0, 2)));
     write_u8(MailboxAddr + 0x13, s.triple_buffering ? 1 : 0);
+    write_u8(MailboxAddr + 0x14, s.crop_enabled ? 1 : 0);
+    // Read by the intro patches themselves (patches/src/beach_intro_patch.c,
+    // river_intro_patch.c) once, as a course intro starts -- this byte
+    // reaches the game whether or not the page is ever opened, on every
+    // overlay load's re-seed.
+    write_u8(MailboxAddr + 0x15, s.intro_fix ? 1 : 0);
     write_u32(MailboxAddr + 0x4, 0);
     // The SOUND bank: its own sequence word and six value bytes, read live
     // by the patched audio functions (volumes as straight percentages) and
@@ -880,9 +888,9 @@ void stage_menu_assets(uint8_t* rdram) {
         { "Stereo suits speakers and headphones.",    "Mono mixes both sides together." },
         { "Silences the game while another",          "window is in front." },
     };
-    // Ids BaseCount+52/+53: the Graphics page's thirteenth row -- the spawn
-    // fade -- label and description.
-    constexpr uint32_t StringCount = BaseCount + 52;
+    // Ids BaseCount+52..+55: the Graphics page's last two rows -- Overscan
+    // Crop, then Cutscene Fix -- a label and a description apiece.
+    constexpr uint32_t StringCount = BaseCount + 56;
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -997,6 +1005,30 @@ void stage_menu_assets(uint8_t* rdram) {
         else if (id == BaseCount + 26) {
             // The SOUND page's heading, in the header face.
             strip = compose_hdr("Sound");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 52) {
+            strip = compose("Overscan Crop");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 53) {
+            strip = compose_lines("Hides the picture edges a CRT cut off.",
+                                  "Off shows every pixel the game draws.");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 54) {
+            // No capital I in the body face (see STR_INTRO_LABEL in the
+            // patch): the row is named for what the player sees.
+            strip = compose("Cutscene Fix");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 55) {
+            strip = compose_lines("Skips the clipped frame the console drew",
+                                  "as a course intro hands off the camera.");
             w = strip.width;
             h = strip.height;
         }
@@ -1189,6 +1221,12 @@ void poll_menu_mailbox(uint8_t* rdram) {
     s.three_point_filtering = read_u8_mail(MailboxAddr + 0x11) == 0;
     s.color_depth = std::min<int>(read_u8_mail(MailboxAddr + 0x12), 2);
     s.triple_buffering = read_u8_mail(MailboxAddr + 0x13) != 0;
+    // The crop is consumed where F2's flip is: rt64_render_context.cpp reads
+    // crop_enabled on every display list, so setting the field is the whole
+    // apply. The intro byte is read by the patch straight from the mailbox;
+    // the field only carries it to the file.
+    s.crop_enabled = read_u8_mail(MailboxAddr + 0x14) != 0;
+    s.intro_fix = read_u8_mail(MailboxAddr + 0x15) != 0;
 
     apply_graphics_settings();
     save_settings();
