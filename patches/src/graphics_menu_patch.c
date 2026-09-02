@@ -24,8 +24,11 @@
  *
  * Settings travel through the 16-byte mailbox at 0x80C00000: the port seeds
  * it with saved values, the page edits bytes and bumps a sequence counter,
- * and the port applies and persists on each bump -- every change is live
- * while the menu is open.
+ * and the port applies on each bump and writes the file once the edits
+ * pause (src/settings.h, settings_flush_if_due) -- every change is live
+ * while the menu is open. A keeps what is on screen; B puts back the bytes
+ * the page opened with and bumps once more, so the header's Cancel is a
+ * real cancel, the same way the SOUND page's is.
  */
 
 #include "common.h"
@@ -339,6 +342,10 @@ static void snap_tint(GObj* gobj, u8 r, u8 g, u8 b) {
 #define LIST_HELP(i)   (*(volatile u32*) (SCRATCH_ARRAYS + 0x1A0 + (i) * 4))  /* SObj*, 8 */
 #define PAGE_ARROW_UP  (*(volatile u32*) (SCRATCH_ARRAYS + 0x1C0))            /* GObj* */
 #define PAGE_ARROW_DN  (*(volatile u32*) (SCRATCH_ARRAYS + 0x1C4))            /* GObj* */
+/* The Graphics page's entry snapshot of the mailbox value bytes, by field
+ * index, for B to restore. Sixteen bytes for fourteen fields, the same
+ * headroom as the row arrays; nothing else lives past the arrow slots. */
+#define PAGE_ENTRY(i)  (*(volatile u8*)  (SCRATCH_ARRAYS + 0x1C8 + (i)))       /* u8, 16 */
 
 /* The page's fourteen rows, in display order. Each row cycles one mailbox
  * field and shows one label, one value set and one description; the maps
@@ -619,6 +626,17 @@ static void snap_graphics_page(void) {
         snap_tint((GObj*) PAGE_VALUE(i), SEL_R, SEL_G, SEL_B);
     }
 
+    /* The header promises A OK and B Cancel, and B keeps the promise the
+     * way the SOUND page's does: the values as they stood at entry, put
+     * back and re-published on the way out. Every mailbox byte the host
+     * reads (fourteen, one per field, whichever row shows it) is
+     * snapshotted by field index -- after the range check above, so a
+     * Cancel republishes exactly what the page showed, never a byte it
+     * refused to display. */
+    for (i = 0; i < PAGE_ITEMS; i++) {
+        PAGE_ENTRY(i) = MBOX_FIELD(i);
+    }
+
     /* The scroll arrows sit at the list's right edge, doubled in their
      * own texels and bobbing a couple of pixels in the main loop: colour
      * alone at the screen's edge went unnoticed, and motion is the one
@@ -645,7 +663,24 @@ static void snap_graphics_page(void) {
         moved = 0;
 
         if (gContInputPressedButtons & B_BUTTON) {
+            /* Cancel. Every stick edit was published live (the host
+             * applied it on the next tick and marked the file dirty), so B
+             * restores each field byte from the entry snapshot and bumps
+             * the sequence word once more: that bump is what makes the
+             * host re-apply the old values and mark them for the debounced
+             * write -- it ignores an unchanged sequence. When nothing
+             * differs there is nothing to publish and no bump, so backing
+             * out of an untouched page costs no apply and no file write. */
             auPlaySoundWithParams(0x43, 0x7FFF, 0x40, 1.0f, 0);
+            for (i = 0; i < PAGE_ITEMS; i++) {
+                if (MBOX_FIELD(i) != PAGE_ENTRY(i)) {
+                    MBOX_FIELD(i) = PAGE_ENTRY(i);
+                    moved = 1;
+                }
+            }
+            if (moved) {
+                MBOX_SEQ = MBOX_SEQ + 1;
+            }
             break;
         }
 
