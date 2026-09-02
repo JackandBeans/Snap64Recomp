@@ -26,6 +26,14 @@
  *     ran at the wrong moment.
  * Prints only under SNAP_STATS. Reads game memory; writes nothing.
  * Addresses from build/pokemonsnap.map.
+ *
+ * Measured on a recorded run through five scored photos (eval.inputs), same
+ * replay, two builds. Renderer before the copy-mode fix: odd 3072, eq 0,
+ * or1 == U on every Pokemon of every photo. After: odd 0, eq == U, or1 0.
+ * The recomputed unobstructed count matched the game's own in all twenty
+ * rows of both runs, and was the same before and after for these photos --
+ * the clause the fix restores only bites on exact depth ties, and these
+ * shots had none.
  */
 
 #include <cstdint>
