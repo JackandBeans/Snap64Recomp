@@ -9,7 +9,8 @@ input and audio. The game's own code runs; the port changes how it is hosted,
 and every change to how it *looks* is off unless you turn it on.
 
 The title screen's credits line reads `Jack & Beans (Snap64 Recomp) · v1.0.0 rc1`:
-"Jack & Beans" is the codename this project uses for itself (`src/version.h.in`
+"Jack & Beans" is the codename this project uses for itself, an homage to
+the team behind the original game (`src/version.h.in`
 explains why), "Snap64 Recomp" is the port's name, and `1.0.0-rc1` is its
 version -- the credits face has no hyphen, so the line sets the tag off with a
 space. This project is not affiliated with
