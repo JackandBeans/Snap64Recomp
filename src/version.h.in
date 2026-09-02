@@ -17,6 +17,11 @@
 
 #define SNAP_PORT_NAME      "@SNAP_PRODUCT_NAME@"
 #define SNAP_PORT_NAME_W    L"@SNAP_PRODUCT_NAME@"
+// The port's own name for itself, chosen by its author as an homage to the
+// team behind the original game. It is the first thing on the title screen's
+// credits line and appears nowhere else; the product name above is what the
+// window, the dialogs and the package carry, so the trademark is never the
+// product's name.
 #define SNAP_PORT_CODENAME  "Jack & Beans"
 
 #define SNAP_VERSION_MAJOR  @PROJECT_VERSION_MAJOR@
