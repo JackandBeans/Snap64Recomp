@@ -7,7 +7,9 @@
  * --wrap, so tools/hook_funcs.py renames the recompiled definition to
  * __real_dmaLoadOverlay and this file defines dmaLoadOverlay in its place:
  * we run the real (recompiled) loader first, then update librecomp's
- * function tables for the newly resident code.
+ * function tables for the newly resident code. The same renaming wraps
+ * dmaReadVPK0, the game's segment decompressor, so the port can harvest its
+ * menu font the moment the main menu's segment is in RDRAM.
  */
 #include <atomic>
 #include <cstdint>
@@ -16,6 +18,7 @@
 #include "recomp.h"
 #include "librecomp/overlays.hpp"
 #include "settings.h"
+#include "menu_harvest.h"
 #include "audio.h"
 #include "ultramodern/ultramodern.hpp"
 extern "C" void snap_prepare_overlay_load(int32_t ram_addr, uint32_t size);
@@ -70,8 +73,9 @@ static inline uint32_t read_u32(uint8_t* rdram, uint32_t addr) {
 extern "C" void dmaLoadOverlay(uint8_t* rdram, recomp_context* ctx) {
     snap::g_rdram = rdram;
     snap::apply_game_settings(rdram);
-    // An overlay load is a safe moment for the graphics page's assets and
-    // mailbox: the menu cannot be open while code is being swapped.
+    // An overlay load is a safe moment for the settings mailbox: the menu
+    // cannot be open while code is being swapped. The menu's strings are
+    // staged by the dmaReadVPK0 wrapper below, once their font is in RDRAM.
     snap::stage_menu_assets(rdram);
     uint32_t overlay_addr = static_cast<uint32_t>(ctx->r4); // a0 = Overlay*
 
@@ -108,6 +112,27 @@ extern "C" void dmaLoadOverlay(uint8_t* rdram, recomp_context* ctx) {
         else if ((vram_start < LevelCodeEnd) && ((vram_start + size) > LevelCodeStart)) {
             snap::g_app_level_resident.store(false, std::memory_order_relaxed);
         }
+    }
+}
+
+// The game decompresses its VPK0 segments through dmaReadVPK0(rom, ram)
+// (the decomp's src/sys/dma.c), synchronously: when the real function
+// returns, the whole segment is in RDRAM. The main menu's segment (ROM
+// 0xA0F830, decompressed to 0x802B5000 immediately before the main-menu
+// overlay is loaded -- app_render/46270.c, start_scene_manager) carries the
+// Options screen's pre-rendered text, which is the port's menu font. This is
+// the one moment it is certain to be resident and the menu code has not yet
+// run, so the font is harvested and the pages' strings staged right here.
+// The intro's segment (ROM 0xAA0B80) lands at the same VRAM and does not
+// match; the harvest itself reads RDRAM and writes nothing to it.
+extern "C" void dmaReadVPK0(uint8_t* rdram, recomp_context* ctx) {
+    // a0/a1 before the call: the real function's callees clobber them.
+    const uint32_t rom = static_cast<uint32_t>(ctx->r4);
+    const uint32_t ram = static_cast<uint32_t>(ctx->r5);
+    __real_dmaReadVPK0(rdram, ctx);
+    if ((rom == snap::kMainMenuVpk0Rom) && (ram == snap::kMainMenuVpk0Vram)) {
+        snap::g_rdram = rdram;
+        snap::stage_menu_strings(rdram);
     }
 }
 

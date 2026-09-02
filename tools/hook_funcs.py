@@ -14,6 +14,10 @@ import sys
 HOOKED = [
     # Overlay residency tracking and the RSP memory probes.
     'dmaLoadOverlay',
+    # The VPK0 segment loads. The main menu's segment carries the sprite font
+    # the port harvests (src/menu_harvest.cpp); the wrapper in
+    # src/overlay_hook.cpp is the moment that segment is resident.
+    'dmaReadVPK0',
     'check_sp_imem',
     'check_sp_dmem',
     # Reads the animation system's own verdict about which poses are steps

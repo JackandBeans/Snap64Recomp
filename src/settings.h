@@ -225,10 +225,14 @@ void apply_game_settings(uint8_t* rdram);
 // Hotkey handler; returns true if the key was consumed.
 bool handle_settings_hotkey(int scancode);
 
-// The in-game GRAPHICS page (patches/src/graphics_menu_patch.c): stages its
-// font strips into RDRAM and carries its settings mailbox. Both live in
-// src/menu_assets.cpp.
+// The in-game GRAPHICS page (patches/src/graphics_menu_patch.c). All three
+// live in src/menu_assets.cpp. stage_menu_assets seeds the settings mailbox
+// (every overlay load); stage_menu_strings harvests the menu font from the
+// main menu's VPK0 segment and stages the pages' strips (the dmaReadVPK0
+// wrapper, once that segment is resident); poll_menu_mailbox applies what
+// the pages published (every game tick).
 void stage_menu_assets(uint8_t* rdram);
+void stage_menu_strings(uint8_t* rdram);
 void poll_menu_mailbox(uint8_t* rdram);
 
 } // namespace snap

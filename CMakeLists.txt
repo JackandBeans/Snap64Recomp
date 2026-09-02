@@ -88,6 +88,70 @@ target_compile_options(recomp_funcs PRIVATE
 endif()
 
 # =============================================================================
+# Audio microcode -- recompiled from the ROM at build time
+# =============================================================================
+# aspMain is Nintendo's RSP audio microcode. Its recompiled C++ is derived
+# from the ROM and is therefore never committed: RSPRecomp (vendored under
+# lib/N64ModernRuntime/N64Recomp and already a target of this build through
+# librecomp's add_subdirectory, EXCLUDE_FROM_ALL) regenerates it into the
+# build tree from the builder's own ROM -- the same ROM the executable runs
+# against. The DEPENDS below is what makes the build compile RSPRecomp first.
+set(SNAP_ROM "" CACHE FILEPATH
+    "Pokemon Snap (USA) ROM, big-endian .z64, used to recompile the RSP audio microcode")
+if (SNAP_ROM STREQUAL "")
+    foreach(_snap_rom_candidate
+            "${CMAKE_CURRENT_SOURCE_DIR}/pokemonsnap.z64"
+            "${CMAKE_CURRENT_BINARY_DIR}/Release/pokemonsnap.z64"
+            "${CMAKE_CURRENT_BINARY_DIR}/pokemonsnap.z64")
+        if (EXISTS "${_snap_rom_candidate}")
+            set(SNAP_ROM "${_snap_rom_candidate}" CACHE FILEPATH
+                "Pokemon Snap (USA) ROM, big-endian .z64, used to recompile the RSP audio microcode" FORCE)
+            break()
+        endif()
+    endforeach()
+endif()
+if (NOT EXISTS "${SNAP_ROM}")
+    message(FATAL_ERROR
+        "SNAP_ROM: no ROM found. The RSP audio microcode (aspMain) is recompiled from "
+        "the game's ROM at build time and is not part of the repository. Pass "
+        "-DSNAP_ROM=<path to pokemonsnap.z64> (a big-endian .z64 dump of Pokemon Snap (USA)), "
+        "or place pokemonsnap.z64 in ${CMAKE_CURRENT_SOURCE_DIR}, "
+        "${CMAKE_CURRENT_BINARY_DIR}/Release or ${CMAKE_CURRENT_BINARY_DIR}.")
+endif()
+# Two cheap checks on the file itself; the runtime's hash check (src/main.cpp)
+# remains the authority on the game.
+file(READ "${SNAP_ROM}" _snap_rom_magic LIMIT 4 HEX)
+file(READ "${SNAP_ROM}" _snap_rom_name OFFSET 32 LIMIT 20 HEX)
+string(TOLOWER "${_snap_rom_magic}" _snap_rom_magic)
+string(TOLOWER "${_snap_rom_name}" _snap_rom_name)
+if (NOT _snap_rom_magic STREQUAL "80371240")
+    message(FATAL_ERROR
+        "SNAP_ROM=${SNAP_ROM} does not start with the big-endian N64 header 80 37 12 40; "
+        "a byte-swapped (.v64) or little-endian (.n64) dump cannot be recompiled. Convert it to .z64 first.")
+endif()
+# "POKEMON SNAP" padded with spaces to the header's twenty-byte name field.
+if (NOT _snap_rom_name STREQUAL "504f4b454d4f4e20534e41502020202020202020")
+    message(FATAL_ERROR
+        "SNAP_ROM=${SNAP_ROM}: the ROM header's internal name is not 'POKEMON SNAP'; this is not the expected game.")
+endif()
+message(STATUS "RSP audio microcode from ROM: ${SNAP_ROM}")
+
+set(SNAP_RSP_DIR "${CMAKE_CURRENT_BINARY_DIR}/rsp")
+set(SNAP_ASPMAIN_CPP "${SNAP_RSP_DIR}/aspMain.cpp")
+# Absolute, forward-slashed paths: RSPRecomp joins a relative path with the
+# toml's own directory and uses an absolute one as is, and a TOML basic string
+# takes forward slashes without escaping.
+file(TO_CMAKE_PATH "${SNAP_ROM}" SNAP_ROM_CMAKE)
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/rsp/aspMain.us.toml.in"
+               "${SNAP_RSP_DIR}/aspMain.us.toml" @ONLY)
+add_custom_command(
+    OUTPUT "${SNAP_ASPMAIN_CPP}"
+    COMMAND RSPRecomp "${SNAP_RSP_DIR}/aspMain.us.toml"
+    DEPENDS RSPRecomp "${SNAP_RSP_DIR}/aspMain.us.toml" "${SNAP_ROM}"
+    COMMENT "Recompiling the aspMain audio microcode from ${SNAP_ROM}"
+    VERBATIM)
+
+# =============================================================================
 # Game executable
 # =============================================================================
 # Game-side patches, recompiled from patches/ by N64Recomp (see patches.toml).
@@ -120,6 +184,7 @@ set(SNAP_SOURCES
     src/rect_census.cpp
     src/fx_tags.cpp
     src/menu_assets.cpp
+    src/menu_harvest.cpp
     src/anim_steps.cpp
     src/focus_dot.cpp
     src/dl_budget.cpp
@@ -129,12 +194,12 @@ set(SNAP_SOURCES
     src/intro_probe.cpp
     src/patch_shims.cpp
     src/settings.cpp
-    rsp/aspMain.cpp
+    "${SNAP_ASPMAIN_CPP}"
 )
 
 # librecomp's RSP vector-unit implementation uses SSSE3 intrinsics.
 if (NOT MSVC)
-    set_source_files_properties(rsp/aspMain.cpp PROPERTIES COMPILE_OPTIONS "-msse4.1")
+    set_source_files_properties("${SNAP_ASPMAIN_CPP}" PROPERTIES COMPILE_OPTIONS "-msse4.1")
 endif()
 
 add_executable(PokemonSnapRecomp ${SNAP_SOURCES})

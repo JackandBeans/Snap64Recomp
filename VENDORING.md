@@ -20,7 +20,7 @@ carried as patches on top of an upstream commit that is actually recorded.
 | Path | In git? | State |
 | --- | --- | --- |
 | `lib/N64ModernRuntime` | yes, 1041 plain files | forked; no git directory; upstream commit unrecorded |
-| `lib/N64ModernRuntime/N64Recomp` | yes (part of the above) | the runtime's bundled copy of N64Recomp's headers and sources; upstream commit unrecorded |
+| `lib/N64ModernRuntime/N64Recomp` | yes (part of the above) | the runtime's bundled copy of N64Recomp's headers and sources; its `RSPRecomp` target is built by the port's CMake to recompile the audio microcode at build time (BUILDING.md step 9); upstream commit unrecorded |
 | `lib/rt64` (outside `src/contrib`) | yes, 299 files | forked; `lib/rt64/.git` is an orphaned gitfile pointing at a deleted `.git/modules/lib/rt64`; upstream commit unrecorded |
 | `lib/rt64/src/contrib/` | **no** (ignored), except `plume/plume_d3d12.cpp` | 396 MB of RT64's third-party trees, pins lost (below) |
 | `lib/SDL` | no (ignored) | pristine clone with a live `.git`, pinned below |

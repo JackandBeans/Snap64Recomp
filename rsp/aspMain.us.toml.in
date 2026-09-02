@@ -1,4 +1,11 @@
-# Pokemon Snap (USA) aspMain audio microcode
+# Pokemon Snap (USA) aspMain audio microcode -- RSPRecomp configuration.
+#
+# This is a template: CMake writes <build>/rsp/aspMain.us.toml from it with
+# the two paths filled in (SNAP_ROM, and the output inside the build tree),
+# and runs RSPRecomp on that. The recompiled microcode is derived from the
+# ROM and is never committed. To run by hand: copy this file somewhere, put
+# absolute paths in the two @...@ slots, and run RSPRecomp on the copy.
+#
 # text ROM 0x3E580 size 0xE20; data ROM 0x457A0.
 #
 # text_address: Snap's rspboot variant loads the ucode at IMEM 0x1080, NOT
@@ -10,11 +17,7 @@
 text_offset = 0x3E580
 text_size = 0xE20
 text_address = 0x04001080
-# Paths are relative to this file's directory (RSPRecomp joins each one with
-# the config's parent directory, RSPRecomp/src/rsp_recomp.cpp read_config), so
-# the ROM goes in the port root as pokemonsnap.z64 -- the same place the
-# recompiler and the finished executable look for it.
-rom_file_path = "pokemonsnap.z64"
-output_file_path = "rsp/aspMain.cpp"
+rom_file_path = "@SNAP_ROM_CMAKE@"
+output_file_path = "@SNAP_ASPMAIN_CPP@"
 output_function_name = "aspMain"
 extra_indirect_branch_targets = [ 0x1118, 0x1470, 0x11DC, 0x1B38, 0x1214, 0x187C, 0x1254, 0x12D0, 0x12EC, 0x1328, 0x140C, 0x1294, 0x138C, 0x170C, 0x144C, 0x1E24 ]

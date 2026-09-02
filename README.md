@@ -22,9 +22,10 @@ Nintendo, HAL Laboratory or The Pokémon Company; their trademarks are theirs.
   exactly what, and gives the full pipeline as it exists today.
 * No automated tests, no CI, no installer, no release archive.
 * Licensed under the GPLv3 (`LICENSE`); `NOTICE.md` lists every third-party
-  component. Some files in the tree are still derived from the game's ROM
-  (`NOTICE.md`, last section); they are scheduled for replacement by build-
-  or run-time generation and have not been removed yet.
+  component. No file in the tree carries the game's bytes: the menu font is
+  cut from the game's own sprites in memory at run time, and the audio
+  microcode is recompiled from the builder's ROM at build time (`NOTICE.md`,
+  last section).
 
 ## What you need
 

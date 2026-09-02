@@ -77,21 +77,22 @@ entry, with what its files say:
 | `mips-linux-gnu-ld`, `mips-linux-gnu-as`, `readelf` | GNU binutils (GPLv3, as tools) | Ubuntu package `binutils-mips-linux-gnu` / `binutils` |
 | Visual Studio 2019 (MSVC 19.29), CMake, Python 3, ninja, uv | their own terms | see `BUILDING.md` |
 
-## Files in this tree that derive from the game
+## Material derived from the game, and where it comes from
 
-These contain material extracted or translated from the Pokémon Snap ROM. They
-are here because the port needs them and the generation step has not yet been
-moved to build or run time; they are **scheduled for removal** in favour of
-generating them from the player's own ROM, and they have **not** been removed
-yet.
+No tracked file carries bytes extracted or translated from the Pokémon Snap
+ROM. Two things the port needs are derived from the game; both are produced
+from the builder's or the player's own copy, at build time or at run time, and
+never enter the repository:
 
-| File | What it is | How it was made |
-| --- | --- | --- |
-| `rsp/aspMain.cpp` (73 KB) | a C++ translation, by RSPRecomp, of Nintendo's `aspMain` RSP audio microcode (ROM 0x3E580, 0xE20 bytes of RSP instructions, loaded at IMEM 0x1080) | `~/N64Recomp/build/RSPRecomp aspMain.us.toml` |
-| `src/menu_font.h` (72 KB) | the letterforms of the Options screen, cut from the game's pre-rendered menu sprites, as IA pixel pairs, plus thirteen characters drawn by the port in the same style | `tools/harvest_menu_font.py <rom>` (decompresses the main menu's VPK0 segment at ROM 0xA0F830) |
-| `src/menu_dot.h` | the Options menu's bullet dot and value chevrons, as pixels | `tools/extract_menu_dot.py <rom>` |
-| `tools/menu_font_harvest.json` (51 KB) | the harvested glyph pixels in the harvester's intermediate form | `tools/harvest_menu_font.py` |
-| `tools/menu_glyphs.py` | the same dot and chevron pixels as `src/menu_dot.h`, for the reference renderer | `tools/extract_menu_dot.py` |
+| What | Where it comes from |
+| --- | --- |
+| the letterforms of the Options screen, its bullet dot and its value chevrons, which the port composites its own menu text from | cut out of the game's own menu sprites in RDRAM at run time, the moment the game has decompressed its main menu (`src/menu_harvest.cpp`, called from the `dmaReadVPK0` wrapper in `src/overlay_hook.cpp`); the characters those sprites never contain are the port's own drawings, kept as code in the same file. `tools/harvest_menu_font.py` and `tools/extract_menu_dot.py` are the offline reference for that cut and write only under `build-win/`. |
+| the C++ translation of Nintendo's `aspMain` RSP audio microcode (ROM 0x3E580, 0xE20 bytes of RSP instructions, loaded at IMEM 0x1080) | generated into the build tree (`build-win/rsp/aspMain.cpp`) at build time by RSPRecomp, which CMake builds from the vendored `lib/N64ModernRuntime/N64Recomp` and runs on the ROM named by the `SNAP_ROM` cache variable (`rsp/aspMain.us.toml.in`, `CMakeLists.txt`). The ROM is therefore a build dependency as well as a run-time one. |
+
+Earlier revisions tracked these as `rsp/aspMain.cpp`, `src/menu_font.h`,
+`src/menu_dot.h`, `tools/menu_font_harvest.json` and `tools/menu_glyphs.py`;
+all five were deleted from the tree on 2026-09-02 and `.gitignore` refuses
+them.
 
 Also derived from the game, and tracked on purpose:
 

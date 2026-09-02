@@ -40,6 +40,17 @@ lib/DirectX-Headers/
 # Python
 __pycache__/
 
+# ROM-derived, and never to return: the menu font and furniture pixels are
+# harvested from RDRAM at run time (src/menu_harvest.cpp), and the audio
+# microcode is recompiled into the build tree (rsp/aspMain.us.toml.in).
+/src/menu_font.h
+/src/menu_dot.h
+/tools/menu_font_harvest.json
+/tools/menu_glyphs.py
+/rsp/aspMain.cpp
+# The run-time harvest's SNAP_STATS dump (src/menu_harvest.cpp).
+menu_font_runtime.json
+
 # Editor / OS
 .vs/
 .vscode/
