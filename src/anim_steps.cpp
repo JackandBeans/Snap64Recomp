@@ -195,13 +195,24 @@ bool sample_steps(uint8_t* rdram, uint32_t rootDObj, StepSample* samples, uint32
 // Records an object whose animation stepped. Duplicates are dropped: one
 // object stepping several channels at once is still one verdict.
 void note_stepped_object(uint32_t gobj) {
-    if ((gobj == 0) || (g_stepped_object_count >= MaxSteppedObjects)) {
+    if (gobj == 0) {
         return;
     }
     for (uint32_t i = 0; i < g_stepped_object_count; i++) {
         if (g_stepped_objects[i] == gobj) {
             return;
         }
+    }
+    // The list is the renderer's sixteen slots, and a seventeenth object that
+    // steps in the same frame has nowhere to go: the renderer is never told,
+    // and is left with only its magnitude tests to tell the jump from motion
+    // -- the guess this file exists to replace. Those are counted and
+    // reported beside the steps found, so a full list is a number in the
+    // stats rather than a silence. The duplicate scan runs first so an object
+    // already on the list is not counted as lost.
+    if (g_stepped_object_count >= MaxSteppedObjects) {
+        snapdiag::stepsDroppedCounter().fetch_add(1, std::memory_order_relaxed);
+        return;
     }
     g_stepped_objects[g_stepped_object_count++] = gobj;
     snapdiag::stepsNotedCounter().fetch_add(1, std::memory_order_relaxed);
@@ -246,9 +257,26 @@ extern "C" void animUpdateModelTreeAnimation(uint8_t* rdram, recomp_context* ctx
     // Only the outermost call is measured. A model's animation callback can
     // re-enter the animation system, and a nested view of a tree is a view of a
     // tick already half applied.
-    static int depth = 0;
-    const bool outermost = (depth == 0);
-    depth++;
+    //
+    // The nesting count is released by a destructor rather than by a matching
+    // statement after the real call. Ultramodern throws thread_terminated out
+    // of its scheduling calls, and that unwinds straight through a recompiled
+    // frame when a scene tears down (src/frame_cost.cpp, src/focus_dot.cpp).
+    // A decrement that could be skipped would leave the count above zero for
+    // the rest of the session; every later call would then look nested and go
+    // unmeasured, and step detection would be off with nothing to say so. The
+    // count stays raised through the port's own tail of this function, which
+    // reads memory and touches counters and re-enters nothing.
+    static int nesting = 0;
+    struct NestingGuard {
+        int& count;
+        const bool outermost;
+        explicit NestingGuard(int& c) : count(c), outermost(c == 0) { ++count; }
+        ~NestingGuard() { --count; }
+        NestingGuard(const NestingGuard&) = delete;
+        NestingGuard& operator=(const NestingGuard&) = delete;
+    } nestingGuard{nesting};
+    const bool outermost = nestingGuard.outermost;
 
     static snap::StepSample beforeSamples[snap::MaxStepSamples];
     static snap::StepSample afterSamples[snap::MaxStepSamples];
@@ -280,8 +308,6 @@ extern "C" void animUpdateModelTreeAnimation(uint8_t* rdram, recomp_context* ctx
 
     __real_animUpdateModelTreeAnimation(rdram, ctx);
 
-    depth--;
-
     // The rest of this function is the port's too, so it is timed as well.
     struct AfterTimer {
         bool on;
@@ -296,7 +322,15 @@ extern "C" void animUpdateModelTreeAnimation(uint8_t* rdram, recomp_context* ctx
         }
     } afterTimer{timing, timing ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{}};
 
-    if (!sampled || (snap::stepped_object_count() >= snap::MaxSteppedObjects)) {
+    // This used to give up as well once the frame's list was full, which made
+    // an overflow invisible: no second walk, no comparison, and no call to
+    // note_stepped_object, so nothing existed that could count the loss. The
+    // walk now runs regardless and the list's cap is applied where the object
+    // is recorded, where a rejection is counted. The price is the after-walk
+    // on objects animated after a frame's sixteenth step -- the same walk
+    // every object gets on every other frame -- and the fullest the list has
+    // been measured is nine of sixteen.
+    if (!sampled) {
         return;
     }
 

@@ -601,6 +601,14 @@ inline std::atomic<uint32_t> &stepsEmittedCounter() {
     return counter;
 }
 
+// Steps found on a frame whose sixteen-slot list was already full. They never
+// reach the renderer, which is left with only its magnitude tests to tell the
+// jump from motion. Zero here is the number that says the cap was never hit.
+inline std::atomic<uint32_t> &stepsDroppedCounter() {
+    static std::atomic<uint32_t> counter = { 0 };
+    return counter;
+}
+
 inline std::atomic<uint32_t> &cameraDeclaredCounter() {
     static std::atomic<uint32_t> counter{0};
     return counter;
