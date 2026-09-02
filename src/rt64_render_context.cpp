@@ -378,6 +378,8 @@ public:
             case 2: app_->userConfig.upscale2D = RT64::UserConfiguration::Upscale2D::All; break;
             default: app_->userConfig.upscale2D = RT64::UserConfiguration::Upscale2D::ScaledOnly; break;
         }
+        app_->userConfig.snapPhotoDetail = snap::settings().photo_detail;
+        app_->userConfig.snapJynxVC = snap::settings().jynx_vc;
 
         // Changing the sample count is the one setting that has to rebuild
         // the render targets and the shader cache; RT64 only did that from

@@ -123,6 +123,8 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         s.crop_top           = std::clamp(j.value("crop_top", s.crop_top), 0, 60);
         s.crop_bottom        = std::clamp(j.value("crop_bottom", s.crop_bottom), 0, 60);
         s.intro_fix          = j.value("intro_fix", s.intro_fix);
+        s.photo_detail       = j.value("photo_detail", s.photo_detail);
+        s.jynx_vc            = j.value("jynx_vc", s.jynx_vc);
         out = s;
         return SettingsRead::Ok;
     } catch (const std::exception& e) {
@@ -249,6 +251,8 @@ bool save_settings() {
         {"crop_top",              copy.crop_top},
         {"crop_bottom",           copy.crop_bottom},
         {"intro_fix",             copy.intro_fix},
+        {"photo_detail",          copy.photo_detail},
+        {"jynx_vc",               copy.jynx_vc},
     };
     // dump() throws only for a string that is not valid UTF-8, and every
     // value above is a bool or an int.

@@ -22,6 +22,7 @@
 
 #include "rt64_application.h"
 #include "rt64_interpreter.h"
+#include "render/rt64_snap_recolor.h"
 
 //#define ASSERT_ON_BLENDER_EMULATION
 #define SYNC_ON_EVERY_FB_PAIR 0
@@ -478,6 +479,15 @@ namespace RT64 {
         // Add the draw call to the FB pair.
         GameCall gameCall;
         gameCall.callDesc = drawCall;
+
+        // Pokemon Snap port, opt-in: Jynx's face and hands take the purple of
+        // Nintendo's re-releases (render/rt64_snap_recolor.h). Applied to the
+        // recorded copy so the RDP's own primitive colour, which later draws
+        // inherit, stays what the cartridge set.
+        if (ext.userConfig->snapJynxVC) {
+            SnapJynxVC::apply(gameCall.callDesc);
+        }
+
         fbPair.addGameCall(gameCall);
 
         // Assign the indices or increase the count of the active sprite command if it exists.

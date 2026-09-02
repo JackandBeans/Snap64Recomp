@@ -102,6 +102,31 @@ struct Settings {
     // mailbox byte 0x80C00015 -- seeded from here and edited by the GRAPHICS
     // page's Cutscene Fix row.
     bool  intro_fix         = false;
+    // The game shows every photo -- the review window after a shot, Oak's
+    // check, the album -- by rendering it once into a 320x210 buffer in RAM
+    // (the photo fills the part of it each screen asks for) and drawing that
+    // buffer as a sprite. Off, the port draws that buffer as
+    // the console did: native pixels, scaled. On, the renderer serves those
+    // sprites from its own full-resolution render of the same photo, so the
+    // picture Oak holds up is as sharp as the ride was. Nothing else drawn as
+    // a sprite changes. Off by default: the console's look.
+    // Mailbox byte 0x80C00016, seeded from here and edited by the GRAPHICS
+    // page's Photo Detail row; rt64_render_context.cpp copies it into
+    // RT64's userConfig (snapPhotoDetail) on every config push.
+    bool  photo_detail      = false;
+    // Jynx's face and hands are black on the cartridge -- not a texture but
+    // the primitive colour of untextured triangles. Every release Nintendo
+    // has sold since the 2007 Virtual Console shows them purple. Off, the
+    // port draws the cartridge. On, the renderer swaps that primitive colour
+    // for the purple of Nintendo's official artwork on each draw; the
+    // shading is the game's own lighting and no pixels of anyone's are
+    // shipped. Off by default: the console's look.
+    // Mailbox byte 0x80C00017, seeded from here and edited by the GRAPHICS
+    // page's VC Recolour row -- "VC" because neither menu face carries a
+    // capital J; rt64_render_context.cpp copies it into RT64's userConfig
+    // (snapJynxVC) on every config push, so a page edit applies at the next
+    // display list.
+    bool  jynx_vc           = false;
     // Interpolate the view and projection as well as object transforms.
     //
     // On, and it has to be: this game's camera lives in the projection stack,
