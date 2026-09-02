@@ -10,12 +10,22 @@
 #  - The ELF frontend only loads .rel* for listed sections, and static jals
 #    into overlays (scene manager -> every level) resolve via those relocs.
 
+# Paths: N64Recomp resolves every path in this file against the directory the
+# file lives in (src/config.cpp: basedir = config path's parent, joined with
+# each entry), so these are relative to the port root and the tool can be run
+# from anywhere. The two inputs are not tracked; put them here under these
+# names before running (see BUILDING.md):
+#   pokemonsnap.relocs.elf  the decomp's ELF relinked with --emit-relocs,
+#                           from a tree whose build matches the ROM
+#   pokemonsnap.z64         the ROM the decomp was built against
+# The ELF's file name is kept: N64Recomp stamps its stem into
+# RecompiledFuncs/lookup.cpp (get_rom_name), so renaming it changes output.
 [input]
 entrypoint = 0x80000400
-elf_path = "/home/<you>/pokemonsnap/build/pokemonsnap.relocs.elf"
-rom_file_path = "/home/<you>/pokemonsnap/pokemonsnap.z64"
-output_func_path = "/home/<you>/PokemonSnapRecomp/RecompiledFuncs"
-relocatable_sections_path = "/home/<you>/PokemonSnapRecomp/overlays.us.txt"
+elf_path = "pokemonsnap.relocs.elf"
+rom_file_path = "pokemonsnap.z64"
+output_func_path = "RecompiledFuncs"
+relocatable_sections_path = "overlays.us.txt"
 bss_section_suffix = "_bss"
 single_file_output = false
 use_mdebug = false

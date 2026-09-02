@@ -14,7 +14,8 @@ Run under WSL from the repo root:
 import os
 import sys
 
-sys.path.insert(0, os.path.expanduser("~/pokemonsnap/tools"))
+# The decomp checkout: SNAP_DECOMP if set, else ~/pokemonsnap (BUILDING.md).
+sys.path.insert(0, os.path.join(os.path.expanduser(os.environ.get("SNAP_DECOMP", "~/pokemonsnap")), "tools"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from vpk0_codec import decompress_vpk0
 from extract_menu_dot import decode_sprite, ROM_VPK0

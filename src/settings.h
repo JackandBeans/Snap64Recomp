@@ -2,7 +2,8 @@
  * @file settings.h
  * @brief Persistent user settings for PokemonSnapRecomp.
  *
- * Loaded from snapsettings.json next to the executable; applied through
+ * Loaded from snapsettings.json in the working directory (the executable's
+ * folder when launched normally; the same place saves/ goes); applied through
  * ultramodern's GraphicsConfig (which reaches RT64 via update_config) and
  * through direct game-memory pokes for game-side options (HQ audio).
  */
@@ -23,13 +24,15 @@ struct Settings {
     //
     // Defaults to Original, and should stay there for normal play.
     //
-    // This game reads back its own rendered framebuffer: photo scoring
-    // re-renders and counts pixels, and the focus indicator copies tiles of
-    // the colour buffer after each Pokemon draws to decide whether one is
-    // centred. Interpolation renders and presents synthetic frames around the
-    // real one, so what the game reads back is no longer what it drew, and
-    // those mechanics stop working -- the red dot stops appearing. F8 enables
-    // it anyway for a look at high-refresh motion, at that cost.
+    // Original is the console's rate, which is reason enough under the
+    // covenant. This game also reads back its own rendered framebuffer:
+    // photo scoring re-renders and counts pixels, and the focus indicator
+    // copies tiles of the colour buffer after each Pokemon draws. Measured
+    // Sep 2026 with Display interpolation on: five photos scored and the
+    // game's own pixel counts were reproduced exactly, because the readback
+    // runs on the frames the game draws, not on the synthetic presents
+    // between them. The focus indicator under interpolation has not been
+    // re-measured since the port's focus-dot work; treat it as unverified.
     int   fps_mode          = 0;
     int   fps_manual_target = 120;
     // The game's auSoundQuality flag IS its Stereo/Mono option: zero makes

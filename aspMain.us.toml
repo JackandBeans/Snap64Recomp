@@ -10,7 +10,11 @@
 text_offset = 0x3E580
 text_size = 0xE20
 text_address = 0x04001080
-rom_file_path = "/home/<you>/pokemonsnap/pokemonsnap.z64"
-output_file_path = "/home/<you>/PokemonSnapRecomp/rsp/aspMain.cpp"
+# Paths are relative to this file's directory (RSPRecomp joins each one with
+# the config's parent directory, RSPRecomp/src/rsp_recomp.cpp read_config), so
+# the ROM goes in the port root as pokemonsnap.z64 -- the same place the
+# recompiler and the finished executable look for it.
+rom_file_path = "pokemonsnap.z64"
+output_file_path = "rsp/aspMain.cpp"
 output_function_name = "aspMain"
 extra_indirect_branch_targets = [ 0x1118, 0x1470, 0x11DC, 0x1B38, 0x1214, 0x187C, 0x1254, 0x12D0, 0x12EC, 0x1328, 0x140C, 0x1294, 0x138C, 0x170C, 0x144C, 0x1E24 ]

@@ -15,7 +15,8 @@ import struct
 import sys
 import zlib
 
-sys.path.insert(0, os.path.expanduser("~/pokemonsnap/tools"))
+# The decomp checkout: SNAP_DECOMP if set, else ~/pokemonsnap (BUILDING.md).
+sys.path.insert(0, os.path.join(os.path.expanduser(os.environ.get("SNAP_DECOMP", "~/pokemonsnap")), "tools"))
 from vpk0_codec import decompress_vpk0
 
 ROM_VPK0 = 0xA0F830

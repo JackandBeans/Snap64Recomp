@@ -17,7 +17,9 @@ the patch links against its symbols and is compiled with its copy of IDO.
 
 ```sh
 # 1. Symbol files: what the patch links against, and what the recompiler
-#    resolves calls into the game with.
+#    resolves calls into the game with. Both are tracked; rerun only when the
+#    decomp's symbols change. Use the plain ELF that matches the ROM (see
+#    BUILDING.md step 2 about the stale relocatable ELF).
 python tools/gen_reference_syms.py ~/pokemonsnap/build/pokemonsnap.elf \
     patches/pokemonsnap.syms.toml patches/game_syms.ld
 
@@ -31,8 +33,9 @@ make -C patches DECOMP=$HOME/pokemonsnap
 cmake --build build-win --config Release --target PokemonSnapRecomp --parallel
 ```
 
-Everything except `src/`, the Makefile and the linker script is generated and
-is not tracked.
+`build/` is generated and not tracked. `game_syms.ld` and
+`pokemonsnap.syms.toml` are generated too, but tracked (names and addresses
+only), so a checkout can build the patches without the decomp's ELF.
 
 ## How the pieces fit
 

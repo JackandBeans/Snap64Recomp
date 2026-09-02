@@ -154,7 +154,8 @@ INNER_HOOKS = [
 
 
 def main() -> int:
-    root = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else 'RecompiledFuncs')
+    # Default: the port root's RecompiledFuncs, wherever this is run from.
+    root = pathlib.Path(sys.argv[1]) if len(sys.argv) > 1 else pathlib.Path(__file__).resolve().parent.parent / 'RecompiledFuncs'
     if not root.is_dir():
         print(f'not a directory: {root}')
         return 1

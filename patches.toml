@@ -6,8 +6,9 @@
 # resolved. Nothing about the ROM changes, so the section layout, the
 # manual_funcs addresses and the overlay table all stay valid.
 #
-# Run from the port root, after building patches/ and regenerating the symbol
-# file with tools/gen_reference_syms.py:
+# Paths are relative to this file's directory. Run after building patches/;
+# the symbol files it names are tracked and only need regenerating (with
+# tools/gen_reference_syms.py) when the decomp's symbols change:
 #
 #   ~/N64Recomp/build/N64Recomp patches.toml
 
