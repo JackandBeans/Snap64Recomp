@@ -8,9 +8,11 @@ translates the game's MIPS code into C, [N64ModernRuntime](https://github.com/N6
 input and audio. The game's own code runs; the port changes how it is hosted,
 and every change to how it *looks* is off unless you turn it on.
 
-The title screen's credits line reads `Jack & Beans (Snap64 Recomp) · v1.0.0`:
-"Jack & Beans" is the name this project uses for itself (`src/version.h`
-explains why), "Snap64 Recomp" is the port. This project is not affiliated with
+The title screen's credits line reads `Jack & Beans (Snap64 Recomp) · v1.0.0 rc1`:
+"Jack & Beans" is the codename this project uses for itself (`src/version.h.in`
+explains why), "Snap64 Recomp" is the port's name, and `1.0.0-rc1` is its
+version -- the credits face has no hyphen, so the line sets the tag off with a
+space. This project is not affiliated with
 Nintendo, HAL Laboratory or The Pokémon Company; their trademarks are theirs.
 
 ## Status: prerelease
@@ -20,7 +22,11 @@ Nintendo, HAL Laboratory or The Pokémon Company; their trademarks are theirs.
 * **Not buildable from a clean checkout.** Vendored trees, the recompiled
   game and the recompiler's inputs are missing from git; `BUILDING.md` lists
   exactly what, and gives the full pipeline as it exists today.
-* No automated tests, no CI, no installer, no release archive.
+* No automated tests, no CI, no installer. The release archive is the ZIP
+  that `cpack` writes (`BUILDING.md`, step 13); none has been published.
+* Version `1.0.0-rc1`, typed once in `CMakeLists.txt` and shown in the title
+  bar, the log banner, the credits line, the executable's file properties and
+  the ZIP's name.
 * Licensed under the GPLv3 (`LICENSE`); `NOTICE.md` lists every third-party
   component. No file in the tree carries the game's bytes: the menu font is
   cut from the game's own sprites in memory at run time, and the audio
@@ -35,27 +41,51 @@ Nintendo, HAL Laboratory or The Pokémon Company; their trademarks are theirs.
 * **Your own dump of the US cartridge**, SHA-1
   `edc7c49cc568c045fe48be0d18011c30f393cbaf` (the checksum the
   [decompilation project](https://github.com/ethteck/pokemonsnap) publishes).
-  Name it `pokemonsnap.z64` and put it in the folder you launch from
-  (normally the executable's folder). Byte-swapped `.v64` and little-endian
+  Name it `pokemonsnap.z64` and put it next to `Snap64Recomp.exe` (the
+  port reads its own folder, not the working directory; see "Where things
+  live"). Byte-swapped `.v64` and little-endian
   `.n64` dumps are accepted -- the runtime detects the order from the header
   and corrects it in memory without touching the file -- but the file name is
   fixed, so rename such a dump to `pokemonsnap.z64`. A missing, unreadable or
   wrong-revision file produces a dialog before the window opens; a wrong dump
   shows both the expected and the actual hash. The ROM is never included
   with this project.
-* Beside `PokemonSnapRecomp.exe`: `SDL2.dll`, `dxcompiler.dll`, `dxil.dll`
-  (where they come from is in `BUILDING.md`, step 12), and optionally
+* Beside `Snap64Recomp.exe`: `SDL2.dll`, `dxcompiler.dll`, `dxil.dll` (the
+  build places them there; `BUILDING.md`, step 12), and optionally
   `menu_text/recomp_logo.png` for the "Recomp" badge under the title logo (no
   file, no badge).
 
 ## Running
 
-Start `PokemonSnapRecomp.exe` from its folder. It opens a 1280x960 window;
-`SNAP_WINDOW=WxH` in the environment opens it at an exact size instead (at
-least 320x240). The window's maximize button is the fullscreen switch; the
-in-game Graphics page and F11 do the same. **Esc quits.** Saves go to
-`saves/` and settings to `snapsettings.json`, both in the folder you launched
-from.
+Start `Snap64Recomp.exe`; a shortcut works from anywhere, because the port
+reads and writes the folder the executable is in, whatever the working
+directory (`src/paths.cpp`). It opens a 1280x960 window titled
+`Snap64 Recomp 1.0.0-rc1`; `SNAP_WINDOW=WxH` in the environment opens it at
+an exact size instead (at least 320x240). The window's maximize button is the
+fullscreen switch; the in-game Graphics page and F11 do the same. **Esc
+quits.** Saves go to `saves/` and settings to `snapsettings.json`, both next
+to the executable. A console window opens beside the game window; it is the
+log, and the first thing to include in a bug report.
+
+### Where things live
+
+Everything is in the folder with the executable.
+
+| File or folder | What it is |
+| --- | --- |
+| `pokemonsnap.z64` | your ROM (you provide it) |
+| `snapsettings.json`, `snapsettings.json.bak` | settings, written by the in-game Graphics and Sound pages and by the hotkeys |
+| `saves/pokemonsnap.bin`, `saves/pokemonsnap.bin.bak` | the game's save data (its EEPROM image) |
+| `cache/` | RT64's compiled shaders, the driver's pipeline cache and the seen-shader list; safe to delete, the next start is slower |
+| `mods/`, `mod_config/` | the runtime's mod folders; created empty, unused by this release |
+| `menu_text/recomp_logo.png` | the "Recomp" wordmark on the title screen |
+| `Snap64Recomp.map` | the linker map; include it with crash reports (the `[SNAP-AV]` lines in the log are decoded against it) |
+| `LICENSE`, `NOTICE.md`, `licenses/` | licences |
+
+Coming from an earlier build: settings, saves and the ROM were already next to
+the executable and carry over as they are. Earlier builds kept the shader cache
+in `%LOCALAPPDATA%\pokemonsnap`; that folder is no longer read and can be
+deleted. The first start after the change rebuilds the cache once.
 
 ### Controls
 
@@ -191,7 +221,8 @@ documentation.
 
 See `BUILDING.md`. Short version: the decompilation and IDO under WSL,
 N64Recomp for the game and the patches, CMake and MSVC on Windows, and a list
-of things git does not carry.
+of things git does not carry. `cpack -C Release` in the build directory then
+writes `Snap64Recomp-1.0.0-rc1-win64.zip` (step 13).
 
 ## License
 

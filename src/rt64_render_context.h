@@ -1,6 +1,6 @@
 /**
  * @file rt64_render_context.h
- * @brief RT64 RendererContext factory for WaveRace64-Recomp.
+ * @brief RT64 RendererContext factory for Snap64 Recomp.
  *
  * Provides a factory function that creates an ultramodern::renderer::RendererContext
  * subclass backed by the RT64 rendering library.

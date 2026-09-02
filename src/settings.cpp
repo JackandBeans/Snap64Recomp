@@ -17,6 +17,7 @@
 
 #include "json/json.hpp"
 #include "librecomp/files.hpp"
+#include "paths.h"
 #include "ultramodern/config.hpp"
 #include "recomp.h"
 
@@ -130,9 +131,9 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
 }
 
 void load_settings() {
-    const std::filesystem::path primary{SETTINGS_FILE};
+    const std::filesystem::path primary = base_path(SETTINGS_FILE);
     const std::string backup_name = std::string(SETTINGS_FILE) + SETTINGS_BACKUP_SUFFIX;
-    const std::filesystem::path backup{backup_name};
+    const std::filesystem::path backup = base_path(backup_name);
 
     Settings loaded;
     {
@@ -192,16 +193,16 @@ static std::string describe_write_failure() {
     const std::string temp_name = std::string(SETTINGS_FILE) + SETTINGS_TEMP_SUFFIX;
     const std::string backup_name = std::string(SETTINGS_FILE) + SETTINGS_BACKUP_SUFFIX;
     std::error_code ec;
-    if (std::filesystem::is_directory(std::filesystem::path(temp_name), ec)) {
+    if (std::filesystem::is_directory(base_path(temp_name), ec)) {
         return temp_name + " is a directory, so the temporary file could not be created";
     }
-    if (!std::filesystem::is_regular_file(std::filesystem::path(temp_name), ec)) {
+    if (!std::filesystem::is_regular_file(base_path(temp_name), ec)) {
         return "the temporary file " + temp_name + " could not be written";
     }
-    if (std::filesystem::is_directory(std::filesystem::path(SETTINGS_FILE), ec)) {
+    if (std::filesystem::is_directory(base_path(SETTINGS_FILE), ec)) {
         return std::string(SETTINGS_FILE) + " is a directory, so it could not be moved aside";
     }
-    if (std::filesystem::is_directory(std::filesystem::path(backup_name), ec)) {
+    if (std::filesystem::is_directory(base_path(backup_name), ec)) {
         return backup_name + " is a directory, so the old file could not become the backup";
     }
     return "the temporary file was written but could not be renamed into place";
@@ -257,7 +258,7 @@ bool save_settings() {
     // name, so a crash at any point leaves a complete file under one of the
     // two names. The .bak beside the file is that mechanism's side effect,
     // and what load_settings falls back to.
-    if (!recomp::write_file_with_backup(std::filesystem::path(SETTINGS_FILE),
+    if (!recomp::write_file_with_backup(base_path(SETTINGS_FILE),
                                         std::span<const char>(text.data(), text.size()))) {
         s_failed_gen.store(gen, std::memory_order_relaxed);
         fprintf(stderr, "[SNAP-CFG] failed to save %s: %s (the [files] line above has the OS error)\n",

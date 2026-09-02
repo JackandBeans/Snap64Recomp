@@ -1,6 +1,6 @@
 /**
  * @file rsp_microcode.cpp
- * @brief RSP microcode dispatch implementation for WaveRace64-Recomp.
+ * @brief RSP microcode dispatch implementation for Snap64 Recomp.
  *
  * Pokemon Snap uses two RSP task types:
  *   - M_GFXTASK (1): Graphics display list processing (F3DEX / Fast3D variant)

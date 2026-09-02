@@ -1,0 +1,40 @@
+/**
+ * @file version.h.in
+ * @brief The port's identity, in one place.
+ *
+ * CMake writes version.h from this file into <build>/generated (see
+ * "Version" in CMakeLists.txt): the numbers come from project(VERSION) and
+ * SNAP_VERSION_PRERELEASE there, and nowhere else.
+ *
+ * "Jack & Beans" is the project the game itself began as at HAL -- the
+ * unused JACK and BEANS prototype logo still ships inside the title
+ * screen's own data -- which makes it the one name tied to this game
+ * that is ours to use. It is the codename on the title screen's credits
+ * line; "Snap64 Recomp" is the product name on every other surface.
+ */
+#ifndef SNAP_VERSION_H
+#define SNAP_VERSION_H
+
+#define SNAP_PORT_NAME      "@SNAP_PRODUCT_NAME@"
+#define SNAP_PORT_NAME_W    L"@SNAP_PRODUCT_NAME@"
+#define SNAP_PORT_CODENAME  "Jack & Beans"
+
+#define SNAP_VERSION_MAJOR  @PROJECT_VERSION_MAJOR@
+#define SNAP_VERSION_MINOR  @PROJECT_VERSION_MINOR@
+#define SNAP_VERSION_PATCH  @PROJECT_VERSION_PATCH@
+// "-rc1" for a prerelease, "" for a final.
+#define SNAP_VERSION_SUFFIX "@SNAP_VERSION_SUFFIX@"
+// "1.0.0-rc1"
+#define SNAP_PORT_VERSION   "@SNAP_VERSION_FULL@"
+
+// The title-screen credits line; \x01 is the credits face's middle dot.
+// That face is harvested from the copyright block's first line
+// ("@1995 1996 1998 Nintendo/Creatures/GAMEFREAK", menu_harvest.cpp) plus
+// the port's own drawings there, so it has no '-' and no '2', '3' or '7':
+// the prerelease tag is set off with a space (SNAP_VERSION_CREDITS in
+// CMakeLists.txt), and a character the face lacks is reported by
+// compose_credits() through note_missing(), which withholds the port's
+// menu strings rather than draw a line with a hole in it.
+#define SNAP_PORT_CREDITS SNAP_PORT_CODENAME " (" SNAP_PORT_NAME ") \x01 v" "@SNAP_VERSION_CREDITS@"
+
+#endif

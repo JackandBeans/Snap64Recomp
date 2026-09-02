@@ -1,6 +1,6 @@
 ﻿/**
  * @file rt64_render_context.cpp
- * @brief RT64 RendererContext implementation for WaveRace64-Recomp.
+ * @brief RT64 RendererContext implementation for Snap64 Recomp.
  *
  * Wraps the RT64::Application into an ultramodern::renderer::RendererContext
  * subclass so that the N64ModernRuntime can drive display list submission,
@@ -16,6 +16,7 @@
 #include "ultramodern/renderer_context.hpp"
 #include "ultramodern/config.hpp"
 
+#include "paths.h"
 #include "settings.h"
 #include "hle/rt64_snap_diag.h"
 
@@ -184,7 +185,14 @@ public:
         // Configure the RT64 application.
         RT64::ApplicationConfiguration app_config{};
         app_config.appId = "pokemonsnap";
-        // Disable config file I/O â€” we manage settings ourselves.
+        // The shader blob cache, the driver pipeline library and the
+        // seen-shader list (rt64_application.cpp) go next to the executable
+        // like everything else the port writes (paths.h). RT64's own default
+        // is %LOCALAPPDATA%\<appId> (rt64_user_paths.cpp), which is where
+        // earlier builds left them; with the path given, appId is unused.
+        app_config.detectDataPath = false;
+        app_config.dataPath = snap::base_path("cache");
+        // Disable config file I/O -- we manage settings ourselves.
         app_config.useConfigurationFile = false;
 
         // Create the RT64 application.

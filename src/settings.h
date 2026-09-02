@@ -1,9 +1,9 @@
 ﻿/**
  * @file settings.h
- * @brief Persistent user settings for PokemonSnapRecomp.
+ * @brief Persistent user settings for Snap64 Recomp.
  *
- * Loaded from snapsettings.json in the working directory (the executable's
- * folder when launched normally; the same place saves/ goes); applied through
+ * Loaded from snapsettings.json next to the executable (paths.h; the same
+ * place saves/ goes, whatever the working directory); applied through
  * ultramodern's GraphicsConfig (which reaches RT64 via update_config) and
  * through direct game-memory pokes for game-side options (HQ audio).
  */

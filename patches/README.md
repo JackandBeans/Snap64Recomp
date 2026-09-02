@@ -30,7 +30,7 @@ make -C patches DECOMP=$HOME/pokemonsnap
 ~/N64Recomp/build/N64Recomp patches.toml
 
 # 4. Build the port. CMake picks up RecompiledPatches/patches.c automatically.
-cmake --build build-win --config Release --target PokemonSnapRecomp --parallel
+cmake --build build-win --config Release --target Snap64Recomp --parallel
 ```
 
 `build/` is generated and not tracked. `game_syms.ld` and

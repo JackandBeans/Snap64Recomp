@@ -217,7 +217,7 @@ plain files and carry local modifications; they are part of the checkout.
 ### 11. CMake
 
     cmake -S . -B build-win -G "Visual Studio 16 2019" -A x64
-    cmake --build build-win --config Release --target PokemonSnapRecomp --parallel
+    cmake --build build-win --config Release --target Snap64Recomp --parallel
 
 Configure prints `RSP audio microcode from ROM: <path>` once it has found the
 ROM (step 9), or stops with a message naming `SNAP_ROM` and the places it
@@ -225,23 +225,72 @@ looked. `CMakeLists.txt` globs `RecompiledFuncs/funcs_*.c` into the
 `recomp_funcs` static library, builds RSPRecomp and runs it to write
 `build-win/rsp/aspMain.cpp`, compiles that and `RecompiledPatches/patches.c`
 (if present) into the executable, links RT64 statically and links against the
-SDL2 built from `lib/SDL`. The result is
-`build-win/Release/PokemonSnapRecomp.exe`.
+SDL2 built from `lib/SDL`. The result is `build-win/Release/Snap64Recomp.exe`,
+with `Snap64Recomp.map` (the linker map, `/MAP`) beside it.
+
+Configure also writes `build-win/generated/version.h` and
+`build-win/generated/snap64.rc` from `src/version.h.in` and
+`src/snap64.rc.in`. The version is typed once, in `CMakeLists.txt`
+(`project(Snap64Recomp VERSION 1.0.0)` plus `SNAP_VERSION_PRERELEASE`, `rc1`
+today, empty for a final), and reaches the title bar, the log banner, the
+title screen's credits line, the executable's version resource (Properties >
+Details) and the package name from there.
 
 ### 12. Runtime files next to the executable
 
-The build does not stage these; copy them by hand:
+The build stages these itself (a `POST_BUILD` step of the `Snap64Recomp`
+target in `CMakeLists.txt`); the ROM is the one file to copy by hand:
 
 | File | Comes from |
 | --- | --- |
-| `SDL2.dll` | `build-win/lib/SDL/Release/SDL2.dll` (built by step 11) |
-| `dxcompiler.dll`, `dxil.dll` | `build-win/lib/rt64/` (RT64's CMake copies them there from `lib/rt64/src/contrib/dxc/bin/x64/`) |
-| `pokemonsnap.z64` | your ROM |
-| `menu_text/recomp_logo.png` | the repository's `menu_text/` (optional: the title-screen badge; absent file, absent badge) |
+| `SDL2.dll` | the `SDL2` target built from `lib/SDL` (step 11) |
+| `dxcompiler.dll`, `dxil.dll` | `lib/rt64/src/contrib/dxc/bin/x64/` (the same files RT64's CMake copies into `build-win/lib/rt64/`) |
+| `menu_text/recomp_logo.png` | the repository's `menu_text/` (the title-screen badge; absent file, absent badge) |
+| `pokemonsnap.z64` | your ROM: copy it next to the executable yourself |
 
 The executable also loads `d3d12.dll`, `dxgi.dll` and `vulkan-1.dll` from the
-system. Saves go to `saves/` and settings to `snapsettings.json`, both in the
-working directory, which `src/main.cpp` registers as the config path.
+system. Saves go to `saves/`, settings to `snapsettings.json` and RT64's
+shader and pipeline caches to `cache/`, all next to the executable whatever
+the working directory: `src/paths.cpp` resolves the executable's directory
+(`SDL_GetBasePath`), `src/main.cpp` registers it as librecomp's config path
+(ROM, saves, mods), and `src/rt64_render_context.cpp` hands RT64 `cache/`
+under it as its data path. Diagnostics driven from a shell (`SNAP_REPLAY`,
+`SNAP_RECORD`, `snap_frame_dumps/`, `ramdump*.bin`, `menu_font_runtime.json`)
+still resolve against the working directory.
+
+### 13. Package
+
+    cd build-win
+    cpack -C Release
+
+writes `Snap64Recomp-1.0.0-rc1-win64.zip` and a `.sha256` beside it in
+`build-win`. The ZIP holds one folder of the same name: `Snap64Recomp.exe`,
+`Snap64Recomp.map`, the three DLLs, `menu_text/recomp_logo.png`, `LICENSE`,
+`NOTICE.md`, `README.md` and `licenses/` -- one `.txt` per component in
+`NOTICE.md`, copied from the vendored trees at packaging time so they cannot
+drift from what was built (`concurrentqueue.txt` is cut from that header's
+leading comment at configure time). No ROM, no saves, no settings, no cache.
+
+Two licence texts come from the repository's `licenses/` instead, because the
+vendored copies carry none:
+
+* `licenses/nlohmann-json.txt` -- tracked: the MIT text with the copyright
+  line from `json.hpp`'s SPDX header.
+* `licenses/DirectXShaderCompiler.txt` -- tracked: the `dxc` binaries under
+  `lib/rt64/src/contrib/dxc/` ship without their `LICENSE.TXT`, so the text
+  was taken from upstream's
+  <https://raw.githubusercontent.com/microsoft/DirectXShaderCompiler/main/LICENSE.TXT>
+  on 2026-09-02 (the LLVM Release License, University of Illinois/NCSA). If
+  the file is ever removed, configure warns and `cpack` stops on it: a package
+  without the DXC licence is not meant to be produced.
+
+To cut a release: change `project(Snap64Recomp VERSION ...)` and
+`SNAP_VERSION_PRERELEASE` in `CMakeLists.txt`, reconfigure, rebuild, `cpack`.
+The credits face on the title screen is harvested from the copyright block
+and has no hyphen and no `2`, `3` or `7` (`src/version.h.in`); a version
+that needs one of those is reported at the first main-menu load
+(`[SNAP-MENU] no glyph ...`) and the port's menu strings are withheld until
+the string is changed.
 
 ## What a clean checkout is missing
 
@@ -260,12 +309,14 @@ the two symbol files. It does **not** contain:
    recompiler's inputs (step 3); the ROM is also what CMake recompiles the
    audio microcode from (step 9, `SNAP_ROM`).
 5. The decomp, IDO, the MIPS binutils and N64Recomp themselves.
-6. The three runtime DLLs beside the executable (step 12).
+6. `pokemonsnap.z64` in the port root (or `SNAP_ROM`), which configure needs
+   for the audio microcode (step 9).
 
 `.gitmodules` used to declare `lib/N64ModernRuntime` and `lib/rt64` as
 submodules without ever committing a gitlink; it has been removed, and
 VENDORING.md records what those directories actually are.
 
-There is no CI, no test suite and no packaging: `install()` copies only the
-executable, and the DLLs, the ROM check and the `menu_text` badge are all
-manual.
+There is no CI and no test suite. Packaging is `cpack` (step 13): the
+`install()` rules lay out the portable folder, and the build stages the DLLs
+and the `menu_text` badge beside the executable (step 12). The ROM is the one
+file still placed by hand.

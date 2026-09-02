@@ -1,6 +1,8 @@
 # Build output
 build-win/
 build-linux/
+# The packaging check's fresh build directory (BUILDING.md, step 13).
+build-fresh/
 *.obj
 *.pdb
 *.ilk

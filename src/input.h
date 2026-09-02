@@ -1,6 +1,6 @@
 /**
  * @file input.h
- * @brief Input callbacks for WaveRace64-Recomp.
+ * @brief Input callbacks for Snap64 Recomp.
  *
  * Provides SDL2 game controller / keyboard input callbacks that match the
  * ultramodern::input::callbacks_t interface.

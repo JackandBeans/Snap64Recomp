@@ -32,17 +32,36 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <filesystem>
 #include <mutex>
 #include <string>
 #include <vector>
 
 #include "audio.h"
+#include "paths.h"
 #include "settings.h"
 #include "version.h"
 
 // stb_image's implementation is compiled inside the RT64 library
 // (rt64_texture_cache.cpp); this include only brings the declarations.
 #include "stb/stb_image.h"
+
+// stb_image hands a narrow file name to fopen, which on Windows is the ANSI
+// code page: an install path with a character outside it would lose the
+// badge and every override. Open the file here, hand stb the stream.
+static stbi_uc* load_png(const std::filesystem::path& path, int* w, int* h, int* comp) {
+#if defined(_WIN32)
+    FILE* f = _wfopen(path.c_str(), L"rb");
+#else
+    FILE* f = fopen(path.c_str(), "rb");
+#endif
+    if (f == nullptr) {
+        return nullptr;
+    }
+    stbi_uc* data = stbi_load_from_file(f, w, h, comp, 4);
+    fclose(f);
+    return data;
+}
 
 // The menu sprite fonts and furniture, harvested from RDRAM at run time.
 #include "menu_harvest.h"
@@ -460,8 +479,10 @@ Strip compose_credits(const char* text) {
     // fusing across the gap exactly as the stock lines above fuse.
     // Punctuation the stock face never sets -- parens, the ampersand,
     // the middle dot -- takes extra air, and the word spaces run a pixel
-    // wide, which lands the whole line at 168px against the first stock
-    // line's measured 169: the equal length the layout asks for.
+    // wide, which lands the release line (`... v1.0.0`) at 168px against
+    // the first stock line's measured 169: the equal length the layout
+    // asks for. A prerelease tag (version.h.in) adds its own glyphs to
+    // that.
     auto roomy = [](char c) {
         return (c == '(') || (c == ')') || (c == '&') || (c == '\x01');
     };
@@ -501,6 +522,10 @@ Strip compose_credits(const char* text) {
         }
         const MenuGlyph* g = crd_glyph(*c);
         if (g == nullptr) {
+            // The face is the copyright block's (menu_harvest.cpp): no '-',
+            // no '2', '3' or '7'. A version string that needs one of them
+            // (version.h.in) is not quietly clipped: note_missing() withholds
+            // every staged string, so the miss is loud.
             note_missing(*c);
             continue;
         }
@@ -604,10 +629,8 @@ void apply_shadow(Strip &strip) {
 // shadow is rebuilt underneath. Missing or unreadable files simply fall
 // back to the font renderer, so partial sets are fine.
 bool load_override(const char* name, Strip &strip) {
-    char path[256];
-    snprintf(path, sizeof(path), "menu_text/%s.png", name);
     int w = 0, h = 0, comp = 0;
-    stbi_uc* data = stbi_load(path, &w, &h, &comp, 4);
+    stbi_uc* data = load_png(base_path("menu_text") / (std::string(name) + ".png"), &w, &h, &comp);
     if (data == nullptr) {
         return false;
     }
@@ -924,7 +947,7 @@ void stage_menu_strings(uint8_t* rdram) {
     struct { int w = 0, h = 0; std::vector<uint16_t> texels; } logo;
     {
         int lw = 0, lh = 0, comp = 0;
-        stbi_uc* data = stbi_load("menu_text/recomp_logo.png", &lw, &lh, &comp, 4);
+        stbi_uc* data = load_png(base_path("menu_text/recomp_logo.png"), &lw, &lh, &comp);
         if ((data != nullptr) && (lw > 0) && (lh > 0)) {
             // Image generators fight transparency: a fully opaque image is
             // treated as white-backgrounded, and near-white pixels become

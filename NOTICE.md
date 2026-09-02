@@ -8,6 +8,14 @@ is under a license the GPL can absorb (MIT, BSD, zlib, Apache-2.0, public
 domain); the two GPLv2-only items in the tree are not compiled into the
 executable (see `mupen64plus-core` and `xxHash/cli` below).
 
+The release ZIP (`BUILDING.md`, step 13) carries these texts as
+`licenses/<name>.txt`, copied out of the vendored trees when the package is
+made. Two come from the repository's `licenses/` instead, because the vendored
+copies carry no licence file: `nlohmann-json.txt` (the MIT text with
+`json.hpp`'s copyright line) and `DirectXShaderCompiler.txt` (upstream's
+`LICENSE.TXT`, the LLVM Release License, copied on 2026-09-02; the `dxc` row
+below).
+
 What follows is every component in the working tree as read on 2026-09-02,
 with its license as found in its own files, its origin, and whether this build
 uses it. "Ignored" means the directory is present on the developer's machine
@@ -20,7 +28,7 @@ but not in git (`VENDORING.md` explains).
 | **N64Recomp** | MIT, "Copyright (c) 2024 Wiseguy" (`LICENSE`) | <https://github.com/N64Recomp/N64Recomp> | The tool itself runs under WSL (`~/N64Recomp`, upstream commit `ffb39cd`, unmodified) and is not in this tree. A copy of its sources and headers is bundled inside `lib/N64ModernRuntime/N64Recomp` (tracked; `recomp.h` is what the generated code includes); its upstream commit is not recorded. |
 | **N64ModernRuntime** (`librecomp`, `ultramodern`) | GPLv3 (`lib/N64ModernRuntime/COPYING`, byte-identical to gnu.org's `gpl-3.0.txt`) | <https://github.com/N64Recomp/N64ModernRuntime> | Tracked as 1041 plain files. **Modified** by this port: `ultramodern/src/threads.cpp`, `ultramodern/src/mesgqueue.cpp`, `ultramodern/include/ultramodern/ultramodern.hpp`, `librecomp/src/pi.cpp`, `librecomp/src/rsp.cpp` (each site marked `Pokemon Snap port`). Upstream commit not recorded. Statically linked. |
 | concurrentqueue (in `N64ModernRuntime/thirdparty`) | Simplified BSD, also Boost Software License (stated in the header) | Cameron Desrochers | header-only, used by both libraries |
-| nlohmann/json 3.12.0 (in `N64ModernRuntime/thirdparty/json`) | MIT (SPDX header) | <https://github.com/nlohmann/json> | header-only, used by librecomp |
+| nlohmann/json 3.12.0 (in `N64ModernRuntime/thirdparty/json`) | MIT (SPDX header only; the text is tracked as `licenses/nlohmann-json.txt`) | <https://github.com/nlohmann/json> | header-only, used by librecomp |
 | miniz (in `N64ModernRuntime/thirdparty/miniz`) | MIT (`LICENSE`: RAD Game Tools, Valve, Rich Geldreich) | <https://github.com/richgel999/miniz> | compiled by librecomp's CMake |
 | o1heap (in `N64ModernRuntime/thirdparty/o1heap`) | MIT (Pavel Kirienko) | <https://github.com/pavel-kirienko/o1heap> | compiled into librecomp |
 | sse2neon (in `N64ModernRuntime/thirdparty/sse2neon`) | MIT (header) | <https://github.com/DLTcollab/sse2neon> | header-only; ARM builds only |
@@ -39,7 +47,7 @@ entry, with what its files say:
 | `contrib/` entry | License (as found) | Used by this build? |
 | --- | --- | --- |
 | `ddspp` | MIT (Emilio López, 2018-2023) | yes, header-only (DDS texture parsing) |
-| `dxc` | **No license file in the tree.** These are DirectX Shader Compiler release binaries (`bin/x64/dxc.exe`, `dxcompiler.dll`, `dxil.dll`, plus Linux and macOS builds, `inc/`, `lib/`); the headers cite "LICENSE.TXT", which is not present. Upstream's `LICENSE.TXT` is the LLVM Release License (University of Illinois/NCSA), read on 2026-09-02 at <https://github.com/microsoft/DirectXShaderCompiler/blob/main/LICENSE.TXT>. The release version is not recorded anywhere in the tree. `dxil.dll` is Microsoft's DXIL validator, shipped with DXC releases; its redistribution terms must be checked against the release these came from before the DLLs are distributed. | yes: `dxc.exe` compiles the shaders at build time; `dxcompiler.dll` and `dxil.dll` are loaded at run time and must sit beside the executable |
+| `dxc` | **No license file in the tree.** These are DirectX Shader Compiler release binaries (`bin/x64/dxc.exe`, `dxcompiler.dll`, `dxil.dll`, plus Linux and macOS builds, `inc/`, `lib/`); the headers cite "LICENSE.TXT", which is not present. Upstream's `LICENSE.TXT` is the LLVM Release License (University of Illinois/NCSA), read on 2026-09-02 at <https://github.com/microsoft/DirectXShaderCompiler/blob/main/LICENSE.TXT>. The release version is not recorded anywhere in the tree. That text is tracked as `licenses/DirectXShaderCompiler.txt` and shipped in the package. `dxil.dll` is Microsoft's DXIL validator, shipped with DXC releases; its redistribution terms must be checked against the release these came from before the DLLs are distributed. | yes: `dxc.exe` compiles the shaders at build time; `dxcompiler.dll` and `dxil.dll` are loaded at run time and must sit beside the executable |
 | `hlslpp` | MIT (Emilio López, 2017-2024) | yes, header-only (49 RT64 files) |
 | `im3d` | MIT-form permission notice (John Chapman, 2016-2022) | yes, `im3d.cpp` is compiled |
 | `imgui` | MIT (Omar Cornut, 2014-2024) | yes, compiled with the DX12 and Win32 backends |

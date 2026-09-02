@@ -1,6 +1,6 @@
 /**
  * @file input.cpp
- * @brief SDL2-based input implementation for WaveRace64-Recomp.
+ * @brief SDL2-based input implementation for Snap64 Recomp.
  *
  * Maps SDL2 game controller and keyboard input to N64 controller state.
  * Supports a single controller (port 0) with keyboard fallback.

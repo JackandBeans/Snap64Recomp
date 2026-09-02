@@ -1,6 +1,6 @@
 ﻿/**
  * @file main.cpp
- * @brief WaveRace64-Recomp game integration entry point.
+ * @brief Snap64 Recomp game integration entry point.
  *
  * Registers the Pokemon Snap GameEntry with the N64ModernRuntime,
  * builds the overlay section table, wires up all callbacks, and
@@ -30,6 +30,7 @@
 #include "input.h"
 #include "settings.h"
 #include "version.h"
+#include "paths.h"
 namespace snap { extern uint8_t* g_rdram; }
 extern "C" void snap_publish_ai_len(uint8_t* rdram);
 
@@ -85,7 +86,7 @@ static ultramodern::renderer::WindowHandle create_window(void* /*gfx_data*/) {
         }
     }
     sdl_window = SDL_CreateWindow(
-        "Pokemon Snap",
+        SNAP_PORT_NAME,
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         windowW, windowH,
         SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI
@@ -121,8 +122,8 @@ static void snap_update_window_title() {
         return;
     }
 
-    char title[128];
-    snprintf(title, sizeof(title), "Pokemon Snap%s%s%s",
+    char title[160];
+    snprintf(title, sizeof(title), "%s %s%s%s%s", SNAP_PORT_NAME, SNAP_PORT_VERSION,
              (snap::settings().fps_mode == 0) ? "" : " - interpolation ON (F8)",
              snap::settings().render_to_ram ? "" : " - render-to-RAM OFF (F6)",
              snap::settings().interpolate_camera ? "" : " - camera lerp OFF (F4)");
@@ -234,7 +235,7 @@ static void gfx_init_callback() {
 static void error_message_box(const char* msg) {
     fprintf(stderr, "[SNAP] ERROR: %s\n", msg);
     if (sdl_window) {
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, "Pokemon Snap - Error", msg, sdl_window);
+        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, SNAP_PORT_NAME " - Error", msg, sdl_window);
         return;
     }
 #if defined(_WIN32)
@@ -245,7 +246,7 @@ static void error_message_box(const char* msg) {
     if (wide_len > 0) {
         std::wstring wide(static_cast<size_t>(wide_len), L'\0');
         MultiByteToWideChar(CP_UTF8, 0, msg, -1, wide.data(), wide_len);
-        MessageBoxW(nullptr, wide.c_str(), L"Pokemon Snap - Error", MB_OK | MB_ICONERROR);
+        MessageBoxW(nullptr, wide.c_str(), SNAP_PORT_NAME_W L" - Error", MB_OK | MB_ICONERROR);
     }
 #endif
 }
@@ -458,7 +459,10 @@ int main(int argc, char* argv[]) {
         }
     }
 #endif
-    printf("[SNAP] " SNAP_PORT_NAME " (" SNAP_PORT_DESC ") v" SNAP_PORT_VERSION "\n");
+    printf("[SNAP] " SNAP_PORT_NAME " " SNAP_PORT_VERSION " (" SNAP_PORT_CODENAME ")\n");
+    // The first thing a support log needs: where this run reads and writes.
+    printf("[SNAP] data directory: %s\n",
+           reinterpret_cast<const char*>(snap::base_dir().u8string().c_str()));
 
     snap::load_settings();
     snap::apply_graphics_settings();
@@ -508,7 +512,8 @@ int main(int argc, char* argv[]) {
     // 3. Build the Configuration and start
     // -----------------------------------------------------------------------
     recomp::Configuration config {
-        .project_version = { .major = 0, .minor = 1, .patch = 0, .suffix = "-alpha" },
+        .project_version = { .major = SNAP_VERSION_MAJOR, .minor = SNAP_VERSION_MINOR,
+                             .patch = SNAP_VERSION_PATCH, .suffix = SNAP_VERSION_SUFFIX },
 
         .window_handle = ultramodern::renderer::WindowHandle{},
 
@@ -557,8 +562,11 @@ int main(int argc, char* argv[]) {
         },
     };
 
-    // Anchor config path to CWD so saves, mods, and ROM cache resolve correctly.
-    recomp::register_config_path(std::filesystem::current_path());
+    // The ROM (pokemonsnap.z64), saves/, mods/, mod_config/ and mods.json all
+    // hang off this one path inside librecomp (recomp.cpp, pi.cpp). It is the
+    // executable's directory, never the working directory: a shortcut with a
+    // different "Start in" used to lose all of them.
+    recomp::register_config_path(snap::base_dir());
     recomp::start(config);
 
     // An edit inside the last debounce window (a hotkey, or a page edit on

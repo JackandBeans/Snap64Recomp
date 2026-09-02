@@ -1,6 +1,6 @@
 ﻿/**
  * @file audio.cpp
- * @brief SDL2-based audio callback implementation for WaveRace64-Recomp.
+ * @brief SDL2-based audio callback implementation for Snap64 Recomp.
  *
  * Uses SDL2's audio queue API for low-latency audio playback.
  * The N64 audio thread submits buffers via audio_queue_samples(),

@@ -1,16 +1,40 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(PokemonSnapRecomp VERSION 0.1.0 LANGUAGES C CXX)
+project(Snap64Recomp VERSION 1.0.0 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # =============================================================================
+# Version -- the one place it lives
+# =============================================================================
+# project(VERSION) takes numbers only, so the prerelease tag is its own
+# variable. SNAP_VERSION_FULL is what every surface shows: the title bar,
+# the log banner, the credits line, the exe's version resource and the
+# package name (all through the generated version.h / snap64.rc, below).
+# An empty SNAP_VERSION_PRERELEASE is a final release.
+set(SNAP_PRODUCT_NAME "Snap64 Recomp")
+set(SNAP_VERSION_PRERELEASE "rc1")
+if (SNAP_VERSION_PRERELEASE)
+    set(SNAP_VERSION_SUFFIX "-${SNAP_VERSION_PRERELEASE}")
+    set(SNAP_RC_FILEFLAGS "VS_FF_PRERELEASE")
+else()
+    set(SNAP_VERSION_SUFFIX "")
+    set(SNAP_RC_FILEFLAGS "0x0L")
+endif()
+set(SNAP_VERSION_FULL "${PROJECT_VERSION}${SNAP_VERSION_SUFFIX}")
+# The title screen's credits face has no hyphen (src/version.h.in).
+string(REPLACE "-" " " SNAP_VERSION_CREDITS "${SNAP_VERSION_FULL}")
+if (MSVC)
+    enable_language(RC)
+endif()
+
+# =============================================================================
 # Options
 # =============================================================================
 option(BUILD_RT64 "Build RT64 rendering backend" ON)
 
-message(STATUS "PokemonSnapRecomp v${PROJECT_VERSION}")
+message(STATUS "${SNAP_PRODUCT_NAME} ${SNAP_VERSION_FULL}")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
 # =============================================================================
@@ -27,7 +51,7 @@ else()
 endif()
 
 # =============================================================================
-# RT64 â€” static rendering backend
+# RT64 -- static rendering backend
 # =============================================================================
 if (BUILD_RT64)
     set(RT64_STATIC ON CACHE BOOL "Build RT64 as a static library" FORCE)
@@ -51,7 +75,7 @@ endif()
 add_subdirectory(lib/N64ModernRuntime EXCLUDE_FROM_ALL)
 
 # =============================================================================
-# Recompiled functions â€” static library from N64Recomp output
+# Recompiled functions -- static library from N64Recomp output
 # =============================================================================
 file(GLOB RECOMP_FUNC_SOURCES
     "${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs/funcs_*.c"
@@ -173,6 +197,7 @@ endif()
 set(SNAP_SOURCES
     ${SNAP_PATCH_SOURCES}
     src/main.cpp
+    src/paths.cpp
     src/rt64_render_context.cpp
     src/rsp_microcode.cpp
     src/audio.cpp
@@ -202,10 +227,23 @@ if (NOT MSVC)
     set_source_files_properties("${SNAP_ASPMAIN_CPP}" PROPERTIES COMPILE_OPTIONS "-msse4.1")
 endif()
 
-add_executable(PokemonSnapRecomp ${SNAP_SOURCES})
+# The identity header and the Windows version resource are written from
+# src/version.h.in and src/snap64.rc.in with the numbers above; the sources
+# include "version.h" and find the generated one because src/version.h no
+# longer exists.
+configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/version.h.in"
+               "${CMAKE_CURRENT_BINARY_DIR}/generated/version.h" @ONLY)
+if (MSVC)
+    configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/snap64.rc.in"
+                   "${CMAKE_CURRENT_BINARY_DIR}/generated/snap64.rc" @ONLY)
+    list(APPEND SNAP_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/generated/snap64.rc")
+endif()
 
-target_include_directories(PokemonSnapRecomp PRIVATE
+add_executable(Snap64Recomp ${SNAP_SOURCES})
+
+target_include_directories(Snap64Recomp PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
+    "${CMAKE_CURRENT_BINARY_DIR}/generated"
     "${CMAKE_CURRENT_SOURCE_DIR}/RecompiledFuncs"
     "${CMAKE_CURRENT_SOURCE_DIR}/lib/N64ModernRuntime/N64Recomp/include"
     "${CMAKE_CURRENT_SOURCE_DIR}/lib/N64ModernRuntime/librecomp/include"
@@ -216,7 +254,7 @@ target_include_directories(PokemonSnapRecomp PRIVATE
 
 # RT64 include paths (for rt64_application.h, etc.)
 if (BUILD_RT64)
-    target_include_directories(PokemonSnapRecomp PRIVATE
+    target_include_directories(Snap64Recomp PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src"
         "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib"
         "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/hlslpp/include"
@@ -224,11 +262,11 @@ if (BUILD_RT64)
         "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/imgui"
         "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/mupen64plus-core/src/api"
     )
-    target_compile_definitions(PokemonSnapRecomp PRIVATE HAS_RT64=1 HLSL_CPU FFX_GCC)
+    target_compile_definitions(Snap64Recomp PRIVATE HAS_RT64=1 HLSL_CPU FFX_GCC)
 if (WIN32)
-    target_compile_definitions(PokemonSnapRecomp PRIVATE NOMINMAX)
+    target_compile_definitions(Snap64Recomp PRIVATE NOMINMAX)
     # Game threads inherit the image default; recompiled call chains need Linux-like depth.
-    target_link_options(PokemonSnapRecomp PRIVATE /STACK:8388608 /MAP)
+    target_link_options(Snap64Recomp PRIVATE /STACK:8388608 /MAP)
 endif()
 endif()
 
@@ -238,7 +276,7 @@ endif()
 # link.exe resolves cyclic static libraries on its own and reports the GNU
 # flags as LNK4044 on every link, so they are only passed where they mean
 # something.
-target_link_libraries(PokemonSnapRecomp PRIVATE
+target_link_libraries(Snap64Recomp PRIVATE
     recomp_funcs
     librecomp
     ultramodern
@@ -253,9 +291,9 @@ if (MSVC)
     # the --allow-multiple-definition that serves the same purpose under GNU
     # ld, which also covers symbols such as guMtxF2L appearing in several
     # overlay sections.
-    target_link_options(PokemonSnapRecomp PRIVATE /FORCE:MULTIPLE /IGNORE:4006 /IGNORE:4088)
+    target_link_options(Snap64Recomp PRIVATE /FORCE:MULTIPLE /IGNORE:4006 /IGNORE:4088)
 else()
-    target_link_options(PokemonSnapRecomp PRIVATE
+    target_link_options(Snap64Recomp PRIVATE
         -Wl,--start-group
         -Wl,--end-group
         -Wl,--allow-multiple-definition
@@ -263,12 +301,12 @@ else()
 endif()
 
 if (BUILD_RT64)
-    target_link_libraries(PokemonSnapRecomp PRIVATE rt64)
+    target_link_libraries(Snap64Recomp PRIVATE rt64)
 endif()
 
 # Platform-specific link flags
 if (UNIX AND NOT APPLE)
-    target_link_libraries(PokemonSnapRecomp PRIVATE
+    target_link_libraries(Snap64Recomp PRIVATE
         pthread
         dl
     )
@@ -276,13 +314,123 @@ endif()
 
 # Compiler warnings for game code
 if (NOT MSVC)
-    target_compile_options(PokemonSnapRecomp PRIVATE -Wall -Wextra -Wno-unused-parameter)
+    target_compile_options(Snap64Recomp PRIVATE -Wall -Wextra -Wno-unused-parameter)
 endif()
 
 # =============================================================================
-# Installation
+# Runtime files next to the executable
 # =============================================================================
-install(TARGETS PokemonSnapRecomp DESTINATION bin)
+# A fresh build directory must run without hand-copying (the copies in
+# build-win/Release were placed by hand). SDL2.dll is the SDL target's own
+# output; the DXC pair is what rt64 loads at run time, taken from the same
+# place lib/rt64/CMakeLists.txt copies it into rt64's own binary dir (an
+# ignored tree -- see VENDORING.md); the PNG is the title screen's "Recomp"
+# badge (menu_assets.cpp). copy_if_different takes several sources when the
+# last argument is a directory.
+if (WIN32)
+    set(SNAP_DXC_BIN "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/dxc/bin/x64")
+    set(SNAP_RUNTIME_DLLS "$<TARGET_FILE:SDL2>")
+    if (BUILD_RT64)
+        list(APPEND SNAP_RUNTIME_DLLS "${SNAP_DXC_BIN}/dxcompiler.dll" "${SNAP_DXC_BIN}/dxil.dll")
+    endif()
+    add_custom_command(TARGET Snap64Recomp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different ${SNAP_RUNTIME_DLLS} "$<TARGET_FILE_DIR:Snap64Recomp>"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:Snap64Recomp>/menu_text"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/menu_text/recomp_logo.png"
+            "$<TARGET_FILE_DIR:Snap64Recomp>/menu_text/recomp_logo.png"
+        COMMENT "Placing the runtime DLLs and menu_text/ next to Snap64Recomp.exe"
+        VERBATIM)
+endif()
+
+# =============================================================================
+# Installation and packaging: one flat, portable folder (README "Where things live")
+# =============================================================================
+# The package is the Windows one (cpack -C Release in the build directory
+# writes Snap64Recomp-<version>-win64.zip); the licence list below names the
+# trees the Windows build compiles.
+install(TARGETS Snap64Recomp RUNTIME DESTINATION .)
+if (WIN32)
+    install(FILES ${SNAP_RUNTIME_DLLS} DESTINATION .)
+    # The /MAP output. The [SNAP-AV] crash report (main.cpp) prints image RVAs
+    # that are symbolised against this file; a user's crash log is unreadable
+    # without it.
+    install(FILES "$<TARGET_FILE_DIR:Snap64Recomp>/$<TARGET_FILE_BASE_NAME:Snap64Recomp>.map"
+            DESTINATION . OPTIONAL)
+endif()
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/menu_text/recomp_logo.png" DESTINATION menu_text)
+install(FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
+    "${CMAKE_CURRENT_SOURCE_DIR}/NOTICE.md"
+    "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
+    DESTINATION .)
+
+# Third-party licence texts, copied from the vendored trees at install time so
+# they can never drift from the code that was built. name|path pairs; the
+# name becomes licenses/<name>.txt. NOTICE.md lists the same components.
+set(SNAP_THIRD_PARTY_LICENSES
+    "SDL2|lib/SDL/LICENSE.txt"
+    "RT64|lib/rt64/LICENSE"
+    "N64ModernRuntime|lib/N64ModernRuntime/COPYING"
+    "N64Recomp|lib/N64ModernRuntime/N64Recomp/LICENSE"
+    "DirectX-Headers|lib/DirectX-Headers/LICENSE"
+    "plume|lib/rt64/src/contrib/plume/LICENSE"
+    "re-spirv|lib/rt64/src/contrib/re-spirv/LICENSE"
+    "zstd|lib/rt64/src/contrib/zstd/LICENSE"
+    "nativefiledialog-extended|lib/rt64/src/contrib/nativefiledialog-extended/LICENSE"
+    "imgui|lib/rt64/src/contrib/imgui/LICENSE.txt"
+    "im3d|lib/rt64/src/contrib/im3d/LICENSE"
+    "implot|lib/rt64/src/contrib/implot/LICENSE"
+    "hlslpp|lib/rt64/src/contrib/hlslpp/LICENSE"
+    "ddspp|lib/rt64/src/contrib/ddspp/LICENSE"
+    "stb|lib/rt64/src/contrib/stb/LICENSE"
+    "xxHash|lib/rt64/src/contrib/xxHash/LICENSE"
+    "mupen64plus-core|lib/rt64/src/contrib/mupen64plus-core/LICENSES"
+    "miniz|lib/N64ModernRuntime/thirdparty/miniz/LICENSE"
+    "o1heap|lib/N64ModernRuntime/thirdparty/o1heap/LICENSE"
+    "sljit|lib/N64ModernRuntime/N64Recomp/lib/sljit/LICENSE"
+    "fmt|lib/N64ModernRuntime/N64Recomp/lib/fmt/LICENSE"
+    "rabbitizer|lib/N64ModernRuntime/N64Recomp/lib/rabbitizer/LICENSE"
+    "tomlplusplus|lib/N64ModernRuntime/N64Recomp/lib/tomlplusplus/LICENSE"
+)
+foreach(_entry IN LISTS SNAP_THIRD_PARTY_LICENSES)
+    string(REPLACE "|" ";" _pair "${_entry}")
+    list(GET _pair 0 _name)
+    list(GET _pair 1 _file)
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/${_file}" DESTINATION licenses RENAME "${_name}.txt")
+endforeach()
+# concurrentqueue ships its licence only as the header's leading comment
+# (everything before "#pragma once"); cut that out at configure time.
+file(READ "${CMAKE_CURRENT_SOURCE_DIR}/lib/N64ModernRuntime/thirdparty/concurrentqueue/concurrentqueue.h" _cq_head LIMIT 8192)
+string(FIND "${_cq_head}" "#pragma once" _cq_end)
+if (_cq_end LESS 1)
+    message(FATAL_ERROR "concurrentqueue.h: no '#pragma once' in the first 8 KB; its licence comment could not be cut out")
+endif()
+string(SUBSTRING "${_cq_head}" 0 ${_cq_end} _cq_license)
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/licenses/concurrentqueue.txt" "${_cq_license}")
+install(FILES "${CMAKE_CURRENT_BINARY_DIR}/generated/licenses/concurrentqueue.txt" DESTINATION licenses)
+# Tracked in the repository because the vendored copies carry no licence file:
+# nlohmann/json has only an SPDX header, and the DXC binaries ship without
+# their LICENSE.TXT (the text was copied from upstream; BUILDING.md, step 13).
+# A package without the DXC licence is not produced.
+if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/licenses/DirectXShaderCompiler.txt")
+    message(WARNING "licenses/DirectXShaderCompiler.txt is missing; cpack stops until it is added (BUILDING.md, step 13)")
+endif()
+install(FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/licenses/nlohmann-json.txt"
+    "${CMAKE_CURRENT_SOURCE_DIR}/licenses/DirectXShaderCompiler.txt"
+    DESTINATION licenses)
+
+# cpack -C Release (from the build directory) -> Snap64Recomp-<version>-win64.zip
+# with a top-level folder of the same name, and a .sha256 beside it.
+set(CPACK_GENERATOR "ZIP")
+set(CPACK_PACKAGE_NAME "Snap64Recomp")
+set(CPACK_PACKAGE_VERSION "${SNAP_VERSION_FULL}")
+set(CPACK_PACKAGE_FILE_NAME "Snap64Recomp-${SNAP_VERSION_FULL}-win64")
+set(CPACK_PACKAGE_CHECKSUM SHA256)
+set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY ON)
+set(CPACK_SOURCE_GENERATOR "")
+include(CPack)
 
 # =============================================================================
 # Summary

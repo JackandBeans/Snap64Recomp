@@ -1,6 +1,6 @@
 /**
  * @file rsp_microcode.h
- * @brief RSP microcode dispatch for WaveRace64-Recomp.
+ * @brief RSP microcode dispatch for Snap64 Recomp.
  *
  * Pokemon Snap uses the F3DEX microcode (a variant of Fast3D) for its
  * display list processing. This module maps OSTask types to the

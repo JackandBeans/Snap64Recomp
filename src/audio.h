@@ -1,6 +1,6 @@
 /**
  * @file audio.h
- * @brief Audio callbacks for WaveRace64-Recomp.
+ * @brief Audio callbacks for Snap64 Recomp.
  *
  * Provides SDL2-based audio output callbacks that match the
  * ultramodern::audio_callbacks_t interface.
