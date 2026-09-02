@@ -57,11 +57,15 @@ namespace RT64 {
         Timestamp presentTimestamp;
         VIHistory viHistory;
         bool presentWaitEnabled = false;
-        // Pokemon Snap port: whether the swap chain is currently letting the
-        // display pace presents. Tracked so the mode is only pushed when it
-        // actually changes; on some backends setting it forces the swap chain
-        // to be rebuilt.
-        bool swapChainDisplayPaced = false;
+        // Pokemon Snap port: what the swap chain was last told about syncing
+        // presents to the display, and whether it has been told anything yet.
+        // The mode is pushed on the first present and then only when it
+        // changes, because on Vulkan a change rebuilds the swap chain. Until
+        // the first push the value here is meaningless, hence the second flag:
+        // the present thread must not trust a guess about the backend's
+        // creation default.
+        bool swapChainVsyncEnabled = false;
+        bool swapChainVsyncKnown = false;
 
         PresentQueue();
         ~PresentQueue();

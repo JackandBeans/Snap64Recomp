@@ -39,6 +39,22 @@ namespace {
         return scheduled;
     }
 
+    // Pokemon Snap port: whether the present thread's own timer is spacing
+    // presents, which is the one case the swap chain must not sync them to
+    // the display. The timer runs only when the port interpolates to a rate
+    // above the game's (targetRate > viOriginalRate) that is still below the
+    // display's: there its sleep sets the cadence, and a sync interval on top
+    // of it would round each present to the next refresh and space them
+    // unevenly. In every other case -- the game's own rate (targetRate 0, or
+    // a manual rate the game already meets) and a target at or above the
+    // display's rate -- nothing else spaces the presents, so the display must.
+    // One rule, shared by the swap chain switch and the pacing report, so the
+    // report can never describe a mode the switch is not in.
+    bool snapSoftwarePaced(uint32_t targetRate, uint32_t viOriginalRate, uint32_t displayRate) {
+        const bool displayMatched = (displayRate > 0) && (targetRate >= displayRate);
+        return (targetRate > 0) && (targetRate > viOriginalRate) && !displayMatched;
+    }
+
     // Written at half resolution by default: the artifact is full-screen scale
     // and half res keeps a burst of captures in the tens of megabytes. A
     // sprite-sized artifact needs the real pixels -- SNAP_PCAP_FULL keeps them.
@@ -753,26 +769,46 @@ namespace {
 
             if (presentFrame && swapChainValid) {
                 // Wait until the approximate time the next present should be at the current intended rate.
-                // Pokemon Snap port: when the port is interpolating to the
-                // display's own rate, the display sets the cadence. Pacing
-                // these presents from a software clock instead leaves two
-                // clocks running at almost the same speed and never in step,
-                // and they beat against each other: every few seconds a
-                // present lands twice inside one refresh and is never seen,
-                // or none lands and a refresh repeats. Frame after frame
-                // arrives exactly on time by every internal measure while the
-                // picture visibly stutters and doubles, worst during a smooth
-                // pan where the eye tracks the motion. Handing the wait to the
-                // display puts every frame on a refresh boundary, which is the
-                // only way this is smooth at any rate the display runs at.
+                // Pokemon Snap port: the display syncs every present unless
+                // this thread's own timer is spacing them (snapSoftwarePaced
+                // above). At the game's own rate each VI frame is queued by
+                // the VI thread and goes out on the next refresh; when the
+                // port interpolates to the display's rate, the display sets
+                // the cadence outright. Pacing either from a software clock
+                // instead leaves two clocks running at almost the same speed
+                // and never in step, and they beat against each other: every
+                // few seconds a present lands twice inside one refresh and is
+                // never seen, or none lands and a refresh repeats. Frame after
+                // frame arrives exactly on time by every internal measure
+                // while the picture visibly stutters and doubles, worst during
+                // a smooth pan where the eye tracks the motion. Handing the
+                // wait to the display puts every frame on a refresh boundary.
+                //
+                // The switch is pushed on the first present and then only on a
+                // change: on Vulkan a change rebuilds the swap chain. Pushing
+                // it once up front means the port never leans on a backend's
+                // creation default. The earlier rule synced only while
+                // interpolating to the display's rate, and its detector began
+                // at "off", which happened to match the created swap chain at
+                // the game's rate -- so a session that visited Display and
+                // came back to Original pushed vsync off and nothing turned it
+                // on again, and presents free-ran unsynchronised from then on.
                 const uint32_t displayRate = ext.sharedResources->swapChainRate;
-                const bool displayPaced = (targetRate > 0) && (displayRate > 0) && (targetRate >= displayRate);
-                if (displayPaced != swapChainDisplayPaced) {
-                    ext.swapChain->setVsyncEnabled(displayPaced);
-                    swapChainDisplayPaced = displayPaced;
+                const bool softwarePaced = snapSoftwarePaced(targetRate, viOriginalRate, displayRate);
+                const bool wantVsync = !softwarePaced;
+                if (!swapChainVsyncKnown || (wantVsync != swapChainVsyncEnabled)) {
+                    ext.swapChain->setVsyncEnabled(wantVsync);
+                    swapChainVsyncEnabled = wantVsync;
+                    swapChainVsyncKnown = true;
+                    if (snapdiag::statsEnabled()) {
+                        fprintf(stdout, "[SNAP-VSYNC] %s: display %u Hz, target %u, game %u, presents paced by the %s\n",
+                            wantVsync ? "on" : "off", displayRate, targetRate, viOriginalRate,
+                            wantVsync ? "display" : "software timer");
+                        fflush(stdout);
+                    }
                 }
 
-                if (!displayPaced && (presentTimestamp != Timestamp()) && (targetRate > 0) && (targetRate > viOriginalRate)) {
+                if (softwarePaced && (presentTimestamp != Timestamp())) {
                     Timer::preciseSleepUntil(presentTimestamp + std::chrono::nanoseconds(1'000'000'000 / targetRate));
                 }
 
@@ -1032,10 +1068,11 @@ namespace {
                             // What the picture is actually being paced against.
                             // Presenting faster than the display can show is
                             // torn, unevenly spaced frames however good every
-                            // other number here looks.
+                            // other number here looks. Same rule as the swap
+                            // chain switch, so this names the mode it is in.
                             fprintf(stdout, "[SNAP-PACE]   display %u Hz, target %u, game %u, presenting %s\n",
                                 ext.sharedResources->swapChainRate, targetRate, viOriginalRate,
-                                ((targetRate > 0) && (ext.sharedResources->swapChainRate > 0) && (targetRate >= ext.sharedResources->swapChainRate)) ? "in step with the display" : "as fast as it can");
+                                snapSoftwarePaced(targetRate, viOriginalRate, ext.sharedResources->swapChainRate) ? "from the software timer, unsynced" : "in step with the display");
                             const uint32_t drawnFrames = snapdiag::drawnFrameCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t logicSteps = snapdiag::logicStepCounter().exchange(0, std::memory_order_relaxed);
                             const uint32_t skippedDraws = snapdiag::skippedDrawCounter().exchange(0, std::memory_order_relaxed);
