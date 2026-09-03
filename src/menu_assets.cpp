@@ -1100,8 +1100,8 @@ void stage_menu_strings(uint8_t* rdram) {
             // The help face has no J, no V and no hyphen: the description
             // says what turns purple and where to see it (Jynx dance in
             // the Cave), not the name, "VC" or "re-release".
-            strip = compose_lines("Jynx gets the purple face and hands of",
-                                  "the Wii and Switch releases. Cave only.");
+            strip = compose_lines("Off keeps the black Jynx of the cartridge.",
+                                  "On, the purple Jynx of the Wii and Switch.");
             w = strip.width;
             h = strip.height;
         }
