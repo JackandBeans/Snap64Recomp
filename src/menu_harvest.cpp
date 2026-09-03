@@ -834,13 +834,177 @@ void dump_bitmap(FILE* f, const char* name, const MenuBitmap& b) {
 
 } // namespace
 
+
+// --- the title menu's face -----------------------------------------------------
+// The title screen's items ("New Game", "Continue", "Gallery", "Options") are
+// whole-word sprites in a larger face: a white core inside a dark ring one to
+// two pixels wide with a soft fringe beyond, the cores one column apart so
+// neighbouring rings share a column. Segmented on the white core, since the
+// rings would merge every letter into one run; each cell keeps two columns
+// either side for its ring, and a neighbour's core caught in those columns
+// becomes ring, so a cell is one letter's. "Continue" is left out (its u and
+// e touch) and so is "Gallery" (two bitmap rows; the decoder reads the
+// first); "No Controller Connected" is the same face and supplies the rest.
+// The capital S no title word contains is the port's, below.
+constexpr Source kTitleSources[] = {
+    { 0x8034B920, "New Game" },
+    { 0x802F6490, "Options" },
+    { 0x8034FAD8, "No Controller Connected" },
+};
+
+// Core rows only (kMenuTtlCapH of them); the ring is generated.
+constexpr SynthGlyph kTitleSynth[] = {
+    { 'S', { ".#####.", "##...##", "##.....", "###....", ".####..", "...###.", ".....##", ".....##", "##...##", ".#####.", "", "" } },
+};
+
+bool title_core(const Px& p) {
+    return (p.a >= Core) && (p.i >= Core);
+}
+
+// A title cell: two columns of margin either side of the core run, the
+// kMenuTtlCellH rows from the row above the core's top; a neighbour's core
+// in the margin is replaced by ring.
+Cell cut_title_cell(const Img& img, int s, int e, int top) {
+    Cell c;
+    const int x0 = std::max(0, s - 2);
+    const int x1 = std::min(img.w, e + 2);
+    c.w = x1 - x0;
+    c.cs = s - x0;
+    c.ce = e - x0;
+    c.px.assign(size_t(c.w) * size_t(kMenuTtlCellH), Px{});
+    for (int r = 0; r < kMenuTtlCellH; r++) {
+        const int y = top - 1 + r;
+        if ((y < 0) || (y >= img.h)) {
+            continue;
+        }
+        for (int x = x0; x < x1; x++) {
+            Px p = img.at(x, y);
+            if (((x < s) || (x >= e)) && title_core(p)) {
+                p = Px{ 0, 220 };
+            }
+            c.px[size_t(r) * size_t(c.w) + size_t(x - x0)] = p;
+        }
+    }
+    return c;
+}
+
+// A title letter of the port's own: the core at cell rows 1..kMenuTtlCapH,
+// then the ring by dilation, one pixel of opaque dark and one of soft dark,
+// the way the originals' rings read.
+Cell synth_title(const SynthGlyph& g) {
+    const int coreW = int(std::strlen(g.rows[0]));
+    Cell c;
+    c.w = coreW + 4;
+    c.cs = 2;
+    c.ce = 2 + coreW;
+    c.px.assign(size_t(c.w) * size_t(kMenuTtlCellH), Px{});
+    std::vector<bool> core(c.px.size(), false);
+    for (int r = 0; r < kMenuTtlCapH; r++) {
+        const int w = int(std::strlen(g.rows[r]));
+        for (int x = 0; x < w; x++) {
+            if (g.rows[r][x] == '#') {
+                core[size_t(1 + r) * size_t(c.w) + size_t(2 + x)] = true;
+            }
+        }
+    }
+    auto near = [&](int y, int x, int d) {
+        for (int dy = -d; dy <= d; dy++) {
+            for (int dx = -d; dx <= d; dx++) {
+                const int ny = y + dy;
+                const int nx = x + dx;
+                if ((ny >= 0) && (ny < kMenuTtlCellH) && (nx >= 0) && (nx < c.w) &&
+                    core[size_t(ny) * size_t(c.w) + size_t(nx)]) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    for (int y = 0; y < kMenuTtlCellH; y++) {
+        for (int x = 0; x < c.w; x++) {
+            Px& p = c.px[size_t(y) * size_t(c.w) + size_t(x)];
+            if (core[size_t(y) * size_t(c.w) + size_t(x)]) {
+                p = Px{ 255, 255 };
+            }
+            else if (near(y, x, 1)) {
+                p = Px{ 0, 230 };
+            }
+            else if (near(y, x, 2)) {
+                p = Px{ 0, 100 };
+            }
+        }
+    }
+    return c;
+}
+
+bool harvest_title(const Segment& seg, Table& ttl, std::string& why) {
+    for (const Source& src : kTitleSources) {
+        Img img;
+        if (!decode_sprite(seg, src.vram, img, why)) {
+            return false;
+        }
+        int top = -1;
+        for (int y = 0; (y < img.h) && (top < 0); y++) {
+            for (int x = 0; x < img.w; x++) {
+                if (title_core(img.at(x, y))) {
+                    top = y;
+                    break;
+                }
+            }
+        }
+        if (top < 0) {
+            note_skip(src.vram, "title word has no core", 0, 1);
+            continue;
+        }
+        std::vector<bool> occ(size_t(img.w), false);
+        for (int x = 0; x < img.w; x++) {
+            for (int y = 0; y < img.h; y++) {
+                if (title_core(img.at(x, y))) {
+                    occ[size_t(x)] = true;
+                    break;
+                }
+            }
+        }
+        std::vector<Span> runs;
+        for (int x = 0; x < img.w;) {
+            if (!occ[size_t(x)]) {
+                x++;
+                continue;
+            }
+            const int s = x;
+            while ((x < img.w) && occ[size_t(x)]) {
+                x++;
+            }
+            runs.push_back(Span{ s, x });
+        }
+        const std::string expect = without_spaces(src.text);
+        if (runs.size() != expect.size()) {
+            note_skip(src.vram, "title runs vs chars", runs.size(), expect.size());
+            continue;
+        }
+        for (size_t i = 0; i < expect.size(); i++) {
+            const char ch = expect[i];
+            if (ttl.count(ch) != 0) {
+                continue;
+            }
+            ttl[ch] = cut_title_cell(img, runs[i].first, runs[i].second, top);
+        }
+    }
+    for (const SynthGlyph& s : kTitleSynth) {
+        if (ttl.count(s.ch) == 0) {
+            ttl[s.ch] = synth_title(s);
+        }
+    }
+    return true;
+}
+
 bool harvest_menu_font(const uint8_t* rdram, MenuFont& out) {
     if (rdram == nullptr) {
         return false;
     }
     const Segment seg(rdram);
     MenuFont font;
-    Table body, hdr, crd, hlp;
+    Table body, hdr, crd, hlp, ttl;
     KernTable kern, spaceKern;
     std::string why;
     if (!harvest_body(seg, body, why) ||
@@ -855,13 +1019,21 @@ bool harvest_menu_font(const uint8_t* rdram, MenuFont& out) {
     pack_face(hdr, kMenuHdrCellH, font.hdr);
     pack_face(crd, kMenuFontCellH, font.crd);
     pack_face(hlp, kMenuHlpCellH, font.hlp);
+    // The title face is the one that may be missing: a title entry that
+    // cannot be composed is left out by the patch, nothing else changes.
+    if (harvest_title(seg, ttl, why)) {
+        pack_face(ttl, kMenuTtlCellH, font.ttl);
+    }
+    else {
+        printf("[SNAP-MENU] title face not harvested: %s\n", why.c_str());
+    }
     pack_kern(kern, font.hlpKern);
     pack_kern(spaceKern, font.hlpSpaceKern);
     font.ready = true;
     out = std::move(font);
-    printf("[SNAP-MENU] menu font harvested from RDRAM: %zu body, %zu header, %zu credits, %zu help glyphs; "
+    printf("[SNAP-MENU] menu font harvested from RDRAM: %zu body, %zu header, %zu credits, %zu help, %zu title glyphs; "
            "%zu+%zu kern pairs; dot %dx%d (text at %d), chevrons %dx%d and %dx%d\n",
-           out.body.glyphs.size(), out.hdr.glyphs.size(), out.crd.glyphs.size(), out.hlp.glyphs.size(),
+           out.body.glyphs.size(), out.hdr.glyphs.size(), out.crd.glyphs.size(), out.hlp.glyphs.size(), out.ttl.glyphs.size(),
            out.hlpKern.size(), out.hlpSpaceKern.size(), out.dot.w, out.dot.h, out.dotTextStart,
            out.brkL.w, out.brkL.h, out.brkR.w, out.brkR.h);
     if (snapdiag::statsEnabled()) {
@@ -885,6 +1057,8 @@ bool dump_menu_font(const MenuFont& font, const char* path) {
     dump_face(f, "crd", font.crd);
     fprintf(f, ", ");
     dump_face(f, "hlp", font.hlp);
+    fprintf(f, ", ");
+    dump_face(f, "ttl", font.ttl);
     fprintf(f, ", ");
     dump_kern(f, "hlp_kern", font.hlpKern);
     fprintf(f, ", ");

@@ -104,6 +104,10 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *               the Snap Station boot's memory test sweeps 0x80400000-0x807FFFF0
  *   +0x34  u8   MBOX_SEL, the patch's own: the current selection,
  *               readable from every coroutine
+ *   +0x38  u8   MBOX_TITLE_REQ: the title's Snap Station item was chosen;
+ *               the host reads it, clears it, attaches the station
+ *   +0x50  u32  SCRATCH_TITLE_GOBJ, the patch's own: the title's Snap
+ *               Station label, between its creation and its deletion
  *   +0x100      SCRATCH_ARRAYS, the page's pointer and snapshot arrays
  *
  * The host never touches anything the map calls the patch's own. */
@@ -179,6 +183,10 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  * the description says what changes and where, never the name. */
 #define STR_JYNX_LABEL  88
 #define STR_JYNX_DESC   89
+/* "Snap Station" in the title menu's own face, for the title's fifth item
+ * (the title section at the end of this file). Width 0 when the port could
+ * not compose it, and then there is no fifth item. */
+#define STR_TITLE_STATION 90
 
 /* The SOUND bank of the mailbox: its own sequence word and value bytes
  * (percent volumes; stereo and background-mute booleans). The patched
@@ -1685,3 +1693,338 @@ void func_800E2058_A095E8(void) {
  * the intro's own objects are deleted at its end, and the badge the
  * player sees arrives with the static title build above, revealed under
  * the same flash that brings the logo in. */
+
+
+/* =========================================================================
+ * The title screen's fifth item: Snap Station
+ *
+ * The title menu is built by func_800E33C8_A0A958 from four whole-word
+ * sprites ("New Game", "Continue", "Gallery", "Options") into the cursor
+ * loop's four-slot buffer, positioned from a 3x4 table of y values that
+ * re-centres the block for two, three or four items. There is no fifth slot
+ * anywhere: the buffer, the table and the dispatch (func_800E37E8_A0AD78)
+ * all end at four. The functions below are the stock ones with one more
+ * item, "Snap Station", shown whenever "Gallery" is (the saved report holds
+ * more than three species: the kiosk needed photos too). Its label is a
+ * strip the port composes from the title face's own letters (menu_harvest.cpp
+ * cuts them out of the word sprites; STR_TITLE_STATION) and it rides the
+ * stock labels' lifecycle: created where they are (func_800E281C_A09DAC),
+ * positioned, shown and tinted by the builder, pulsed by the stock cursor
+ * process, hidden by B with the rest, deleted where they are
+ * (func_800E1B78_A09108). Its GObj lives in a scratch word of the mailbox,
+ * since a patch has no data of its own.
+ *
+ * Choosing it sets MBOX_TITLE_REQ for the host, which makes port 4 carry
+ * the station for the rest of the run (src/snap_station.cpp), and then goes
+ * where Gallery goes: the same sound, the same fade, the same scene. The
+ * Gallery's own watcher finds the printer and shows Print; everything from
+ * there is the game's and the station's. When the label is absent (a strip
+ * of width 0: the title face did not harvest), the menu is the stock four.
+ * ========================================================================= */
+#define MBOX_TITLE_REQ     (*(volatile u8*)  (SNAP_GFX_MAILBOX + 0x38))
+#define SCRATCH_TITLE_GOBJ (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x50))
+
+/* Five rows at the stock four-row pitch of 18, begun one row above the
+ * four-row block's 120: ink from 105 to 189, below the logo (whose lowest
+ * stroke ends near 100) and above the copyright block (from 195). The
+ * label strip is 128 wide with its text centred, so its x centres it on
+ * the column the stock words share. */
+#define TITLE_ROW_Y(i)   (104 + (i) * 18)
+#define TITLE_STATION_X  96
+
+extern s8 D_800E80D0_A0F660;     /* the Gallery is unlocked */
+extern s8 D_800E82ED_A0F87D;     /* a save exists */
+extern u8 D_800E82E4_A0F874;     /* the title's state */
+extern u32 D_800E82E8_A0F878;    /* idle frames */
+extern s8 D_800BF051;
+extern GObj* D_800E82C0_A0F850;
+extern GObj* D_800E82C4_A0F854;
+extern GObj* D_800E82C8_A0F858;
+extern GObj* D_800E82CC_A0F85C;  /* New Game */
+extern GObj* D_800E82D0_A0F860;  /* Continue */
+extern GObj* D_800E82D4_A0F864;  /* Gallery */
+extern GObj* D_800E82D8_A0F868;  /* Options */
+extern GObj* D_800E82DC_A0F86C;
+extern GObj* D_800E82E0_A0F870;
+void func_800E3240_A0A7D0(GObj* gobj);
+s32 func_800E3E28_A0B3B8(void);
+void func_800E1AEC_A0907C(void);
+void func_800E1AD4_A09064(void);
+void func_800E2348_A098D8(void);
+void func_800E23E4_A09974(void);
+void func_800E2480_A09A10(void);
+void func_800E251C_A09AAC(void);
+void func_800E25B8_A09B48(void);
+void func_800E2654_A09BE4(void);
+void func_800E2780_A09D10(void);
+s32 func_800E1CCC_A0925C(void);
+s32 checkPlayerFlag(s32 pfid);
+void auSetBGMVolumeSmooth(s32 playerID, u32 vol, u32 time);
+void func_800E1B78_A09108(u8 arg0);   /* replaced below; used before that */
+
+/* The label, or NULL when the port staged no strip for it. Hidden until
+ * the builder shows it; no SP_TEXSHUF, since the strip is staged for the
+ * plain load the pages' strips use. */
+static GObj* snap_title_station_label(void) {
+    Sprite* sp;
+    GObj* gobj;
+
+    if ((DIR_MAGIC != 0x53474130) || ((u32) STR_TITLE_STATION >= DIR_COUNT)) {
+        return NULL;
+    }
+    if (DIR_W(STR_TITLE_STATION) <= 0) {
+        return NULL;
+    }
+    sp = snap_build_sprite(STR_TITLE_STATION, TITLE_STATION_X, TITLE_ROW_Y(3), G_IM_FMT_IA);
+    if (sp == NULL) {
+        return NULL;
+    }
+    gobj = ohCreateSprite(0xE, ohUpdateDefault, 0, 0x80000000, renDrawSprite, 1, 0x80000000, -1,
+                          sp, 0, NULL, 1);
+    if (gobj == NULL) {
+        return NULL;
+    }
+    func_800E18A0_A08E30(gobj->data.sobj, SP_HIDDEN | SP_TRANSPARENT);
+    func_800E18E0_A08E70(gobj->data.sobj, 0x80, 0x80, 0x80);
+    return gobj;
+}
+
+/* Stock, plus the Snap Station label beside the Gallery's. */
+void func_800E281C_A09DAC(void) {
+    switch (D_800BF051) {
+        case 0:
+            D_800E82ED_A0F87D = checkPlayerFlag(PFID_16);
+            func_800E2348_A098D8();
+            func_800E23E4_A09974();
+            D_800E80D0_A0F660 = func_800E1CCC_A0925C();
+            SCRATCH_TITLE_GOBJ = 0;
+            if (D_800E80D0_A0F660 == 1) {
+                func_800E251C_A09AAC();
+                SCRATCH_TITLE_GOBJ = (u32) snap_title_station_label();
+            }
+            func_800E25B8_A09B48();
+            if (D_800E82ED_A0F87D != 0) {
+                func_800E2480_A09A10();
+                func_800E2654_A09BE4();
+            }
+            break;
+        case -1:
+            func_800E2780_A09D10();
+            break;
+    }
+}
+
+/* One row of the list: placed, shown, and the stock unselected tint. */
+static void snap_title_row(GObj* gobj, s16 x, s16 y) {
+    func_800E18FC_A08E8C(gobj->data.sobj, x, y);
+    func_800E18AC_A08E3C(gobj->data.sobj, 1);
+    func_800E18E0_A08E70(gobj->data.sobj, 0xC0, 0xC0, 0);
+}
+
+/* Stock for two, three and four items (the y values are the game's table,
+ * D_800E80E4_A0F674), and five when the Snap Station label exists. */
+u8 func_800E33C8_A0A958(GObj** gobjs) {
+    GObj* station;
+
+    if (D_800E82ED_A0F87D == 0) {
+        gobjs[0] = D_800E82CC_A0F85C;
+        snap_title_row(gobjs[0], 127, 138);
+        gobjs[1] = D_800E82D8_A0F868;
+        snap_title_row(gobjs[1], 128, 162);
+        return 2;
+    }
+    if (D_800E80D0_A0F660 != 1) {
+        gobjs[0] = D_800E82CC_A0F85C;
+        snap_title_row(gobjs[0], 127, 132);
+        gobjs[1] = D_800E82D0_A0F860;
+        snap_title_row(gobjs[1], 128, 150);
+        gobjs[2] = D_800E82D8_A0F868;
+        snap_title_row(gobjs[2], 128, 168);
+        return 3;
+    }
+    station = (GObj*) SCRATCH_TITLE_GOBJ;
+    if (station == NULL) {
+        gobjs[0] = D_800E82CC_A0F85C;
+        snap_title_row(gobjs[0], 127, 120);
+        gobjs[1] = D_800E82D0_A0F860;
+        snap_title_row(gobjs[1], 128, 138);
+        gobjs[2] = D_800E82D4_A0F864;
+        snap_title_row(gobjs[2], 116, 155);
+        gobjs[3] = D_800E82D8_A0F868;
+        snap_title_row(gobjs[3], 128, 174);
+        return 4;
+    }
+    gobjs[0] = D_800E82CC_A0F85C;
+    snap_title_row(gobjs[0], 127, TITLE_ROW_Y(0));
+    gobjs[1] = D_800E82D0_A0F860;
+    snap_title_row(gobjs[1], 128, TITLE_ROW_Y(1));
+    gobjs[2] = D_800E82D4_A0F864;
+    snap_title_row(gobjs[2], 116, TITLE_ROW_Y(2));
+    gobjs[3] = station;
+    snap_title_row(gobjs[3], TITLE_STATION_X, TITLE_ROW_Y(3));
+    gobjs[4] = D_800E82D8_A0F868;
+    snap_title_row(gobjs[4], 128, TITLE_ROW_Y(4));
+    return 5;
+}
+
+/* Stock, with Snap Station between Gallery and Options when its label
+ * exists: the station is requested of the host and the Gallery's own path
+ * is taken. */
+s32 func_800E37E8_A0AD78(s32 arg0, s8 arg1) {
+    s32 station;
+
+    if (D_800E82ED_A0F87D == 0) {
+        switch (arg1) {
+            case 0:
+                auPlaySoundWithParams(0x42, 0x7FFF, 0x40, 1.0f, 0);
+                func_800E1B78_A09108(1);
+                return 6;
+            case 1:
+                auPlaySoundWithParams(0x42, 0x7FFF, 0x40, 1.0f, 0);
+                func_800E1B78_A09108(1);
+                return 8;
+        }
+    } else {
+        switch (arg1) {
+            case 0:
+                if (func_800E3E28_A0B3B8() == 6) {
+                    func_800E1B78_A09108(1);
+                    return 6;
+                } else {
+                    return 4;
+                }
+            case 1:
+                auPlaySoundWithParams(0x40, 0x7FFF, 0x40, 1.0f, 0);
+                func_800E1B78_A09108(0);
+                return 7;
+            default:
+                if (D_800E80D0_A0F660 == 1) {
+                    station = (SCRATCH_TITLE_GOBJ != 0);
+                    if (arg1 == 2) {
+                        auPlaySoundWithParams(0x42, 0x7FFF, 0x40, 1.0f, 0);
+                        func_800E1B78_A09108(0);
+                        return 9;
+                    } else if (station && (arg1 == 3)) {
+                        MBOX_TITLE_REQ = 1;
+                        auPlaySoundWithParams(0x42, 0x7FFF, 0x40, 1.0f, 0);
+                        func_800E1B78_A09108(0);
+                        return 9;
+                    } else if (arg1 == (station ? 4 : 3)) {
+                        auPlaySoundWithParams(0x42, 0x7FFF, 0x40, 1.0f, 0);
+                        func_800E1B78_A09108(1);
+                        return 8;
+                    }
+                } else {
+                    auPlaySoundWithParams(0x42, 0x7FFF, 0x40, 1.0f, 0);
+                    func_800E1B78_A09108(1);
+                    return 8;
+                }
+        }
+    }
+    return 0;
+}
+
+/* Stock, with a five-slot buffer for the list. */
+s32 func_800E3974_A0AF04(s8 arg0) {
+    UnkStruct800BEDF8* temp_v0;
+    GObj* sp54[5];
+    s32 ret;
+    s8 temp_s3;
+    s8 var_s0;
+    u8 i;
+
+    if (D_800E82E4_A0F874 == 4) {
+        var_s0 = 0;
+    } else if (D_800E82ED_A0F87D != 0) {
+        var_s0 = 1;
+    } else {
+        var_s0 = 0;
+    }
+
+    temp_s3 = func_800E33C8_A0A958(sp54);
+    omCreateProcess(sp54[var_s0], func_800E3240_A0A7D0, 0, 1);
+    ohWait(1);
+
+    while (1) {
+        temp_v0 = func_800AA38C(0);
+        if (temp_v0->pressedButtons != 0) {
+            func_800E1AEC_A0907C();
+            func_800E1AD4_A09064();
+        }
+
+        if (D_800E82E8_A0F878 >= 1800 && D_800BF051 == 0) {
+            func_800E1B78_A09108(0);
+            if (arg0 == 0xF) {
+                ret = 11;
+            } else {
+                ret = 10;
+            }
+            break;
+        }
+
+        if (temp_v0->pressedButtons & STICK_SLOW_UP) {
+            auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
+            ohEndAllObjectProcesses(sp54[var_s0]);
+            func_800E18E0_A08E70((sp54[var_s0])->data.sobj, 0xC0, 0xC0, 0);
+            var_s0--;
+            if (var_s0 < 0) {
+                var_s0 = temp_s3 - 1;
+            }
+            omCreateProcess(sp54[var_s0], func_800E3240_A0A7D0, 0, 1);
+        } else if (temp_v0->pressedButtons & STICK_SLOW_DOWN) {
+            auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
+            ohEndAllObjectProcesses(sp54[var_s0]);
+            func_800E18E0_A08E70(sp54[var_s0]->data.sobj, 0xC0, 0xC0, 0);
+            var_s0++;
+            var_s0 %= temp_s3;
+            omCreateProcess(sp54[var_s0], func_800E3240_A0A7D0, 0, 1);
+        } else if (temp_v0->pressedButtons & B_BUTTON) {
+            auPlaySoundWithParams(0x43, 0x7FFF, 0x40, 1.0f, 0);
+            ohEndAllObjectProcesses(sp54[var_s0]);
+            for (i = 0; i < temp_s3; i++) {
+                func_800E18AC_A08E3C(sp54[i]->data.sobj, 0);
+            }
+            ret = 2;
+            break;
+        } else if (temp_v0->pressedButtons & (0x8000 | 0x1000)) {
+            ret = func_800E37E8_A0AD78(D_800E82ED_A0F87D, var_s0) & 0xFF;
+            break;
+        }
+
+        ohWait(1);
+    }
+    return ret;
+}
+
+/* Stock, plus the Snap Station label's deletion beside the Gallery's. */
+void func_800E1B78_A09108(u8 arg0) {
+    if (!arg0) {
+        auSetBGMVolumeSmooth(0, 0, 60);
+        func_800E1930_A08EC0(1, 0, 0, 0, 1.0f);
+    } else {
+        auSetBGMVolumeSmooth(0, 0, 30);
+        ohWait(30);
+    }
+    omDeleteGObj(D_800E82B0_A0F840);
+    omDeleteGObj(D_800E82BC_A0F84C);
+    omDeleteGObj(D_800E82C0_A0F850);
+    omDeleteGObj(D_800E82C4_A0F854);
+    if (D_800BF051 == 0) {
+        omDeleteGObj(D_800E82C8_A0F858);
+        omDeleteGObj(D_800E82CC_A0F85C);
+        if (D_800E82ED_A0F87D != 0) {
+            omDeleteGObj(D_800E82D0_A0F860);
+            omDeleteGObj(D_800E82DC_A0F86C);
+        }
+        if (D_800E80D0_A0F660 == 1) {
+            omDeleteGObj(D_800E82D4_A0F864);
+            if (SCRATCH_TITLE_GOBJ != 0) {
+                omDeleteGObj((GObj*) SCRATCH_TITLE_GOBJ);
+                SCRATCH_TITLE_GOBJ = 0;
+            }
+        }
+        omDeleteGObj(D_800E82D8_A0F868);
+    } else {
+        omDeleteGObj(D_800E82E0_A0F870);
+    }
+}

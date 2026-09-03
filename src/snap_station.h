@@ -58,6 +58,11 @@
  * with the port.
  *
  * Off by default (settings.h, snap_station); the console had no station.
+ * The title screen's fifth item, "Snap Station", attaches it for one run
+ * without the setting (patches/src/graphics_menu_patch.c, the title section),
+ * and goes to the Gallery, where the game's own Print button appears. When
+ * the print's second relaunch boots normally, the sheet's folder is opened
+ * for the player, the way the kiosk handed over the stickers.
  */
 #ifndef SNAP_STATION_H
 #define SNAP_STATION_H
@@ -75,6 +80,11 @@ void station_init();
 
 // Follows the setting (settings.cpp on load, the Graphics page on an edit).
 void station_set_enabled(bool enabled);
+
+// The title screen's Snap Station item was chosen (menu_assets.cpp relays the
+// patch's mailbox byte): port 4 carries the station from now until this
+// process ends, whatever the setting says. Nothing is written to the settings.
+void station_request_from_title();
 
 // Whether port 4 reports a controller with a pak right now. True from the
 // first instruction when a print job is pending, so the game's boot sees the

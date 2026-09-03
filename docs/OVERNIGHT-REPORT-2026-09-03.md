@@ -224,7 +224,11 @@ feature is not evidence.
 
 ## 4. What was left out, and why
 
-* **A Snap Station menu row.** I did build a seventeenth Graphics row
+* **A Snap Station menu row.** *Done later the same day, on the title
+  screen rather than in Options: a fifth title entry, "Snap Station", in
+  the title's own lettering, shown with Gallery; see the README's section
+  and the commit that followed this report.* The night's account: I did
+  build a seventeenth Graphics row
   (the mailbox field bank grown to +0x18, the page's scratch arrays widened,
   `station_set_enabled` wired to the new byte): it compiled and ran, but
   while verifying it I found the credits-digit bug above, which had blanked

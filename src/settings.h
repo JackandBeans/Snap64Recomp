@@ -135,8 +135,9 @@ struct Settings {
     // how to drive. On, the Gallery shows its Print button, and printing
     // runs the game's own photo display after a reset (a relaunch of this
     // program) and writes the sheet as PNG files under stickers/. Off by
-    // default: the console had no station. Not a mailbox field yet; edited
-    // in snapsettings.json.
+    // default: the console had no station. On, port 4 carries it from five
+    // seconds after every start; the title screen's Snap Station item
+    // attaches it for one run without this (snap_station.h).
     bool  snap_station      = false;
     // Interpolate the view and projection as well as object transforms.
     //

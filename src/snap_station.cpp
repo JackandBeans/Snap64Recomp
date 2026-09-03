@@ -28,6 +28,7 @@
 #if defined(_WIN32)
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
+#include <shellapi.h>
 #endif
 
 #include "ultramodern/ultramodern.hpp"
@@ -303,7 +304,9 @@ bool read_vi_frame(uint8_t* rdram, Frame& f) {
 // ---------------------------------------------------------------------------
 // The resets: a relaunch of this executable
 // ---------------------------------------------------------------------------
-void write_marker(const char* mode) {
+// mode, pid, time, and an optional fourth line: the sheet folder a "restart"
+// carries so the normal boot can open it.
+void write_marker(const char* mode, const std::string& extra) {
     std::ofstream out(marker_path(), std::ios::trunc);
     if (!out) {
         say("could not write %s", path_text(marker_path()).c_str());
@@ -314,7 +317,7 @@ void write_marker(const char* mode) {
 #else
     const unsigned long pid = 0;
 #endif
-    out << mode << "\n" << pid << "\n" << std::time(nullptr) << "\n";
+    out << mode << "\n" << pid << "\n" << std::time(nullptr) << "\n" << extra << "\n";
 }
 
 void remove_marker() {
@@ -390,16 +393,31 @@ void wait_for_save_to_settle() {
     std::this_thread::sleep_for(std::chrono::milliseconds(200));
 }
 
-void schedule_relaunch(const char* mode, const char* why, int delayMs, bool settleSave) {
-    std::thread([mode, why, delayMs, settleSave]() {
+void schedule_relaunch(const char* mode, const char* why, int delayMs, bool settleSave,
+                       const std::string& extra = std::string()) {
+    std::thread([mode, why, delayMs, settleSave, extra]() {
         if (settleSave) {
             wait_for_save_to_settle();
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
-        write_marker(mode);
+        write_marker(mode, extra);
         relaunch_self(why);
     }).detach();
 }
+
+#if defined(_WIN32)
+// The kiosk handed the player the sheet; the port opens its folder as the
+// normal boot after a print gets under way.
+void open_folder(const std::string& utf8) {
+    const std::filesystem::path p(std::u8string(reinterpret_cast<const char8_t*>(utf8.c_str())));
+    std::error_code ec;
+    if (!std::filesystem::is_directory(p, ec)) {
+        return;
+    }
+    ShellExecuteW(nullptr, L"open", p.wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    say("the printed sheet is in %s", utf8.c_str());
+}
+#endif
 
 // ---------------------------------------------------------------------------
 // The display mode's captures
@@ -610,9 +628,11 @@ void on_message(uint8_t* rdram, Station& s, uint8_t msg) {
                 s.busy = true;
                 std::thread([]() {
                     Station& st2 = st();
+                    std::string sheet;
                     {
                         std::lock_guard<std::mutex> lock(st2.mutex);
                         finish_sheet(st2);
+                        sheet = path_text(st2.sheetDir);
                         st2.frames.clear();
                         st2.sheetDir.clear();
                         remove_marker();
@@ -620,7 +640,7 @@ void on_message(uint8_t* rdram, Station& s, uint8_t msg) {
                         st2.busy = false;
                     }
                     say("display finished; relaunching into a normal boot");
-                    schedule_relaunch("restart", "the end of the print", 1500, false);
+                    schedule_relaunch("restart", "the end of the print", 1500, false, sheet);
                 }).detach();
             }
             break;
@@ -694,22 +714,35 @@ void station_init() {
     unsigned long pid = 0;
     long long when = 0;
     in >> mode >> pid >> when;
+    std::string extra;
+    std::getline(in, extra);   // the rest of the time line
+    std::getline(in, extra);   // the sheet folder, when a print just ended
     in.close();
 #if defined(_WIN32)
     wait_for_process(pid);
 #endif
     const long long age = static_cast<long long>(std::time(nullptr)) - when;
     if (mode == "print" && age >= 0 && age < 600) {
-        if (!s.enabled.load()) {
-            say("a print job is pending but the Snap Station is off; the job is dropped");
-            remove_marker();
-            return;
-        }
+        // The job is honoured whatever the setting says: the run that wrote
+        // it had the station present, by the setting or by the title screen's
+        // item, and the age check above is what guards against a stale one.
         s.jobPending.store(true);
         say("print job pending: the station is present from boot for the photo display");
     } else {
         // "restart", or a job too old to trust.
+#if defined(_WIN32)
+        if (mode == "restart" && !extra.empty()) {
+            open_folder(extra);
+        }
+#endif
         remove_marker();
+    }
+}
+
+void station_request_from_title() {
+    Station& s = st();
+    if (!s.everPresent.exchange(true)) {
+        say("chosen from the title screen: port 4 carries the station for the rest of this run");
     }
 }
 

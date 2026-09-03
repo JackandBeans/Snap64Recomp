@@ -35,6 +35,13 @@ constexpr int kMenuFontSpaceGap = 4;
 // gaps run 1-3 with mode 2, word spaces 4-7 with mode 6.
 constexpr int kMenuHlpLetterGap = 2;
 constexpr int kMenuHlpSpaceGap = 6;
+// The title menu's face: the large ringed letters of "New Game", "Options"
+// and the rest, a 10-row cap inside a 16-row cell. Measured on the word
+// sprites: cores one column apart inside a word, six across a space.
+constexpr int kMenuTtlCellH = 16;
+constexpr int kMenuTtlCapH = 10;
+constexpr int kMenuTtlLetterGap = 1;
+constexpr int kMenuTtlSpaceGap = 6;
 
 // The main menu's VPK0 segment: ROM start, VRAM it decompresses to, and its
 // decompressed size (splat.yaml main_menu_vpk0_bss: bss_size 0xF3770).
@@ -74,6 +81,7 @@ struct MenuFont {
     MenuFace hdr;       // the Options title's face, kMenuHdrCellH rows
     MenuFace crd;       // the copyright block's face, kMenuFontCellH rows
     MenuFace hlp;       // the help sentences' face, kMenuHlpCellH rows
+    MenuFace ttl;       // the title menu's face, kMenuTtlCellH rows (may be empty)
     std::vector<MenuKern> hlpKern;       // (prev, next) -> gap inside a word
     std::vector<MenuKern> hlpSpaceKern;  // (prev, next) -> gap across a space
     MenuBitmap dot;     // the items' bullet dot

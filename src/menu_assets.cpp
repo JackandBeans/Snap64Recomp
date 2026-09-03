@@ -40,6 +40,7 @@
 #include "audio.h"
 #include "paths.h"
 #include "settings.h"
+#include "snap_station.h"
 #include "version.h"
 
 // stb_image's implementation is compiled inside the RT64 library
@@ -217,6 +218,82 @@ Strip compose(const char* text) {
         xc += g->coreW + kMenuFontLetterGap;
     }
 
+    return strip;
+}
+
+
+// One title-menu item in the title's own face: the large ringed letters of
+// "New Game", "Continue", "Options" and "Gallery" (menu_harvest.cpp). Cores
+// one column apart and six across a space, as measured on the originals; a
+// core pixel wins over ring and ring over fringe, so the shared ring columns
+// between letters read as they do in the sprites. The text is centred in
+// its 64-texel-rounded width, so the patch places the strip by its centre.
+// A letter the face lacks leaves the strip empty (width 0) and is said, but
+// does not withhold the directory: this is the one string that may be
+// absent, and the patch then keeps the stock four items.
+Strip compose_title(const char* text) {
+    Strip strip;
+    strip.height = kMenuTtlCellH;
+    const MenuFace& face = g_font.ttl;
+
+    int ink = 0;
+    for (const char* c = text; *c != 0; c++) {
+        if (*c == ' ') {
+            ink += kMenuTtlSpaceGap;
+            continue;
+        }
+        const MenuGlyph* g = face.find(*c);
+        if (g == nullptr) {
+            printf("[SNAP-MENU] the title face has no '%c'; the title's Snap Station entry is left out\n", *c);
+            strip.width = 0;
+            return strip;
+        }
+        ink += g->coreW + kMenuTtlLetterGap;
+    }
+    ink -= kMenuTtlLetterGap;
+
+    const int width = (ink + 4 + 63) & ~63;
+    strip.width = width;
+    strip.intensity.assign(size_t(width) * strip.height, 0);
+    strip.alpha.assign(size_t(width) * strip.height, 0);
+
+    auto blend = [&](int px, int py, uint8_t i, uint8_t a) {
+        if ((px < 0) || (px >= width) || (py < 0) || (py >= strip.height) || (a == 0)) {
+            return;
+        }
+        const size_t at = size_t(py) * width + px;
+        const bool newCore = (a >= 128) && (i >= 128);
+        const bool oldCore = (strip.alpha[at] >= 128) && (strip.intensity[at] >= 128);
+        if (newCore) {
+            strip.intensity[at] = i;
+            strip.alpha[at] = a;
+            return;
+        }
+        if (oldCore) {
+            return;
+        }
+        if (a > strip.alpha[at]) {
+            strip.intensity[at] = i;
+            strip.alpha[at] = a;
+        }
+    };
+
+    int xc = (width - ink) / 2;
+    for (const char* c = text; *c != 0; c++) {
+        if (*c == ' ') {
+            xc += kMenuTtlSpaceGap;
+            continue;
+        }
+        const MenuGlyph* g = face.find(*c);
+        const unsigned char* ia = face.ia.data() + size_t(g->off) * 2;
+        for (int gy = 0; gy < kMenuTtlCellH; gy++) {
+            for (int gx = 0; gx < g->cellW; gx++) {
+                blend(xc - g->coreStart + gx, gy,
+                      ia[(gy * g->cellW + gx) * 2 + 0], ia[(gy * g->cellW + gx) * 2 + 1]);
+            }
+        }
+        xc += g->coreW + kMenuTtlLetterGap;
+    }
     return strip;
 }
 
@@ -787,6 +864,7 @@ void seed_mailbox() {
     // word (the byte map at SNAP_GFX_MAILBOX in the patch).
     write_u8(MailboxAddr + 0x16, s.photo_detail ? 1 : 0);
     write_u8(MailboxAddr + 0x17, s.jynx_vc ? 1 : 0);
+    write_u8(MailboxAddr + 0x38, 0);   // no title request pending
     write_u32(MailboxAddr + 0x4, 0);
     // The SOUND bank: its own sequence word and six value bytes, read live
     // by the patched audio functions (volumes as straight percentages) and
@@ -934,8 +1012,9 @@ void stage_menu_strings(uint8_t* rdram) {
     };
     // Ids BaseCount+52..+59: the Graphics page's last four rows -- Overscan
     // Crop, Cutscene Fix, Photo Detail, Jynx Recolour -- a label and a
-    // description apiece.
-    constexpr uint32_t StringCount = BaseCount + 60;
+    // description apiece. Id BaseCount+60: the title screen's "Snap Station"
+    // item, in the title's own face (zero width when that face is missing).
+    constexpr uint32_t StringCount = BaseCount + 61;
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -1105,6 +1184,11 @@ void stage_menu_strings(uint8_t* rdram) {
             w = strip.width;
             h = strip.height;
         }
+        else if (id == BaseCount + 60) {
+            strip = compose_title("Snap Station");
+            w = strip.width;
+            h = (w > 0) ? strip.height : 0;
+        }
         else if (id >= BaseCount + 46) {
             // The SOUND page's setting descriptions.
             strip = compose_lines(sndDescs[id - BaseCount - 46][0], sndDescs[id - BaseCount - 46][1]);
@@ -1267,6 +1351,12 @@ void poll_menu_mailbox(uint8_t* rdram) {
     g_menu_rdram = rdram;
     if (read_u32_mail(MailboxAddr) != MailboxMagic) {
         return;
+    }
+    // The title screen's Snap Station item: the patch sets the byte when it
+    // is chosen, and port 4 carries the station for the rest of this run.
+    if (read_u8_mail(MailboxAddr + 0x38) != 0) {
+        write_u8(MailboxAddr + 0x38, 0);
+        station_request_from_title();
     }
     animate_credits();
 

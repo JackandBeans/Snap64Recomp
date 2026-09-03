@@ -207,14 +207,20 @@ retail cartridge, and the printer sat on controller port 4, where the game
 speaks to it as if it were a Controller Pak; every retail cartridge carries
 the code, and the protocol was recovered without a station by James Chambers
 in 2021 and matches the decompilation line for line. The port emulates the
-device on port 4. Off by default, because the console at home had no
-station: `"snap_station": true` in `snapsettings.json` turns it on for the
-next start.
+device on port 4.
 
-With it on, the game's own Gallery (the title menu's Gallery entry, which
-the game adds once the saved report holds more than three species) shows
-the Print button the kiosk showed, above Save, with the game's own help
-text about a print credit. Print does what it did in
+It is reached from the title screen. Once the saved report holds more than
+three species, the game adds its Gallery entry to the title menu, and the
+port adds a fifth entry below it, **Snap Station**, drawn in the title's
+own lettering. Choosing it attaches the station to port 4 for this run and
+opens the game's own Gallery, exactly as the Gallery entry does; nothing is
+written to the settings. (The console at home had no station, so port 4
+is empty otherwise; `"snap_station": true` in `snapsettings.json` keeps it
+attached on every start instead, from a few seconds after boot.)
+
+In the Gallery with the station attached, the game shows the Print button
+the kiosk showed, above Save, with the game's own help text about a print
+credit. Print does what it did in
 the store: the game saves the four photos of its print tray to the
 cartridge (the tray is the Arrange screen's four cells, which the Camera
 Check fills with the photos Oak accepts), asks the station to reset the
@@ -232,7 +238,10 @@ the bottom, for no reason any source explains. When the display
 ends the sixteen captures are laid out into `stickers/<date>/sheet.png`
 (and `sheet_presented.png` from the renderer's frames, with the singles
 next to them), and the port relaunches itself once more into a normal boot,
-as the kiosk reset the console a second time.
+as the kiosk reset the console a second time. That boot opens the sheet's
+folder for you, the way the kiosk handed over the stickers; the station is
+not attached to it, so the title is the ordinary one until you choose Snap
+Station again.
 
 What the sheet cannot be: the physical stickers were postage-stamp-sized
 prints of a captured analog video signal on a photo printer whose make,
