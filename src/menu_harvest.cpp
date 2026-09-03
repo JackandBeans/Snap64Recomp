@@ -372,10 +372,12 @@ constexpr uint32_t kValueVram = 0x80342FF0;   // "<Stereo>": the chevrons
 // --- the port's own glyphs (harvest_menu_font.py SYNTH, HLP_SYNTH, CRD_SYNTH,
 // HDR_SYNTH, transcribed verbatim) ------------------------------------------
 
-// The twenty-one body characters no menu sprite contains, drawn in the
+// The twenty-two body characters no menu sprite contains, drawn in the
 // sprite font's own style (2px stems, one antialiased fringe, caps on rows
-// 1..9).
+// 1..9). J is the port's, for the Jynx Recolour row: T's bar, a stem on the
+// right, O's bottom curve opening to the left.
 constexpr SynthGlyph kBodySynth[] = {
+    { 'J', { ".......", "+#####.", ".+++##+", "....##.", "....#+.", "....#+.", "....#+.", "+#..#+.", ".####+.", ".+##+.." } },
     { 'E', { ".......", "+#####.", ".##+++.", ".#+....", ".####+.", ".##+++.", ".#+....", ".#+..+.", ".#####.", ".+###+." } },
     { 'V', { ".......", "##...##", "#+...#+", "#+...#+", "#+...#+", "+#..+#.", ".#+.#+.", ".##+#+.", ".+##+..", "..##..." } },
     { '0', { ".....", "+###+", "##+##", "#+.#+", "#+.#+", "#+.#+", "#+.#+", "#+.#+", "####+", "+###+" } },
@@ -402,6 +404,7 @@ constexpr SynthGlyph kBodySynth[] = {
 // Characters the twelve help sentences never use, in the help face's own
 // proportions (9-row caps on rows 1-9, x-height rows 4-9).
 constexpr SynthGlyph kHelpSynth[] = {
+    { 'J', { ".....", ".####", "...#.", "...#.", "...#.", "...#.", "...#.", "...#.", "#..#.", "+##+.", ".....", "....." } },
     { 'L', { "....", "#...", "#...", "#...", "#...", "#...", "#...", "#...", "#..+", "####", "....", "...." } },
     { 'N', { ".....", "#...#", "##..#", "##+.#", "#.#.#", "#.#.#", "#.+##", "#..##", "#...#", "#...#", ".....", "....." } },
     { 'O', { ".+++.", "+###+", "#+.+#", "#...#", "#...#", "#...#", "#...#", "#...#", "#+.+#", "+###+", ".....", "....." } },

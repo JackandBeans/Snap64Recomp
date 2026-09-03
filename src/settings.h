@@ -125,8 +125,8 @@ struct Settings {
     // shading is the game's own lighting and no pixels of anyone's are
     // shipped. Off by default: the console's look.
     // Mailbox byte 0x80C00017, seeded from here and edited by the GRAPHICS
-    // page's VC Recolour row -- "VC" because neither menu face carries a
-    // capital J; rt64_render_context.cpp copies it into RT64's userConfig
+    // page's Jynx Recolour row (the J is one of the port's own glyphs, drawn
+    // in the menu face's style); rt64_render_context.cpp copies it into RT64's userConfig
     // (snapJynxVC) on every config push, so a page edit applies at the next
     // display list.
     bool  jynx_vc           = false;

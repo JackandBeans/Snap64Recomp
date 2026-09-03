@@ -933,7 +933,7 @@ void stage_menu_strings(uint8_t* rdram) {
         { "Silences the game while another",          "window is in front." },
     };
     // Ids BaseCount+52..+59: the Graphics page's last four rows -- Overscan
-    // Crop, Cutscene Fix, Photo Detail, VC Recolour -- a label and a
+    // Crop, Cutscene Fix, Photo Detail, Jynx Recolour -- a label and a
     // description apiece.
     constexpr uint32_t StringCount = BaseCount + 60;
 
@@ -1092,7 +1092,7 @@ void stage_menu_strings(uint8_t* rdram) {
         else if (id == BaseCount + 58) {
             // No capital J in the body face (see STR_JYNX_LABEL in the
             // patch): named for the releases whose look it borrows.
-            strip = compose("VC Recolour");
+            strip = compose("Jynx Recolour");
             w = strip.width;
             h = strip.height;
         }
@@ -1100,8 +1100,8 @@ void stage_menu_strings(uint8_t* rdram) {
             // The help face has no J, no V and no hyphen: the description
             // says what turns purple and where to see it (Jynx dance in
             // the Cave), not the name, "VC" or "re-release".
-            strip = compose_lines("Purple face and hands in the Cave, as",
-                                  "every release since the Wii draws them.");
+            strip = compose_lines("Jynx gets the purple face and hands of",
+                                  "the Wii and Switch releases. Cave only.");
             w = strip.width;
             h = strip.height;
         }

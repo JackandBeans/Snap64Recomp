@@ -170,7 +170,7 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_INTRO_DESC  85
 #define STR_PHOTO_LABEL 86  /* "Photo Detail" (settings.h photo_detail) */
 #define STR_PHOTO_DESC  87
-/* "VC Recolour": the purple Jynx of the re-releases (settings.h jynx_vc).
+/* "Jynx Recolour": the purple Jynx of the re-releases (settings.h jynx_vc).
  * Not "Jynx Recolour" -- the body face has no capital J either, and the
  * help face the description is set in has no J, no V and no hyphen, so
  * the description says what changes and where, never the name. */
@@ -407,7 +407,7 @@ static s32 snap_row_field(s32 row) {
         case 12: return 12;   /* Overscan Crop */
         case 13: return 13;   /* Cutscene Fix */
         case 14: return 14;   /* Photo Detail */
-        default: return 15;   /* VC Recolour */
+        default: return 15;   /* Jynx Recolour */
     }
 }
 
@@ -505,7 +505,7 @@ static s32 snap_value_str(s32 row, s32 v) {
         case 9: return (v == 0) ? STR_DOUBLE : STR_TRIPLE;
         default: return v ? STR_ON : STR_OFF;  /* Widescreen, Dither, Fullscreen,
                                                 * Overscan Crop, Cutscene Fix,
-                                                * Photo Detail, VC Recolour */
+                                                * Photo Detail, Jynx Recolour */
     }
 }
 
