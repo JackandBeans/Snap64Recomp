@@ -14,6 +14,7 @@ touched.
 | `ec73c7d` | the Snap Station on port 4, with the two port bugs it exposed fixed |
 | `87859cc` | mods and texture packs: the loaders disclosed and anchored |
 | `94580a0` | the credits face gets the digits 2, 3 and 7 so the rc2 title line opens the menu |
+| `6c541e1` | the menu check drives eval.inputs to the title |
 | (last) | this report |
 
 Nothing was pushed. The PokemonSnapRecomp-backup folder beside the
@@ -197,8 +198,12 @@ with Pokémon Stadium's.
   of the final code commit was fetched with `tools/fetch_deps.py` in 177 s,
   configured in 43 s and built in 259 s with no errors, then deleted.
 * **The last run**: `tools/release_check.py` against the final build and
-  the rc2 archive, now with a menu check, all green (its count is the line
-  the suite printed at the end of this night; see the terminal).
+  the rc2 archive, now with the menu check, **18 checks, 0 failed, 781 s**
+  (04:40 on 3 September): the windowed subsystem, the three log paths, the
+  Beach replay's four real captured frames, the diagnostic replay's 60
+  pacing and 1110 coherence lines, Oak's evaluation scoring every photo
+  and 55 exported, the settings file, the menu staging its 90 interface
+  strings, and the archive with the v1.7.2308 validator.
 
 ### 3.1 A regression the suite let through, and the guard added
 
@@ -276,11 +281,13 @@ the game's own update-x3-draw-x1 hold at cart crossings, wrong scoring.
 
 ### 5.3 The Graphics and Sound pages (ten minutes)
 
-12. Options from the title: every Graphics row cycles and its description
-    reads correctly (rows 15 Photo Detail and 16 Jynx Recolour are the newest;
-    the Jynx text names both positions). B cancels back to the values the
-    page opened with; A keeps them. Sound page: sliders apply live, Stereo
-    and Mono switch.
+12. Options from the title: the list must show **Graphics** and **Sound**
+    entries (if it shows only Screen, Sound, Z Button, Control Stick, Return,
+    the menu font failed to stage, which the `menu` suite check now guards
+    against). Every Graphics row cycles and its description reads correctly
+    (rows 15 Photo Detail and 16 Jynx Recolour are the newest; the Jynx text
+    names both positions). B cancels back to the values the page opened with;
+    A keeps them. Sound page: sliders apply live, Stereo and Mono switch.
 13. Photo Detail: with it on, the photos Oak holds up in the evaluation are
     sharp at your window's resolution; with it off, they are the cartridge's
     pixelated ones. The NEW badge and the photo frame must look the same
