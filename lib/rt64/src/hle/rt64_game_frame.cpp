@@ -1257,11 +1257,28 @@ namespace RT64 {
         thread_local std::unordered_map<uint32_t, uint32_t> prevCounts;
         thread_local std::unordered_map<uint32_t, uint32_t> curCounts;
 
+        // Every rectangle each element drew, on each side, for the case the
+        // counts disagree. A sprite entering the screen is scissored: the
+        // strips still outside are not emitted, so its count grows frame by
+        // frame as it slides in and every ordinal shifts, which the rule above
+        // refuses -- correctly, for the ordinals. But all of an element's
+        // rectangles move by one translation, so when the ordinals cannot be
+        // trusted the element is asked for the translation most of its
+        // rectangles agree on, and each rectangle pairs with the previous one
+        // of its exact size that sits at that translation from it. Strips with
+        // no counterpart stay where the game put them. Pokemon Snap's panels
+        // and its course-select monitor slide in from off screen, and stepped
+        // for the whole slide before this.
+        thread_local std::unordered_map<uint32_t, std::vector<PrevRect>> prevById;
+        thread_local std::unordered_map<uint32_t, std::vector<const DrawCall *>> curById;
+
         // Every unnamed rectangle's exact corners, so a rectangle that has not
         // moved can be told from one that has.
         thread_local std::unordered_set<uint64_t> prevUnnamed;
         prevCounts.clear();
         curCounts.clear();
+        prevById.clear();
+        curById.clear();
         if (countRectStats) {
             prevUnnamed.clear();
         }
@@ -1290,6 +1307,7 @@ namespace RT64 {
                     if (call.snapRectId != 0) {
                         prevRects.insert({ keyOf(call), PrevRect{ call.rect, call.rectDsdx, call.rectDtdy } });
                         prevCounts[call.snapRectId]++;
+                        prevById[call.snapRectId].push_back(PrevRect{ call.rect, call.rectDsdx, call.rectDtdy });
                     }
                     else if (countRectStats) {
                         prevUnnamed.insert(cornersOf(call.rect));
@@ -1317,6 +1335,7 @@ namespace RT64 {
                     const DrawCall &call = proj.gameCalls[c].callDesc;
                     if (call.snapRectId != 0) {
                         curCounts[call.snapRectId]++;
+                        curById[call.snapRectId].push_back(&call);
                     }
                 }
             }
@@ -1330,6 +1349,80 @@ namespace RT64 {
         // of the screen is a recycled address, not a moving sprite, and it is
         // shown where it is rather than swept there from somewhere else.
         const int32_t MaxTravel = 160 << 2;
+
+        // The translation vote, computed once per element per frame and only
+        // when asked (an element whose counts agree never needs it).
+        struct Vote {
+            bool tried = false;
+            bool valid = false;
+            int32_t dx = 0;
+            int32_t dy = 0;
+        };
+        thread_local std::unordered_map<uint32_t, Vote> votes;
+        votes.clear();
+        auto sameSize = [](const FixedRect &a, const FixedRect &b) {
+            return ((a.lrx - a.ulx) == (b.lrx - b.ulx)) && ((a.lry - a.uly) == (b.lry - b.uly));
+        };
+        auto voteFor = [&](const DrawCall &call) -> const PrevRect * {
+            const uint32_t id = call.snapRectId;
+            Vote &vote = votes[id];
+            const auto prevIt = prevById.find(id);
+            const auto curIt = curById.find(id);
+            if (!vote.tried) {
+                vote.tried = true;
+                if ((prevIt != prevById.end()) && (curIt != curById.end()) &&
+                    ((prevIt->second.size() * curIt->second.size()) <= 4096)) {
+                    const std::vector<PrevRect> &prevs = prevIt->second;
+                    const std::vector<const DrawCall *> &curs = curIt->second;
+                    int32_t bestSupport = 0;
+                    // Every current-previous pair of one size proposes the
+                    // translation between them; the proposal most of the
+                    // element's rectangles can follow exactly wins.
+                    for (const DrawCall *c : curs) {
+                        for (const PrevRect &p : prevs) {
+                            if (!sameSize(c->rect, p.rect) || (c->rectDsdx != p.dsdx) || (c->rectDtdy != p.dtdy)) {
+                                continue;
+                            }
+                            const int32_t dx = c->rect.ulx - p.rect.ulx;
+                            const int32_t dy = c->rect.uly - p.rect.uly;
+                            if ((std::abs(dx) > MaxTravel) || (std::abs(dy) > MaxTravel)) {
+                                continue;
+                            }
+                            int32_t support = 0;
+                            for (const DrawCall *c2 : curs) {
+                                for (const PrevRect &p2 : prevs) {
+                                    if (sameSize(c2->rect, p2.rect) && ((c2->rect.ulx - p2.rect.ulx) == dx) &&
+                                        ((c2->rect.uly - p2.rect.uly) == dy)) {
+                                        support++;
+                                        break;
+                                    }
+                                }
+                            }
+                            if (support > bestSupport) {
+                                bestSupport = support;
+                                vote.dx = dx;
+                                vote.dy = dy;
+                            }
+                        }
+                    }
+                    // Two rectangles at least, and at least half of what the
+                    // element drew this frame, have to agree; one rectangle
+                    // agreeing with itself proves nothing.
+                    const int32_t needed = std::max<int32_t>(2, int32_t((curs.size() + 1) / 2));
+                    vote.valid = (bestSupport >= needed);
+                }
+            }
+            if (!vote.valid || (prevIt == prevById.end())) {
+                return nullptr;
+            }
+            for (const PrevRect &p : prevIt->second) {
+                if (sameSize(call.rect, p.rect) && (call.rectDsdx == p.dsdx) && (call.rectDtdy == p.dtdy) &&
+                    ((call.rect.ulx - p.rect.ulx) == vote.dx) && ((call.rect.uly - p.rect.uly) == vote.dy)) {
+                    return &p;
+                }
+            }
+            return nullptr;
+        };
 
         // While the present queue is photographing a burst, every decision made
         // here is printed against the same game-frame number the pictures carry.
@@ -1389,33 +1482,34 @@ namespace RT64 {
                     // did last frame, so this one's ordinal does not name the
                     // same piece of it that it named before. Left where the game
                     // put it.
+                    const PrevRect *paired = nullptr;
                     const auto prevCountIt = prevCounts.find(call.snapRectId);
-                    if ((prevCountIt == prevCounts.end()) ||
-                        (prevCountIt->second != curCounts[call.snapRectId])) {
+                    const bool countsAgree = (prevCountIt != prevCounts.end()) &&
+                                             (prevCountIt->second == curCounts[call.snapRectId]);
+                    if (countsAgree) {
+                        const auto it = prevRects.find(keyOf(call));
+                        if (it != prevRects.end()) {
+                            paired = &it->second;
+                        }
+                    }
+                    if (paired == nullptr) {
+                        // The ordinals cannot be trusted (or one is missing):
+                        // the element's translation vote decides.
+                        paired = voteFor(call);
+                    }
+                    if (paired == nullptr) {
                         if (snapDumpWindow) {
                             fprintf(stdout, "[SNAP-PAIR] f%u MISS id %08X ord %u (%d,%d %dx%d) %s prev-count %u cur-count %u\n",
                                 f, call.snapRectId, call.snapRectOrdinal,
                                 call.rect.ulx >> 2, call.rect.uly >> 2,
                                 (call.rect.lrx - call.rect.ulx) >> 2, (call.rect.lry - call.rect.uly) >> 2,
-                                (prevCountIt == prevCounts.end()) ? "new-id" : "count-changed",
+                                (prevCountIt == prevCounts.end()) ? "new-id" : (countsAgree ? "no-prev-ordinal" : "count-changed, no vote"),
                                 (prevCountIt == prevCounts.end()) ? 0u : prevCountIt->second,
                                 curCounts[call.snapRectId]);
                         }
                         continue;
                     }
-
-                    auto it = prevRects.find(keyOf(call));
-                    if (it == prevRects.end()) {
-                        if (snapDumpWindow) {
-                            fprintf(stdout, "[SNAP-PAIR] f%u MISS id %08X ord %u (%d,%d %dx%d) no-prev-ordinal\n",
-                                f, call.snapRectId, call.snapRectOrdinal,
-                                call.rect.ulx >> 2, call.rect.uly >> 2,
-                                (call.rect.lrx - call.rect.ulx) >> 2, (call.rect.lry - call.rect.uly) >> 2);
-                        }
-                        continue;
-                    }
-
-                    const FixedRect &prevRect = it->second.rect;
+                    const FixedRect &prevRect = paired->rect;
                     const bool travelled =
                         (std::abs(call.rect.ulx - prevRect.ulx) > MaxTravel) ||
                         (std::abs(call.rect.uly - prevRect.uly) > MaxTravel) ||
@@ -1449,8 +1543,8 @@ namespace RT64 {
                     }
 
                     call.snapPrevRect = prevRect;
-                    call.snapPrevDsdx = it->second.dsdx;
-                    call.snapPrevDtdy = it->second.dtdy;
+                    call.snapPrevDsdx = paired->dsdx;
+                    call.snapPrevDtdy = paired->dtdy;
                     call.snapRectMapped = true;
 
                     // The mark key asks for the next frames' actual pairs. One
@@ -1466,7 +1560,7 @@ namespace RT64 {
                     }
 
                     if (countRectStats) {
-                        snapReportRectChange(call, prevRect, it->second.dsdx, it->second.dtdy);
+                        snapReportRectChange(call, prevRect, paired->dsdx, paired->dtdy);
                     }
 
                     if (countRectStats) {
