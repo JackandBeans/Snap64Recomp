@@ -17,6 +17,9 @@ that a release build can be put through all of them in one go:
   score       the recorded run to Oak's evaluation scores every photo with the
               scorer's healthy signature (src/score_probe.cpp), and, in the
               same run, the photo export saves the photos it shows
+  menu        the in-game Graphics/Sound Options page: its interface strings
+              stage from the harvested font with no character missing, so the
+              page opens instead of falling back to the stock menu
   settings    snapsettings.json is valid JSON and carries the port's fields
   package     (with --zip) the release archive carries the executable, the
               three DLLs, the licences and the documents
@@ -216,6 +219,20 @@ def check_score(c, exe_dir):
     c.add('score', '[SNAP-AV]' not in out, 'crash report %s' % ('present' if '[SNAP-AV]' in out else 'none'))
 
 
+def check_menu(c, exe_dir):
+    """The Options page's custom Graphics/Sound rows come from strings the port
+    composites from the harvested menu font; one character with no glyph
+    withholds the whole directory and the page falls back to the stock menu.
+    A boot that reaches the title logs which happened."""
+    out = run_game(exe_dir, {'SNAP_REPLAY': 'beach.inputs', 'SNAP_MUTE': '1'}, 25)
+    staged = [l for l in out.splitlines() if l.startswith('[SNAP-MENU] staged ')]
+    withheld = [l for l in out.splitlines() if 'the staged strings are withheld' in l]
+    missing = [l for l in out.splitlines() if l.startswith('[SNAP-MENU] no glyph for ')]
+    c.add('menu', bool(staged) and not withheld,
+          'interface strings %s%s' % ('staged (' + staged[0].split('staged ', 1)[1] + ')' if staged else 'NOT staged',
+                                       '; withheld: ' + '; '.join(m.split('] ', 1)[1] for m in missing) if withheld else ''))
+
+
 def check_settings(c, exe_dir):
     p = exe_dir / 'snapsettings.json'
     try:
@@ -385,7 +402,7 @@ def main():
         return 2
     checks = [('subsystem', check_subsystem), ('stdio', check_stdio), ('attract', check_attract),
               ('stats', check_stats), ('score', check_score), ('settings', check_settings),
-              ('station', check_station)]
+              ('menu', check_menu), ('station', check_station)]
     c = Check()
     t0 = time.time()
     for name, fn in checks:
