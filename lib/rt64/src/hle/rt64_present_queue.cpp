@@ -25,6 +25,10 @@
 // frames never touch RDRAM -- so this is the only place the picture a player
 // actually saw can be captured. Atomic: several threads arm it.
 extern "C" std::atomic<int32_t> snap_frame_dump_pending{0};
+// Pokemon Snap port: the Snap Station (src/snap_station.cpp) holds this open
+// while it captures a displayed sticker slot, so the capture below runs
+// without the diagnostic environment or a schedule.
+extern "C" std::atomic<int32_t> snap_frame_dump_station{0};
 
 namespace RT64 {
 
@@ -60,7 +64,9 @@ namespace {
     // sprite-sized artifact needs the real pixels -- SNAP_PCAP_FULL keeps them.
     uint32_t snapCaptureDivisor() {
         static const uint32_t divisor = (std::getenv("SNAP_PCAP_FULL") != nullptr) ? 1 : 2;
-        return divisor;
+        // The Snap Station's captures are the sticker's second artifact, the
+        // render at the player's resolution: never halved.
+        return (snap_frame_dump_station.load() > 0) ? 1u : divisor;
     }
 
     uint32_t snapCaptureMaxFiles() {
@@ -705,7 +711,8 @@ namespace {
                     // Pokemon Snap port: while the game side is dumping its
                     // framebuffers around a churn frame, also photograph the
                     // image actually being presented, interpolation included.
-                    if ((snapdiag::captureEnabled() || snapPcapScheduled()) && (snap_frame_dump_pending.load() > 0)) {
+                    if ((snapdiag::captureEnabled() || snapPcapScheduled() || (snap_frame_dump_station.load() > 0)) &&
+                        (snap_frame_dump_pending.load() > 0)) {
                         // The window is consumed here. It used to be counted down by
                         // the game-side dumper, which no longer exists, so an armed
                         // capture never stopped until it hit the file cap.
@@ -742,7 +749,7 @@ namespace {
 
                 // The wait above is the fence for the recorded copy, so the
                 // readback is safe to map and write out here.
-                if (snapdiag::captureEnabled() || snapPcapScheduled()) {
+                if (snapdiag::captureEnabled() || snapPcapScheduled() || (snap_frame_dump_station.load() > 0)) {
                     snapCaptureFinish(renderParams.textureFormat);
                 }
             }

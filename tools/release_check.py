@@ -20,6 +20,13 @@ that a release build can be put through all of them in one go:
   settings    snapsettings.json is valid JSON and carries the port's fields
   package     (with --zip) the release archive carries the executable, the
               three DLLs, the licences and the documents
+  station     (only with --only station: it takes ten minutes and rewrites the
+              save) the Snap Station print: the station replay plays a
+              course, marks an album photo, saves, opens the Gallery's Print
+              row and presses it; the port relaunches twice; the sixteen
+              slots and both sheets appear and the sheet holds four 2x2
+              blocks of one photo each. The save and settings are put back
+              afterwards.
 
 It opens the real game window for each run; runs are killed at their time
 limit, which is how the recipe has always worked (the replays never reach a
@@ -221,6 +228,138 @@ def check_settings(c, exe_dir):
     c.add('settings', not missing, 'valid JSON with %d fields%s' % (len(j), (', missing ' + ', '.join(missing)) if missing else ''))
 
 
+def _png_rgb(path):
+    """Decode an 8-bit RGB PNG (what the station writes) with the standard library."""
+    import zlib
+    d = path.read_bytes()
+    pos, w, h, idat = 8, 0, 0, b''
+    while pos < len(d):
+        n = struct.unpack('>I', d[pos:pos + 4])[0]
+        tag = d[pos + 4:pos + 8]
+        body = d[pos + 8:pos + 8 + n]
+        if tag == b'IHDR':
+            w, h = struct.unpack('>II', body[:8])
+        elif tag == b'IDAT':
+            idat += body
+        pos += 12 + n
+    raw = zlib.decompress(idat)
+    stride = w * 3
+    out = bytearray(w * h * 3)
+    prev = bytearray(stride)
+    p = 0
+    for y in range(h):
+        f = raw[p]
+        line = bytearray(raw[p + 1:p + 1 + stride])
+        p += 1 + stride
+        if f == 1:
+            for i in range(3, stride):
+                line[i] = (line[i] + line[i - 3]) & 255
+        elif f == 2:
+            for i in range(stride):
+                line[i] = (line[i] + prev[i]) & 255
+        elif f == 3:
+            for i in range(stride):
+                line[i] = (line[i] + (((line[i - 3] if i >= 3 else 0) + prev[i]) >> 1)) & 255
+        elif f == 4:
+            for i in range(stride):
+                a = line[i - 3] if i >= 3 else 0
+                b = prev[i]
+                cc = prev[i - 3] if i >= 3 else 0
+                pp = a + b - cc
+                pa, pb, pc = abs(pp - a), abs(pp - b), abs(pp - cc)
+                line[i] = (line[i] + (a if (pa <= pb and pa <= pc) else (b if pb <= pc else cc))) & 255
+        out[y * stride:(y + 1) * stride] = line
+        prev = line
+    return w, h, out
+
+
+def _block_diff(buf, w, a, b, cw, ch, step=8):
+    (ax, ay), (bx, by) = a, b
+    t = n = 0
+    for y in range(0, ch, step):
+        for x in range(0, cw, step):
+            i = ((ay + y) * w + ax + x) * 3
+            j = ((by + y) * w + bx + x) * 3
+            t += abs(buf[i] - buf[j]) + abs(buf[i + 1] - buf[j + 1]) + abs(buf[i + 2] - buf[j + 2])
+            n += 3
+    return t / max(n, 1)
+
+
+def check_station(c, exe_dir):
+    """The whole print, through the two relaunches. Rewrites the save; puts it back."""
+    import shutil
+    replay = exe_dir / 'station.inputs'
+    if not replay.is_file():
+        c.add('station', False, 'station.inputs is not beside the executable')
+        return
+    save = exe_dir / 'saves' / 'pokemonsnap.bin'
+    keep = {}
+    for f in (save, save.with_suffix('.bin.bak'), exe_dir / 'snapsettings.json'):
+        if f.is_file():
+            keep[f] = f.read_bytes()
+    settings = json.loads((exe_dir / 'snapsettings.json').read_text(encoding='utf-8')) if (exe_dir / 'snapsettings.json').is_file() else {}
+    settings['snap_station'] = True
+    (exe_dir / 'snapsettings.json').write_text(json.dumps(settings, indent=2), encoding='utf-8')
+    for f in ('snap64.log', 'snap64.prev.log', 'snapstation.job'):
+        if (exe_dir / f).exists():
+            (exe_dir / f).unlink()
+    before = set((exe_dir / 'stickers').glob('*')) if (exe_dir / 'stickers').is_dir() else set()
+    try:
+        env = dict(os.environ)
+        env.update({'SNAP_REPLAY': 'station.inputs', 'SNAP_MUTE': '1'})
+        p = subprocess.Popen([str(exe_dir / EXE)], cwd=str(exe_dir), env=env, stdout=subprocess.PIPE,
+                             stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace')
+        t0 = time.time()
+        try:
+            out, _ = p.communicate(timeout=520)
+            relaunched = True
+        except subprocess.TimeoutExpired:
+            p.kill()
+            out, _ = p.communicate()
+            relaunched = False
+        first = [l for l in out.splitlines() if '[SNAP-STATION]' in l]
+        c.add('station', relaunched and any('reset requested' in l for l in first),
+              'first process: %s after %.0f s' % ('relaunched itself at 0x5A' if relaunched else 'never reached 0x5A (killed)', time.time() - t0))
+        # Follow the relaunches through the logs they write beside the executable.
+        seen, sheet = [], None
+        t1 = time.time()
+        while time.time() - t1 < 300:
+            for name in ('snap64.prev.log', 'snap64.log'):
+                f = exe_dir / name
+                if f.is_file():
+                    for l in f.read_text(encoding='utf-8', errors='replace').splitlines():
+                        if '[SNAP-STATION]' in l and l not in seen:
+                            seen.append(l)
+            for d in (set((exe_dir / 'stickers').glob('*')) - before):
+                if (d / 'sheet.png').is_file():
+                    sheet = d
+            if sheet and any('normal boot' in l for l in seen):
+                time.sleep(8)
+                break
+            time.sleep(2)
+        subprocess.run(['taskkill', '/F', '/IM', EXE], capture_output=True)
+        slots = sum(1 for l in seen if ' captured (' in l)
+        c.add('station', slots == 16, '%d of 16 slots captured in the display process' % slots)
+        c.add('station', sheet is not None and any('normal boot' in l for l in seen),
+              'sheet %s; final relaunch %s' % ('written' if sheet else 'MISSING', 'logged' if any('normal boot' in l for l in seen) else 'MISSING'))
+        if sheet:
+            w, h, buf = _png_rgb(sheet / 'sheet.png')
+            cw, ch = w // 4, h // 4
+            same = [_block_diff(buf, w, (0, 0), (cw, ch), cw, ch), _block_diff(buf, w, (2 * cw, 0), (3 * cw, ch), cw, ch),
+                    _block_diff(buf, w, (0, 2 * ch), (cw, 3 * ch), cw, ch), _block_diff(buf, w, (2 * cw, 2 * ch), (3 * cw, 3 * ch), cw, ch)]
+            other = [_block_diff(buf, w, (0, 0), (2 * cw, 0), cw, ch), _block_diff(buf, w, (0, 0), (0, 2 * ch), cw, ch)]
+            c.add('station', w == 2560 and h == 1920 and max(same) < 2.0 and min(other) > 2.0,
+                  'sheet %dx%d; within-block differences %s, between blocks %s'
+                  % (w, h, ' '.join('%.1f' % v for v in same), ' '.join('%.1f' % v for v in other)))
+            presented = (sheet / 'sheet_presented.png').is_file()
+            c.add('station', presented, 'presented sheet %s' % ('written' if presented else 'MISSING'))
+    finally:
+        for f, data in keep.items():
+            f.write_bytes(data)
+        if (exe_dir / 'snapstation.job').exists():
+            (exe_dir / 'snapstation.job').unlink()
+
+
 def check_package(c, zip_path):
     z = zipfile.ZipFile(zip_path)
     names = z.namelist()
@@ -245,12 +384,15 @@ def main():
         print('no %s in %s' % (EXE, exe_dir), file=sys.stderr)
         return 2
     checks = [('subsystem', check_subsystem), ('stdio', check_stdio), ('attract', check_attract),
-              ('stats', check_stats), ('score', check_score), ('settings', check_settings)]
+              ('stats', check_stats), ('score', check_score), ('settings', check_settings),
+              ('station', check_station)]
     c = Check()
     t0 = time.time()
     for name, fn in checks:
         if args.only and name not in args.only:
             continue
+        if name == 'station' and not args.only:
+            continue   # ten minutes and a save rewrite: asked for by name only
         if name in ('attract', 'stats', 'stdio') and not (exe_dir / 'beach.inputs').is_file():
             c.add(name, False, 'beach.inputs is not beside the executable')
             continue

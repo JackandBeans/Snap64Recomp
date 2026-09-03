@@ -124,6 +124,16 @@ Keep the ELF's name: N64Recomp writes its stem into
 `RecompiledFuncs/lookup.cpp` (`get_rom_name` returns `pokemonsnap.relocs.z64`;
 nothing reads it, but renaming the file changes generated output).
 
+**One hand edit in the generated code.** `RecompiledFuncs/funcs_48.c` carries
+`auThreadMain`'s read of the audio interface's length register (vram
+`0x800219D8`, `lui $t8, 0xA450` / `lw $t9, 4($t8)` in the ROM) rewritten to
+`lui $t8, 0x80C0` / `lw $t9, 0x40($t8)`: the port publishes SDL's real audio
+backlog at `0x80C00040` every frame (`src/overlay_hook.cpp`) and the game reads
+it there. The word must stay outside `0x80400000`-`0x807FFFF0`: the game's
+Snap Station boot sweeps that range with a read-back memory test, and a word
+rewritten during the sweep fails it. Regenerated `RecompiledFuncs` need the
+same two-line edit.
+
 ### 4. Recompile the game
 
     ~/N64Recomp/build/N64Recomp pokemonsnap.us.toml
@@ -392,3 +402,18 @@ configure took 41 s and the Release build 244 s with no errors, leaving
 `Snap64Recomp.exe` (10,083,840 bytes) with `SDL2.dll`, `dxcompiler.dll` and
 `dxil.dll` (SHA-256 `9cccc7ef…`) beside it and the 53 shaders compiled. The
 clone was deleted afterwards.
+
+## Replays and the headless suite
+
+The port replays controller readings from `.inputs` files beside the
+executable (`SNAP_REPLAY=name.inputs`; twelve bytes per reading, `src/input.cpp`).
+Three are used by `tools/release_check.py`, and none is in git: `beach.inputs`
+and `eval.inputs` were recorded by the developer (a Beach ride; a ride, the
+Camera Check and Oak's evaluation of five photos), and `station.inputs` was
+synthesised from those two on 2026-09-03 for the Snap Station: the evaluation
+replay, a second Beach ride, an Album Mark in the Camera Check, Oak's check,
+the lab's Save, the title menu's Gallery entry, four rows down and Print. The
+suite's default run takes about eleven minutes; `--only station` adds the ten
+minute print and puts the save and settings back afterwards. All of them need
+the ROM beside the executable, and they open the game window; a hidden window
+starves the pacing numbers, so leave it on top.

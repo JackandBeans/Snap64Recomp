@@ -12,6 +12,7 @@
 #include <cstdio>
 
 #include "recomp.h"
+#include "snap_station.h"
 
 // Recompiled callers read the return value out of v0 (ctx->r2), so every stub
 // must write it. Left unwritten, v0 holds whatever the previously executed
@@ -37,16 +38,25 @@ extern "C" void __osPfsSelectBank_recomp(uint8_t* rdram, recomp_context* ctx) {
     ctx->r2 = StubNoPak;
 }
 
+// __osContRamWrite(mq, channel, address, buffer, force) and
+// __osContRamRead(mq, channel, address, buffer): the 32-byte Controller Pak
+// block transfers. No pak is emulated, but the Snap Station on port 4 is one
+// of these devices (snap_station.h); it answers when it is present and the
+// call is its channel, and everything else is still "no pak".
 extern "C" void __osContRamWrite_recomp(uint8_t* rdram, recomp_context* ctx) {
-    // Stub: Controller RAM write.
-    (void)rdram;
-    ctx->r2 = StubNoPak;
+    int32_t result = StubNoPak;
+    if (!snap::station_ram_write(rdram, int32_t(ctx->r5), uint32_t(ctx->r6) & 0xFFFFu, ctx->r7, &result)) {
+        result = StubNoPak;
+    }
+    ctx->r2 = result;
 }
 
 extern "C" void __osContRamRead_recomp(uint8_t* rdram, recomp_context* ctx) {
-    // Stub: Controller RAM read.
-    (void)rdram;
-    ctx->r2 = StubNoPak;
+    int32_t result = StubNoPak;
+    if (!snap::station_ram_read(rdram, int32_t(ctx->r5), uint32_t(ctx->r6) & 0xFFFFu, ctx->r7, &result)) {
+        result = StubNoPak;
+    }
+    ctx->r2 = result;
 }
 
 extern "C" void osPfsIsPlug_recomp(uint8_t* rdram, recomp_context* ctx) {

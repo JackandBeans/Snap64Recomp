@@ -158,12 +158,18 @@ extern "C" void check_sp_dmem(uint8_t* rdram, recomp_context* ctx) {
 
 
 // Publishes SDL's real audio backlog to the scratch word that auThreadMain's
-// patched AI_LEN read (vram 0x800219D8 -> 0x80700004) consumes. Lives here
+// patched AI_LEN read (vram 0x800219D8, RecompiledFuncs/funcs_48.c) consumes.
+// The word lives in the port's mailbox page at 0x80C00040 (byte map in
+// patches/src/graphics_menu_patch.c). It used to sit at 0x80700004, inside
+// the Expansion Pak range 0x80400000-0x807FFFF0 that the game's Snap Station
+// boot sweeps with a read-back memory test (func_8009B2BC): a word rewritten
+// every frame in that range fails the test, and the kiosk's photo display
+// never starts. Nothing of the port's may live in that range. Lives here
 // because the MEM_W macro requires a variable literally named rdram.
 extern "C" void snap_publish_ai_len(uint8_t* rdram) {
     if (rdram == nullptr) return;
     // ultramodern already models AI_LEN: queued bytes minus a lookahead margin.
-    MEM_W(0, (gpr)(int32_t)0x80700004) = ultramodern::get_remaining_audio_bytes();
+    MEM_W(0, (gpr)(int32_t)0x80C00040) = ultramodern::get_remaining_audio_bytes();
 }
 
 

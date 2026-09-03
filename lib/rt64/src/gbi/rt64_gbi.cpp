@@ -152,6 +152,10 @@ namespace RT64 {
     const GBIInstance   L3DEX2_FIFO_2_05          = { "L3DEX2.fifo 2.05",                          GBIUCode::L3DEX2,      { false,  false,  false,  false,  false } }; // Needs confirmation.
     const GBIInstance   L3DEX2_FIFO_ACCLAIM       = { "L3DEX2.fifo 2.05 (Acclaim)",                GBIUCode::Unknown,     { false,  false,  false,  false,  false } }; // Needs confirmation.
     const GBIInstance   L3DEX2_FIFO_2_08          = { "L3DEX2.fifo 2.08",                          GBIUCode::L3DEX2,      { false,  false,  false,  false,  false } }; // Needs confirmation.
+    // Pokemon Snap port: the Snap Station's photo display mode runs on this
+    // one (data string "RSP Gfx ucode L3DEX fifo 2.08H"); hashed from the
+    // game's own copy in RDRAM.
+    const GBIInstance   L3DEX2_FIFO_2_08H         = { "L3DEX2.fifo 2.08H",                         GBIUCode::L3DEX2,      { false,  false,  false,  true,   false } };
     const GBIInstance   ZSORTP_0_33               = { "ZSortp 0.33",                               GBIUCode::Unknown,     { false,  false,  false,  false,  false } }; // Needs confirmation.
     
     // ****************************************************************************************
@@ -160,7 +164,7 @@ namespace RT64 {
     // 
     //                  Length      Hash                    Known instances               
     //     
-    static std::array<GBISegment, 94> textSegments = {
+    static std::array<GBISegment, 95> textSegments = {
             GBISegment{ 0x1408,     0x9C0926F5E466BE70ULL,  { &F3D_SDK_E } }, // Needs confirmation.
             GBISegment{ 0x1400,     0x34EAA6E921BCF1B2ULL,  { &F3D_SDK_F, &F3D_SDK_UNKNOWN_G, &F3D_SDK_UNKNOWN_H } }, // Needs confirmation.
             GBISegment{ 0x1408,     0x3E05E9BBE814C700ULL,  { &F3D_FIFO_SDK_E } }, // Needs confirmation.
@@ -254,10 +258,11 @@ namespace RT64 {
             GBISegment{ 0x1190,     0xA2F9906594260FD4ULL,  { &L3DEX2_FIFO_2_05 } }, // Needs confirmation.
             GBISegment{ 0x1190,     0x019210E4F59B27C1ULL,  { &L3DEX2_FIFO_ACCLAIM } }, // Needs confirmation.
             GBISegment{ 0x1190,     0x60B6BA671EE6F1F6ULL,  { &L3DEX2_FIFO_2_08 } }, // Needs confirmation.
+            GBISegment{ 0x1190,     0x5EA14F10D4FAB208ULL,  { &L3DEX2_FIFO_2_08H } }, // Pokemon Snap's copy, hashed 2026-09-03.
             GBISegment{ 0x10B0,     0xE8028E4BC6529E6EULL,  { &ZSORTP_0_33 } }, // Needs confirmation.
     };
 
-    static std::array<GBISegment, 105> dataSegments = {
+    static std::array<GBISegment, 106> dataSegments = {
             GBISegment{ 0x800,      0xEEB10D73400213B3ULL,  { &F3D_SDK_E } }, // Needs confirmation.
             GBISegment{ 0x800,      0x49651E384B48F694ULL,  { &F3D_SDK_F } }, // Needs confirmation.
             GBISegment{ 0x800,      0x1A736198F90E81C5ULL,  { &F3D_SDK_UNKNOWN_G } }, // Needs confirmation.
@@ -362,6 +367,7 @@ namespace RT64 {
             GBISegment{ 0x3F0,      0x58F659DEBA493C69ULL,  { &L3DEX2_FIFO_2_05 } }, // Needs confirmation.
             GBISegment{ 0x3F0,      0x772E4F4BD7F82DEFULL,  { &L3DEX2_FIFO_ACCLAIM } }, // Needs confirmation.
             GBISegment{ 0x3F0,      0xE261C98A63863DB4ULL,  { &L3DEX2_FIFO_2_08 } }, // Needs confirmation.
+            GBISegment{ 0x3F0,      0xFC7F62E902B70309ULL,  { &L3DEX2_FIFO_2_08H } }, // Pokemon Snap's copy, hashed 2026-09-03.
             GBISegment{ 0x400,      0x8F5D64011662220CULL,  { &ZSORTP_0_33 } }, // Needs confirmation.
     };
 
@@ -437,6 +443,20 @@ namespace RT64 {
 
         if (textSegmentIndex < 0 || dataSegmentIndex < 0) {
             fprintf(stderr, "Unable to find a matching GBI in the current database. This game is not supported in HLE.\n");
+            // Pokemon Snap port: say which half failed and what was hashed, so a
+            // new microcode can be added to the tables above from one run.
+            fprintf(stderr, "Text segment %s, data segment %s; last data hash 0x%016" PRIX64 " over 0x%X bytes.\n",
+                (textSegmentIndex < 0) ? "unmatched" : "matched", (dataSegmentIndex < 0) ? "unmatched" : "matched",
+                rdramHash, rdramHashed);
+            {
+                const uint64_t textAt = XXH3_64bits(&RDRAM[textAddress], 0x1190);
+                const uint64_t dataAt = XXH3_64bits(&RDRAM[dataAddress], 0x3F0);
+                fprintf(stderr, "Text hash over 0x1190 bytes 0x%016" PRIX64 ", data hash over 0x3F0 bytes 0x%016" PRIX64 ".\n", textAt, dataAt);
+                fprintf(stderr, "textAddress 0x%X dataAddress 0x%X; text bytes %02X%02X%02X%02X %02X%02X%02X%02X, data bytes %02X%02X%02X%02X.\n",
+                    textAddress, dataAddress, RDRAM[textAddress ^ 3], RDRAM[(textAddress + 1) ^ 3], RDRAM[(textAddress + 2) ^ 3], RDRAM[(textAddress + 3) ^ 3],
+                    RDRAM[(textAddress + 4) ^ 3], RDRAM[(textAddress + 5) ^ 3], RDRAM[(textAddress + 6) ^ 3], RDRAM[(textAddress + 7) ^ 3],
+                    RDRAM[dataAddress ^ 3], RDRAM[(dataAddress + 1) ^ 3], RDRAM[(dataAddress + 2) ^ 3], RDRAM[(dataAddress + 3) ^ 3]);
+            }
             deduceGBIInformation(RDRAM, textAddress, dataAddress);
             return nullptr;
         }

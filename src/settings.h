@@ -130,6 +130,14 @@ struct Settings {
     // (snapJynxVC) on every config push, so a page edit applies at the next
     // display list.
     bool  jynx_vc           = false;
+    // The Pokemon Snap Station on controller port 4 (snap_station.h): the
+    // Blockbuster kiosk's sticker printer, which the retail cartridge knows
+    // how to drive. On, the Gallery shows its Print button, and printing
+    // runs the game's own photo display after a reset (a relaunch of this
+    // program) and writes the sheet as PNG files under stickers/. Off by
+    // default: the console had no station. Not a mailbox field yet; edited
+    // in snapsettings.json.
+    bool  snap_station      = false;
     // Interpolate the view and projection as well as object transforms.
     //
     // On, and it has to be: this game's camera lives in the projection stack,

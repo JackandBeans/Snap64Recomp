@@ -31,6 +31,7 @@
 #include "settings.h"
 #include "version.h"
 #include "paths.h"
+#include "snap_station.h"
 namespace snap { extern uint8_t* g_rdram; }
 extern "C" void snap_publish_ai_len(uint8_t* rdram);
 
@@ -510,6 +511,9 @@ int main(int argc, char* argv[]) {
            reinterpret_cast<const char*>(snap::base_dir().u8string().c_str()));
 
     snap::load_settings();
+    // Before anything else opens the save or the caches: a relaunch after a
+    // Snap Station print waits here for the previous instance to exit.
+    snap::station_init();
     snap::apply_graphics_settings();
     snap::set_master_volume(snap::settings().master_volume);
     snap::set_mute_unfocused(snap::settings().mute_unfocused);

@@ -160,6 +160,9 @@ marks most changed sites (grep for it), but not all of them.
 * `ultramodern/src/mesgqueue.cpp` -- run-clock pauses.
 * `ultramodern/include/ultramodern/ultramodern.hpp`, `librecomp/src/pi.cpp`,
   `librecomp/src/rsp.cpp` -- the matching interface and I/O changes.
+* `ultramodern/include/ultramodern/input.hpp` -- `Pak::ControllerPak`
+  uncommented, so a port can report a pak that the rumble path does not
+  claim (the Snap Station on port 4, `src/snap_station.cpp`).
 
 ### RT64
 

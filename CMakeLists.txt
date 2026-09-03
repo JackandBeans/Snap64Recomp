@@ -220,6 +220,7 @@ set(SNAP_SOURCES
     src/patch_shims.cpp
     src/settings.cpp
     src/photo_export.cpp
+    src/snap_station.cpp
     "${SNAP_ASPMAIN_CPP}"
 )
 
@@ -368,6 +369,11 @@ if (WIN32)
             DESTINATION . OPTIONAL)
 endif()
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/menu_text/recomp_logo.png" DESTINATION menu_text)
+# The two folders players are told about (README "Mods and texture packs")
+# exist in a fresh unpack, each with the note that says what it is for and
+# that nothing ships in it.
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/mods/README.md" DESTINATION mods)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/texture_packs/README.txt" DESTINATION texture_packs)
 install(FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
     "${CMAKE_CURRENT_SOURCE_DIR}/NOTICE.md"

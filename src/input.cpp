@@ -38,6 +38,7 @@
 #include <SDL2/SDL.h>
 
 #include "photo_export.h"
+#include "snap_station.h"
 
 // Pokemon Snap port: how many more presented images to photograph. Lives in
 // RT64's present queue, where the pictures actually leave for the screen;
@@ -265,6 +266,14 @@ static void snap_input_tap(uint16_t* buttons, float* x, float* y) {
 }
 
 bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
+    // Port 4 is the Snap Station when it is present: a controller nobody
+    // holds, so its pad reads succeed with nothing pressed (snap_station.h).
+    if (controller_num == 3 && snap::station_port4_present()) {
+        *buttons = 0;
+        *x = 0.0f;
+        *y = 0.0f;
+        return true;
+    }
     // Only support controller port 0.
     if (controller_num != 0) {
         return false;
@@ -430,6 +439,17 @@ void input_set_rumble(int controller_num, bool rumble) {
 }
 
 ultramodern::input::connected_device_info_t input_get_connected_device_info(int controller_num) {
+    // Port 4: the Snap Station, a controller with a pak-class device in it.
+    // The game probes any port that reports a pak (contInitialize,
+    // contDetectDevices) and recognises the station by what the probe echoes
+    // (snap_station.cpp); "ControllerPak" here only says a pak is present --
+    // the runtime's own rumble path checks for RumblePak and leaves it alone.
+    if (controller_num == 3 && snap::station_port4_present()) {
+        return {
+            .connected_device = ultramodern::input::Device::Controller,
+            .connected_pak    = ultramodern::input::Pak::ControllerPak,
+        };
+    }
     if (controller_num != 0) {
         return {
             .connected_device = ultramodern::input::Device::None,

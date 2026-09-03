@@ -99,6 +99,9 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *   +0x28  u8   SOUND fields 0..5, through +0x2D (sfx_volume_patch.c reads
  *               them too)
  *   +0x30  u32  MBOX_DBG, retired
+ *   +0x40  u32  the audio backlog word the patched AI_LEN read consumes
+ *               (src/overlay_hook.cpp); moved here from 0x80700004 because
+ *               the Snap Station boot's memory test sweeps 0x80400000-0x807FFFF0
  *   +0x34  u8   MBOX_SEL, the patch's own: the current selection,
  *               readable from every coroutine
  *   +0x100      SCRATCH_ARRAYS, the page's pointer and snapshot arrays

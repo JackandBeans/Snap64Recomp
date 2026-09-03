@@ -125,6 +125,7 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         s.intro_fix          = j.value("intro_fix", s.intro_fix);
         s.photo_detail       = j.value("photo_detail", s.photo_detail);
         s.jynx_vc            = j.value("jynx_vc", s.jynx_vc);
+        s.snap_station       = j.value("snap_station", s.snap_station);
         out = s;
         return SettingsRead::Ok;
     } catch (const std::exception& e) {
@@ -253,6 +254,7 @@ bool save_settings() {
         {"intro_fix",             copy.intro_fix},
         {"photo_detail",          copy.photo_detail},
         {"jynx_vc",               copy.jynx_vc},
+        {"snap_station",          copy.snap_station},
     };
     // dump() throws only for a string that is not valid UTF-8, and every
     // value above is a bool or an int.
@@ -314,6 +316,12 @@ void apply_graphics_settings() {
     }
     cfg.rr_manual_value = s_settings.fps_manual_target;
     cfg.ds_option = s_settings.downsample;
+    // RT64's developer mode, for whoever makes a texture pack: its texture
+    // dump is the only source of the hashes a pack is keyed on. A launch-time
+    // environment switch, never a setting, and off for every player; RT64
+    // takes F1 and F2 for its own panels while it is on (README, "Mods and
+    // texture packs").
+    cfg.developer_mode = (getenv("SNAP_DEV") != nullptr);
 
     ren::set_graphics_config(cfg);
     printf("[SNAP-CFG] applied: %s, %s, MSAA %dx, fps mode %d\n",

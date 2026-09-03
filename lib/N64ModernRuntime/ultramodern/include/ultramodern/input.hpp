@@ -15,7 +15,11 @@ namespace ultramodern {
         enum class Pak {
             None,
             RumblePak,
-            // ControllerPak,
+            // Pokemon Snap port: a pak that is not a Rumble Pak, so that a
+            // port can report a pak present without the rumble path
+            // claiming it (src/snap_station.cpp puts the Snap Station on
+            // port 4 this way).
+            ControllerPak,
             // TransferPak
         };
 
