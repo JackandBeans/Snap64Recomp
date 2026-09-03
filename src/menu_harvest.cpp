@@ -854,7 +854,10 @@ constexpr Source kTitleSources[] = {
 
 // Core rows only (kMenuTtlCapH of them); the ring is generated.
 constexpr SynthGlyph kTitleSynth[] = {
-    { 'S', { ".#####.", "##...##", "##.....", "###....", ".####..", "...###.", ".....##", ".....##", "##...##", ".#####.", "", "" } },
+    /* Built from the face's own C: its top arc (rows 1-3) and, mirrored, its
+     * bottom arc (rows 8-10), the stems thinning to one column at the middle
+     * as the C's does, joined by a two-row spine. */
+    { 'S', { "..####.", ".######", "##....#", "##.....", ".###...", "...###.", ".....##", "#....##", "######.", ".####..", "", "" } },
 };
 
 bool title_core(const Px& p) {

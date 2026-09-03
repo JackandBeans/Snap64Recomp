@@ -72,6 +72,7 @@ namespace RT64 {
             uint64_t tileId = 0;
             uint32_t pairIndex = 0;
             bool filled = false;
+            bool duplicate = false;
             uint64_t matchedTimestamp = 0;
             bool matchReported = false;
             // The bitmap in the order the game stores it: pixel (x, y) at
@@ -88,10 +89,11 @@ namespace RT64 {
         // The window library's buffer is 320x210; the screen is 240 rows.
         static constexpr uint32_t MaxSourceWidth = 320;
         static constexpr uint32_t MaxSourceHeight = 210;
-        // Enough for every photo a screen shows at once plus the scoring
-        // passes between them; each pin is the halved photo at the render
-        // scale, half a megabyte for a thumbnail at 8x.
-        static constexpr size_t MaxCandidates = 24;
+        // Enough for every photo a screen shows at once, the previews the
+        // Report renders afresh on every cursor move, and the scoring passes
+        // between them; each pin is the halved photo at the render scale,
+        // half a megabyte for a thumbnail at 8x.
+        static constexpr size_t MaxCandidates = 40;
         static constexpr uint32_t RDRAMBytes = 0x800000;
         // A VI origin sits a row or two into its buffer; treat anything within
         // a few rows of a displayed address as the screen.
@@ -242,16 +244,33 @@ namespace RT64 {
                 }
 
                 candidate.filled = true;
+
+                // The same photo rendered again at the same size (the Report
+                // and the Album re-render on a cursor move; the Gallery's
+                // enlarge fades a photo it just drew) yields the very bitmap
+                // an earlier candidate already holds. Keep the earlier one,
+                // which the texture loads may be matching this frame, and
+                // release the newcomer, so a re-render never pushes a photo
+                // still on screen out of the ring.
+                for (auto other = candidates.begin(); other != candidates.end(); other++) {
+                    if ((&*other != &candidate) && other->filled && (other->dstWidth == candidate.dstWidth) &&
+                        (other->dstHeight == candidate.dstHeight) && (other->pixels == candidate.pixels)) {
+                        candidate.duplicate = true;
+                        break;
+                    }
+                }
+
                 return;
             }
         }
 
         // Called when the display list is done: a candidate whose rows never
         // came back (render-to-RAM off, or the pair was not rendered) can
-        // never be matched and is released.
+        // never be matched and is released, as is one that duplicated an
+        // earlier candidate's bitmap.
         void endDisplayList(FramebufferManager &fbManager) {
             for (auto it = candidates.begin(); it != candidates.end();) {
-                if (!it->filled) {
+                if (!it->filled || it->duplicate) {
                     unpin(fbManager, it->tileId);
                     it = candidates.erase(it);
                 }
@@ -261,7 +280,13 @@ namespace RT64 {
             }
         }
 
-        // The oldest render nothing ever matched goes first; failing that, the oldest.
+        // The oldest render nothing ever matched goes first; failing that,
+        // the one whose bitmap was drawn longest ago. Not the oldest render:
+        // the Report's page of thumbnails is rendered once and drawn every
+        // frame after, while each cursor move renders a fresh preview that
+        // is drawn until the next move, so age of creation would evict the
+        // thumbnails still on screen ahead of previews long replaced -- the
+        // thumbnails then fall back to the console's halved texels.
         void evictOne(FramebufferManager &fbManager) {
             if (candidates.empty()) {
                 return;
@@ -277,6 +302,11 @@ namespace RT64 {
 
             if (victim == candidates.end()) {
                 victim = candidates.begin();
+                for (auto it = candidates.begin(); it != candidates.end(); it++) {
+                    if (it->matchedTimestamp < victim->matchedTimestamp) {
+                        victim = it;
+                    }
+                }
             }
 
             unpin(fbManager, victim->tileId);
