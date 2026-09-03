@@ -381,3 +381,14 @@ with an empty shader cache, so that every raster shader it links at run time
 through `dxcompiler.dll` was signed by the new `dxil.dll`: it presented in
 step with the display throughout, wrote a 1.5 MB shader cache, and logged no
 compiler, linker or pipeline error.
+
+The proof was then repeated with the committed script (commit `8d1c027`), at
+23:00 the same day: a plain `git clone` (1 s; the three plume files came with
+it), `python tools/fetch_deps.py` fetched all 23 trees in 174 s, replaced
+`dxil.dll` with the v1.7.2308 file and restored the three plume files from
+the repository, a second run reported every tree at its pin in 5 s, and after
+`RecompiledFuncs/`, `RecompiledPatches/` and the ROM were copied in,
+configure took 41 s and the Release build 244 s with no errors, leaving
+`Snap64Recomp.exe` (10,083,840 bytes) with `SDL2.dll`, `dxcompiler.dll` and
+`dxil.dll` (SHA-256 `9cccc7ef…`) beside it and the 53 shaders compiled. The
+clone was deleted afterwards.
