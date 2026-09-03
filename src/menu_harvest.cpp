@@ -426,24 +426,29 @@ constexpr SynthGlyph kHelpSynth[] = {
 // digit (the 2 of "rc2", say) would otherwise withhold the whole menu
 // directory (menu_assets.cpp note_missing).
 constexpr SynthGlyph kCreditsSynth[] = {
-    { 'J', { ".....", "..###", "...#.", "...#.", "...#.", "...#.", "#..#.", ".##..", ".....", "....." } },
-    { 'B', { ".....", "###..", "#..#.", "#..#.", "###..", "#..#.", "#..#.", "###..", ".....", "....." } },
-    { 'S', { ".....", ".###.", "#....", "#....", ".##..", "...#.", "...#.", "###..", ".....", "....." } },
-    { 'k', { ".....", "#....", "#....", "#..#.", "#.#..", "##...", "#.#..", "#..#.", ".....", "....." } },
+    /* Drawn at the copyright face's own proportions, measured on its
+     * harvested letters: capitals seven rows on rows 1-7 and three columns
+     * wide (E, F, R, K, C, A), lowercase five rows on rows 3-7 and three
+     * wide, digits three wide, one-pixel strokes with squared corners; only
+     * m and & take more. Wider drawings read bolder than the line above. */
+    { 'J', { "...", ".##", "..#", "..#", "..#", "..#", "#.#", ".#.", "...", "..." } },
+    { 'B', { "...", "##.", "#.#", "#.#", "##.", "#.#", "#.#", "##.", "...", "..." } },
+    { 'S', { "...", "###", "#..", "#..", ".#.", "..#", "..#", "###", "...", "..." } },
+    { 'k', { "...", "#..", "#..", "#.#", "##.", "#.#", "#.#", "#.#", "...", "..." } },
     { 'm', { ".....", ".....", ".....", "####.", "#.#.#", "#.#.#", "#.#.#", "#.#.#", ".....", "....." } },
-    { 'p', { ".....", ".....", ".....", "###..", "#..#.", "#..#.", "###..", "#....", "#....", "....." } },
-    { 'c', { ".....", ".....", ".....", ".###.", "#....", "#....", "#....", ".###.", ".....", "....." } },
-    { 'v', { ".....", ".....", ".....", "#..#.", "#..#.", "#..#.", ".##..", ".##..", ".....", "....." } },
-    { '&', { ".....", ".#...", "#.#..", "#.#..", ".#...", "#.#.#", "#..#.", ".##.#", ".....", "....." } },
-    { '(', { ".....", "..#..", ".#...", ".#...", ".#...", ".#...", ".#...", "..#..", ".....", "....." } },
-    { ')', { ".....", "..#..", "...#.", "...#.", "...#.", "...#.", "...#.", "..#..", ".....", "....." } },
-    { '0', { ".....", ".##..", "#..#.", "#..#.", "#..#.", "#..#.", "#..#.", ".##..", ".....", "....." } },
-    { '4', { ".....", "..##.", ".#.#.", "#..#.", "####.", "...#.", "...#.", "...#.", ".....", "....." } },
-    { '2', { ".....", ".##..", "#..#.", "...#.", "..#..", ".#...", "#....", "####.", ".....", "....." } },
-    { '3', { ".....", ".##..", "#..#.", "...#.", "..#..", "...#.", "#..#.", ".##..", ".....", "....." } },
-    { '7', { ".....", "####.", "...#.", "...#.", "..#..", "..#..", ".#...", ".#...", ".....", "....." } },
-    { '.', { ".....", ".....", ".....", ".....", ".....", ".....", ".....", "#....", ".....", "....." } },
-    { '\x01', { ".....", ".....", ".....", ".....", "##...", "##...", ".....", ".....", ".....", "....." } },
+    { 'p', { "...", "...", "...", "##.", "#.#", "#.#", "##.", "#..", "#..", "#.." } },
+    { 'c', { "...", "...", "...", ".##", "#..", "#..", "#..", ".##", "...", "..." } },
+    { 'v', { "...", "...", "...", "#.#", "#.#", "#.#", "#.#", ".#.", "...", "..." } },
+    { '&', { "....", ".#..", "#.#.", "#.#.", ".#..", "#.##", "#.#.", ".#.#", "....", "...." } },
+    { '(', { "..", ".#", "#.", "#.", "#.", "#.", "#.", ".#", "..", ".." } },
+    { ')', { "..", "#.", ".#", ".#", ".#", ".#", ".#", "#.", "..", ".." } },
+    { '0', { "...", "###", "#.#", "#.#", "#.#", "#.#", "#.#", "###", "...", "..." } },
+    { '2', { "...", "###", "..#", "..#", "###", "#..", "#..", "###", "...", "..." } },
+    { '3', { "...", "###", "..#", "..#", "###", "..#", "..#", "###", "...", "..." } },
+    { '4', { "...", "#.#", "#.#", "#.#", "###", "..#", "..#", "..#", "...", "..." } },
+    { '7', { "...", "###", "..#", "..#", ".#.", ".#.", ".#.", ".#.", "...", "..." } },
+    { '.', { ".", ".", ".", ".", ".", ".", ".", "#", ".", "." } },
+    { '', { "..", "..", "..", "..", "##", "##", "..", "..", "..", ".." } },
 };
 
 // The letters "Graphics" and "Sound" need beyond the "Options" sprite, in the
@@ -840,9 +845,8 @@ void dump_bitmap(FILE* f, const char* name, const MenuBitmap& b) {
 // whole-word sprites in a larger face: a white core inside a dark ring one to
 // two pixels wide with a soft fringe beyond, the cores one column apart so
 // neighbouring rings share a column. Segmented on the white core, since the
-// rings would merge every letter into one run; each cell keeps two columns
-// either side for its ring, and a neighbour's core caught in those columns
-// becomes ring, so a cell is one letter's. "Continue" is left out (its u and
+// rings would merge every letter into one run; each cell keeps the one
+// column either side that is its ring. "Continue" is left out (its u and
 // e touch) and so is "Gallery" (two bitmap rows; the decoder reads the
 // first); "No Controller Connected" is the same face and supplies the rest.
 // The capital S no title word contains is the port's, below.
@@ -864,13 +868,17 @@ bool title_core(const Px& p) {
     return (p.a >= Core) && (p.i >= Core);
 }
 
-// A title cell: two columns of margin either side of the core run, the
-// kMenuTtlCellH rows from the row above the core's top; a neighbour's core
-// in the margin is replaced by ring.
+// A title cell: the core run and one column either side, the kMenuTtlCellH
+// rows from the row above the core's top. One column, not two: cores sit one
+// column apart in a word, so the column past the ring is the neighbour's
+// core, and a second margin would carry a neighbour that the composed word
+// does not have (an earlier cut turned it into ring and every letter grew a
+// stray dark column beside it). The shared ring column is taken from both
+// letters when the word is composed, as the sprites share it.
 Cell cut_title_cell(const Img& img, int s, int e, int top) {
     Cell c;
-    const int x0 = std::max(0, s - 2);
-    const int x1 = std::min(img.w, e + 2);
+    const int x0 = std::max(0, s - 1);
+    const int x1 = std::min(img.w, e + 1);
     c.w = x1 - x0;
     c.cs = s - x0;
     c.ce = e - x0;
@@ -881,19 +889,15 @@ Cell cut_title_cell(const Img& img, int s, int e, int top) {
             continue;
         }
         for (int x = x0; x < x1; x++) {
-            Px p = img.at(x, y);
-            if (((x < s) || (x >= e)) && title_core(p)) {
-                p = Px{ 0, 220 };
-            }
-            c.px[size_t(r) * size_t(c.w) + size_t(x - x0)] = p;
+            c.px[size_t(r) * size_t(c.w) + size_t(x - x0)] = img.at(x, y);
         }
     }
     return c;
 }
 
 // A title letter of the port's own: the core at cell rows 1..kMenuTtlCapH,
-// then the ring by dilation, one pixel of opaque dark and one of soft dark,
-// the way the originals' rings read.
+// then the ring by dilation, one pixel of dark at the originals' ring
+// strength and one of the faint fringe beyond it.
 Cell synth_title(const SynthGlyph& g) {
     const int coreW = int(std::strlen(g.rows[0]));
     Cell c;
@@ -930,10 +934,10 @@ Cell synth_title(const SynthGlyph& g) {
                 p = Px{ 255, 255 };
             }
             else if (near(y, x, 1)) {
-                p = Px{ 0, 230 };
+                p = Px{ 0, 220 };
             }
             else if (near(y, x, 2)) {
-                p = Px{ 0, 100 };
+                p = Px{ 0, 60 };
             }
         }
     }
