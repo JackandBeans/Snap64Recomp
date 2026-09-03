@@ -288,11 +288,16 @@ public:
         // either a .rtz archive or a loose directory carrying an rt64.json.
         // Loading blocks, which is why it happens here at boot and never
         // mid-course; ordering is alphabetical, and later packs override
-        // earlier ones where they collide.
+        // earlier ones where they collide. The folder is next to the
+        // executable like everything else (paths.h) -- a bare relative name
+        // here resolved against the working directory, which a shortcut or
+        // a launcher sets elsewhere, and found nothing -- and is created
+        // empty so a player can see where a pack goes.
         {
             std::vector<RT64::ReplacementDirectory> packs;
-            const std::filesystem::path packRoot = "texture_packs";
+            const std::filesystem::path packRoot = snap::base_path("texture_packs");
             std::error_code ec;
+            std::filesystem::create_directories(packRoot, ec);
             if (std::filesystem::is_directory(packRoot, ec)) {
                 std::vector<std::filesystem::path> found;
                 for (const auto &entry : std::filesystem::directory_iterator(packRoot, ec)) {

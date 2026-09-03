@@ -118,3 +118,9 @@ The ROM itself is never distributed. The generated `RecompiledFuncs/` (the
 recompiled game) and `RecompiledPatches/` are ignored by git.
 
 `menu_text/recomp_logo.png` is the port's own title-screen badge, not game art.
+
+No texture pack and no mod ships in this repository or in the release
+archive. RT64's texture replacement system and librecomp's mod loader are
+vendored capability; any content for them is the player's own and under
+its own terms, and content derived from another game's data is outside
+what this project hosts, links, or helps install.
