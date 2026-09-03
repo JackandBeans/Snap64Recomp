@@ -20,9 +20,13 @@ Nintendo, HAL Laboratory or The Pokémon Company; their trademarks are theirs.
 
 * Built and run on one machine: Windows 11, MSVC 2019, a Direct3D 12 GPU. No
   other platform, GPU or compiler has been tried.
-* **Not buildable from a clean checkout.** Vendored trees, the recompiled
-  game and the recompiler's inputs are missing from git; `BUILDING.md` lists
-  exactly what, and gives the full pipeline as it exists today.
+* **Buildable from a clean checkout, in two steps beyond `git clone`.**
+  `python tools/fetch_deps.py` fetches the vendored trees (SDL,
+  DirectX-Headers, RT64's third-party trees) at the recorded upstream commits
+  and verifies them; the recompiled game and the recompiler's inputs
+  (`RecompiledFuncs/`, `RecompiledPatches/`, the ROM) are generated under WSL
+  from your own cartridge dump. A second checkout built this way, on this
+  machine, on 2026-09-02 (`BUILDING.md`, "What a clean checkout is missing").
 * No automated tests, no CI, no installer. The release archive is the ZIP
   that `cpack` writes (`BUILDING.md`, step 13); none has been published.
 * Version `1.0.0-rc1`, typed once in `CMakeLists.txt` and shown in the title

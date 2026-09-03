@@ -27,6 +27,8 @@ non-MSVC branches; no build on another platform is recorded in this repository.
   19.29.30159 through the `Visual Studio 16 2019` generator, platform `x64`).
 * CMake 3.20 or newer (the recorded build used 4.4.2).
 * Python 3 (any recent version; the tools use only the standard library).
+* Git for Windows on `PATH`, and access to github.com for
+  `tools/fetch_deps.py` (step 10).
 
 ### WSL
 
@@ -202,14 +204,32 @@ microcode on the next build.
 
 ### 10. Vendored trees on the Windows side
 
-These directories are **not in git** and must exist before CMake runs
-(`VENDORING.md` has the pins and what is known about their state):
+`lib/SDL`, `lib/DirectX-Headers` and `lib/rt64/src/contrib` are **not in
+git** and must exist before CMake runs. One command puts them there, at the
+upstream commits recorded in `VENDORING.md`:
 
-| Directory | What | How to obtain |
-| --- | --- | --- |
-| `lib/SDL` | SDL 2.30.11, `release-2.30.11` (`fa24d868ac2f8fd558e4e914c9863411245db8fd`) | `git clone https://github.com/libsdl-org/SDL.git lib/SDL && git -C lib/SDL checkout fa24d868ac2f8fd558e4e914c9863411245db8fd` |
-| `lib/DirectX-Headers` | `v1.619.5` (`ee479f0bd5f7b884f202bcf0c3f076cc050dd256`) | `git clone https://github.com/microsoft/DirectX-Headers.git lib/DirectX-Headers && git -C lib/DirectX-Headers checkout ee479f0bd5f7b884f202bcf0c3f076cc050dd256` |
-| `lib/rt64/src/contrib` | RT64's 19 third-party trees (396 MB, including the `dxc` compiler binaries) | **No recorded pins.** The only copy is the developer's working tree. See VENDORING.md. |
+    python tools/fetch_deps.py
+
+It needs git on `PATH` and access to github.com, and fetches 23 trees (SDL
+2.30.11, DirectX-Headers v1.619.5, RT64's fifteen submodules with the five
+trees nested inside plume and re-spirv, and the five directories rt64 keeps as
+plain files), about 700 MB, each as a detached checkout of one commit (no
+history); it took two and a half minutes on the machine this was written on.
+Every tree is verified (`git rev-parse HEAD` against the pin; the `dxc`
+binaries file by file against SHA-256 values in the script), a mismatch stops
+the script naming the pin and the reason, and running it again is a no-op
+(`--dry-run` says what it would do, `--list` prints the pin table).
+
+Two things it does that a plain clone would not: it puts the port's own three
+plume files back with `git checkout --` after cloning plume (`VENDORING.md`,
+"plume"), and it replaces `dxc/bin/x64/dxil.dll` with the file of Microsoft's
+release v1.7.2308, downloaded from the release archive (25 MB) and checked
+by SHA-256, because the copy in rt64's `dxc-bin` is under terms that do not
+allow distributing it (`VENDORING.md`, "dxc"). On a tree whose `.git` points
+at a git directory that no longer exists (the developer's original checkouts)
+it reports `UNVERIFIED` and leaves the directory alone rather than replace
+the only copy, apart from that one `dxil.dll`; delete such a directory to have
+it fetched at the pin.
 
 `lib/N64ModernRuntime` and `lib/rt64/src` (outside `contrib`) are tracked as
 plain files and carry local modifications; they are part of the checkout.
@@ -299,10 +319,11 @@ tracked copies of N64ModernRuntime and RT64, the recompiler configs, the
 tools, the patch sources, the microcode template `rsp/aspMain.us.toml.in` and
 the two symbol files. It does **not** contain:
 
-1. `lib/SDL` and `lib/DirectX-Headers` -- ignored; pins are recorded above.
-2. `lib/rt64/src/contrib` -- ignored except for `plume/plume_d3d12.cpp`; pins
-   were lost with the deleted git directory (VENDORING.md). CMake cannot
-   configure without it.
+1. `lib/SDL` and `lib/DirectX-Headers` -- ignored; `python tools/fetch_deps.py`
+   fetches them at the recorded pins (step 10).
+2. `lib/rt64/src/contrib` -- ignored except for the port's three plume files;
+   the same script fetches all of it at the pins recovered in VENDORING.md.
+   CMake cannot configure without it.
 3. `RecompiledFuncs/` and `RecompiledPatches/` -- generated (steps 4-5, 8);
    generating them needs the ROM, the decomp build and N64Recomp under WSL.
 4. `pokemonsnap.relocs.elf` and `pokemonsnap.z64` in the port root -- the
@@ -320,3 +341,43 @@ There is no CI and no test suite. Packaging is `cpack` (step 13): the
 `install()` rules lay out the portable folder, and the build stages the DLLs
 and the `menu_text` badge beside the executable (step 12). The ROM is the one
 file still placed by hand.
+
+### The clean-checkout build, as verified
+
+On 2026-09-02, on the machine above, the list was tested end to end: a plain
+local `git clone` into a second directory, then in it
+
+    python tools/fetch_deps.py
+    # copy RecompiledFuncs/, RecompiledPatches/ and pokemonsnap.z64 from the
+    # working tree (the WSL outputs of steps 3-5 and 8; the copies were already
+    # hooked, so tools/hook_funcs.py was not needed)
+    cmake -S . -B build -G "Visual Studio 16 2019" -A x64
+    cmake --build build --config Release --target Snap64Recomp --parallel
+
+`fetch_deps.py` fetched all 23 trees in about two and a half minutes (its
+second run, three seconds, reported every one already at its pin), configure
+took 41 s and found the ROM and the patches, and the build took 4 min 4 s with
+no errors, 10 compiler warnings and the linker's `LNK4088` (the port links
+with `/FORCE:MULTIPLE`, `CMakeLists.txt`; the `/IGNORE:4088` beside it does
+not silence that one). `build/Release` held `Snap64Recomp.exe` (10,083,840 bytes; the
+version resource reads `1.0.0-rc1`), `SDL2.dll`, `dxcompiler.dll` and
+`dxil.dll` (the last two byte-identical to `lib/rt64/src/contrib/dxc/bin/x64/`),
+`Snap64Recomp.map` and `menu_text/recomp_logo.png`. The fetched trees were
+diffed against the developer's own: identical apart from zstd's two test-suite
+symlinks (empty files in the original checkout, link-target text in the new
+one). The executable was not run as part of this check.
+
+That record predates two changes made the same day: the two plume headers
+became tracked (so `fetch_deps.py` no longer patches them), and `dxil.dll`
+became the v1.7.2308 file (`VENDORING.md`, "dxc"). With the new validator in
+place the developer's build directory was rebuilt with its 53 compiled shaders
+deleted first: all 53 were regenerated and signed through it, the executable
+relinked, and `Release/dxil.dll` restaged (SHA-256 `9cccc7ef…`). The
+v1.8.2403.2 validator had been tried first and refused the very first library
+shader (`RasterPSLibrary.hlsl`, "Container part 'Runtime Data (RDAT)' does
+not match expected for module"), which is why the validator stays in the
+compiler's 1.7 series. The game was then run for 75 s on the Beach replay
+with an empty shader cache, so that every raster shader it links at run time
+through `dxcompiler.dll` was signed by the new `dxil.dll`: it presented in
+step with the display throughout, wrote a 1.5 MB shader cache, and logged no
+compiler, linker or pipeline error.

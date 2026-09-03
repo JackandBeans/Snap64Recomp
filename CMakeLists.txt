@@ -412,14 +412,20 @@ file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/licenses/concurrentqueue.txt" 
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/generated/licenses/concurrentqueue.txt" DESTINATION licenses)
 # Tracked in the repository because the vendored copies carry no licence file:
 # nlohmann/json has only an SPDX header, and the DXC binaries ship without
-# their LICENSE.TXT (the text was copied from upstream; BUILDING.md, step 13).
-# A package without the DXC licence is not produced.
-if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/licenses/DirectXShaderCompiler.txt")
-    message(WARNING "licenses/DirectXShaderCompiler.txt is missing; cpack stops until it is added (BUILDING.md, step 13)")
-endif()
+# their licence texts (BUILDING.md, step 13). DirectXShaderCompiler.txt is the
+# LLVM Release License of the compiler and headers; DirectXShaderCompiler-dxil.txt
+# is Microsoft's LICENSE-MS.txt of release v1.7.2308, the terms dxil.dll is
+# shipped under (NOTICE.md, VENDORING.md "dxc"). A package without them is not
+# produced.
+foreach(_lic IN ITEMS DirectXShaderCompiler.txt DirectXShaderCompiler-dxil.txt)
+    if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/licenses/${_lic}")
+        message(WARNING "licenses/${_lic} is missing; cpack stops until it is added (BUILDING.md, step 13)")
+    endif()
+endforeach()
 install(FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/licenses/nlohmann-json.txt"
     "${CMAKE_CURRENT_SOURCE_DIR}/licenses/DirectXShaderCompiler.txt"
+    "${CMAKE_CURRENT_SOURCE_DIR}/licenses/DirectXShaderCompiler-dxil.txt"
     DESTINATION licenses)
 
 # cpack -C Release (from the build directory) -> Snap64Recomp-<version>-win64.zip
