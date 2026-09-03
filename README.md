@@ -213,8 +213,8 @@ next start.
 
 With it on, the game's own Gallery (the title menu's Gallery entry, which
 the game adds once the saved report holds more than three species) shows
-the Print button the kiosk showed, above Save, with
-the game's own help text about a print credit. Print does what it did in
+the Print button the kiosk showed, above Save, with the game's own help
+text about a print credit. Print does what it did in
 the store: the game saves the four photos of its print tray to the
 cartridge (the tray is the Arrange screen's four cells, which the Camera
 Check fills with the photos Oak accepts), asks the station to reset the
