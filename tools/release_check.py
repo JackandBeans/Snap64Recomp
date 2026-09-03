@@ -223,14 +223,20 @@ def check_menu(c, exe_dir):
     """The Options page's custom Graphics/Sound rows come from strings the port
     composites from the harvested menu font; one character with no glyph
     withholds the whole directory and the page falls back to the stock menu.
-    A boot that reaches the title logs which happened."""
-    out = run_game(exe_dir, {'SNAP_REPLAY': 'beach.inputs', 'SNAP_MUTE': '1'}, 25)
+    The font is harvested when the title's main-menu segment loads, which the
+    eval replay passes through early; the ride replays skip it, and a boot
+    with no replay does not advance under an unfocused window."""
+    if not (exe_dir / 'eval.inputs').is_file():
+        c.add('menu', False, 'eval.inputs is not beside the executable')
+        return
+    out = run_game(exe_dir, {'SNAP_REPLAY': 'eval.inputs', 'SNAP_MUTE': '1'}, 130)
     staged = [l for l in out.splitlines() if l.startswith('[SNAP-MENU] staged ')]
     withheld = [l for l in out.splitlines() if 'the staged strings are withheld' in l]
     missing = [l for l in out.splitlines() if l.startswith('[SNAP-MENU] no glyph for ')]
-    c.add('menu', bool(staged) and not withheld,
-          'interface strings %s%s' % ('staged (' + staged[0].split('staged ', 1)[1] + ')' if staged else 'NOT staged',
-                                       '; withheld: ' + '; '.join(m.split('] ', 1)[1] for m in missing) if withheld else ''))
+    detail = ('staged (' + staged[0].split('staged ', 1)[1] + ')') if staged else 'NOT staged'
+    if withheld:
+        detail += '; withheld: ' + '; '.join(m.split('] ', 1)[1] for m in missing)
+    c.add('menu', bool(staged) and not withheld, 'interface strings ' + detail)
 
 
 def check_settings(c, exe_dir):

@@ -13,6 +13,7 @@ touched.
 | `4972025` | a windowed program that keeps its log; version rc2; `tools/release_check.py` |
 | `ec73c7d` | the Snap Station on port 4, with the two port bugs it exposed fixed |
 | `87859cc` | mods and texture packs: the loaders disclosed and anchored |
+| `94580a0` | the credits face gets the digits 2, 3 and 7 so the rc2 title line opens the menu |
 | (last) | this report |
 
 Nothing was pushed. The PokemonSnapRecomp-backup folder beside the
@@ -196,17 +197,40 @@ with Pokémon Stadium's.
   of the final code commit was fetched with `tools/fetch_deps.py` in 177 s,
   configured in 43 s and built in 259 s with no errors, then deleted.
 * **The last run**: `tools/release_check.py` against the final build and
-  the rc2 archive, 17 checks, 0 failed, 651 s (03:28 on 3 September).
+  the rc2 archive, now with a menu check, all green (its count is the line
+  the suite printed at the end of this night; see the terminal).
+
+### 3.1 A regression the suite let through, and the guard added
+
+The rc2 version bump (`4972025`) silently broke the in-game Options page,
+and two suite runs passed over it because nothing opened the menu. The
+title's version line is one of the strings the port composites for its
+Graphics and Sound pages, set in the credits face harvested from the game's
+copyright block; that block supplies the digits of 1995-1999, and the port
+synthesised 0 and 4 but not 2, so "rc2" asked for a glyph the face did not
+have. One missing glyph withholds the whole staged directory, and the page
+fell back to the stock five-item menu with no Graphics or Sound entry. It
+surfaced only because I went to add the Snap Station menu row and found the
+page blank. The fix adds 2, 3 and 7 to the credits synth (`94580a0`), and
+`tools/release_check.py` gained a `menu` check that fails if a boot to the
+title does not log that the interface strings staged. The lesson is the one
+this project already learned once: a green suite that never exercises the
+feature is not evidence.
 
 ## 4. What was left out, and why
 
-* **A Snap Station menu row.** Reasons above. The two honest options, with
-  their costs, are in the design document the research produced
-  (`docs/` does not carry it; it is in the session's scratchpad and
-  summarised here): a seventh entry on the game's Option list needs the
-  rows re-pitched; a seventeenth Graphics row needs the mailbox field bank
-  moved and the page's scratch arrays widened, a change the patch's own
-  comments record as having corrupted the page once before.
+* **A Snap Station menu row.** I did build a seventeenth Graphics row
+  (the mailbox field bank grown to +0x18, the page's scratch arrays widened,
+  `station_set_enabled` wired to the new byte): it compiled and ran, but
+  while verifying it I found the credits-digit bug above, which had blanked
+  the menu for every row. Once that was fixed I reverted the seventeenth
+  row rather than ship a mailbox relayout I had not yet verified renders,
+  and the sixteen-row page is confirmed working. The row is a clean
+  follow-up now that the menu opens: either finish that seventeenth Graphics
+  row (verify it draws and that toggling it makes port 4 appear), or take
+  the design's preferred path, a seventh entry on the game's own Option
+  list, which needs the list's rows re-pitched. The setting stays in
+  `snapsettings.json` meanwhile, and the station works from there.
 * **Anything from another game's data.** See section 2.
 * **A soft reset inside the process.** Not in the runtime; the relaunch is
   faithful in effect and documented.
