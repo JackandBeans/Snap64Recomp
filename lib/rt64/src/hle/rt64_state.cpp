@@ -370,6 +370,7 @@ namespace RT64 {
                         dstCallTile.tmemHashOrID = checkResult.tileId;
                         dstCallTile.tileCopyWidth = checkResult.tileWidth;
                         dstCallTile.tileCopyHeight = checkResult.tileHeight;
+                        dstCallTile.tileCopyRowOffset = checkResult.rowOffset;
 
                         // We must force reinterpretation if a LUT format is used.
                         const uint32_t tlutFormat = rdp->otherMode.textLUT();
@@ -383,6 +384,7 @@ namespace RT64 {
                     }
                     else {
                         dstCallTile.tileCopyUsed = false;
+                        dstCallTile.tileCopyRowOffset = 0;
                         dstCallTile.tmemHashOrID = rdp->tileReplacementHashes[tileIndex];
 
                         if (checkResult.syncRequired) {
@@ -591,6 +593,28 @@ namespace RT64 {
             // Synchronization will be required unless direct reinterpretation is possible (which is not implemented yet).
             if (colorImg.formatChanged || depthImg.formatChanged) {
                 fbPair.syncRequired = true;
+            }
+
+            // Pokemon Snap port: a small colour render that is not the screen
+            // may be a photo the game's CPU will halve into a sprite; pin a
+            // halved copy of it, queued to run right after this pair renders
+            // (hle/rt64_snap_photo_detail.h). Off, nothing here runs.
+            if (ext.userConfig->snapPhotoDetail) {
+                uint32_t snapScreens[4];
+                size_t snapScreenCount = 0;
+                for (const VIHistory::Present &entry : viHistory.history) {
+                    if (entry.vi.visible()) {
+                        snapScreens[snapScreenCount++] = entry.vi.fbAddress();
+                    }
+                }
+
+                if (lastScreenVI.visible()) {
+                    snapScreens[snapScreenCount++] = lastScreenVI.fbAddress();
+                }
+
+                const uint32_t snapDrawnWidth = uint32_t(std::max(0, std::min(fbPair.drawColorRect.right(true), int32_t(colorImg.width))));
+                snapPhotoDetail.beginRender(framebufferManager, fbPair.endFbOperations, colorImg.address, colorImg.width, colorImg.siz,
+                    snapDrawnWidth, colorHeight, uint32_t(fbPairIndex), snapScreens, snapScreenCount);
             }
 
             uint32_t colorFbBytes = colorFb->imageRowBytes(colorWriteWidth) * colorFb->height;
@@ -1509,6 +1533,15 @@ namespace RT64 {
                     if (getFramebufferPairs(pairCursor)) {
                         colorFb->copyNativeToRAM(&RDRAM[colorFb->addressStart], colorWriteWidth, colorRowStart, std::min(colorRowEnd, colorFb->height));
 
+                        // Pokemon Snap port: these rows are what the game's
+                        // CPU halves into a photo sprite; note what that
+                        // halving yields so the sprite can be recognised
+                        // (hle/rt64_snap_photo_detail.h). Off, nothing here
+                        // runs.
+                        if (ext.userConfig->snapPhotoDetail) {
+                            snapPhotoDetail.fillPixels(RDRAM, pairCursor);
+                        }
+
                         if (depthWriteWidth > 0) {
                             depthFb->copyNativeToRAM(&RDRAM[depthFb->addressStart], depthWriteWidth, depthRowStart, std::min(depthRowEnd, depthFb->height));
                         }
@@ -1646,6 +1679,15 @@ namespace RT64 {
         // The texture manager should also be notified of any hashes that were removed.
         if (ext.textureCache->evict(workloadCounter, evictedTextureHashes)) {
             textureManager.removeHashes(evictedTextureHashes);
+        }
+
+        // Pokemon Snap port: release the photo pins that never got their rows
+        // back, and every pin once the setting is off.
+        if (ext.userConfig->snapPhotoDetail) {
+            snapPhotoDetail.endDisplayList(framebufferManager);
+        }
+        else if (!snapPhotoDetail.candidates.empty()) {
+            snapPhotoDetail.clear(framebufferManager);
         }
 
         if (renderToRDRAM) {

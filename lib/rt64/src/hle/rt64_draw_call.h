@@ -157,6 +157,8 @@ namespace RT64 {
         bool tileCopyUsed;
         uint16_t tileCopyWidth;
         uint16_t tileCopyHeight;
+        // Pokemon Snap port: the row of a whole-render copy this tile samples from.
+        uint32_t tileCopyRowOffset;
         bool reinterpretTile;
         uint8_t reinterpretSiz;
         uint8_t reinterpretFmt;

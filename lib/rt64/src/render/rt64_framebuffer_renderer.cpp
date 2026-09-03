@@ -246,13 +246,28 @@ namespace RT64 {
             interop::GPUTile &gpuTile = dstGPUTiles[i];
             if (callTile.tileCopyUsed) {
                 const auto &it = fbManager->tileCopies.find(callTile.tmemHashOrID);
-                if (it != fbManager->tileCopies.end()) {
+                // A copy that was set up without a texture (its source had
+                // nothing to give) binds the blank texture rather than null.
+                if ((it != fbManager->tileCopies.end()) && (it->second.texture != nullptr)) {
                     const FramebufferManager::TileCopy &tileCopy = it->second;
-                    gpuTile.tcScale.x = static_cast<float>(tileCopy.usedWidth) / static_cast<float>(callTile.tileCopyWidth);
-                    gpuTile.tcScale.y = static_cast<float>(tileCopy.usedHeight) / static_cast<float>(callTile.tileCopyHeight);
+                    if (tileCopy.snapWhole) {
+                        // Pokemon Snap port: the copy is a whole halved photo
+                        // and this tile samples a run of its rows, so the
+                        // scale is the copy's own and the rows are an offset
+                        // (hle/rt64_snap_photo_detail.h).
+                        gpuTile.tcScale.x = static_cast<float>(tileCopy.usedWidth) / static_cast<float>(std::max(tileCopy.nativeWidth, 1u));
+                        gpuTile.tcScale.y = static_cast<float>(tileCopy.usedHeight) / static_cast<float>(std::max(tileCopy.nativeHeight, 1u));
+                        gpuTile.texelShift = tileCopy.texelShift;
+                        gpuTile.texelShift.y += uint32_t(std::lround(callTile.tileCopyRowOffset * gpuTile.tcScale.y));
+                    }
+                    else {
+                        gpuTile.tcScale.x = static_cast<float>(tileCopy.usedWidth) / static_cast<float>(callTile.tileCopyWidth);
+                        gpuTile.tcScale.y = static_cast<float>(tileCopy.usedHeight) / static_cast<float>(callTile.tileCopyHeight);
+                        gpuTile.texelShift = tileCopy.texelShift;
+                    }
+
                     gpuTile.ulScale.x = tileCopy.ulScaleS ? gpuTile.tcScale.x : 1.0f;
                     gpuTile.ulScale.y = tileCopy.ulScaleT ? gpuTile.tcScale.y : 1.0f;
-                    gpuTile.texelShift = tileCopy.texelShift;
                     gpuTile.texelMask = tileCopy.texelMask;
                     gpuTile.textureIndex = getTextureIndex(tileCopy);
                     gpuTile.textureDimensions = interop::float3(float(tileCopy.textureWidth), float(tileCopy.textureHeight), 1.0f);

@@ -30,6 +30,7 @@
 #include "rt64_rdp.h"
 #include "rt64_rsp.h"
 #include "rt64_rdp_tmem.h"
+#include "rt64_snap_photo_detail.h"
 #include "rt64_workload_queue.h"
 
 namespace RT64 {
@@ -80,6 +81,9 @@ namespace RT64 {
         bool snapFocusDotRequest = false;
         TextureManager textureManager;
         FramebufferManager framebufferManager;
+        // Pokemon Snap port: the renders a photo sprite may be halved from,
+        // kept only while userConfig->snapPhotoDetail is on.
+        SnapPhotoDetail snapPhotoDetail;
         FramebufferChangePool scratchFbChangePool;
         std::unique_ptr<FramebufferRenderer> framebufferRenderer;
         RenderTargetManager renderTargetManager;

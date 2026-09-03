@@ -103,13 +103,16 @@ struct Settings {
     // page's Cutscene Fix row.
     bool  intro_fix         = false;
     // The game shows every photo -- the review window after a shot, Oak's
-    // check, the album -- by rendering it once into a 320x210 buffer in RAM
-    // (the photo fills the part of it each screen asks for) and drawing that
-    // buffer as a sprite. Off, the port draws that buffer as
-    // the console did: native pixels, scaled. On, the renderer serves those
-    // sprites from its own full-resolution render of the same photo, so the
-    // picture Oak holds up is as sharp as the ride was. Nothing else drawn as
-    // a sprite changes. Off by default: the console's look.
+    // check, the album -- by rendering it into a 320x210 buffer in RAM at
+    // twice the sprite's size, halving it on the CPU (each sprite pixel the
+    // average of a 2x2 block) into the sprite's own bitmap, and drawing that
+    // bitmap. Off, the port draws that bitmap as the console did: the halved
+    // pixels, scaled. On, the renderer recognises the bitmap as the halving
+    // of a render it made and serves the sprite from a 2x2-averaged copy of
+    // its own full-resolution render instead (lib/rt64/src/hle/
+    // rt64_snap_photo_detail.h), so the picture Oak holds up is as sharp as
+    // the ride was. Nothing else drawn as a sprite changes. Off by default:
+    // the console's look.
     // Mailbox byte 0x80C00016, seeded from here and edited by the GRAPHICS
     // page's Photo Detail row; rt64_render_context.cpp copies it into
     // RT64's userConfig (snapPhotoDetail) on every config push.

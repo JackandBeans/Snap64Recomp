@@ -92,6 +92,16 @@ namespace RT64 {
             interop::uint2 ditherOffset = { 0, 0 };
             uint32_t ditherPattern = 0;
             float sampleScale = 1.0f;
+            // Pokemon Snap port (hle/rt64_snap_photo_detail.h): log2 of the
+            // box each copied pixel averages, zero for an ordinary copy; the
+            // copy's size in its own texels; whether it is a whole render kept
+            // for sprites to sample rows of; and whether it is pinned against
+            // reuse while a photo may still be drawn from it.
+            uint32_t sourceShift = 0;
+            uint32_t nativeWidth = 0;
+            uint32_t nativeHeight = 0;
+            bool snapWhole = false;
+            bool snapPinned = false;
             bool readColorFromStorage = false;
             bool readDepthFromStorage = false;
             bool needsDiscard = false;
@@ -108,6 +118,8 @@ namespace RT64 {
             uint8_t fmt = 0;
             bool reinterpret = false;
             bool syncRequired = false;
+            // Pokemon Snap port: the row of a whole-render copy this tile starts at.
+            uint32_t rowOffset = 0;
 
             CheckCopyResult() = default;
 
@@ -122,6 +134,10 @@ namespace RT64 {
             RenderFramebuffer *dstFramebuffer;
             RenderDescriptorSet *descriptorSet;
             interop::TextureCopyCB pushConstants;
+            // The destination extent: the source extent for an ordinary copy,
+            // and the source extent over the box for a halved one.
+            uint32_t dstWidth;
+            uint32_t dstHeight;
         };
 
         struct CommandListCopies {

@@ -89,6 +89,20 @@ namespace RT64 {
         uint32_t bottom;
         uint32_t lineWidth;
         uint32_t ditherPattern;
+        // Pokemon Snap port (hle/rt64_snap_photo_detail.h). A tile that reads
+        // the framebuffer through a 2x2 average, the way the game's CPU halves
+        // each photo into its sprite: the copy covers [left,right)x[top,bottom)
+        // of the framebuffer but is (right-left)>>downsampleShift texels wide.
+        // sourceWidth names the render target the copy is taken from, for
+        // when the framebuffer entry at the address has been re-registered
+        // at another width since the render. wholeImage marks the pinned copy
+        // of a whole render; a tile that samples rows of such a copy carries
+        // the row it starts at in rowOffset. All zero on every tile the
+        // ordinary path makes.
+        uint32_t sourceWidth;
+        uint32_t downsampleShift;
+        uint32_t rowOffset;
+        uint32_t wholeImage;
 
         bool valid() const;
         uint64_t hash() const;

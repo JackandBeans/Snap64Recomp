@@ -183,6 +183,24 @@ namespace RT64 {
                 }
             }
         }
+        // Pokemon Snap port: a load from plain memory may still be a photo --
+        // the bitmap the game's CPU halved from a render this renderer made
+        // and pinned a halved copy of. When it is, the TMEM it fills is
+        // tagged with those rows of the pinned copy (hle/
+        // rt64_snap_photo_detail.h). Only with the setting on; the comparison
+        // is the whole loaded range against the bitmap the game computed, so
+        // nothing else is ever substituted.
+        else if (makeTileCopy && !RGBA32 && state->ext.userConfig->snapPhotoDetail && state->ext.emulatorConfig->framebuffer.copyWithGPU) {
+            SnapPhotoDetail::Match match;
+            if (state->snapPhotoDetail.match(state->RDRAM, addressStart, addressEnd, fbManager.getUsedTimestamp(), match)) {
+                const FramebufferTile fbTile = SnapPhotoDetail::makeRegionTile(match);
+                fbManager.insertRegionsTMEM(fbTile.address, tmemStart, std::min(tmemWords, uint32_t(RDP_TMEM_WORDS)), tmemMask, false, false, &regionIterators);
+                for (FramebufferManager::RegionIterator regionIt : regionIterators) {
+                    regionIt->fbTile = fbTile;
+                    regionIt->tileCopyId = match.candidate->tileId;
+                }
+            }
+        }
     }
     
     void RDP::checkImageOverlap(uint32_t addressStart, uint32_t addressEnd) {
