@@ -251,7 +251,7 @@ with `Snap64Recomp.map` (the linker map, `/MAP`) beside it.
 Configure also writes `build-win/generated/version.h` and
 `build-win/generated/snap64.rc` from `src/version.h.in` and
 `src/snap64.rc.in`. The version is typed once, in `CMakeLists.txt`
-(`project(Snap64Recomp VERSION 1.0.0)` plus `SNAP_VERSION_PRERELEASE`, `rc1`
+(`project(Snap64Recomp VERSION 1.0.0)` plus `SNAP_VERSION_PRERELEASE`, `rc2`
 today, empty for a final), and reaches the title bar, the log banner, the
 title screen's credits line, the executable's version resource (Properties >
 Details) and the package name from there.
@@ -283,7 +283,7 @@ still resolve against the working directory.
     cd build-win
     cpack -C Release
 
-writes `Snap64Recomp-1.0.0-rc1-win64.zip` and a `.sha256` beside it in
+writes `Snap64Recomp-1.0.0-rc2-win64.zip` and a `.sha256` beside it in
 `build-win`. The ZIP holds one folder of the same name: `Snap64Recomp.exe`,
 `Snap64Recomp.map`, the three DLLs, `menu_text/recomp_logo.png`, `LICENSE`,
 `NOTICE.md`, `README.md` and `licenses/` -- one `.txt` per component in

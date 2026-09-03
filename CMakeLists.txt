@@ -14,7 +14,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # package name (all through the generated version.h / snap64.rc, below).
 # An empty SNAP_VERSION_PRERELEASE is a final release.
 set(SNAP_PRODUCT_NAME "Snap64 Recomp")
-set(SNAP_VERSION_PRERELEASE "rc1")
+set(SNAP_VERSION_PRERELEASE "rc2")
 if (SNAP_VERSION_PRERELEASE)
     set(SNAP_VERSION_SUFFIX "-${SNAP_VERSION_PRERELEASE}")
     set(SNAP_RC_FILEFLAGS "VS_FF_PRERELEASE")
@@ -268,6 +268,14 @@ if (WIN32)
     target_compile_definitions(Snap64Recomp PRIVATE NOMINMAX)
     # Game threads inherit the image default; recompiled call chains need Linux-like depth.
     target_link_options(Snap64Recomp PRIVATE /STACK:8388608 /MAP)
+    # A windowed program: no console opens beside the game window. main()
+    # stays the entry point (SDL2main is not linked), so the CRT's console
+    # start-up routine is named explicitly. Where the log goes when there is
+    # no console is decided by snap_bind_stdio() in src/main.cpp: an
+    # inherited pipe or file is kept, a parent console is attached, and
+    # otherwise snap64.log is written beside the executable.
+    set_target_properties(Snap64Recomp PROPERTIES WIN32_EXECUTABLE TRUE)
+    target_link_options(Snap64Recomp PRIVATE /ENTRY:mainCRTStartup)
 endif()
 endif()
 

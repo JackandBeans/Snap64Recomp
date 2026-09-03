@@ -116,7 +116,7 @@ static ultramodern::renderer::WindowHandle create_window(void* /*gfx_data*/) {
 // Frame interpolation is the one setting that changes how the game looks
 // rather than how it is presented, and a saved snapsettings.json silently
 // outranks the built-in default. Put its state where it cannot be missed:
-// stdout is invisible when the exe is launched from a shortcut.
+// from a shortcut the log is a file nobody reads until something is wrong.
 static void snap_update_window_title() {
     if (sdl_window == nullptr) {
         return;
@@ -435,11 +435,56 @@ extern "C" void snap_record_overlay_load(uint32_t rom, int32_t ram_addr, uint32_
         }
     }
 }
+#if defined(_WIN32)
+// Where the log goes. The executable is a windowed program (CMakeLists.txt:
+// /SUBSYSTEM:WINDOWS), so a shortcut launch opens no console and nothing
+// would show a printf. Decided once, before the first line is printed:
+//   1. stdout is already a handle the parent gave this process -- a pipe or
+//      a file from a shell redirection, the headless test rigs, a Python
+//      capture -- keep it, so `> out.log` reads exactly as before.
+//   2. No handle, but the parent has a console (the name typed into cmd or
+//      PowerShell): attach to it, so the lines appear there. The shell does
+//      not wait for a windowed program, so its prompt interleaves; that is
+//      how every windowed program behaves.
+//   3. Neither (Explorer, a shortcut, Start): write snap64.log beside the
+//      executable, keeping the previous run as snap64.prev.log so a crash
+//      log survives one relaunch. Both streams are opened in append mode on
+//      the same file and unbuffered, so their lines keep their order and the
+//      last line before a crash is on disk.
+static void snap_bind_stdio() {
+    HANDLE out = GetStdHandle(STD_OUTPUT_HANDLE);
+    if ((out != nullptr) && (out != INVALID_HANDLE_VALUE) && (GetFileType(out) != FILE_TYPE_UNKNOWN)) {
+        return;
+    }
+    FILE* f = nullptr;
+    if (AttachConsole(ATTACH_PARENT_PROCESS)) {
+        freopen_s(&f, "CONOUT$", "w", stdout);
+        freopen_s(&f, "CONOUT$", "w", stderr);
+        setvbuf(stdout, nullptr, _IONBF, 0);
+        setvbuf(stderr, nullptr, _IONBF, 0);
+        return;
+    }
+    const std::filesystem::path log = snap::base_path("snap64.log");
+    const std::filesystem::path prev = snap::base_path("snap64.prev.log");
+    std::error_code ec;
+    std::filesystem::remove(prev, ec);
+    std::filesystem::rename(log, prev, ec);
+    std::filesystem::remove(log, ec);
+    if (_wfreopen_s(&f, log.c_str(), L"a", stdout) != 0) {
+        return;
+    }
+    _wfreopen_s(&f, log.c_str(), L"a", stderr);
+    setvbuf(stdout, nullptr, _IONBF, 0);
+    setvbuf(stderr, nullptr, _IONBF, 0);
+}
+#endif
+
 int main(int argc, char* argv[]) {
     (void)argc;
     (void)argv;
 
 #if defined(_WIN32)
+    snap_bind_stdio();
     AddVectoredExceptionHandler(1, snap_veh);
 
     // Declare per-monitor DPI awareness before any window exists. Without

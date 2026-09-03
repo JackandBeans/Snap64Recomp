@@ -8,10 +8,10 @@ translates the game's MIPS code into C, [N64ModernRuntime](https://github.com/N6
 input and audio. The game's own code runs; the port changes how it is hosted,
 and every change to how it *looks* is off unless you turn it on.
 
-The title screen's credits line reads `Jack & Beans (Snap64 Recomp) · v1.0.0 rc1`:
+The title screen's credits line reads `Jack & Beans (Snap64 Recomp) · v1.0.0 rc2`:
 "Jack & Beans" is the codename this project uses for itself, an homage to
 the team behind the original game (`src/version.h.in`
-explains why), "Snap64 Recomp" is the port's name, and `1.0.0-rc1` is its
+explains why), "Snap64 Recomp" is the port's name, and `1.0.0-rc2` is its
 version -- the credits face has no hyphen, so the line sets the tag off with a
 space. This project is not affiliated with
 Nintendo, HAL Laboratory or The Pokémon Company; their trademarks are theirs.
@@ -29,7 +29,7 @@ Nintendo, HAL Laboratory or The Pokémon Company; their trademarks are theirs.
   machine, on 2026-09-02 (`BUILDING.md`, "What a clean checkout is missing").
 * No automated tests, no CI, no installer. The release archive is the ZIP
   that `cpack` writes (`BUILDING.md`, step 13); none has been published.
-* Version `1.0.0-rc1`, typed once in `CMakeLists.txt` and shown in the title
+* Version `1.0.0-rc2`, typed once in `CMakeLists.txt` and shown in the title
   bar, the log banner, the credits line, the executable's file properties and
   the ZIP's name.
 * Licensed under the GPLv3 (`LICENSE`); `NOTICE.md` lists every third-party
@@ -65,12 +65,14 @@ Nintendo, HAL Laboratory or The Pokémon Company; their trademarks are theirs.
 Start `Snap64Recomp.exe`; a shortcut works from anywhere, because the port
 reads and writes the folder the executable is in, whatever the working
 directory (`src/paths.cpp`). It opens a 1280x960 window titled
-`Snap64 Recomp 1.0.0-rc1`; `SNAP_WINDOW=WxH` in the environment opens it at
+`Snap64 Recomp 1.0.0-rc2`; `SNAP_WINDOW=WxH` in the environment opens it at
 an exact size instead (at least 320x240). The window's maximize button is the
 fullscreen switch; the in-game Graphics page and F11 do the same. **Esc
 quits.** Saves go to `saves/` and settings to `snapsettings.json`, both next
-to the executable. A console window opens beside the game window; it is the
-log, and the first thing to include in a bug report.
+to the executable. No console opens: the log is `snap64.log` next to the
+executable, the previous run's is kept as `snap64.prev.log`, and it is the
+first thing to include in a bug report. Started from a terminal, or with its
+output redirected, the port writes there instead and the file is not touched.
 
 ### Where things live
 
@@ -83,6 +85,7 @@ Everything is in the folder with the executable.
 | `saves/pokemonsnap.bin`, `saves/pokemonsnap.bin.bak` | the game's save data (its EEPROM image) |
 | `photos/` | the photos you save with P or the controller's Back button (see "Photos"); created on the first save |
 | `cache/` | RT64's compiled shaders, the driver's pipeline cache and the seen-shader list; safe to delete, the next start is slower |
+| `snap64.log`, `snap64.prev.log` | the log of this run and of the one before it, written when the port was not started from a terminal |
 | `mods/`, `mod_config/` | the runtime's mod folders; created empty, unused by this release |
 | `menu_text/recomp_logo.png` | the "Recomp" wordmark on the title screen |
 | `Snap64Recomp.map` | the linker map; include it with crash reports (the `[SNAP-AV]` lines in the log are decoded against it) |
@@ -243,9 +246,17 @@ their documentation.
   machine above and the renderer, audio, saving, the Graphics and Sound
   pages and the hotkeys listed here all come from the code as it stands
   (`src/settings.cpp`, `src/settings.h`, `src/input.cpp`, `src/main.cpp`).
-* There is no test suite, no CI run, and no build on any other machine
-  recorded in this repository. Anything not listed here should be assumed
-  untried.
+* `tools/release_check.py` is the headless suite a release build is put
+  through: the executable is windowed, the log reaches a pipe or `snap64.log`,
+  the Beach replay runs under the player's own conditions with captured
+  frames that are real pictures, the diagnostic replay produces its usual
+  pacing and coherence numbers with no crash report, the recorded run to
+  Oak's evaluation scores every photo with the scorer's healthy signature and
+  exports the photos it shows, the settings file is valid, and the archive
+  carries everything it must. It opens the game window for each run and
+  takes about twelve minutes. There is no CI run, and no build on any other
+  machine is recorded in this repository. Anything not listed here should be
+  assumed untried.
 * The photo export (P, the controller's Back button, `photos/`) is checked
   by `SNAP_PHOTO_AUTOEXPORT` on an input replay that reaches Oak's check,
   not by hand: saving from the keyboard and from the controller has not been
@@ -260,7 +271,7 @@ their documentation.
 See `BUILDING.md`. Short version: the decompilation and IDO under WSL,
 N64Recomp for the game and the patches, CMake and MSVC on Windows, and a list
 of things git does not carry. `cpack -C Release` in the build directory then
-writes `Snap64Recomp-1.0.0-rc1-win64.zip` (step 13).
+writes `Snap64Recomp-1.0.0-rc2-win64.zip` (step 13).
 
 ## License
 
