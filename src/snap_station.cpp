@@ -10,6 +10,7 @@
  * src/AA18E0.c) drives all of it; nothing here decides what the game shows.
  */
 #include "snap_station.h"
+#include "snap_station_osd_font.h"
 
 #include <atomic>
 #include <chrono>
@@ -484,37 +485,18 @@ constexpr int StarBlinkMs = 250;
 constexpr int StarBlinks = 3;
 constexpr int PrintFinalHoldMs = 2500;
 
-// The printer's on-screen-display face, measured against the sticker grid
+// The printer's on-screen-display face. Measured against the sticker grid
 // in two photographs of the real screen (2026-09-03; the grid's cells are
-// 160 by 120, the one known size in them): capitals thirty-six pixels tall
-// and sixteen wide, stems four wide and bars three tall, on a twenty-three
-// pixel pitch, so seven pixels between letters. Five by twelve dots of
-// three by three, each dot widened a pixel to the right (OsdFontBoldX).
-// Only the letters its two lines use; the three dots after PRINTING are
-// not on the letter pitch and are drawn on their own (osd_printing).
-constexpr int OsdFontRows = 12;
-constexpr int OsdFontScaleX = 3;
-constexpr int OsdFontScaleY = 3;
-constexpr int OsdFontBoldX = 1;
+// 160 by 120, the one known size in them): a condensed grotesque, capitals
+// thirty-six pixels tall and about sixteen wide, stems four wide and bars
+// three tall, centred on a twenty-three pixel pitch, white with a dark
+// edge. The printer's own character set cannot be read off a curved
+// screen, so the letters are bitmaps set from a freely licensed grotesque
+// of the same construction (snap_station_osd_font.h, tools/osd_font_gen.py).
+// The three dots after PRINTING are not on the letter pitch and are drawn
+// on their own (osd_printing).
 constexpr int OsdFontAdvance = 23;
-struct OsdGlyph {
-    char ch;
-    const char* rows[OsdFontRows];
-};
-constexpr OsdGlyph kOsdFont[] = {
-    { 'P', { "####.", "#...#", "#...#", "#...#", "####.", "#....", "#....", "#....", "#....", "#....", "#....", "#...." } },
-    { 'R', { "####.", "#...#", "#...#", "#...#", "####.", "#.#..", "#..#.", "#..#.", "#...#", "#...#", "#...#", "#...#" } },
-    { 'I', { "#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#..", "..#..", "..#..", "..#..", "..#..", "#####" } },
-    { 'N', { "#...#", "##..#", "##..#", "#.#.#", "#.#.#", "#.#.#", "#..##", "#..##", "#...#", "#...#", "#...#", "#...#" } },
-    { 'T', { "#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.." } },
-    { 'G', { ".###.", "#...#", "#....", "#....", "#....", "#....", "#..##", "#...#", "#...#", "#...#", "#...#", ".####" } },
-    { 'L', { "#....", "#....", "#....", "#....", "#....", "#....", "#....", "#....", "#....", "#....", "#....", "#####" } },
-    { 'E', { "#####", "#....", "#....", "#....", "#....", "####.", "#....", "#....", "#....", "#....", "#....", "#####" } },
-    { 'A', { ".###.", "#...#", "#...#", "#...#", "#...#", "#####", "#...#", "#...#", "#...#", "#...#", "#...#", "#...#" } },
-    { 'S', { ".####", "#....", "#....", "#....", ".#...", "..#..", "...#.", "....#", "....#", "....#", "#...#", "####." } },
-    { 'W', { "#...#", "#...#", "#...#", "#...#", "#...#", "#...#", "#...#", "#...#", "#.#.#", "#.#.#", "##.##", "#...#" } },
-    { '.', { ".....", ".....", ".....", ".....", ".....", ".....", ".....", ".....", ".....", ".....", ".....", "..#.." } },
-};
+constexpr int OsdFontRing = 2;
 
 void osd_put(std::vector<uint8_t>& img, int x, int y, uint8_t r, uint8_t g, uint8_t b);
 
@@ -566,42 +548,33 @@ void osd_put(std::vector<uint8_t>& img, int x, int y, uint8_t r, uint8_t g, uint
 
 // A glyph at a pixel scale: white, with a black ring one glyph pixel wide, the
 // way an on-screen display keeps its text legible over any picture.
-// A glyph's dots are scaleX by scaleY pixels, each widened by boldX to the
-// right (a stem is then scaleX + boldX wide, a bar scaleY tall); the black
-// ring around the white is one dot wide, as the video's character
+// A letter of the printer's face: white where its bitmap has ink, with a
+// black edge OsdFontRing pixels wide around it, as the video's character
 // generator drew it.
-void osd_glyph(std::vector<uint8_t>& img, const char* const* rows, int nrows, int x, int y, int scaleX, int scaleY, int boldX) {
-    const int ncols = int(std::strlen(rows[0]));
-    auto ink = [&](int r, int c) {
-        return (r >= 0) && (r < nrows) && (c >= 0) && (c < ncols) && (rows[r][c] == '#');
+void osd_glyph(std::vector<uint8_t>& img, const uint32_t* rows, int x, int y) {
+    auto ink = [&](int px, int py) {
+        return (py >= 0) && (py < snap_osd::GlyphRows) && (px >= 0) && (px < snap_osd::GlyphCols) && (((rows[py] >> px) & 1u) != 0u);
     };
-    auto dot = [&](int r, int c, uint8_t v) {
-        for (int sy = 0; sy < scaleY; sy++) {
-            for (int sx = 0; sx < scaleX + boldX; sx++) {
-                osd_put(img, x + c * scaleX + sx, y + r * scaleY + sy, v, v, v);
-            }
-        }
-    };
-    for (int r = -1; r <= nrows; r++) {
-        for (int c = -1; c <= ncols; c++) {
-            if (ink(r, c)) {
+    for (int py = -OsdFontRing; py < snap_osd::GlyphRows + OsdFontRing; py++) {
+        for (int px = -OsdFontRing; px < snap_osd::GlyphCols + OsdFontRing; px++) {
+            if (ink(px, py)) {
                 continue;
             }
             bool edge = false;
-            for (int dr = -1; (dr <= 1) && !edge; dr++) {
-                for (int dc = -1; (dc <= 1) && !edge; dc++) {
-                    edge = ink(r + dr, c + dc);
+            for (int dy = -OsdFontRing; (dy <= OsdFontRing) && !edge; dy++) {
+                for (int dx = -OsdFontRing; (dx <= OsdFontRing) && !edge; dx++) {
+                    edge = ink(px + dx, py + dy);
                 }
             }
             if (edge) {
-                dot(r, c, 0);
+                osd_put(img, x + px, y + py, 0, 0, 0);
             }
         }
     }
-    for (int r = 0; r < nrows; r++) {
-        for (int c = 0; c < ncols; c++) {
-            if (ink(r, c)) {
-                dot(r, c, 255);
+    for (int py = 0; py < snap_osd::GlyphRows; py++) {
+        for (int px = 0; px < snap_osd::GlyphCols; px++) {
+            if (ink(px, py)) {
+                osd_put(img, x + px, y + py, 255, 255, 255);
             }
         }
     }
@@ -610,9 +583,9 @@ void osd_glyph(std::vector<uint8_t>& img, const char* const* rows, int nrows, in
 void osd_text(std::vector<uint8_t>& img, const char* text, int x, int y) {
     for (const char* c = text; *c != 0; c++) {
         if (*c != ' ') {
-            for (const OsdGlyph& g : kOsdFont) {
+            for (const snap_osd::Glyph& g : snap_osd::kGlyphs) {
                 if (g.ch == *c) {
-                    osd_glyph(img, g.rows, OsdFontRows, x, y, OsdFontScaleX, OsdFontScaleY, OsdFontBoldX);
+                    osd_glyph(img, g.rows, x, y);
                     break;
                 }
             }
@@ -621,11 +594,11 @@ void osd_text(std::vector<uint8_t>& img, const char* text, int x, int y) {
     }
 }
 
-// A thin white bar with a one-pixel black edge: the printer's mark for a
-// pass still to come.
-void osd_bar(std::vector<uint8_t>& img, int cx, int cy, int w, int h) {
-    for (int y = cy - h / 2 - 1; y <= cy + h / 2 + 1; y++) {
-        for (int x = cx - w / 2 - 1; x <= cx + w / 2 + 1; x++) {
+// A white bar with a black edge: the printer's mark for a pass still to
+// come, and the dots after PRINTING.
+void osd_bar(std::vector<uint8_t>& img, int cx, int cy, int w, int h, int ring = 1) {
+    for (int y = cy - h / 2 - ring; y <= cy + h / 2 + ring; y++) {
+        for (int x = cx - w / 2 - ring; x <= cx + w / 2 + ring; x++) {
             osd_put(img, x, y, 0, 0, 0);
         }
     }
@@ -708,11 +681,11 @@ std::vector<uint8_t> osd_printing(const std::vector<uint8_t>& grid, const Mark m
     // pixels above that middle, so the hem crosses the letters three
     // quarters of the way down; the second line's top is seventy-four
     // lower; both start fourteen pixels into the second column. The three
-    // dots after PRINTING are not on the letter pitch: seven-pixel squares
-    // twenty-five apart, centred on the hem.
+    // dots after PRINTING are not on the letter pitch: five-pixel squares
+    // with a two-pixel edge, twenty-five apart, centred on the hem.
     osd_text(img, "PRINTING", 174, 209);
     for (int i = 0; i < 3; i++) {
-        osd_bar(img, 387 + i * 25, 235, 6, 6);
+        osd_bar(img, 387 + i * 25, 235, 4, 4, 2);
     }
     osd_text(img, "PLEASE WAIT", 174, 283);
     osd_marks(img, marks);

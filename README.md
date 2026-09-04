@@ -251,7 +251,10 @@ taken from having no clock. Then the port relaunches itself once more into a
 normal boot, as the kiosk reset the console a second time. That boot opens
 the sheet's folder for you, the way the kiosk handed over the stickers; the
 station is not attached to it, so the title is the ordinary one until you
-choose Snap Station again.
+choose Snap Station again. The lettering on that screen is set from bitmaps of Roboto Regular
+(Apache License 2.0), a freely licensed grotesque of the same construction
+as the printer's own, which cannot be read off a photographed screen;
+`tools/osd_font_gen.py` regenerates them.
 
 What the sheet cannot be: the physical stickers were postage-stamp-sized
 prints of a captured analog video signal on a photo printer whose make,
