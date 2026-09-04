@@ -1397,6 +1397,11 @@ namespace RT64 {
             fprintf(stdout, "[SNAP-PRIM] %u single-matrix triangle calls, %u under matched transforms, %u colour pairs\n",
                 dumpConsidered, dumpMapped, dumpPaired);
         }
+        else if (snapdiag::statsEnabled() && (dumpPaired > 0)) {
+            // Under SNAP_STATS, one line per frame that blended a triangle
+            // colour: a fade shows as a run of them, hands-free.
+            fprintf(stdout, "[SNAP-PRIM] %u triangle colour pairs this frame\n", dumpPaired);
+        }
 
         return changed;
     }
@@ -1415,6 +1420,7 @@ namespace RT64 {
 
         thread_local std::unordered_map<uint64_t, PrevRect> prevRects;
         bool changed = false;
+        uint32_t colourPairs = 0;
         prevRects.clear();
 
         // How many rectangles each element drew, on each side.
@@ -1738,6 +1744,7 @@ namespace RT64 {
                         params.snapPrevPrimColor = paired->primColor;
                         params.snapPrimBlend = 1.0f;
                         changed = true;
+                        colourPairs++;
                         if (snapdiag::pairDumpPending().load(std::memory_order_relaxed) > 0) {
                             fprintf(stdout, "[SNAP-PRIM] f%u rect id %08X ord %u: colour (%.2f %.2f %.2f a %.2f) -> (%.2f %.2f %.2f a %.2f)\n",
                                 f, call.snapRectId, call.snapRectOrdinal,
@@ -1826,6 +1833,10 @@ namespace RT64 {
                     snapdiag::rectCountChangedCounter().fetch_add(1, std::memory_order_relaxed);
                 }
             }
+        }
+
+        if (countRectStats && (colourPairs > 0)) {
+            fprintf(stdout, "[SNAP-PRIM] %u rectangle colour pairs this frame\n", colourPairs);
         }
 
         return changed;
