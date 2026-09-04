@@ -7,3 +7,4 @@ src/snap_station_osd_font.h     linguist-generated
 *.ico  binary
 *.png  binary
 *.bin  binary
+*.inputs binary

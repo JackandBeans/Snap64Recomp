@@ -444,6 +444,48 @@ N64Recomp for the game and the patches, CMake and MSVC on Windows, and a list
 of things git does not carry. `cpack -C Release` in the build directory then
 writes `Snap64Recomp-1.0.0-win64.zip` (step 13).
 
+## How it was made
+
+Two answers, because the question has two parts.
+
+**What the port is, mechanically.** N64Recomp reads the game's code out of
+the builder's own cartridge dump and writes it out as C, one function at a
+time, at build time; none of that output is in this repository. That C is
+compiled and linked with librecomp and ultramodern, which give it the
+console's operating system calls, with RT64, which turns the game's display
+lists into Direct3D 12, and with the port's own code under `src/`: the
+window, input, audio and settings, the identity the frame interpolation
+pairs objects and sprites by, the menu pages composed from the game's own
+sprite font, the photo export and the Snap Station. Where the game's own
+behaviour had to change for a feature (the Graphics page on its Options
+screen, the fifth title entry, the intro's camera fix), the changed function
+is a copy of its decompiled source under `patches/src`, compiled with the
+decompilation's own IDO toolchain and loaded over the original. The whole
+chain, with the tools and inputs at each step, is `BUILDING.md`.
+
+**Who wrote it.** Every line of the port's own code, its tools and its
+documentation, this README included, was written by Anthropic's Claude
+models running in Claude Code, directed by Jack & Beans, who set the rule
+the port follows (console behaviour by default), chose what it would and
+would not do, tested every build on screen and supplied the reference
+material the work needed: the kiosk footage the printer's display was
+measured from, the Virtual Console capture behind Jynx Recolor, the renders
+the logo was composed from. "The developer" elsewhere in this README is
+Jack & Beans; no model played the game. The commit trailers name the model
+that wrote each commit (`git log --format=%(trailers:key=Co-Authored-By)`):
+up to 1.0.0 that is Claude Opus 5, Claude Fable 5 and Claude Fable 5.1 in
+roughly equal shares, two commits by Claude Opus 4.8, and the earliest
+forty-odd commits (17 to 24 August 2026), which carry no trailer because
+the rule came after them. The working method was the same throughout: read
+the decompilation, the runtime and RT64's source; make the change; build;
+run the headless suite, which drives the real executable through recorded
+controller inputs and reads its log and captured frames; then Jack &
+Beans's look at the result on screen. The commit messages record the
+findings, the measurements and the dead ends, including the changes that
+were tried and reverted, and the notes under `docs/dev/` are the model's
+reports to the author, kept as written. Read the code before you trust it;
+all of it is here.
+
 ## Thanks
 
 None of this would exist without:
@@ -461,10 +503,17 @@ None of this would exist without:
   renderer, and its frame interpolation this port extends.
 * James Chambers (jamchamb), whose 2021 work recovered the Snap Station
   protocol from the cartridge without a station to test against.
+* [ido-static-recomp](https://github.com/decompals/ido-static-recomp)
+  by the decompals, which lets the decompilation's compiler, and so the
+  port's patches, build on a modern machine.
 * [SDL2](https://libsdl.org), the DirectX Shader Compiler, and the libraries
   named in `NOTICE.md`.
 * The Roboto Project Authors, for the typeface the printer's lettering is
   set from.
+* Anthropic's Claude, which wrote the port ("How it was made" above).
+* The team at HAL Laboratory who made the game in 1999, and whose unused
+  "Jack & Beans" prototype logo, still inside the cartridge, gave the
+  port's author a name.
 * Everyone who plays it and reports what they see: the first reports from
   other machines are what 1.0.1 will be made of.
 

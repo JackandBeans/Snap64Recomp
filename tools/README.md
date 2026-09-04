@@ -30,3 +30,9 @@ belongs. Python 3.11 with Pillow, NumPy and SciPy covers all of them.
 | `release_check.py` | The headless verification suite a release build goes through: windowed subsystem and icon, logging, the attract replay, pacing statistics, Oak's evaluation, the Options page, the settings file, the package, and the Snap Station print. |
 | `dump_threads.py` | From a minidump: every thread's instruction pointer and stack return addresses, resolved through the linker map. |
 | `unlock_save.py` | Writes an "everything unlocked" copy of a save file (all courses and items), for testing. |
+
+## Replays
+
+| File | What it is |
+| --- | --- |
+| `replays/beach.inputs`, `replays/eval.inputs`, `replays/station.inputs` | The controller recordings the suite drives the executable with (`SNAP_REPLAY`; `BUILDING.md`, "Replays and the headless suite"): a Beach ride; a ride, the Camera Check and Oak's evaluation; and the route to a Snap Station print, synthesised from the other two. Twelve bytes per reading, no game data. |

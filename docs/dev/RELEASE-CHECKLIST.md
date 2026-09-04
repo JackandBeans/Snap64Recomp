@@ -54,6 +54,18 @@ Identity settled on 2026-09-04: author Jack & Beans <snap64recomp@gmail.com>,
 history rewritten with filter-repo before any push; README carries a byline,
 a Thanks section and a copyright line; the logo is docs/logo.png.
 
+Disclosure settled on 2026-09-04 (2.12 closed): README's "How it was
+made" says the port was written by Claude models in Claude Code under the
+author's direction, and how the commit trailers name the model;
+CONTRIBUTING.md asks the same of contributors. The same day a second
+filter-repo pass scrubbed the author's Windows username from 274
+historical versions of five files (the recompiler's `.toml` inputs,
+`patches/README.md`, this file and PUBLISHING.md), dropped the two unused
+ELF dumps the first commit carried, and pruned the empty baseline root
+commit; the tree at the tip did not change. The suite's three replays
+are now tracked under `tools/replays/`, so the suite can be run from a
+checkout.
+
 Yours: 1.7 the clean-machine run, 2.11 screenshots, the push and the
 release page (docs/dev/PUBLISHING.md walks through them), and the
 decision on the email before the first push.

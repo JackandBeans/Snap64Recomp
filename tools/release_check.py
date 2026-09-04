@@ -38,8 +38,10 @@ quit). Run it from anywhere:
 
     python tools/release_check.py build-win/Release [--zip build-win/Snap64Recomp-<v>-win64.zip] [--only NAME ...]
 
-It needs the replays beach.inputs and eval.inputs beside the executable (both
-recorded by the developer; BUILDING.md), and the ROM there. Exit status 0 when
+The replays it drives the executable with live in tools/replays (beach.inputs,
+eval.inputs, station.inputs; BUILDING.md, "Replays and the headless suite") and
+are copied beside the executable when they are not already there; the ROM
+must be there. Exit status 0 when
 every check passed. Nothing here is a substitute for playing the game; it is
 what can be checked without a person.
 """
@@ -48,6 +50,7 @@ import hashlib
 import json
 import os
 import pathlib
+import shutil
 import struct
 import subprocess
 import sys
@@ -55,6 +58,7 @@ import time
 import zipfile
 
 EXE = 'Snap64Recomp.exe'
+REPLAYS = pathlib.Path(__file__).resolve().parent / 'replays'
 DXIL_SHA256 = '9cccc7ef419da73fa314fdaecae831c6c20206ae70732c9093f95193378ced10'  # v1.7.2308 (VENDORING.md)
 
 
@@ -252,6 +256,20 @@ def check_score(c, exe_dir):
     c.add('score', '[SNAP-AV]' not in out, 'crash report %s' % ('present' if '[SNAP-AV]' in out else 'none'))
 
 
+def ensure_replay(exe_dir, name):
+    """SNAP_REPLAY reads a file beside the executable; the tracked copy is
+    under tools/replays. True when the file is beside the executable, copied
+    there if it was not."""
+    target = exe_dir / name
+    if target.is_file():
+        return True
+    source = REPLAYS / name
+    if not source.is_file():
+        return False
+    shutil.copyfile(source, target)
+    return True
+
+
 def check_menu(c, exe_dir):
     """The Options page's custom Graphics/Sound rows come from strings the port
     composites from the harvested menu font; one character with no glyph
@@ -259,7 +277,7 @@ def check_menu(c, exe_dir):
     The font is harvested when the title's main-menu segment loads, which the
     eval replay passes through early; the ride replays skip it, and a boot
     with no replay does not advance under an unfocused window."""
-    if not (exe_dir / 'eval.inputs').is_file():
+    if not ensure_replay(exe_dir, 'eval.inputs'):
         c.add('menu', False, 'eval.inputs is not beside the executable')
         return
     out = run_game(exe_dir, {'SNAP_REPLAY': 'eval.inputs', 'SNAP_MUTE': '1'}, 130)
@@ -345,7 +363,7 @@ def check_station(c, exe_dir):
     """The whole print, through the two relaunches. Rewrites the save; puts it back."""
     import shutil
     replay = exe_dir / 'station.inputs'
-    if not replay.is_file():
+    if not ensure_replay(exe_dir, 'station.inputs'):
         c.add('station', False, 'station.inputs is not beside the executable')
         return
     save = exe_dir / 'saves' / 'pokemonsnap.bin'
@@ -485,10 +503,10 @@ def main():
             continue
         if name == 'station' and not args.only:
             continue   # ten minutes and a save rewrite: asked for by name only
-        if name in ('attract', 'stats', 'stdio') and not (exe_dir / 'beach.inputs').is_file():
+        if name in ('attract', 'stats', 'stdio') and not ensure_replay(exe_dir, 'beach.inputs'):
             c.add(name, False, 'beach.inputs is not beside the executable')
             continue
-        if name == 'score' and not (exe_dir / 'eval.inputs').is_file():
+        if name == 'score' and not ensure_replay(exe_dir, 'eval.inputs'):
             c.add(name, False, 'eval.inputs is not beside the executable')
             continue
         fn(c, exe_dir)

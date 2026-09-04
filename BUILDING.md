@@ -424,7 +424,9 @@ clone was deleted afterwards.
 
 The port replays controller readings from `.inputs` files beside the
 executable (`SNAP_REPLAY=name.inputs`; twelve bytes per reading, `src/input.cpp`).
-Three are used by `tools/release_check.py`, and none is in git: `beach.inputs`
+Three are used by `tools/release_check.py` and are tracked under
+`tools/replays/` (the suite copies them beside the executable when they are
+not already there): `beach.inputs`
 and `eval.inputs` were recorded by the developer (a Beach ride; a ride, the
 Camera Check and Oak's evaluation of five photos), and `station.inputs` was
 synthesised from those two on 2026-09-03 for the Snap Station: the evaluation

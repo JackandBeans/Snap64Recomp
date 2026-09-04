@@ -2,8 +2,9 @@
 
 Written for a first release on a GitHub account made for the project.
 Everything below happens on your machine and in a browser; the port's
-build is already done and tagged locally. Nothing in this file has been
-done yet, because publishing is yours to press.
+build is already done and tagged locally. "Before pushing" records what
+is done and what is yours; everything from "Create the repository" on
+is yours to press.
 
 ## Before pushing, once
 
@@ -12,6 +13,10 @@ done yet, because publishing is yours to press.
    to that name and address with `git filter-repo --mailmap` (the tag
    `v1.0.0` re-pointed with them, the Co-Authored-By trailers untouched),
    and `git config user.name` / `user.email` set for the commits to come.
+   A second pass the same day scrubbed the author's Windows username
+   from every historical file version that carried it and dropped two
+   unused dumps from the first commit; `git grep -i <username>
+   $(git rev-list --all)` is the check, and it finds nothing.
    Create the GitHub account with that address; the username is yours to
    choose (the walkthrough below writes `<your-username>`).
 
