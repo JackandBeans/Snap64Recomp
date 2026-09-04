@@ -641,13 +641,14 @@ void osd_bar(std::vector<uint8_t>& img, int cx, int cy, int w, int h) {
 enum class Mark { Dash, Star, Blank };
 void osd_marks(std::vector<uint8_t>& img, const Mark marks[3]) {
     // Over the lower part of the top row's third and fourth photos, centred
-    // 445, 498 and 551 pixels in and 93 down, fifty-three apart: the stars
+    // 445, 498 and 551 pixels in and 89 down (27 above the middle of the
+    // hem between the first two rows), fifty-three apart: the stars
     // thirty-two across, the dashes twenty-four by six. Measured against
     // the sticker grid in two photographs of the real screen, the one thing
     // in them with known dimensions.
     for (int i = 0; i < 3; i++) {
         const int cx = 445 + i * 53;
-        const int cy = 93;
+        const int cy = 89;
         if (marks[i] == Mark::Star) {
             osd_star(img, cx, cy, 16.0f);
         }
@@ -700,18 +701,20 @@ std::vector<uint8_t> osd_grid(const std::vector<Frame>& frames) {
 
 std::vector<uint8_t> osd_printing(const std::vector<uint8_t>& grid, const Mark marks[3]) {
     std::vector<uint8_t> img = grid;
-    // Where the photographs have them against the grid: the first line's
-    // top twenty-four pixels above the line between the second and third
-    // rows, so that line crosses the letters two thirds of the way down;
-    // the second line's top seventy-four lower; both starting fourteen
-    // pixels into the second column. The three dots after PRINTING sit on the
-    // baseline as seven-pixel squares twenty-five apart, wider apart than
-    // the letters.
-    osd_text(img, "PRINTING", 174, 216);
+    // Where the photographs have them against the grid. The white line
+    // between two rows of photos is the upper photo's own bottom hem, the
+    // last 34 of its 480 lines, so in the grid it runs from 231 to 240
+    // with its middle at 236; the first line of text has its top 27
+    // pixels above that middle, so the hem crosses the letters three
+    // quarters of the way down; the second line's top is seventy-four
+    // lower; both start fourteen pixels into the second column. The three
+    // dots after PRINTING are not on the letter pitch: seven-pixel squares
+    // twenty-five apart, centred on the hem.
+    osd_text(img, "PRINTING", 174, 209);
     for (int i = 0; i < 3; i++) {
-        osd_bar(img, 387 + i * 25, 248, 6, 6);
+        osd_bar(img, 387 + i * 25, 235, 6, 6);
     }
-    osd_text(img, "PLEASE WAIT", 174, 290);
+    osd_text(img, "PLEASE WAIT", 174, 283);
     osd_marks(img, marks);
     return img;
 }
