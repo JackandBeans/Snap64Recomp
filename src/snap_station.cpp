@@ -471,9 +471,10 @@ namespace {
 
 constexpr int OsdW = 640;
 constexpr int OsdH = 480;
-constexpr int OsdGutter = 4;
-constexpr int OsdCellW = (OsdW - 5 * OsdGutter) / 4;   // 155
-constexpr int OsdCellH = (OsdH - 5 * OsdGutter) / 4;   // 115
+// The printer tiled its sixteen captures edge to edge: the white hem the
+// game draws around every photo is what reads as the lines between them.
+constexpr int OsdCellW = OsdW / 4;   // 160
+constexpr int OsdCellH = OsdH / 4;   // 120
 constexpr int PhotoHoldMs = 1000;        // the photo stays up while the printer "captures"
 constexpr int GridHoldMs = 1200;         // the printer's grid after each capture
 constexpr int NewPhotoWaitMs = 2000;     // the grid stays until the next photo is on screen, at most this
@@ -483,26 +484,31 @@ constexpr int StarBlinkMs = 250;
 constexpr int StarBlinks = 3;
 constexpr int PrintFinalHoldMs = 2500;
 
-// A 5x7 on-screen-display face: only the letters the printer's two lines use.
+// The printer's on-screen-display face, as the footage shows it: tall
+// narrow capitals of a single stroke, two pixels wide at the video's size,
+// twenty-four tall, on a wide fixed pitch. Six by twelve here, drawn at
+// scale two on a thirteen-column pitch. Only the letters its two lines use.
+constexpr int OsdFontRows = 12;
+constexpr int OsdFontScale = 2;
+constexpr int OsdFontPitch = 13;
 struct OsdGlyph {
     char ch;
-    const char* rows[7];
+    const char* rows[OsdFontRows];
 };
 constexpr OsdGlyph kOsdFont[] = {
-    { 'P', { "####.", "#...#", "#...#", "####.", "#....", "#....", "#...." } },
-    { 'R', { "####.", "#...#", "#...#", "####.", "#.#..", "#..#.", "#...#" } },
-    { 'I', { "#####", "..#..", "..#..", "..#..", "..#..", "..#..", "#####" } },
-    { 'N', { "#...#", "##..#", "#.#.#", "#..##", "#...#", "#...#", "#...#" } },
-    { 'T', { "#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.." } },
-    { 'G', { ".###.", "#...#", "#....", "#.###", "#...#", "#...#", ".####" } },
-    { 'L', { "#....", "#....", "#....", "#....", "#....", "#....", "#####" } },
-    { 'E', { "#####", "#....", "#....", "####.", "#....", "#....", "#####" } },
-    { 'A', { ".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#" } },
-    { 'S', { ".####", "#....", "#....", ".###.", "....#", "....#", "####." } },
-    { 'W', { "#...#", "#...#", "#...#", "#.#.#", "#.#.#", "##.##", "#...#" } },
-    { '.', { ".....", ".....", ".....", ".....", ".....", "..#..", "....." } },
+    { 'P', { "#####.", "#....#", "#....#", "#....#", "#####.", "#.....", "#.....", "#.....", "#.....", "#.....", "#.....", "#....." } },
+    { 'R', { "#####.", "#....#", "#....#", "#....#", "#####.", "#..#..", "#...#.", "#...#.", "#....#", "#....#", "#....#", "#....#" } },
+    { 'I', { "#####.", "..#...", "..#...", "..#...", "..#...", "..#...", "..#...", "..#...", "..#...", "..#...", "..#...", "#####." } },
+    { 'N', { "#....#", "##...#", "##...#", "#.#..#", "#.#..#", "#..#.#", "#..#.#", "#...##", "#...##", "#....#", "#....#", "#....#" } },
+    { 'T', { "#####.", "..#...", "..#...", "..#...", "..#...", "..#...", "..#...", "..#...", "..#...", "..#...", "..#...", "..#..." } },
+    { 'G', { ".####.", "#....#", "#.....", "#.....", "#.....", "#.....", "#..###", "#....#", "#....#", "#....#", "#....#", ".####." } },
+    { 'L', { "#.....", "#.....", "#.....", "#.....", "#.....", "#.....", "#.....", "#.....", "#.....", "#.....", "#.....", "#####." } },
+    { 'E', { "#####.", "#.....", "#.....", "#.....", "#.....", "####..", "#.....", "#.....", "#.....", "#.....", "#.....", "#####." } },
+    { 'A', { ".###..", "#...#.", "#...#.", "#...#.", "#...#.", "#####.", "#...#.", "#...#.", "#...#.", "#...#.", "#...#.", "#...#." } },
+    { 'S', { ".####.", "#....#", "#.....", "#.....", ".#....", "..##..", "....#.", ".....#", ".....#", ".....#", "#....#", ".####." } },
+    { 'W', { "#....#", "#....#", "#....#", "#....#", "#....#", "#....#", "#....#", "#....#", "#.##.#", "#.##.#", "##..##", "#....#" } },
+    { '.', { "......", "......", "......", "......", "......", "......", "......", "......", "......", "......", "..##..", "..##.." } },
 };
-constexpr const char* kOsdDash[3] = { ".....", "#####", "....." };
 
 void osd_put(std::vector<uint8_t>& img, int x, int y, uint8_t r, uint8_t g, uint8_t b);
 
@@ -530,7 +536,7 @@ void osd_star(std::vector<uint8_t>& img, int cx, int cy, float r) {
     const int reach = int(r) + 4;
     for (int y = cy - reach; y <= cy + reach; y++) {
         for (int x = cx - reach; x <= cx + reach; x++) {
-            if (osd_in_star(float(x) + 0.5f, float(y) + 0.5f, float(cx), float(cy), r + 2.0f)) {
+            if (osd_in_star(float(x) + 0.5f, float(y) + 0.5f, float(cx), float(cy), r + 1.5f)) {
                 osd_put(img, x, y, 0, 0, 0);
             }
         }
@@ -593,17 +599,32 @@ void osd_glyph(std::vector<uint8_t>& img, const char* const* rows, int nrows, in
     }
 }
 
-void osd_text(std::vector<uint8_t>& img, const char* text, int x, int y, int scale) {
+void osd_text(std::vector<uint8_t>& img, const char* text, int x, int y) {
     for (const char* c = text; *c != 0; c++) {
         if (*c != ' ') {
             for (const OsdGlyph& g : kOsdFont) {
                 if (g.ch == *c) {
-                    osd_glyph(img, g.rows, 7, x, y, scale);
+                    osd_glyph(img, g.rows, OsdFontRows, x, y, OsdFontScale);
                     break;
                 }
             }
         }
-        x += 6 * scale;
+        x += OsdFontPitch * OsdFontScale;
+    }
+}
+
+// A thin white bar with a one-pixel black edge: the printer's mark for a
+// pass still to come.
+void osd_bar(std::vector<uint8_t>& img, int cx, int cy, int w, int h) {
+    for (int y = cy - h / 2 - 1; y <= cy + h / 2 + 1; y++) {
+        for (int x = cx - w / 2 - 1; x <= cx + w / 2 + 1; x++) {
+            osd_put(img, x, y, 0, 0, 0);
+        }
+    }
+    for (int y = cy - h / 2; y <= cy + h / 2; y++) {
+        for (int x = cx - w / 2; x <= cx + w / 2; x++) {
+            osd_put(img, x, y, 255, 255, 255);
+        }
     }
 }
 
@@ -621,7 +642,7 @@ void osd_marks(std::vector<uint8_t>& img, const Mark marks[3]) {
             osd_star(img, cx, cy, 15.0f);
         }
         else if (marks[i] == Mark::Dash) {
-            osd_glyph(img, kOsdDash, 3, cx - 10, cy - 6, 4);
+            osd_bar(img, cx, cy, 24, 3);
         }
     }
 }
@@ -630,14 +651,12 @@ void osd_marks(std::vector<uint8_t>& img, const Mark marks[3]) {
 // them, each a box-filtered copy of its captured frame; light grey where
 // nothing has been captured yet, white lines between.
 std::vector<uint8_t> osd_grid(const std::vector<Frame>& frames) {
+    // Empty places a near-white grey, as the footage's first frame shows
+    // them before the second capture arrives.
     std::vector<uint8_t> img(size_t(OsdW) * OsdH * 4u, 255);
     for (int y = 0; y < OsdH; y++) {
         for (int x = 0; x < OsdW; x++) {
-            const int cx = x % (OsdCellW + OsdGutter);
-            const int cy = y % (OsdCellH + OsdGutter);
-            const bool gutter = (cx < OsdGutter) || (cy < OsdGutter) || (x >= OsdGutter + 4 * (OsdCellW + OsdGutter) - OsdGutter) || (y >= OsdGutter + 4 * (OsdCellH + OsdGutter) - OsdGutter);
-            const uint8_t v = gutter ? 255 : 236;
-            osd_put(img, x, y, v, v, v);
+            osd_put(img, x, y, 240, 240, 240);
         }
     }
     for (size_t k = 0; (k < frames.size()) && (k < 16); k++) {
@@ -647,8 +666,8 @@ std::vector<uint8_t> osd_grid(const std::vector<Frame>& frames) {
         }
         const int col = int(k % 4);
         const int row = int(k / 4);
-        const int x0 = OsdGutter + col * (OsdCellW + OsdGutter);
-        const int y0 = OsdGutter + row * (OsdCellH + OsdGutter);
+        const int x0 = col * OsdCellW;
+        const int y0 = row * OsdCellH;
         for (int y = 0; y < OsdCellH; y++) {
             const int sy0 = (y * f.height) / OsdCellH;
             const int sy1 = std::max(sy0 + 1, ((y + 1) * f.height) / OsdCellH);
@@ -671,8 +690,11 @@ std::vector<uint8_t> osd_grid(const std::vector<Frame>& frames) {
 
 std::vector<uint8_t> osd_printing(const std::vector<uint8_t>& grid, const Mark marks[3]) {
     std::vector<uint8_t> img = grid;
-    osd_text(img, "PRINTING...", 172, 226, 3);
-    osd_text(img, "PLEASE WAIT", 172, 292, 3);
+    // Where the footage has them against its grid: the first line crossing
+    // the line between the second and third rows, the second line inside
+    // the third row, both starting a little over a quarter of the way in.
+    osd_text(img, "PRINTING...", 172, 228);
+    osd_text(img, "PLEASE WAIT", 172, 292);
     osd_marks(img, marks);
     return img;
 }

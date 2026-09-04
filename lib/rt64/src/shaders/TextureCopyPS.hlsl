@@ -30,5 +30,10 @@ float4 PSMain(in float4 pos : SV_Position, in float2 uv : TEXCOORD0) : SV_TARGET
         }
     }
 
-    return sum / float(boxSize.x * boxSize.y);
+    // Opaque, whatever the render's alpha where nothing was drawn: the
+    // game's halving sets the low bit of every RGBA5551 pixel it writes, so
+    // the sprite the console showed had no transparent texel, and a photo
+    // drawn over the Gallery's backdrop must not let it through.
+    const float4 average = sum / float(boxSize.x * boxSize.y);
+    return float4(average.rgb, 1.0f);
 }
