@@ -114,10 +114,14 @@ struct Station {
     std::vector<Frame> frames;
     std::filesystem::file_time_type saveTimeAtCC{};
     bool haveSaveTimeAtCC = false;
-    // The printer's grid is on screen after a capture until this passes;
-    // the station stays busy for as long, as the kiosk held the game.
-    bool previewHold = false;
-    std::chrono::steady_clock::time_point previewUntil;
+    // The pace of a slot after its capture, driven from the game's own
+    // status polls while it waits on the busy byte: 1 = the photo stays up
+    // while the printer "captures", 2 = the printer's grid is up; then the
+    // game is released and a watcher keeps the grid until the next photo is
+    // on screen (see slot_release below).
+    int slotPhase = 0;
+    std::chrono::steady_clock::time_point phaseUntil;
+    uint8_t* rdram = nullptr;
 };
 
 Station& st() {
@@ -470,7 +474,9 @@ constexpr int OsdH = 480;
 constexpr int OsdGutter = 4;
 constexpr int OsdCellW = (OsdW - 5 * OsdGutter) / 4;   // 155
 constexpr int OsdCellH = (OsdH - 5 * OsdGutter) / 4;   // 115
-constexpr int PreviewHoldMs = 1000;      // the grid after each capture
+constexpr int PhotoHoldMs = 1000;        // the photo stays up while the printer "captures"
+constexpr int GridHoldMs = 1200;         // the printer's grid after each capture
+constexpr int NewPhotoWaitMs = 2000;     // the grid stays until the next photo is on screen, at most this
 constexpr int PrintDashesMs = 2000;      // "PRINTING..." with three dashes
 constexpr int PrintPassMs = 8000;        // one printer pass, dash to star
 constexpr int StarBlinkMs = 250;
@@ -506,7 +512,7 @@ bool osd_in_star(float px, float py, float cx, float cy, float r) {
     float vx[10], vy[10];
     for (int i = 0; i < 10; i++) {
         const float ang = -3.14159265f / 2.0f + float(i) * (3.14159265f / 5.0f);
-        const float rad = (i % 2 == 0) ? r : r * 0.42f;
+        const float rad = (i % 2 == 0) ? r : r * 0.5f;
         vx[i] = cx + rad * std::cos(ang);
         vy[i] = cy + rad * std::sin(ang);
     }
@@ -605,11 +611,14 @@ void osd_text(std::vector<uint8_t>& img, const char* text, int x, int y, int sca
 // come, a star for one done; a blinking star is a star or nothing.
 enum class Mark { Dash, Star, Blank };
 void osd_marks(std::vector<uint8_t>& img, const Mark marks[3]) {
+    // Over the lower part of the top row's right-hand photos, forty-eight
+    // pixels apart, thirty pixels tall: measured against the sticker grid in
+    // the footage, the one thing in it with known dimensions.
     for (int i = 0; i < 3; i++) {
-        const int cx = 412 + i * 44;
-        const int cy = 102;
+        const int cx = 410 + i * 48;
+        const int cy = 100;
         if (marks[i] == Mark::Star) {
-            osd_star(img, cx, cy, 17.0f);
+            osd_star(img, cx, cy, 15.0f);
         }
         else if (marks[i] == Mark::Dash) {
             osd_glyph(img, kOsdDash, 3, cx - 10, cy - 6, 4);
@@ -793,14 +802,44 @@ void poll_capture(uint8_t* rdram, Station& s) {
     say("slot %d of %d captured (%dx%d framebuffer%s)", slot, SlotCount, f.width, f.height,
         f.presented.empty() ? "" : ", presented frame kept");
     s.frames.push_back(std::move(f));
-    // The printer's display: the grid so far, held for a moment while the
-    // game waits on the busy byte; the read handler ends the hold.
-    {
-        const std::vector<uint8_t> grid = osd_grid(s.frames);
-        snap_overlay_show(grid.data(), OsdW, OsdH);
-        s.previewHold = true;
-        s.previewUntil = std::chrono::steady_clock::now() + std::chrono::milliseconds(PreviewHoldMs);
+    // The printer's pace: the photo stays up while it captures, then its
+    // grid; the read handler walks the phases from the game's status polls.
+    s.slotPhase = 1;
+    s.phaseUntil = std::chrono::steady_clock::now() + std::chrono::milliseconds(PhotoHoldMs);
+}
+
+// The game is released to draw the next photo while the grid is still up;
+// the old photo would otherwise show again for the frames the new one takes.
+// A watcher reads the framebuffer the VI is scanning out until it no longer
+// looks like the slot just captured, then takes the grid down. Reads only,
+// beside the game's thread: a torn read can only delay the answer a poll.
+void slot_release(Station& s) {
+    if (s.frames.empty() || (s.rdram == nullptr)) {
+        snap_overlay_hide();
+        return;
     }
+    std::thread([rdram = s.rdram, last = s.frames.back().rgb, w = s.frames.back().width, h = s.frames.back().height]() {
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::milliseconds(NewPhotoWaitMs);
+        while (std::chrono::steady_clock::now() < deadline) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(40));
+            Frame f;
+            if (!read_vi_frame(rdram, f) || (f.width != w) || (f.height != h) || (f.rgb.size() != last.size())) {
+                continue;
+            }
+            uint64_t diff = 0;
+            uint64_t n = 0;
+            for (size_t i = 0; i + 2 < f.rgb.size(); i += 3 * 7) {
+                diff += uint64_t(std::abs(int(f.rgb[i]) - int(last[i])));
+                diff += uint64_t(std::abs(int(f.rgb[i + 1]) - int(last[i + 1])));
+                diff += uint64_t(std::abs(int(f.rgb[i + 2]) - int(last[i + 2])));
+                n += 3;
+            }
+            if ((n > 0) && (diff / n >= 12)) {
+                break;
+            }
+        }
+        snap_overlay_hide();
+    }).detach();
 }
 
 void finish_sheet(Station& s) {
@@ -1118,11 +1157,19 @@ bool station_ram_read(uint8_t* rdram, int32_t channel, uint32_t address, gpr buf
         return true;
     }
     if (address == MessageBlock) {
+        s.rdram = rdram;
         poll_capture(rdram, s);
-        if (s.previewHold && (std::chrono::steady_clock::now() >= s.previewUntil)) {
-            snap_overlay_hide();
-            s.previewHold = false;
+        const auto now = std::chrono::steady_clock::now();
+        if ((s.slotPhase == 1) && (now >= s.phaseUntil)) {
+            const std::vector<uint8_t> grid = osd_grid(s.frames);
+            snap_overlay_show(grid.data(), OsdW, OsdH);
+            s.slotPhase = 2;
+            s.phaseUntil = now + std::chrono::milliseconds(GridHoldMs);
+        }
+        else if ((s.slotPhase == 2) && (now >= s.phaseUntil)) {
+            s.slotPhase = 0;
             s.busy = false;
+            slot_release(s);
         }
         for (uint32_t i = 0; i < BlockSize - 1; i++) {
             MEM_B(i, buffer) = 0;
