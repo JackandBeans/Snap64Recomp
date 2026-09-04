@@ -112,6 +112,10 @@ struct Station {
     std::vector<Frame> frames;
     std::filesystem::file_time_type saveTimeAtCC{};
     bool haveSaveTimeAtCC = false;
+    // The printer's grid is on screen after a capture until this passes;
+    // the station stays busy for as long, as the kiosk held the game.
+    bool previewHold = false;
+    std::chrono::steady_clock::time_point previewUntil;
 };
 
 Station& st() {
@@ -419,6 +423,239 @@ void open_folder(const std::string& utf8) {
 }
 #endif
 
+} // namespace
+} // namespace snap
+
+// ---------------------------------------------------------------------------
+// The printer's display
+// ---------------------------------------------------------------------------
+// The kiosk's video printer sat between the console and the monitor and, while
+// it worked, showed its own picture: after each capture, the sixteen-picture
+// grid it had collected so far (the empty places light grey, thin white lines
+// between them), and after the last, that grid under "PRINTING... PLEASE
+// WAIT" with three marks over the upper right that became stars one by one,
+// each popping up and blinking a few times before it held, as each of the
+// printer's three passes finished. Footage of a working station, 3 September
+// 2026; the game itself draws none of it (decomp src/AA18E0.c shows each photo
+// and waits on the busy byte). The pictures are composed here from the
+// captured frames and handed to the renderer (lib/rt64 .. rt64_snap_overlay.h),
+// which presents them in place of the game's frame. The lettering is a plain
+// on-screen-display face drawn here, as the printer's was its own; the pass
+// times are an estimate, the footage having no clock.
+extern "C" void snap_overlay_show(const uint8_t* rgba, uint32_t width, uint32_t height);
+extern "C" void snap_overlay_hide();
+
+namespace snap {
+namespace {
+
+constexpr int OsdW = 640;
+constexpr int OsdH = 480;
+constexpr int OsdGutter = 4;
+constexpr int OsdCellW = (OsdW - 5 * OsdGutter) / 4;   // 155
+constexpr int OsdCellH = (OsdH - 5 * OsdGutter) / 4;   // 115
+constexpr int PreviewHoldMs = 1000;      // the grid after each capture
+constexpr int PrintDashesMs = 2000;      // "PRINTING..." with three dashes
+constexpr int PrintPassMs = 8000;        // one printer pass, dash to star
+constexpr int StarBlinkMs = 250;
+constexpr int StarBlinks = 3;
+constexpr int PrintFinalHoldMs = 2500;
+
+// A 5x7 on-screen-display face: only the letters the printer's two lines use.
+struct OsdGlyph {
+    char ch;
+    const char* rows[7];
+};
+constexpr OsdGlyph kOsdFont[] = {
+    { 'P', { "####.", "#...#", "#...#", "####.", "#....", "#....", "#...." } },
+    { 'R', { "####.", "#...#", "#...#", "####.", "#.#..", "#..#.", "#...#" } },
+    { 'I', { "#####", "..#..", "..#..", "..#..", "..#..", "..#..", "#####" } },
+    { 'N', { "#...#", "##..#", "#.#.#", "#..##", "#...#", "#...#", "#...#" } },
+    { 'T', { "#####", "..#..", "..#..", "..#..", "..#..", "..#..", "..#.." } },
+    { 'G', { ".###.", "#...#", "#....", "#.###", "#...#", "#...#", ".####" } },
+    { 'L', { "#....", "#....", "#....", "#....", "#....", "#....", "#####" } },
+    { 'E', { "#####", "#....", "#....", "####.", "#....", "#....", "#####" } },
+    { 'A', { ".###.", "#...#", "#...#", "#####", "#...#", "#...#", "#...#" } },
+    { 'S', { ".####", "#....", "#....", ".###.", "....#", "....#", "####." } },
+    { 'W', { "#...#", "#...#", "#...#", "#.#.#", "#.#.#", "##.##", "#...#" } },
+    { '.', { ".....", ".....", ".....", ".....", ".....", "..#..", "....." } },
+};
+constexpr const char* kOsdStar[7] = { "...#...", "..###..", "#######", ".#####.", "..###..", ".#.#.#.", "#.....#" };
+constexpr const char* kOsdDash[3] = { ".....", "#####", "....." };
+
+void osd_put(std::vector<uint8_t>& img, int x, int y, uint8_t r, uint8_t g, uint8_t b) {
+    if ((x < 0) || (x >= OsdW) || (y < 0) || (y >= OsdH)) {
+        return;
+    }
+    uint8_t* p = img.data() + (size_t(y) * OsdW + size_t(x)) * 4u;
+    p[0] = r; p[1] = g; p[2] = b; p[3] = 255;
+}
+
+// A glyph at a pixel scale: white, with a black ring one glyph pixel wide, the
+// way an on-screen display keeps its text legible over any picture.
+void osd_glyph(std::vector<uint8_t>& img, const char* const* rows, int nrows, int x, int y, int scale) {
+    const int ncols = int(std::strlen(rows[0]));
+    auto ink = [&](int r, int c) {
+        return (r >= 0) && (r < nrows) && (c >= 0) && (c < ncols) && (rows[r][c] == '#');
+    };
+    for (int r = -1; r <= nrows; r++) {
+        for (int c = -1; c <= ncols; c++) {
+            if (ink(r, c)) {
+                continue;
+            }
+            bool edge = false;
+            for (int dr = -1; (dr <= 1) && !edge; dr++) {
+                for (int dc = -1; (dc <= 1) && !edge; dc++) {
+                    edge = ink(r + dr, c + dc);
+                }
+            }
+            if (edge) {
+                for (int sy = 0; sy < scale; sy++) {
+                    for (int sx = 0; sx < scale; sx++) {
+                        osd_put(img, x + c * scale + sx, y + r * scale + sy, 0, 0, 0);
+                    }
+                }
+            }
+        }
+    }
+    for (int r = 0; r < nrows; r++) {
+        for (int c = 0; c < ncols; c++) {
+            if (!ink(r, c)) {
+                continue;
+            }
+            for (int sy = 0; sy < scale; sy++) {
+                for (int sx = 0; sx < scale; sx++) {
+                    osd_put(img, x + c * scale + sx, y + r * scale + sy, 255, 255, 255);
+                }
+            }
+        }
+    }
+}
+
+void osd_text(std::vector<uint8_t>& img, const char* text, int x, int y, int scale) {
+    for (const char* c = text; *c != 0; c++) {
+        if (*c != ' ') {
+            for (const OsdGlyph& g : kOsdFont) {
+                if (g.ch == *c) {
+                    osd_glyph(img, g.rows, 7, x, y, scale);
+                    break;
+                }
+            }
+        }
+        x += 6 * scale;
+    }
+}
+
+// The three marks over the upper-right photos: a dash for a pass still to
+// come, a star for one done; a blinking star is a star or nothing.
+enum class Mark { Dash, Star, Blank };
+void osd_marks(std::vector<uint8_t>& img, const Mark marks[3]) {
+    for (int i = 0; i < 3; i++) {
+        const int x = 390 + i * 40;
+        if (marks[i] == Mark::Star) {
+            osd_glyph(img, kOsdStar, 7, x, 84, 5);
+        }
+        else if (marks[i] == Mark::Dash) {
+            osd_glyph(img, kOsdDash, 3, x + 6, 96, 4);
+        }
+    }
+}
+
+// The grid the printer had collected: cells in the order the game showed
+// them, each a box-filtered copy of its captured frame; light grey where
+// nothing has been captured yet, white lines between.
+std::vector<uint8_t> osd_grid(const std::vector<Frame>& frames) {
+    std::vector<uint8_t> img(size_t(OsdW) * OsdH * 4u, 255);
+    for (int y = 0; y < OsdH; y++) {
+        for (int x = 0; x < OsdW; x++) {
+            const int cx = x % (OsdCellW + OsdGutter);
+            const int cy = y % (OsdCellH + OsdGutter);
+            const bool gutter = (cx < OsdGutter) || (cy < OsdGutter) || (x >= OsdGutter + 4 * (OsdCellW + OsdGutter) - OsdGutter) || (y >= OsdGutter + 4 * (OsdCellH + OsdGutter) - OsdGutter);
+            const uint8_t v = gutter ? 255 : 236;
+            osd_put(img, x, y, v, v, v);
+        }
+    }
+    for (size_t k = 0; (k < frames.size()) && (k < 16); k++) {
+        const Frame& f = frames[k];
+        if ((f.width <= 0) || (f.height <= 0) || (f.rgb.size() < size_t(f.width) * f.height * 3u)) {
+            continue;
+        }
+        const int col = int(k % 4);
+        const int row = int(k / 4);
+        const int x0 = OsdGutter + col * (OsdCellW + OsdGutter);
+        const int y0 = OsdGutter + row * (OsdCellH + OsdGutter);
+        for (int y = 0; y < OsdCellH; y++) {
+            const int sy0 = (y * f.height) / OsdCellH;
+            const int sy1 = std::max(sy0 + 1, ((y + 1) * f.height) / OsdCellH);
+            for (int x = 0; x < OsdCellW; x++) {
+                const int sx0 = (x * f.width) / OsdCellW;
+                const int sx1 = std::max(sx0 + 1, ((x + 1) * f.width) / OsdCellW);
+                uint32_t r = 0, g = 0, b = 0, n = 0;
+                for (int sy = sy0; sy < sy1; sy++) {
+                    for (int sx = sx0; sx < sx1; sx++) {
+                        const uint8_t* p = f.rgb.data() + (size_t(sy) * f.width + size_t(sx)) * 3u;
+                        r += p[0]; g += p[1]; b += p[2]; n++;
+                    }
+                }
+                osd_put(img, x0 + x, y0 + y, uint8_t(r / n), uint8_t(g / n), uint8_t(b / n));
+            }
+        }
+    }
+    return img;
+}
+
+std::vector<uint8_t> osd_printing(const std::vector<uint8_t>& grid, const Mark marks[3]) {
+    std::vector<uint8_t> img = grid;
+    osd_text(img, "PRINTING...", 172, 226, 3);
+    osd_text(img, "PLEASE WAIT", 172, 292, 3);
+    osd_marks(img, marks);
+    return img;
+}
+
+// The printing screen, from the first dash to the last held star. Blocks its
+// caller for the whole print, so it runs on the finish thread.
+void run_printing_display(const std::vector<uint8_t>& grid, const std::filesystem::path& sheetDir) {
+    using namespace std::chrono;
+    auto show = [&](const Mark marks[3]) {
+        const std::vector<uint8_t> img = osd_printing(grid, marks);
+        snap_overlay_show(img.data(), OsdW, OsdH);
+    };
+    Mark marks[3] = { Mark::Dash, Mark::Dash, Mark::Dash };
+    show(marks);
+    std::this_thread::sleep_for(milliseconds(PrintDashesMs));
+    for (int pass = 0; pass < 3; pass++) {
+        std::this_thread::sleep_for(milliseconds(PrintPassMs - 2 * StarBlinks * StarBlinkMs));
+        for (int blink = 0; blink < StarBlinks; blink++) {
+            marks[pass] = Mark::Star;
+            show(marks);
+            std::this_thread::sleep_for(milliseconds(StarBlinkMs));
+            marks[pass] = Mark::Blank;
+            show(marks);
+            std::this_thread::sleep_for(milliseconds(StarBlinkMs));
+        }
+        marks[pass] = Mark::Star;
+        show(marks);
+    }
+    std::this_thread::sleep_for(milliseconds(PrintFinalHoldMs));
+    // The screen as it stood when the stickers came out, kept with them.
+    if (!sheetDir.empty()) {
+        const std::vector<uint8_t> img = osd_printing(grid, marks);
+        std::vector<unsigned char> rgb(size_t(OsdW) * OsdH * 3u);
+        for (size_t i = 0; i < size_t(OsdW) * OsdH; i++) {
+            rgb[i * 3 + 0] = img[i * 4 + 0];
+            rgb[i * 3 + 1] = img[i * 4 + 1];
+            rgb[i * 3 + 2] = img[i * 4 + 2];
+        }
+        write_png(sheetDir / "printer_display.png", OsdW, OsdH, rgb.data());
+    }
+    snap_overlay_hide();
+}
+
+} // namespace
+} // namespace snap
+
+namespace snap {
+namespace {
+
 // ---------------------------------------------------------------------------
 // The display mode's captures
 // ---------------------------------------------------------------------------
@@ -499,7 +736,14 @@ void poll_capture(uint8_t* rdram, Station& s) {
     say("slot %d of %d captured (%dx%d framebuffer%s)", slot, SlotCount, f.width, f.height,
         f.presented.empty() ? "" : ", presented frame kept");
     s.frames.push_back(std::move(f));
-    s.busy = false;
+    // The printer's display: the grid so far, held for a moment while the
+    // game waits on the busy byte; the read handler ends the hold.
+    {
+        const std::vector<uint8_t> grid = osd_grid(s.frames);
+        snap_overlay_show(grid.data(), OsdW, OsdH);
+        s.previewHold = true;
+        s.previewUntil = std::chrono::steady_clock::now() + std::chrono::milliseconds(PreviewHoldMs);
+    }
 }
 
 void finish_sheet(Station& s) {
@@ -629,18 +873,30 @@ void on_message(uint8_t* rdram, Station& s, uint8_t msg) {
                 std::thread([]() {
                     Station& st2 = st();
                     std::string sheet;
+                    std::vector<uint8_t> grid;
+                    std::filesystem::path sheetDir;
                     {
                         std::lock_guard<std::mutex> lock(st2.mutex);
                         finish_sheet(st2);
                         sheet = path_text(st2.sheetDir);
+                        sheetDir = st2.sheetDir;
+                        grid = osd_grid(st2.frames);
                         st2.frames.clear();
                         st2.sheetDir.clear();
                         remove_marker();
                         st2.jobPending.store(false);
+                    }
+                    // The printer's screen, for as long as its three passes
+                    // took; the game waits on the busy byte throughout, as it
+                    // did in the kiosk.
+                    say("printing: the printer's display is up for the three passes");
+                    run_printing_display(grid, sheetDir);
+                    {
+                        std::lock_guard<std::mutex> lock(st2.mutex);
                         st2.busy = false;
                     }
                     say("display finished; relaunching into a normal boot");
-                    schedule_relaunch("restart", "the end of the print", 1500, false, sheet);
+                    schedule_relaunch("restart", "the end of the print", 500, false, sheet);
                 }).detach();
             }
             break;
@@ -799,6 +1055,11 @@ bool station_ram_read(uint8_t* rdram, int32_t channel, uint32_t address, gpr buf
     }
     if (address == MessageBlock) {
         poll_capture(rdram, s);
+        if (s.previewHold && (std::chrono::steady_clock::now() >= s.previewUntil)) {
+            snap_overlay_hide();
+            s.previewHold = false;
+            s.busy = false;
+        }
         for (uint32_t i = 0; i < BlockSize - 1; i++) {
             MEM_B(i, buffer) = 0;
         }

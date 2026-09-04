@@ -1724,12 +1724,12 @@ void func_800E2058_A095E8(void) {
 #define MBOX_TITLE_REQ     (*(volatile u8*)  (SNAP_GFX_MAILBOX + 0x38))
 #define SCRATCH_TITLE_GOBJ (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x50))
 
-/* Five rows at the stock four-row pitch of 18, begun one row above the
- * four-row block's 120: ink from 105 to 189, below the logo (whose lowest
- * stroke ends near 100) and above the copyright block (from 195). The
- * label strip is 128 wide with its text centred, so its x centres it on
- * the column the stock words share. */
-#define TITLE_ROW_Y(i)   (104 + (i) * 18)
+/* Five rows at the stock four-row pitch of 18. The block sits so the
+ * letters' cores clear the logo's lowest stroke (near 100) above and the
+ * copyright block's cores (from 197) below by the same eight pixels: cores
+ * from 107 to 189. The label strip is 128 wide with its text centred, so
+ * its x centres it on the column the stock words share. */
+#define TITLE_ROW_Y(i)   (106 + (i) * 18)
 #define TITLE_STATION_X  96
 
 extern s8 D_800E80D0_A0F660;     /* the Gallery is unlocked */

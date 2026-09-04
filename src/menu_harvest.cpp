@@ -944,6 +944,67 @@ Cell synth_title(const SynthGlyph& g) {
     return c;
 }
 
+// The S, built from the face's own C rather than drawn: the C's top arc and
+// upper stem as they are (cell rows 0-3), its bottom arc mirrored left to
+// right (rows 9 on), and between them a spine of the C's stroke weight
+// joining the upper-left stem to the lower-right one, ringed the way the C
+// is. Every curve the letter shows is the sprite's; only the diagonal is the
+// port's. Needs the C as harvested (an 11-column cell with the core at column
+// 2); anything else falls back to the drawn S in kTitleSynth.
+bool synth_title_s_from_c(const Cell& c, Cell& out) {
+    if ((c.w != 11) || (c.cs != 2) || (c.px.size() != size_t(c.w) * size_t(kMenuTtlCellH))) {
+        return false;
+    }
+    out = c;
+    for (int r = 9; r < kMenuTtlCellH; r++) {
+        for (int x = 0; x < c.w; x++) {
+            out.px[size_t(r) * size_t(c.w) + size_t(x)] = c.px[size_t(r) * size_t(c.w) + size_t(c.w - 1 - x)];
+        }
+    }
+    std::vector<bool> core(out.px.size(), false);
+    for (size_t i = 0; i < out.px.size(); i++) {
+        core[i] = (out.px[i].a >= Core) && (out.px[i].i >= Core);
+    }
+    // The spine, in cell columns [from, to), per cell row.
+    const int spine[6][2] = { { 2, 4 }, { 2, 5 }, { 4, 7 }, { 5, 8 }, { 7, 9 }, { 7, 9 } };
+    for (int r = 4; r < 10; r++) {
+        for (int x = 0; x < c.w; x++) {
+            core[size_t(r) * size_t(c.w) + size_t(x)] = (x >= spine[r - 4][0]) && (x < spine[r - 4][1]);
+        }
+    }
+    auto near = [&](int y, int x, int d) {
+        for (int dy = -d; dy <= d; dy++) {
+            for (int dx = -d; dx <= d; dx++) {
+                const int ny = y + dy;
+                const int nx = x + dx;
+                if ((ny >= 0) && (ny < kMenuTtlCellH) && (nx >= 0) && (nx < c.w) &&
+                    core[size_t(ny) * size_t(c.w) + size_t(nx)]) {
+                    return true;
+                }
+            }
+        }
+        return false;
+    };
+    for (int r = 4; r < 10; r++) {
+        for (int x = 0; x < c.w; x++) {
+            Px& p = out.px[size_t(r) * size_t(c.w) + size_t(x)];
+            if (core[size_t(r) * size_t(c.w) + size_t(x)]) {
+                p = Px{ 255, 255 };
+            }
+            else if (near(r, x, 1)) {
+                p = Px{ 0, 200 };
+            }
+            else if (near(r, x, 2)) {
+                p = Px{ 0, 70 };
+            }
+            else {
+                p = Px{};
+            }
+        }
+    }
+    return true;
+}
+
 bool harvest_title(const Segment& seg, Table& ttl, std::string& why) {
     for (const Source& src : kTitleSources) {
         Img img;
@@ -995,6 +1056,12 @@ bool harvest_title(const Segment& seg, Table& ttl, std::string& why) {
                 continue;
             }
             ttl[ch] = cut_title_cell(img, runs[i].first, runs[i].second, top);
+        }
+    }
+    if ((ttl.count('S') == 0) && (ttl.count('C') != 0)) {
+        Cell s;
+        if (synth_title_s_from_c(ttl['C'], s)) {
+            ttl['S'] = s;
         }
     }
     for (const SynthGlyph& s : kTitleSynth) {

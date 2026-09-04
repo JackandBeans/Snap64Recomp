@@ -237,11 +237,17 @@ hem; on the fourth slot alone the game draws its black rights line along
 the bottom, for no reason any source explains. When the display
 ends the sixteen captures are laid out into `stickers/<date>/sheet.png`
 (and `sheet_presented.png` from the renderer's frames, with the singles
-next to them), and the port relaunches itself once more into a normal boot,
-as the kiosk reset the console a second time. That boot opens the sheet's
-folder for you, the way the kiosk handed over the stickers; the station is
-not attached to it, so the title is the ordinary one until you choose Snap
-Station again.
+next to them). The kiosk's printer had a screen of its own, laid over the
+video: after each slot it showed the sticker grid it had collected so far,
+and after the last one that grid under "PRINTING... PLEASE WAIT" with three
+marks that became stars one by one as its three passes finished. The port
+shows the same, composed from its captures (the grid is kept as
+`printer_display.png`); the pass times are an estimate, the footage this was
+taken from having no clock. Then the port relaunches itself once more into a
+normal boot, as the kiosk reset the console a second time. That boot opens
+the sheet's folder for you, the way the kiosk handed over the stickers; the
+station is not attached to it, so the title is the ordinary one until you
+choose Snap Station again.
 
 What the sheet cannot be: the physical stickers were postage-stamp-sized
 prints of a captured analog video signal on a photo printer whose make,

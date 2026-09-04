@@ -9,6 +9,7 @@
 
 #include "rt64_workload_queue.h"
 #include "rt64_snap_diag.h"
+#include "rt64_snap_overlay.h"
 
 #include <atomic>
 #include <chrono>
@@ -29,6 +30,33 @@ extern "C" std::atomic<int32_t> snap_frame_dump_pending{0};
 // while it captures a displayed sticker slot, so the capture below runs
 // without the diagnostic environment or a schedule.
 extern "C" std::atomic<int32_t> snap_frame_dump_station{0};
+
+// The Snap Station's printer display (rt64_snap_overlay.h): one picture,
+// replaced whole, shown instead of the frame while it is set.
+namespace RT64 {
+    namespace SnapOverlay {
+        State &state() {
+            static State s;
+            return s;
+        }
+    }
+}
+
+extern "C" void snap_overlay_show(const uint8_t *rgba, uint32_t width, uint32_t height) {
+    RT64::SnapOverlay::State &s = RT64::SnapOverlay::state();
+    std::lock_guard<std::mutex> lock(s.mutex);
+    s.rgba.assign(rgba, rgba + size_t(width) * size_t(height) * 4u);
+    s.width = width;
+    s.height = height;
+    s.visible = true;
+    s.dirty = true;
+}
+
+extern "C" void snap_overlay_hide() {
+    RT64::SnapOverlay::State &s = RT64::SnapOverlay::state();
+    std::lock_guard<std::mutex> lock(s.mutex);
+    s.visible = false;
+}
 
 namespace RT64 {
 
@@ -701,6 +729,52 @@ namespace {
                     }
                 }
                 
+                // Pokemon Snap port: while the Snap Station's printer is
+                // showing its own display, that picture is presented in place
+                // of the frame (rt64_snap_overlay.h). Uploaded here, on the
+                // present thread, before the render pass opens; the previous
+                // present's command list was waited on, so the upload buffer
+                // is free to map.
+                {
+                    SnapOverlay::State &ov = SnapOverlay::state();
+                    std::lock_guard<std::mutex> ovLock(ov.mutex);
+                    if (ov.visible && (ov.width > 0) && (ov.height > 0) && (ov.rgba.size() >= size_t(ov.width) * ov.height * 4u)) {
+                        static std::unique_ptr<RenderTexture> overlayTexture;
+                        static std::unique_ptr<RenderBuffer> overlayUpload;
+                        static uint32_t overlayWidth = 0;
+                        static uint32_t overlayHeight = 0;
+                        const uint32_t pitch = ((ov.width * 4u + 255u) / 256u) * 256u;
+                        if ((overlayTexture == nullptr) || (overlayWidth != ov.width) || (overlayHeight != ov.height)) {
+                            overlayTexture = ext.device->createTexture(RenderTextureDesc::Texture2D(ov.width, ov.height, 1, RenderFormat::R8G8B8A8_UNORM));
+                            overlayUpload = ext.device->createBuffer(RenderBufferDesc::UploadBuffer(uint64_t(pitch) * ov.height));
+                            overlayWidth = ov.width;
+                            overlayHeight = ov.height;
+                            ov.dirty = true;
+                        }
+                        if ((overlayTexture != nullptr) && (overlayUpload != nullptr)) {
+                            if (ov.dirty) {
+                                uint8_t *dst = reinterpret_cast<uint8_t *>(overlayUpload->map());
+                                if (dst != nullptr) {
+                                    for (uint32_t y = 0; y < ov.height; y++) {
+                                        memcpy(dst + size_t(y) * pitch, ov.rgba.data() + size_t(y) * ov.width * 4u, size_t(ov.width) * 4u);
+                                    }
+                                    overlayUpload->unmap();
+                                }
+                                commandList->barriers(RenderBarrierStage::COPY, RenderTextureBarrier(overlayTexture.get(), RenderTextureLayout::COPY_DEST));
+                                commandList->copyTextureRegion(
+                                    RenderTextureCopyLocation::Subresource(overlayTexture.get()),
+                                    RenderTextureCopyLocation::PlacedFootprint(overlayUpload.get(), RenderFormat::R8G8B8A8_UNORM, ov.width, ov.height, 1, pitch / 4u));
+                                commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(overlayTexture.get(), RenderTextureLayout::SHADER_READ));
+                                ov.dirty = false;
+                            }
+                            renderParams.texture = overlayTexture.get();
+                            renderParams.textureFormat = RenderFormat::R8G8B8A8_UNORM;
+                            renderParams.textureWidth = ov.width;
+                            renderParams.textureHeight = ov.height;
+                        }
+                    }
+                }
+
                 commandList->setFramebuffer(swapChainFramebuffer);
                 commandList->clearColor();
 
