@@ -30,7 +30,24 @@ THRESHOLD = 118
 BOLD_RIGHT = 1   # pixels added to the right of every ink pixel
 
 
+def serifed_i():
+    """The printer's I is not a bare stroke: a three-pixel stem with a short
+    bar at top and bottom, nine wide and three tall, centred like the other
+    capitals. Set by hand; Roboto's I is a plain stroke."""
+    rows = []
+    left = (MAX_WIDTH - 9) // 2
+    for y in range(ROWS):
+        if y < 3 or y >= ROWS - 3:
+            bits = sum(1 << x for x in range(left, left + 9))
+        else:
+            bits = sum(1 << x for x in range(left + 3, left + 6))
+        rows.append(bits)
+    return rows
+
+
 def rasterise(font_path, letter):
+    if letter == "I":
+        return serifed_i()
     font = ImageFont.truetype(font_path, 240)
     canvas = Image.new("L", (600, 600), 0)
     ImageDraw.Draw(canvas).text((80, 80), letter, font=font, fill=255)
