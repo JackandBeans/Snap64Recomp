@@ -771,6 +771,12 @@ namespace {
                             renderParams.textureFormat = RenderFormat::R8G8B8A8_UNORM;
                             renderParams.textureWidth = ov.width;
                             renderParams.textureHeight = ov.height;
+                            // The picture is at the VI's own size, not the
+                            // render scale's: presented 1:1 it fills the
+                            // screen; at the frame's scale it sat in the
+                            // top-left corner at a fraction of the size.
+                            renderParams.resolutionScale = { 1.0f, 1.0f };
+                            renderParams.downsamplingScale = 1;
                         }
                     }
                 }

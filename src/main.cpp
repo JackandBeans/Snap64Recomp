@@ -469,7 +469,18 @@ static void snap_bind_stdio() {
     const std::filesystem::path prev = snap::base_path("snap64.prev.log");
     std::error_code ec;
     std::filesystem::remove(prev, ec);
-    std::filesystem::rename(log, prev, ec);
+    // A process the Snap Station relaunched starts while the one that
+    // launched it is still quitting and still holds snap64.log, so the
+    // rename fails with a sharing violation. That parent releases the file
+    // the moment it has started this one (snap_station.cpp, relaunch_self),
+    // so waiting is enough; the cap is for a parent that hangs on exit.
+    for (int attempt = 0; attempt < 200; attempt++) {
+        std::filesystem::rename(log, prev, ec);
+        if (!ec || !std::filesystem::exists(log, ec)) {
+            break;
+        }
+        Sleep(100);
+    }
     std::filesystem::remove(log, ec);
     if (_wfreopen_s(&f, log.c_str(), L"a", stdout) != 0) {
         return;

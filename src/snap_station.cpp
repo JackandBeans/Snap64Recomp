@@ -13,6 +13,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <ctime>
@@ -29,6 +30,7 @@
 #define WIN32_LEAN_AND_MEAN
 #include <windows.h>
 #include <shellapi.h>
+#include <objbase.h>
 #endif
 
 #include "ultramodern/ultramodern.hpp"
@@ -358,7 +360,16 @@ void relaunch_self(const char* why) {
     }
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
-    say("relaunched for %s; this instance is quitting", why);
+    say("relaunched for %s (pid %lu); this instance is quitting", why, pi.dwProcessId);
+    // The new process writes snap64.log beside the executable and keeps
+    // this one's as snap64.prev.log; it can only do that once this process
+    // lets go of the file. Released now rather than at exit, which comes a
+    // second or more later and left the child unable to open its log.
+    fflush(stdout);
+    fflush(stderr);
+    FILE* sink = nullptr;
+    freopen_s(&sink, "NUL", "w", stdout);
+    freopen_s(&sink, "NUL", "w", stderr);
     ultramodern::quit();
 #else
     (void)why;
@@ -418,7 +429,13 @@ void open_folder(const std::string& utf8) {
     if (!std::filesystem::is_directory(p, ec)) {
         return;
     }
+    // ShellExecute may hand the open to a shell extension, which wants COM
+    // initialised on the calling thread.
+    const HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     ShellExecuteW(nullptr, L"open", p.wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
+    if (SUCCEEDED(com)) {
+        CoUninitialize();
+    }
     say("the printed sheet is in %s", utf8.c_str());
 }
 #endif
@@ -479,8 +496,47 @@ constexpr OsdGlyph kOsdFont[] = {
     { 'W', { "#...#", "#...#", "#...#", "#.#.#", "#.#.#", "##.##", "#...#" } },
     { '.', { ".....", ".....", ".....", ".....", ".....", "..#..", "....." } },
 };
-constexpr const char* kOsdStar[7] = { "...#...", "..###..", "#######", ".#####.", "..###..", ".#.#.#.", "#.....#" };
 constexpr const char* kOsdDash[3] = { ".....", "#####", "....." };
+
+void osd_put(std::vector<uint8_t>& img, int x, int y, uint8_t r, uint8_t g, uint8_t b);
+
+// A five-pointed star, filled, centred on (cx, cy): outer radius r, inner
+// radius 0.42 r, a point straight up. Even-odd against the ten edges.
+bool osd_in_star(float px, float py, float cx, float cy, float r) {
+    float vx[10], vy[10];
+    for (int i = 0; i < 10; i++) {
+        const float ang = -3.14159265f / 2.0f + float(i) * (3.14159265f / 5.0f);
+        const float rad = (i % 2 == 0) ? r : r * 0.42f;
+        vx[i] = cx + rad * std::cos(ang);
+        vy[i] = cy + rad * std::sin(ang);
+    }
+    bool inside = false;
+    for (int i = 0, j = 9; i < 10; j = i++) {
+        if (((vy[i] > py) != (vy[j] > py)) &&
+            (px < (vx[j] - vx[i]) * (py - vy[i]) / (vy[j] - vy[i]) + vx[i])) {
+            inside = !inside;
+        }
+    }
+    return inside;
+}
+
+void osd_star(std::vector<uint8_t>& img, int cx, int cy, float r) {
+    const int reach = int(r) + 4;
+    for (int y = cy - reach; y <= cy + reach; y++) {
+        for (int x = cx - reach; x <= cx + reach; x++) {
+            if (osd_in_star(float(x) + 0.5f, float(y) + 0.5f, float(cx), float(cy), r + 2.0f)) {
+                osd_put(img, x, y, 0, 0, 0);
+            }
+        }
+    }
+    for (int y = cy - reach; y <= cy + reach; y++) {
+        for (int x = cx - reach; x <= cx + reach; x++) {
+            if (osd_in_star(float(x) + 0.5f, float(y) + 0.5f, float(cx), float(cy), r)) {
+                osd_put(img, x, y, 255, 255, 255);
+            }
+        }
+    }
+}
 
 void osd_put(std::vector<uint8_t>& img, int x, int y, uint8_t r, uint8_t g, uint8_t b) {
     if ((x < 0) || (x >= OsdW) || (y < 0) || (y >= OsdH)) {
@@ -550,12 +606,13 @@ void osd_text(std::vector<uint8_t>& img, const char* text, int x, int y, int sca
 enum class Mark { Dash, Star, Blank };
 void osd_marks(std::vector<uint8_t>& img, const Mark marks[3]) {
     for (int i = 0; i < 3; i++) {
-        const int x = 390 + i * 40;
+        const int cx = 412 + i * 44;
+        const int cy = 102;
         if (marks[i] == Mark::Star) {
-            osd_glyph(img, kOsdStar, 7, x, 84, 5);
+            osd_star(img, cx, cy, 17.0f);
         }
         else if (marks[i] == Mark::Dash) {
-            osd_glyph(img, kOsdDash, 3, x + 6, 96, 4);
+            osd_glyph(img, kOsdDash, 3, cx - 10, cy - 6, 4);
         }
     }
 }
@@ -895,8 +952,14 @@ void on_message(uint8_t* rdram, Station& s, uint8_t msg) {
                         std::lock_guard<std::mutex> lock(st2.mutex);
                         st2.busy = false;
                     }
+                    // The stickers are handed over by this process, before it
+                    // goes: the folder opens whether or not the relaunch after
+                    // it comes up.
+#if defined(_WIN32)
+                    open_folder(sheet);
+#endif
                     say("display finished; relaunching into a normal boot");
-                    schedule_relaunch("restart", "the end of the print", 500, false, sheet);
+                    schedule_relaunch("restart", "the end of the print", 500, false);
                 }).detach();
             }
             break;
@@ -985,13 +1048,14 @@ void station_init() {
         s.jobPending.store(true);
         say("print job pending: the station is present from boot for the photo display");
     } else {
-        // "restart", or a job too old to trust.
+        // "restart", or a job too old to trust. The marker goes first, so
+        // nothing that follows can leave it behind for the next boot.
+        remove_marker();
 #if defined(_WIN32)
         if (mode == "restart" && !extra.empty()) {
             open_folder(extra);
         }
 #endif
-        remove_marker();
     }
 }
 
