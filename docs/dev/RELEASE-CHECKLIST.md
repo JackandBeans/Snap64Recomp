@@ -50,6 +50,10 @@ sentence. The suite on that build: 21/21 in 782 s, station 5/5 in 492 s,
 the icon check passing in a separate `--only subsystem` run because the
 full run had started before it was added.
 
+Identity settled on 2026-09-04: author Jack & Beans <snap64recomp@gmail.com>,
+history rewritten with filter-repo before any push; README carries a byline,
+a Thanks section and a copyright line; the logo is docs/logo.png.
+
 Yours: 1.7 the clean-machine run, 2.11 screenshots, the push and the
 release page (docs/dev/PUBLISHING.md walks through them), and the
 decision on the email before the first push.
@@ -62,7 +66,7 @@ carries no Apache licence text. Add `licenses/roboto.txt` (licence + notice),
 add it to the CMake licence list, add a NOTICE.md row.
 
 1.2 **Personal paths in the archive (do).** The linker map ships in the zip
-and the executable embeds `C:\Users\<you>\...` through `__FILE__`. Stop
+and the executable embeds `C:\Users\<name>\...` through `__FILE__`. Stop
 installing the `.map`, and add `/d1trimfile:<repo>\` (MSVC) so asserts and
 logs carry relative paths. Rebuild and re-check with `strings`.
 

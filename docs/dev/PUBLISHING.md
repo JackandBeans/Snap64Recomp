@@ -7,36 +7,13 @@ done yet, because publishing is yours to press.
 
 ## Before pushing, once
 
-1. **Make the project's identity, and rewrite the history to it.** Create
-   the project's Gmail address, then the GitHub account with it. Every
-   one of the 311 commits carries the old address as author and committer;
-   before the first push, and only then, rewrite them in one go with
-   `git filter-repo` (installed on this machine; rehearsed on a clone on
-   2026-09-04: all 311 rewritten, `v1.0.0` re-pointed, the Co-Authored-By
-   trailers untouched, no other content changed). Say the address to the
-   assistant and it runs the steps, or do them yourself: with a clean
-   working tree, write one line into `build-win/mailmap.txt`,
-
-       <you> <NEW@ADDRESS> <OLD@ADDRESS>
-
-   then, from the repository:
-
-   ```bash
-   git filter-repo --mailmap build-win/mailmap.txt --force
-   ```
-
-   ```bash
-   git config user.email "NEW@ADDRESS"
-   ```
-
-   Every commit hash changes; nothing in the documents records one. Check
-   with `git log --format=%ae | sort -u` (one address) and `git log -1
-   v1.0.0` (still the release commit), and delete the mailmap file. The
-   old address appears in no tracked file, so the mailmap is the whole
-   job. GitHub can also hide an address behind
-   `<id>+<username>@users.noreply.github.com` (Settings > Emails > "Keep
-   my email addresses private"), which is the alternative if the project
-   address should not be public either.
+1. **Identity: done.** The project's address is snap64recomp@gmail.com and
+   the author name is Jack & Beans. On 2026-09-04 every commit was rewritten
+   to that name and address with `git filter-repo --mailmap` (the tag
+   `v1.0.0` re-pointed with them, the Co-Authored-By trailers untouched),
+   and `git config user.name` / `user.email` set for the commits to come.
+   Create the GitHub account with that address; the username is yours to
+   choose (the walkthrough below writes `<your-username>`).
 
 2. **Take screenshots** from the playtest copy: the title screen, a course,
    the Graphics page. They go on the release page and in the README later.
@@ -63,7 +40,7 @@ done yet, because publishing is yours to press.
 
 ## Push
 
-From `C:\Users\<you>\PokemonSnapRecomp`, in the app's terminal:
+From the repository folder, in the app's terminal:
 
 ```bash
 git remote add origin https://github.com/<your-username>/Snap64Recomp.git

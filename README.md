@@ -2,8 +2,9 @@
 
 # Snap64 Recomp
 
-A native Windows port of the Nintendo 64 game *Pokémon Snap* (US release),
-made by static recompilation. [N64Recomp](https://github.com/N64Recomp/N64Recomp)
+By Jack & Beans. A native Windows port of the Nintendo 64 game *Pokémon Snap*
+(US release), made by static recompilation.
+[N64Recomp](https://github.com/N64Recomp/N64Recomp)
 translates the game's MIPS code into C, [N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime)
 (`librecomp` + `ultramodern`) stands in for the console's operating system,
 [RT64](https://github.com/rt64/rt64) renders, and SDL2 provides the window,
@@ -18,6 +19,8 @@ version. This project is not affiliated with, endorsed by or connected to
 Nintendo, Creatures Inc., GAME FREAK inc., HAL Laboratory or The Pokémon
 Company; Pokémon and Pokémon Snap are their trademarks, and the game is
 theirs. Nothing of the game is included: you supply your own cartridge dump.
+The people and projects this port stands on are thanked under
+[Thanks](#thanks) below.
 
 ## Status: 1.0.0
 
@@ -427,7 +430,9 @@ N64Recomp for the game and the patches, CMake and MSVC on Windows, and a list
 of things git does not carry. `cpack -C Release` in the build directory then
 writes `Snap64Recomp-1.0.0-win64.zip` (step 13).
 
-## Credits
+## Thanks
+
+None of this would exist without:
 
 * The [Pokémon Snap decompilation](https://github.com/ethteck/pokemonsnap)
   and everyone who worked on it: the port's patches are compiled against
@@ -446,10 +451,11 @@ writes `Snap64Recomp-1.0.0-win64.zip` (step 13).
   named in `NOTICE.md`.
 * The Roboto Project Authors, for the typeface the printer's lettering is
   set from.
-* Jack & Beans: the port itself, and the playtesting of every course.
+* Everyone who plays it and reports what they see: the first reports from
+  other machines are what 1.0.1 will be made of.
 
 ## License
 
-GPLv3. See `LICENSE` and `NOTICE.md`. The port's own code is the author's
+Copyright (C) 2026 Jack & Beans. GPLv3: see `LICENSE` and `NOTICE.md`. The port's own code is the author's
 and GPLv3; the game is Nintendo's, Creatures', GAME FREAK's and HAL's, and
 nothing of it is here.
