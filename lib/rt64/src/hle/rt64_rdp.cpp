@@ -133,6 +133,35 @@ namespace RT64 {
     
     void RDP::checkFramebufferOverlap(uint32_t tmemStart, uint32_t tmemWords, uint32_t tmemMask, uint32_t addressStart, uint32_t addressEnd, uint32_t tileWidth, uint32_t tileHeight, bool RGBA32, bool makeTileCopy) {
         auto &fbManager = state->framebufferManager;
+
+        // Pokemon Snap port: a load from plain memory may be a photo -- the
+        // bitmap the game's CPU halved from a render this renderer made and
+        // pinned a halved copy of. When it is, the TMEM it fills is tagged
+        // with those rows of the pinned copy (hle/rt64_snap_photo_detail.h).
+        // Only with the setting on; the comparison is the whole loaded range
+        // against the bitmap the game computed, halfword for halfword, so
+        // nothing else is ever substituted. Asked FIRST, before the address
+        // check below: the bitmaps live on the game's heap, where a buffer
+        // some earlier screen rendered into may have sat, and the record of
+        // that framebuffer outlives the screen. A load inside such a record
+        // used to be treated as a read of that framebuffer, which the CPU
+        // had since overwritten, so the sprite fell back to the console's
+        // halved texels while the same photo elsewhere was served in full.
+        // Exact content identity outranks an address heuristic.
+        if (makeTileCopy && !RGBA32 && state->ext.userConfig->snapPhotoDetail && state->ext.emulatorConfig->framebuffer.copyWithGPU) {
+            SnapPhotoDetail::Match match;
+            if (state->snapPhotoDetail.match(state->RDRAM, addressStart, addressEnd, fbManager.getUsedTimestamp(), match)) {
+                const FramebufferTile fbTile = SnapPhotoDetail::makeRegionTile(match);
+                fbManager.insertRegionsTMEM(fbTile.address, tmemStart, std::min(tmemWords, uint32_t(RDP_TMEM_WORDS)), tmemMask, false, false, &regionIterators);
+                for (FramebufferManager::RegionIterator regionIt : regionIterators) {
+                    regionIt->fbTile = fbTile;
+                    regionIt->tileCopyId = match.candidate->tileId;
+                }
+
+                return;
+            }
+        }
+
         Framebuffer *fb = fbManager.findMostRecentContaining(addressStart, addressEnd);
         if (fb != nullptr) {
             const bool gpuCopiesEnabled = state->ext.emulatorConfig->framebuffer.copyWithGPU;
@@ -180,24 +209,6 @@ namespace RT64 {
                 for (FramebufferManager::RegionIterator regionIt : regionIterators) {
                     regionIt->fbTile = fbTile;
                     regionIt->tileCopyId = newTileId;
-                }
-            }
-        }
-        // Pokemon Snap port: a load from plain memory may still be a photo --
-        // the bitmap the game's CPU halved from a render this renderer made
-        // and pinned a halved copy of. When it is, the TMEM it fills is
-        // tagged with those rows of the pinned copy (hle/
-        // rt64_snap_photo_detail.h). Only with the setting on; the comparison
-        // is the whole loaded range against the bitmap the game computed, so
-        // nothing else is ever substituted.
-        else if (makeTileCopy && !RGBA32 && state->ext.userConfig->snapPhotoDetail && state->ext.emulatorConfig->framebuffer.copyWithGPU) {
-            SnapPhotoDetail::Match match;
-            if (state->snapPhotoDetail.match(state->RDRAM, addressStart, addressEnd, fbManager.getUsedTimestamp(), match)) {
-                const FramebufferTile fbTile = SnapPhotoDetail::makeRegionTile(match);
-                fbManager.insertRegionsTMEM(fbTile.address, tmemStart, std::min(tmemWords, uint32_t(RDP_TMEM_WORDS)), tmemMask, false, false, &regionIterators);
-                for (FramebufferManager::RegionIterator regionIt : regionIterators) {
-                    regionIt->fbTile = fbTile;
-                    regionIt->tileCopyId = match.candidate->tileId;
                 }
             }
         }
