@@ -289,7 +289,7 @@ the game's own update-x3-draw-x1 hold at cart crossings, wrong scoring.
     entries (if it shows only Screen, Sound, Z Button, Control Stick, Return,
     the menu font failed to stage, which the `menu` suite check now guards
     against). Every Graphics row cycles and its description reads correctly
-    (rows 15 Photo Detail and 16 Jynx Recolour are the newest; the Jynx text
+    (rows 15 Photo Detail and 16 Jynx Recolor are the newest; the Jynx text
     names both positions). B cancels back to the values the page opened with;
     A keeps them. Sound page: sliders apply live, Stereo and Mono switch.
 13. Photo Detail: with it on, the photos Oak holds up in the evaluation are

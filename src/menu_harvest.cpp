@@ -374,7 +374,7 @@ constexpr uint32_t kValueVram = 0x80342FF0;   // "<Stereo>": the chevrons
 
 // The twenty-two body characters no menu sprite contains, drawn in the
 // sprite font's own style (2px stems, one antialiased fringe, caps on rows
-// 1..9). J is the port's, for the Jynx Recolour row: T's bar, a stem on the
+// 1..9). J is the port's, for the Jynx Recolor row: T's bar, a stem on the
 // right, O's bottom curve opening to the left.
 constexpr SynthGlyph kBodySynth[] = {
     { 'J', { ".......", "+#####.", ".+++##+", "....##.", "....#+.", "....#+.", "....#+.", "+#..#+.", ".####+.", ".+##+.." } },

@@ -91,7 +91,7 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *                8 Super Sampling, 9 Texture Filter, 10 Color Depth,
  *                11 Buffering, 12 Overscan Crop, 13 Cutscene Fix (also
  *                read by the intro patches), 14 Photo Detail, 15 VC
- *                Recolour. The bank is full: field 16 would be the
+ *                Recolor. The bank is full: field 16 would be the
  *                pointer word below.
  *   +0x18  u32  SCRATCH_GRAPHICS_GOBJ, the patch's own (see below)
  *   +0x1C  u32  SCRATCH_HELP_ITEM, the patch's own
@@ -177,10 +177,11 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_INTRO_DESC  85
 #define STR_PHOTO_LABEL 86  /* "Photo Detail" (settings.h photo_detail) */
 #define STR_PHOTO_DESC  87
-/* "Jynx Recolour": the purple Jynx of the re-releases (settings.h jynx_vc).
- * Not "Jynx Recolour" -- the body face has no capital J either, and the
- * help face the description is set in has no J, no V and no hyphen, so
- * the description says what changes and where, never the name. */
+/* "Jynx Recolor": the purple Jynx of the re-releases (settings.h jynx_vc).
+ * The label's J is one of the port's own glyphs (the body face has no
+ * capital J), and the help face the description is set in has no J, no V
+ * and no hyphen, so the description says what changes and where, never
+ * the name or the re-releases' platforms. */
 #define STR_JYNX_LABEL  88
 #define STR_JYNX_DESC   89
 /* "Snap Station" in the title menu's own face, for the title's fifth item
@@ -418,7 +419,7 @@ static s32 snap_row_field(s32 row) {
         case 12: return 12;   /* Overscan Crop */
         case 13: return 13;   /* Cutscene Fix */
         case 14: return 14;   /* Photo Detail */
-        default: return 15;   /* Jynx Recolour */
+        default: return 15;   /* Jynx Recolor */
     }
 }
 
@@ -516,7 +517,7 @@ static s32 snap_value_str(s32 row, s32 v) {
         case 9: return (v == 0) ? STR_DOUBLE : STR_TRIPLE;
         default: return v ? STR_ON : STR_OFF;  /* Widescreen, Dither, Fullscreen,
                                                 * Overscan Crop, Cutscene Fix,
-                                                * Photo Detail, Jynx Recolour */
+                                                * Photo Detail, Jynx Recolor */
     }
 }
 

@@ -1011,7 +1011,7 @@ void stage_menu_strings(uint8_t* rdram) {
         { "Silences the game while another",          "window is in front." },
     };
     // Ids BaseCount+52..+59: the Graphics page's last four rows -- Overscan
-    // Crop, Cutscene Fix, Photo Detail, Jynx Recolour -- a label and a
+    // Crop, Cutscene Fix, Photo Detail, Jynx Recolor -- a label and a
     // description apiece. Id BaseCount+60: the title screen's "Snap Station"
     // item, in the title's own face (zero width when that face is missing).
     constexpr uint32_t StringCount = BaseCount + 61;
@@ -1171,7 +1171,7 @@ void stage_menu_strings(uint8_t* rdram) {
         else if (id == BaseCount + 58) {
             // No capital J in the body face (see STR_JYNX_LABEL in the
             // patch): named for the releases whose look it borrows.
-            strip = compose("Jynx Recolour");
+            strip = compose("Jynx Recolor");
             w = strip.width;
             h = strip.height;
         }
