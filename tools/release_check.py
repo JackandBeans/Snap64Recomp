@@ -341,8 +341,14 @@ def check_station(c, exe_dir):
             out, _ = p.communicate()
             relaunched = False
         first = [l for l in out.splitlines() if '[SNAP-STATION]' in l]
-        c.add('station', relaunched and any('reset requested' in l for l in first),
-              'first process: %s after %.0f s' % ('relaunched itself at 0x5A' if relaunched else 'never reached 0x5A (killed)', time.time() - t0))
+        reset = any('reset requested' in l for l in first)
+        # An exit without the reset line is not the print: say what the
+        # process did log, so a failure can be read without rerunning.
+        c.add('station', relaunched and reset,
+              'first process: %s after %.0f s%s' % (
+                  'relaunched itself at 0x5A' if (relaunched and reset) else ('exited without a reset request' if relaunched else 'never reached 0x5A (killed)'),
+                  time.time() - t0,
+                  '' if (relaunched and reset) else ('; its station lines: ' + ' | '.join(l.split('] ', 1)[-1] for l in first[-4:]) if first else '; no station lines at all')))
         # Follow the relaunches through the logs they write beside the executable.
         seen, sheet = [], None
         t1 = time.time()
@@ -350,7 +356,13 @@ def check_station(c, exe_dir):
             for name in ('snap64.prev.log', 'snap64.log'):
                 f = exe_dir / name
                 if f.is_file():
-                    for l in f.read_text(encoding='utf-8', errors='replace').splitlines():
+                    # The relaunched game holds its log open; a read can be
+                    # refused for a moment. Try again on the next pass.
+                    try:
+                        text = f.read_text(encoding='utf-8', errors='replace')
+                    except OSError:
+                        continue
+                    for l in text.splitlines():
                         if '[SNAP-STATION]' in l and l not in seen:
                             seen.append(l)
             for d in (set((exe_dir / 'stickers').glob('*')) - before):
