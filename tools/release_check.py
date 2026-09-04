@@ -399,11 +399,35 @@ def check_package(c, zip_path):
     z = zipfile.ZipFile(zip_path)
     names = z.namelist()
     top = names[0].split('/')[0]
-    need = [EXE, 'SDL2.dll', 'dxcompiler.dll', 'dxil.dll', 'LICENSE', 'NOTICE.md', 'README.md',
+    need = [EXE, 'SDL2.dll', 'dxcompiler.dll', 'dxil.dll', 'LICENSE', 'NOTICE.md', 'README.md', 'CHANGELOG.md',
             'licenses/DirectXShaderCompiler.txt', 'licenses/DirectXShaderCompiler-dxil.txt',
-            'menu_text/recomp_logo.png', 'Snap64Recomp.map']
+            'licenses/nlohmann-json.txt', 'licenses/roboto.txt',
+            'menu_text/recomp_logo.png', 'mods/README.md', 'texture_packs/README.txt', 'Snap64Recomp.map']
     missing = [n for n in need if (top + '/' + n) not in names]
     c.add('package', not missing, '%s: %d entries%s' % (zip_path.name, len(names), (', missing ' + ', '.join(missing)) if missing else ''))
+    # The checksum CPack writes beside the archive must match the archive.
+    sidecar = zip_path.with_name(zip_path.name + '.sha256')
+    if sidecar.is_file():
+        stated = sidecar.read_text(encoding='utf-8', errors='replace').split()[0].lower()
+        actual = hashlib.sha256(zip_path.read_bytes()).hexdigest()
+        c.add('package', stated == actual, '.sha256 sidecar %s' % ('matches the archive' if stated == actual else 'does NOT match the archive'))
+    else:
+        c.add('package', False, 'no .sha256 sidecar beside the archive')
+    # Nothing from the build machine's file system may be in the archive.
+    leaked = []
+    for n in names:
+        if n.endswith('/'):
+            continue
+        blob = z.read(n)
+        for needle in (b'C:\\Users\\', b'C:/Users/', b'/home/', b'/mnt/c/'):
+            if needle in blob:
+                leaked.append(n)
+                break
+    c.add('package', not leaked, 'no user paths in the archive' if not leaked else 'user paths in: ' + ', '.join(sorted(set(leaked))))
+    # The executable must not need the Visual C++ Redistributable.
+    exe = z.read(top + '/' + EXE)
+    needs_crt = any(dll in exe for dll in (b'VCRUNTIME140', b'MSVCP140', b'vcruntime140', b'msvcp140'))
+    c.add('package', not needs_crt, 'C++ runtime %s' % ('linked in' if not needs_crt else 'IMPORTED from VCRUNTIME/MSVCP DLLs'))
     digest = hashlib.sha256(z.read(top + '/dxil.dll')).hexdigest() if (top + '/dxil.dll') in names else ''
     c.add('package', digest == DXIL_SHA256, 'dxil.dll is %s' % ('the v1.7.2308 file' if digest == DXIL_SHA256 else 'NOT the v1.7.2308 file (%s)' % digest[:16]))
 

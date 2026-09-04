@@ -14,7 +14,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # package name (all through the generated version.h / snap64.rc, below).
 # An empty SNAP_VERSION_PRERELEASE is a final release.
 set(SNAP_PRODUCT_NAME "Snap64 Recomp")
-set(SNAP_VERSION_PRERELEASE "rc2")
+set(SNAP_VERSION_PRERELEASE "")
 if (SNAP_VERSION_PRERELEASE)
     set(SNAP_VERSION_SUFFIX "-${SNAP_VERSION_PRERELEASE}")
     set(SNAP_RC_FILEFLAGS "VS_FF_PRERELEASE")
@@ -27,6 +27,15 @@ set(SNAP_VERSION_FULL "${PROJECT_VERSION}${SNAP_VERSION_SUFFIX}")
 string(REPLACE "-" " " SNAP_VERSION_CREDITS "${SNAP_VERSION_FULL}")
 if (MSVC)
     enable_language(RC)
+    # The C++ runtime is linked into the executable (and into SDL2.dll, built
+    # here), so a machine without the Visual C++ Redistributable runs it.
+    set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    # __FILE__ -- asserts, the crash report, RT64's own messages -- would
+    # otherwise carry the absolute path of the machine that built the
+    # release. The prefix is trimmed at compile time; what remains is the
+    # path inside the repository.
+    file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/" SNAP_SOURCE_PREFIX_NATIVE)
+    add_compile_options("/d1trimfile:${SNAP_SOURCE_PREFIX_NATIVE}")
 endif()
 
 # =============================================================================
@@ -387,9 +396,18 @@ if (WIN32)
     install(FILES ${SNAP_RUNTIME_DLLS} DESTINATION .)
     # The /MAP output. The [SNAP-AV] crash report (main.cpp) prints image RVAs
     # that are symbolised against this file; a user's crash log is unreadable
-    # without it.
-    install(FILES "$<TARGET_FILE_DIR:Snap64Recomp>/$<TARGET_FILE_BASE_NAME:Snap64Recomp>.map"
-            DESTINATION . OPTIONAL)
+    # without it. The copy that ships has the build machine's paths replaced
+    # (tools/filter_map.cmake); the symbols and addresses are untouched.
+    set(SNAP_MAP_FILTERED "${CMAKE_CURRENT_BINARY_DIR}/generated/Snap64Recomp.map")
+    add_custom_command(TARGET Snap64Recomp POST_BUILD
+        COMMAND ${CMAKE_COMMAND}
+            "-DINPUT=$<TARGET_FILE_DIR:Snap64Recomp>/$<TARGET_FILE_BASE_NAME:Snap64Recomp>.map"
+            "-DOUTPUT=${SNAP_MAP_FILTERED}"
+            "-DSOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}"
+            "-DBINARY_DIR=${CMAKE_CURRENT_BINARY_DIR}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tools/filter_map.cmake"
+        COMMENT "Filtering the linker map of build paths")
+    install(FILES "${SNAP_MAP_FILTERED}" DESTINATION . OPTIONAL)
 endif()
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/menu_text/recomp_logo.png" DESTINATION menu_text)
 # The two folders players are told about (README "Mods and texture packs")
@@ -401,6 +419,7 @@ install(FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
     "${CMAKE_CURRENT_SOURCE_DIR}/NOTICE.md"
     "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
+    "${CMAKE_CURRENT_SOURCE_DIR}/CHANGELOG.md"
     DESTINATION .)
 
 # Third-party licence texts, copied from the vendored trees at install time so
@@ -454,7 +473,7 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/generated/licenses/concurrentqueue.tx
 # is Microsoft's LICENSE-MS.txt of release v1.7.2308, the terms dxil.dll is
 # shipped under (NOTICE.md, VENDORING.md "dxc"). A package without them is not
 # produced.
-foreach(_lic IN ITEMS DirectXShaderCompiler.txt DirectXShaderCompiler-dxil.txt)
+foreach(_lic IN ITEMS DirectXShaderCompiler.txt DirectXShaderCompiler-dxil.txt roboto.txt)
     if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/licenses/${_lic}")
         message(WARNING "licenses/${_lic} is missing; cpack stops until it is added (BUILDING.md, step 13)")
     endif()
@@ -463,6 +482,7 @@ install(FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/licenses/nlohmann-json.txt"
     "${CMAKE_CURRENT_SOURCE_DIR}/licenses/DirectXShaderCompiler.txt"
     "${CMAKE_CURRENT_SOURCE_DIR}/licenses/DirectXShaderCompiler-dxil.txt"
+    "${CMAKE_CURRENT_SOURCE_DIR}/licenses/roboto.txt"
     DESTINATION licenses)
 
 # cpack -C Release (from the build directory) -> Snap64Recomp-<version>-win64.zip
