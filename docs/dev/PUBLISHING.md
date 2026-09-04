@@ -1,20 +1,43 @@
 # Publishing 1.0.0 on GitHub, step by step
 
-Written for a first release on a GitHub account that has never hosted a
-repository. Everything below happens on your machine and in a browser; the
-port's build is already done and tagged locally. Nothing in this file has
-been done yet, because publishing is yours to press.
+Written for a first release on a GitHub account made for the project.
+Everything below happens on your machine and in a browser; the port's
+build is already done and tagged locally. Nothing in this file has been
+done yet, because publishing is yours to press.
 
 ## Before pushing, once
 
-1. **Decide the email that goes public.** Every commit carries the author's
-   email. If you would rather it were not on the internet, GitHub gives
-   each account a private address of the form
-   `<id>+<username>@users.noreply.github.com` (Settings > Emails > "Keep my
-   email addresses private" shows it). Set it for future commits with
-   `git config user.email "<that address>"`. Rewriting the 300 existing
-   commits is possible only before the first push and is a one-time job;
-   say so and it can be done, otherwise the history goes as it is.
+1. **Make the project's identity, and rewrite the history to it.** Create
+   the project's Gmail address, then the GitHub account with it. Every
+   one of the 311 commits carries the old address as author and committer;
+   before the first push, and only then, rewrite them in one go with
+   `git filter-repo` (installed on this machine; rehearsed on a clone on
+   2026-09-04: all 311 rewritten, `v1.0.0` re-pointed, the Co-Authored-By
+   trailers untouched, no other content changed). Say the address to the
+   assistant and it runs the steps, or do them yourself: with a clean
+   working tree, write one line into `build-win/mailmap.txt`,
+
+       <you> <NEW@ADDRESS> <OLD@ADDRESS>
+
+   then, from the repository:
+
+   ```bash
+   git filter-repo --mailmap build-win/mailmap.txt --force
+   ```
+
+   ```bash
+   git config user.email "NEW@ADDRESS"
+   ```
+
+   Every commit hash changes; nothing in the documents records one. Check
+   with `git log --format=%ae | sort -u` (one address) and `git log -1
+   v1.0.0` (still the release commit), and delete the mailmap file. The
+   old address appears in no tracked file, so the mailmap is the whole
+   job. GitHub can also hide an address behind
+   `<id>+<username>@users.noreply.github.com` (Settings > Emails > "Keep
+   my email addresses private"), which is the alternative if the project
+   address should not be public either.
+
 2. **Take screenshots** from the playtest copy: the title screen, a course,
    the Graphics page. They go on the release page and in the README later.
 3. **Try the archive on a machine that has never built the port**, with a
@@ -32,7 +55,11 @@ been done yet, because publishing is yours to press.
    is included.` Topics: `n64`, `recompilation`, `pokemon-snap`, `rt64`,
    `n64recomp`.
 3. Settings > General: leave Issues on (bug reports land there; the README
-   points people to it). Discussions optional. Wiki off.
+   points people to it, and `.github/ISSUE_TEMPLATE/bug_report.yml` is the
+   form they get). Discussions optional. Wiki off.
+4. Settings > General > Social preview: upload `docs/dev/social-preview.png`
+   (1280x640, the icon and wordmark on GitHub's dark ground). It is what a
+   shared link shows on Discord, Twitter and the like.
 
 ## Push
 

@@ -266,10 +266,14 @@ with `Snap64Recomp.map` (the linker map, `/MAP`) beside it.
 Configure also writes `build-win/generated/version.h` and
 `build-win/generated/snap64.rc` from `src/version.h.in` and
 `src/snap64.rc.in`. The version is typed once, in `CMakeLists.txt`
-(`project(Snap64Recomp VERSION 1.0.0)` plus `SNAP_VERSION_PRERELEASE`, `""` for a final release, `""` for a final release, `rc2` for the candidate before it for the candidate before it
-today, empty for a final), and reaches the title bar, the log banner, the
-title screen's credits line, the executable's version resource (Properties >
-Details) and the package name from there.
+(`project(Snap64Recomp VERSION 1.0.0)` plus `SNAP_VERSION_PRERELEASE`: `""`
+for a release, `rc1` and so on for the candidates before it), and reaches
+the title bar, the log banner, the title screen's credits line, the
+executable's version resource (Properties > Details) and the package name
+from there. The same resource file compiles in the executable's icon,
+`src/snap64.ico`, drawn by `tools/icon_gen.py` (Pillow) in the wordmark's
+colours; the `.ico` is tracked, so the generator runs only when the design
+changes.
 
 ### 12. Runtime files next to the executable
 

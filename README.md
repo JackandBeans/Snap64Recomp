@@ -97,27 +97,8 @@ somewhere else before updating the port or trying a Snap Station print.
 one this README came from) and attach `snap64.log` from the run that went
 wrong, `Snap64Recomp.map` if the log has `[SNAP-AV]` lines, your
 `snapsettings.json`, and what you were doing. Say which GPU and driver you
-have; every run so far has been on one machine.
-A second copy started from the same folder waits for the first to exit
-(the Snap Station relaunches itself that way) and otherwise tells you the
-port is already running.
-
-**If Windows or your antivirus objects.** The executable is not signed, so
-the first start may bring up SmartScreen's "Windows protected your PC";
-"More info", then "Run anyway", is the route, once. The Snap Station's Print
-starts a fresh copy of the port twice in a row, which some antivirus
-heuristics dislike; allow it if asked. Nothing here phones home: the port
-opens no network connection at all.
-
-**Back up your save.** `saves/pokemonsnap.bin` is the whole of your progress
-in one file, with one earlier generation kept as `.bak`. Copy `saves/`
-somewhere else before updating the port or trying a Snap Station print.
-
-**Reporting a bug.** Open an issue on this project's GitHub repository (the
-one this README came from) and attach `snap64.log` from the run that went
-wrong, `Snap64Recomp.map` if the log has `[SNAP-AV]` lines, your
-`snapsettings.json`, and what you were doing. Say which GPU and driver you
-have; every run so far has been on one machine.
+have; every run so far has been on one machine. The issue form asks for
+these; `CONTRIBUTING.md` has the ground rules for code.
 
 ### Where things live
 
@@ -156,9 +137,6 @@ Keyboard (`src/input.cpp`):
 | D-pad | Arrow keys |
 | L / R | Q / E |
 | C-Up / C-Down / C-Left / C-Right | I / K / J / L |
-
-The keys are fixed scancodes, positional on the keyboard: on a non-QWERTY
-layout they are the keys in those places, not the letters printed on them.
 
 The keys are fixed scancodes, positional on the keyboard: on a non-QWERTY
 layout they are the keys in those places, not the letters printed on them.

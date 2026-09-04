@@ -37,6 +37,19 @@ port's: PUBLISHING.md explains GitHub's private address; 2.15 the unnamed
 release because pairing identity is where the earlier tearing bugs lived;
 3.5 and 3.6 stay as documented gaps.
 
+Added later on 2026-09-04, after the first tag and before any push, with
+the tag moved to the new head: the executable's icon (`src/snap64.ico`
+from `tools/icon_gen.py`, compiled in through `src/snap64.rc.in`; the
+suite's `subsystem` check now looks for the icon resource), `.github/` (a
+bug-report form and a pull-request template), `CONTRIBUTING.md`,
+`.gitattributes` (the vendored trees marked for GitHub's language
+statistics), `docs/dev/social-preview.png`, and repairs to README.md,
+NOTICE.md and BUILDING.md, where the docs script's second run had
+duplicated a 20-line block, the Assets table (three times over) and one
+sentence. The suite on that build: 21/21 in 782 s, station 5/5 in 492 s,
+the icon check passing in a separate `--only subsystem` run because the
+full run had started before it was added.
+
 Yours: 1.7 the clean-machine run, 2.11 screenshots, the push and the
 release page (docs/dev/PUBLISHING.md walks through them), and the
 decision on the email before the first push.

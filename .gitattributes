@@ -1,0 +1,9 @@
+# GitHub's language statistics: the vendored runtime and renderer trees are
+# not this port's own code (the port's changes to them are marked in place
+# and listed in NOTICE.md), and the printer's font header is generated.
+lib/**                          linguist-vendored
+src/snap_station_osd_font.h     linguist-generated
+# Binary assets, never diffed or line-ending converted.
+*.ico  binary
+*.png  binary
+*.bin  binary

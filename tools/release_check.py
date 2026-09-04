@@ -4,7 +4,8 @@
 Every check here is one the port has been verified with before, gathered so
 that a release build can be put through all of them in one go:
 
-  subsystem   the executable is a windowed program (no console opens)
+  subsystem   the executable is a windowed program (no console opens) and
+              carries its icon resource
   stdio       the log reaches a pipe when one is given, and snap64.log beside
               the executable when nothing is (a shortcut launch), with the
               previous run kept as snap64.prev.log
@@ -136,9 +137,41 @@ def bmp_stats(path):
     return (total / max(n, 1), w, h)
 
 
+def pe_has_group_icon(path):
+    """True when the executable's resource tree has an RT_GROUP_ICON (type 14):
+    what Explorer shows as the file's icon."""
+    d = open(path, 'rb').read()
+    pe = struct.unpack_from('<I', d, 0x3C)[0]
+    if d[pe:pe + 4] != b'PE\x00\x00':
+        return False
+    nsec, opt = struct.unpack_from('<H', d, pe + 6)[0], struct.unpack_from('<H', d, pe + 20)[0]
+    magic = struct.unpack_from('<H', d, pe + 24)[0]
+    dd = pe + 24 + (112 if magic == 0x20B else 96)   # data directories (PE32+ / PE32)
+    rsrc_rva, rsrc_size = struct.unpack_from('<II', d, dd + 2 * 8)
+    if rsrc_rva == 0:
+        return False
+    sec = pe + 24 + opt
+    base = None
+    for i in range(nsec):
+        vsize, va, rawsize, rawptr = struct.unpack_from('<IIII', d, sec + i * 40 + 8)
+        if va <= rsrc_rva < va + max(vsize, rawsize):
+            base = rawptr + (rsrc_rva - va)
+            break
+    if base is None:
+        return False
+    named, ids = struct.unpack_from('<HH', d, base + 12)
+    for i in range(named + ids):
+        name, off = struct.unpack_from('<II', d, base + 16 + i * 8)
+        if (name & 0x80000000) == 0 and name == 14 and (off & 0x80000000):
+            return True
+    return False
+
+
 def check_subsystem(c, exe_dir):
     sub = pe_subsystem(exe_dir / EXE)
     c.add('subsystem', sub == 2, 'PE subsystem %d (%s)' % (sub, {2: 'windowed', 3: 'console'}.get(sub, '?')))
+    icon = pe_has_group_icon(exe_dir / EXE)
+    c.add('subsystem', icon, 'icon resource %s' % ('present' if icon else 'MISSING (src/snap64.ico through snap64.rc.in)'))
 
 
 def check_stdio(c, exe_dir):

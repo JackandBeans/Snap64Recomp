@@ -1,0 +1,53 @@
+name: Bug report
+description: Something the port does wrong, or differently from the console
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks. The three files asked for below are what make a report answerable;
+        `snap64.log` is written next to the executable on every run.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened
+      description: What you saw, and what the console (or an earlier build) does instead.
+    validations:
+      required: true
+  - type: textarea
+    id: steps
+    attributes:
+      label: How to reach it
+      description: Course, place, what you were doing. A screenshot or a short clip helps for anything visual.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Port version
+      description: From the window title, or Properties > Details on Snap64Recomp.exe.
+      placeholder: 1.0.0
+    validations:
+      required: true
+  - type: input
+    id: system
+    attributes:
+      label: Windows and GPU
+      description: Windows version, GPU model and driver version.
+      placeholder: Windows 11 24H2, GeForce RTX 3060, driver 566.03
+    validations:
+      required: true
+  - type: textarea
+    id: files
+    attributes:
+      label: Files
+      description: |
+        Attach `snap64.log` and `snapsettings.json` from the executable's folder (drag them here).
+        If the log has `[SNAP-AV]` lines, attach `Snap64Recomp.map` too. Never attach your ROM.
+  - type: checkboxes
+    id: rom
+    attributes:
+      label: ROM
+      options:
+        - label: I am using my own dump of the US cartridge, and its SHA-1 matches the one in the README.
+          required: true
