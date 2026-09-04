@@ -12,15 +12,29 @@ input and audio. The game's own code runs; the port changes how it is hosted,
 and every change to how it *looks* is off unless you turn it on.
 
 The title screen's credits line reads `Jack & Beans (Snap64 Recomp) · v1.0.0`:
-"Jack & Beans" is the codename this project uses for itself, an homage to
-the team behind the original game (`src/version.h.in`
-explains why), "Snap64 Recomp" is the port's name, and `1.0.0` is its
-version. This project is not affiliated with, endorsed by or connected to
+"Jack & Beans" is the name the port's author goes by, an homage to the team
+behind the original game (`src/version.h.in` explains why), "Snap64 Recomp"
+is the port's name, and `1.0.0` is its version. This project is not affiliated with, endorsed by or connected to
 Nintendo, Creatures Inc., GAME FREAK inc., HAL Laboratory or The Pokémon
 Company; Pokémon and Pokémon Snap are their trademarks, and the game is
 theirs. Nothing of the game is included: you supply your own cartridge dump.
 The people and projects this port stands on are thanked under
 [Thanks](#thanks) below.
+
+## Get it running
+
+1. Download `Snap64Recomp-1.0.0-win64.zip` from the
+   [Releases](../../releases/latest) page and unpack it anywhere.
+2. Put your own dump of the US cartridge, named `pokemonsnap.z64`, next to
+   `Snap64Recomp.exe` (its SHA-1 is under "What you need" below).
+3. Start `Snap64Recomp.exe`. Windows 10 or 11, 64-bit, a GPU driver with
+   Direct3D 12; nothing else to install. The first start compiles shaders and
+   takes a little longer; if SmartScreen objects, "More info", then "Run
+   anyway", once.
+
+Keyboard and controller mappings are under "Controls"; the Graphics and
+Sound pages are on the game's own Options screen; saves live in `saves/`
+next to the executable, so keep that folder when you update.
 
 ## Status: 1.0.0
 
