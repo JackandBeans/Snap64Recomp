@@ -681,11 +681,11 @@ std::vector<uint8_t> osd_printing(const std::vector<uint8_t>& grid, const Mark m
     // pixels above that middle, so the hem crosses the letters three
     // quarters of the way down; the second line's top is seventy-four
     // lower; both start fourteen pixels into the second column. The three
-    // dots after PRINTING are not on the letter pitch: five-pixel squares
+    // dots after PRINTING are not on the letter pitch: three-pixel squares
     // with a two-pixel edge, twenty-five apart, centred on the hem.
     osd_text(img, "PRINTING", 174, 209);
     for (int i = 0; i < 3; i++) {
-        osd_bar(img, 387 + i * 25, 235, 4, 4, 2);
+        osd_bar(img, 387 + i * 25, 235, 2, 2, 2);
     }
     osd_text(img, "PLEASE WAIT", 174, 283);
     osd_marks(img, marks);
