@@ -14,6 +14,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <cstdlib>
+#include <cmath>
 #include <cstring>
 #include <map>
 #include <string>
@@ -944,13 +945,42 @@ Cell synth_title(const SynthGlyph& g) {
     return c;
 }
 
+// The face's own shadow, measured on the C as harvested: alpha 202 one pixel
+// from the core, then a factor 0.57 per pixel (202, 168 on the diagonal, 121,
+// 65, 31, 19), gone below 12. Every word sprite of the face carries it.
+uint8_t title_shadow_alpha(float d) {
+    if (d <= 0.0f) {
+        return 255;
+    }
+    const float a = 202.0f * std::pow(0.57f, d - 1.0f);
+    return (a >= 12.0f) ? uint8_t(a + 0.5f) : 0;
+}
+
+// Distance from (x, y) to the nearest core pixel of a w-wide, h-tall mask.
+float nearest_core(const std::vector<bool>& core, int w, int h, int x, int y) {
+    float best = 1.0e9f;
+    for (int cy = 0; cy < h; cy++) {
+        for (int cx = 0; cx < w; cx++) {
+            if (core[size_t(cy) * size_t(w) + size_t(cx)]) {
+                const float dx = float(cx - x);
+                const float dy = float(cy - y);
+                best = std::min(best, dx * dx + dy * dy);
+            }
+        }
+    }
+    return std::sqrt(best);
+}
+
 // The S, built from the face's own C rather than drawn: the C's top arc and
 // upper stem as they are (cell rows 0-3), its bottom arc mirrored left to
-// right (rows 9 on), and between them a spine of the C's stroke weight
-// joining the upper-left stem to the lower-right one, ringed the way the C
-// is. Every curve the letter shows is the sprite's; only the diagonal is the
-// port's. Needs the C as harvested (an 11-column cell with the core at column
-// 2); anything else falls back to the drawn S in kTitleSynth.
+// right (rows 9 on), and between them a spine of the C's stroke weight: a
+// stroke 2.3 pixels wide from the upper-left stem to the lower-right one,
+// its coverage sampled eight by eight per pixel so its steps are
+// anti-aliased the way every diagonal of the face is (a hard pixel
+// staircase read sharper than its neighbours on the title screen). Around
+// the whole letter the face's shadow falloff, where the C's own shadow does
+// not already reach. Needs the C as harvested (an 11-column cell with the
+// core at column 2); anything else falls back to the drawn S in kTitleSynth.
 bool synth_title_s_from_c(const Cell& c, Cell& out) {
     if ((c.w != 11) || (c.cs != 2) || (c.px.size() != size_t(c.w) * size_t(kMenuTtlCellH))) {
         return false;
@@ -961,44 +991,63 @@ bool synth_title_s_from_c(const Cell& c, Cell& out) {
             out.px[size_t(r) * size_t(c.w) + size_t(x)] = c.px[size_t(r) * size_t(c.w) + size_t(c.w - 1 - x)];
         }
     }
-    std::vector<bool> core(out.px.size(), false);
-    for (size_t i = 0; i < out.px.size(); i++) {
-        core[i] = (out.px[i].a >= Core) && (out.px[i].i >= Core);
-    }
-    // The spine, in cell columns [from, to), per cell row.
-    const int spine[6][2] = { { 2, 4 }, { 2, 5 }, { 4, 7 }, { 5, 8 }, { 7, 9 }, { 7, 9 } };
-    for (int r = 4; r < 10; r++) {
+    // The spine's coverage, in cell coordinates (the harvested cell is 11
+    // wide with the core from column 2; the mirror in the scratch notes
+    // measured the stroke on the 9-wide cut, hence the +1).
+    const float x0 = 2.3f + 1.0f, y0 = 4.2f, x1 = 7.6f + 1.0f, y1 = 8.9f, width = 2.3f;
+    const float dxl = x1 - x0, dyl = y1 - y0;
+    const float len = std::sqrt(dxl * dxl + dyl * dyl);
+    const float ux = dxl / len, uy = dyl / len;
+    std::vector<float> cov(out.px.size(), 0.0f);
+    for (int y = 4; y < 10; y++) {
         for (int x = 0; x < c.w; x++) {
-            core[size_t(r) * size_t(c.w) + size_t(x)] = (x >= spine[r - 4][0]) && (x < spine[r - 4][1]);
-        }
-    }
-    auto near = [&](int y, int x, int d) {
-        for (int dy = -d; dy <= d; dy++) {
-            for (int dx = -d; dx <= d; dx++) {
-                const int ny = y + dy;
-                const int nx = x + dx;
-                if ((ny >= 0) && (ny < kMenuTtlCellH) && (nx >= 0) && (nx < c.w) &&
-                    core[size_t(ny) * size_t(c.w) + size_t(nx)]) {
-                    return true;
+            int hits = 0;
+            for (int sy = 0; sy < 8; sy++) {
+                for (int sx = 0; sx < 8; sx++) {
+                    const float px = float(x) + (float(sx) + 0.5f) / 8.0f;
+                    const float py = float(y) + (float(sy) + 0.5f) / 8.0f;
+                    float t = (px - x0) * ux + (py - y0) * uy;
+                    t = std::min(std::max(t, 0.0f), len);
+                    const float ex = px - (x0 + t * ux);
+                    const float ey = py - (y0 + t * uy);
+                    if (std::sqrt(ex * ex + ey * ey) <= width * 0.5f) {
+                        hits++;
+                    }
                 }
             }
+            cov[size_t(y) * size_t(c.w) + size_t(x)] = float(hits) / 64.0f;
         }
-        return false;
-    };
-    for (int r = 4; r < 10; r++) {
+    }
+    std::vector<bool> core(out.px.size(), false);
+    for (int y = 0; y < kMenuTtlCellH; y++) {
         for (int x = 0; x < c.w; x++) {
-            Px& p = out.px[size_t(r) * size_t(c.w) + size_t(x)];
-            if (core[size_t(r) * size_t(c.w) + size_t(x)]) {
-                p = Px{ 255, 255 };
-            }
-            else if (near(r, x, 1)) {
-                p = Px{ 0, 200 };
-            }
-            else if (near(r, x, 2)) {
-                p = Px{ 0, 70 };
+            const size_t at = size_t(y) * size_t(c.w) + size_t(x);
+            if ((y >= 4) && (y < 10)) {
+                core[at] = cov[at] > 0.5f;
             }
             else {
-                p = Px{};
+                core[at] = (out.px[at].a >= Core) && (out.px[at].i >= Core);
+            }
+        }
+    }
+    for (int y = 0; y < kMenuTtlCellH; y++) {
+        for (int x = 0; x < c.w; x++) {
+            const size_t at = size_t(y) * size_t(c.w) + size_t(x);
+            Px& p = out.px[at];
+            if ((y >= 4) && (y < 10)) {
+                const float cv = cov[at];
+                if (cv > 0.5f) {
+                    p.i = uint8_t(std::min(255.0f, 128.0f + (cv - 0.5f) * 2.0f * 127.0f) + 0.5f);
+                    p.a = 255;
+                }
+                else {
+                    const uint8_t shadow = title_shadow_alpha(nearest_core(core, c.w, kMenuTtlCellH, x, y));
+                    p.i = uint8_t(std::min(255.0f, cv * 2.0f * 200.0f) + 0.5f);
+                    p.a = std::max(shadow, uint8_t((cv > 0.3f) ? 255 : 0));
+                }
+            }
+            else if (!core[at]) {
+                p.a = std::max(p.a, title_shadow_alpha(nearest_core(core, c.w, kMenuTtlCellH, x, y)));
             }
         }
     }

@@ -28,6 +28,7 @@
  * have produced -- the RDP reads these strips exactly as it reads any other
  * texture the game loaded.
  */
+#include <cmath>
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -252,7 +253,8 @@ Strip compose_title(const char* text) {
     }
     ink -= kMenuTtlLetterGap;
 
-    const int width = (ink + 4 + 63) & ~63;
+    // Room for the face's shadow (five pixels) either side of the ink.
+    const int width = (ink + 12 + 63) & ~63;
     strip.width = width;
     strip.intensity.assign(size_t(width) * strip.height, 0);
     strip.alpha.assign(size_t(width) * strip.height, 0);
@@ -293,6 +295,45 @@ Strip compose_title(const char* text) {
             }
         }
         xc += g->coreW + kMenuTtlLetterGap;
+    }
+
+    // The face's shadow around the whole word. A cell keeps one column
+    // either side of its core, so the composed word had a one-pixel ring
+    // where the game's word sprites carry a shadow five pixels wide; every
+    // pixel that is not core takes at least the measured falloff of its
+    // distance to the nearest core pixel (title_shadow_alpha).
+    {
+        std::vector<std::pair<int, int>> cores;
+        for (int y = 0; y < strip.height; y++) {
+            for (int x = 0; x < width; x++) {
+                const size_t at = size_t(y) * width + x;
+                if ((strip.alpha[at] >= 128) && (strip.intensity[at] >= 128)) {
+                    cores.emplace_back(x, y);
+                }
+            }
+        }
+        for (int y = 0; y < strip.height; y++) {
+            for (int x = 0; x < width; x++) {
+                const size_t at = size_t(y) * width + x;
+                if ((strip.alpha[at] >= 128) && (strip.intensity[at] >= 128)) {
+                    continue;
+                }
+                float best = 1.0e9f;
+                for (const auto& c : cores) {
+                    const float dx = float(c.first - x);
+                    const float dy = float(c.second - y);
+                    best = std::min(best, dx * dx + dy * dy);
+                }
+                if (best > 36.0f) {
+                    continue;
+                }
+                const uint8_t shadow = title_shadow_alpha(std::sqrt(best));
+                if (shadow > strip.alpha[at]) {
+                    strip.alpha[at] = shadow;
+                    strip.intensity[at] = 0;
+                }
+            }
+        }
     }
     return strip;
 }

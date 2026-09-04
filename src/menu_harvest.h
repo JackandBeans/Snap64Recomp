@@ -43,6 +43,10 @@ constexpr int kMenuTtlCapH = 10;
 constexpr int kMenuTtlLetterGap = 1;
 constexpr int kMenuTtlSpaceGap = 6;
 
+// The title face's shadow falloff by distance (pixels) from the core, as
+// measured on its C (menu_harvest.cpp); 255 on the core itself.
+uint8_t title_shadow_alpha(float d);
+
 // The main menu's VPK0 segment: ROM start, VRAM it decompresses to, and its
 // decompressed size (splat.yaml main_menu_vpk0_bss: bss_size 0xF3770).
 constexpr uint32_t kMainMenuVpk0Rom  = 0xA0F830u;
