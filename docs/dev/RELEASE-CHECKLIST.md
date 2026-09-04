@@ -8,6 +8,39 @@ leave `docs/` before the repository goes public (item 3.2).
 Legend: **decide** = only the author can settle it; **do** = mechanical, can
 be done on request; **verify** = needs a person or another machine.
 
+## 0. Status on 2026-09-04, after the release work
+
+Done, on the 1.0.0 build: 1.1 (licenses/roboto.txt, NOTICE Assets table),
+1.2 (/d1trimfile, the map filtered, the archive checked for user paths),
+1.3 (README says GitHub Issues of the repository, which needs no URL),
+1.4 (the runtime is linked in; the archive check refuses VCRUNTIME/MSVCP
+imports), 1.5 (1.0.0 everywhere), 2.2, 2.4 (graphics_api + a caught
+start), 2.5 (mutex), 2.6 (Manual kept), 2.8 (unmapped pads logged and
+documented), 2.9 (README paragraph, version resource fields), 2.10
+(CHANGELOG.md), 2.13 (all seven), 2.14 (docs/dev), 3.1, 3.2, 3.3, 3.4,
+3.7, 3.8, and 1.6 as far as the machine can go (main fast-forwarded,
+v1.0.0 tagged; the push is yours).
+
+Decided and left as they are, with the reasoning: 2.1 the decomp-derived
+patch sources stay -- every N64Recomp project ships modified copies of
+decompiled functions as its patches, NOTICE.md now says so plainly, and
+the game's data is what a takedown turns on, none of which is here; 2.3
+the wordmark stays -- original art, a stylistic homage, with the
+disclaimer in the README's first paragraph and the game's own copyright
+line on the same screen; 2.7 the anti-aliased present filter stays the
+default and is disclosed as the third non-console default, since raw
+nearest pixels look wrong at every non-integer window size; 2.12 the
+commit trailers stay (the author set that rule; the README's Status does
+not dwell on it) and the author's email is theirs to change, not the
+port's: PUBLISHING.md explains GitHub's private address; 2.15 the unnamed
+2D content is a documented known limitation, not touched days before
+release because pairing identity is where the earlier tearing bugs lived;
+3.5 and 3.6 stay as documented gaps.
+
+Yours: 1.7 the clean-machine run, 2.11 screenshots, the push and the
+release page (docs/dev/PUBLISHING.md walks through them), and the
+decision on the email before the first push.
+
 ## 1. Things that would embarrass the release (must)
 
 1.1 **Roboto attribution (do).** The printer's lettering bitmaps derive from
