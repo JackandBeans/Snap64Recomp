@@ -60,8 +60,8 @@ only), so a checkout can build the patches without the decomp's ELF.
 
 ## render_patch.c
 
-`renRenderModelTypeACommon`, reproduced from `src/sys/render.c` with one
-addition: a `gEXMatrixGroup` naming the `DObj` whose matrices follow. That is
+`renPrepareModelMatrix` and `ren_func_80013C5C`, reproduced from
+`src/sys/render.c` with one addition: a `gEXMatrixGroup` naming the `DObj` whose matrices follow. That is
 what lets RT64 pair an object with itself between frames rather than inferring
 identity from geometry, which cannot separate rows of identical vegetation
 quads, tiled wall and sky segments, or two of the same Pokemon.

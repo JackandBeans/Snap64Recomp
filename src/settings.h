@@ -35,6 +35,12 @@ struct Settings {
     // re-measured since the port's focus-dot work; treat it as unverified.
     int   fps_mode          = 0;
     int   fps_manual_target = 120;
+    // Which of RT64's backends draws: 0 Direct3D 12, the one every run of
+    // this port has used; 1 Vulkan, compiled in and never run by the
+    // developer, kept as the escape hatch for a machine whose D3D12 path
+    // fails. Read once at start-up (rt64_render_context.cpp), so a change
+    // takes effect at the next launch; no row on the Graphics page.
+    int   graphics_api      = 0;
     // The game's auSoundQuality flag IS its Stereo/Mono option: zero makes
     // the audio thread average every L/R pair of the finished mix. The
     // port's SOUND page owns it now (the old name for this was hq_sound).
@@ -135,9 +141,11 @@ struct Settings {
     // how to drive. On, the Gallery shows its Print button, and printing
     // runs the game's own photo display after a reset (a relaunch of this
     // program) and writes the sheet as PNG files under stickers/. Off by
-    // default: the console had no station. On, port 4 carries it from five
-    // seconds after every start; the title screen's Snap Station item
-    // attaches it for one run without this (snap_station.h).
+    // default: the console had no station. On, port 4 carries it from the
+    // moment the title menu is up, every start (snap_station.h,
+    // station_title_reached: the game tests port 4 for the printer once at
+    // boot and must not find it then); the title screen's Snap Station item
+    // attaches it for one run without this.
     bool  snap_station      = false;
     // Interpolate the view and projection as well as object transforms.
     //

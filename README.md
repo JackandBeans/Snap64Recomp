@@ -8,18 +8,20 @@ translates the game's MIPS code into C, [N64ModernRuntime](https://github.com/N6
 input and audio. The game's own code runs; the port changes how it is hosted,
 and every change to how it *looks* is off unless you turn it on.
 
-The title screen's credits line reads `Jack & Beans (Snap64 Recomp) · v1.0.0 rc2`:
+The title screen's credits line reads `Jack & Beans (Snap64 Recomp) · v1.0.0`:
 "Jack & Beans" is the codename this project uses for itself, an homage to
 the team behind the original game (`src/version.h.in`
-explains why), "Snap64 Recomp" is the port's name, and `1.0.0-rc2` is its
-version -- the credits face has no hyphen, so the line sets the tag off with a
-space. This project is not affiliated with
-Nintendo, HAL Laboratory or The Pokémon Company; their trademarks are theirs.
+explains why), "Snap64 Recomp" is the port's name, and `1.0.0` is its
+version. This project is not affiliated with, endorsed by or connected to
+Nintendo, Creatures Inc., GAME FREAK inc., HAL Laboratory or The Pokémon
+Company; Pokémon and Pokémon Snap are their trademarks, and the game is
+theirs. Nothing of the game is included: you supply your own cartridge dump.
 
-## Status: prerelease
+## Status: 1.0.0
 
 * Built and run on one machine: Windows 11, MSVC 2019, a Direct3D 12 GPU. No
-  other platform, GPU or compiler has been tried.
+  other platform, GPU or compiler has been tried; the first report from a
+  different machine is welcome, good or bad.
 * **Buildable from a clean checkout, in two steps beyond `git clone`.**
   `python tools/fetch_deps.py` fetches the vendored trees (SDL,
   DirectX-Headers, RT64's third-party trees) at the recorded upstream commits
@@ -27,11 +29,12 @@ Nintendo, HAL Laboratory or The Pokémon Company; their trademarks are theirs.
   (`RecompiledFuncs/`, `RecompiledPatches/`, the ROM) are generated under WSL
   from your own cartridge dump. A second checkout built this way, on this
   machine, on 2026-09-02 (`BUILDING.md`, "What a clean checkout is missing").
-* No automated tests, no CI, no installer. The release archive is the ZIP
-  that `cpack` writes (`BUILDING.md`, step 13); none has been published.
-* Version `1.0.0-rc2`, typed once in `CMakeLists.txt` and shown in the title
+* No CI and no installer. The release archive is the ZIP that `cpack`
+  writes (`BUILDING.md`, step 13), after the headless suite in
+  `tools/release_check.py` has passed on it ("What has been verified").
+* Version `1.0.0`, typed once in `CMakeLists.txt` and shown in the title
   bar, the log banner, the credits line, the executable's file properties and
-  the ZIP's name.
+  the ZIP's name. `CHANGELOG.md` says what each release changed.
 * Licensed under the GPLv3 (`LICENSE`); `NOTICE.md` lists every third-party
   component. No file in the tree carries the game's bytes: the menu font is
   cut from the game's own sprites in memory at run time, and the audio
@@ -40,9 +43,11 @@ Nintendo, HAL Laboratory or The Pokémon Company; their trademarks are theirs.
 
 ## What you need
 
-* A 64-bit Windows PC. The executable loads `d3d12.dll`, `dxgi.dll` and
-  `vulkan-1.dll` from the system, so the GPU driver must provide Direct3D 12
-  and the Vulkan loader.
+* A 64-bit Windows 10 or 11 PC (the port asks Windows for per-monitor DPI
+  awareness, which needs Windows 10 version 1703 or later). The executable
+  loads `d3d12.dll`, `dxgi.dll` and `vulkan-1.dll` from the system, so the
+  GPU driver must provide Direct3D 12 and the Vulkan loader. The Visual C++
+  runtime is linked into the executable; nothing else has to be installed.
 * **Your own dump of the US cartridge**, SHA-1
   `edc7c49cc568c045fe48be0d18011c30f393cbaf` (the checksum the
   [decompilation project](https://github.com/ethteck/pokemonsnap) publishes).
@@ -65,7 +70,7 @@ Nintendo, HAL Laboratory or The Pokémon Company; their trademarks are theirs.
 Start `Snap64Recomp.exe`; a shortcut works from anywhere, because the port
 reads and writes the folder the executable is in, whatever the working
 directory (`src/paths.cpp`). It opens a 1280x960 window titled
-`Snap64 Recomp 1.0.0-rc2`; `SNAP_WINDOW=WxH` in the environment opens it at
+`Snap64 Recomp 1.0.0`; `SNAP_WINDOW=WxH` in the environment opens it at
 an exact size instead (at least 320x240). The window's maximize button is the
 fullscreen switch; the in-game Graphics page and F11 do the same. **Esc
 quits.** Saves go to `saves/` and settings to `snapsettings.json`, both next
@@ -73,6 +78,46 @@ to the executable. No console opens: the log is `snap64.log` next to the
 executable, the previous run's is kept as `snap64.prev.log`, and it is the
 first thing to include in a bug report. Started from a terminal, or with its
 output redirected, the port writes there instead and the file is not touched.
+A second copy started from the same folder waits for the first to exit
+(the Snap Station relaunches itself that way) and otherwise tells you the
+port is already running.
+
+**If Windows or your antivirus objects.** The executable is not signed, so
+the first start may bring up SmartScreen's "Windows protected your PC";
+"More info", then "Run anyway", is the route, once. The Snap Station's Print
+starts a fresh copy of the port twice in a row, which some antivirus
+heuristics dislike; allow it if asked. Nothing here phones home: the port
+opens no network connection at all.
+
+**Back up your save.** `saves/pokemonsnap.bin` is the whole of your progress
+in one file, with one earlier generation kept as `.bak`. Copy `saves/`
+somewhere else before updating the port or trying a Snap Station print.
+
+**Reporting a bug.** Open an issue on this project's GitHub repository (the
+one this README came from) and attach `snap64.log` from the run that went
+wrong, `Snap64Recomp.map` if the log has `[SNAP-AV]` lines, your
+`snapsettings.json`, and what you were doing. Say which GPU and driver you
+have; every run so far has been on one machine.
+A second copy started from the same folder waits for the first to exit
+(the Snap Station relaunches itself that way) and otherwise tells you the
+port is already running.
+
+**If Windows or your antivirus objects.** The executable is not signed, so
+the first start may bring up SmartScreen's "Windows protected your PC";
+"More info", then "Run anyway", is the route, once. The Snap Station's Print
+starts a fresh copy of the port twice in a row, which some antivirus
+heuristics dislike; allow it if asked. Nothing here phones home: the port
+opens no network connection at all.
+
+**Back up your save.** `saves/pokemonsnap.bin` is the whole of your progress
+in one file, with one earlier generation kept as `.bak`. Copy `saves/`
+somewhere else before updating the port or trying a Snap Station print.
+
+**Reporting a bug.** Open an issue on this project's GitHub repository (the
+one this README came from) and attach `snap64.log` from the run that went
+wrong, `Snap64Recomp.map` if the log has `[SNAP-AV]` lines, your
+`snapsettings.json`, and what you were doing. Say which GPU and driver you
+have; every run so far has been on one machine.
 
 ### Where things live
 
@@ -112,12 +157,20 @@ Keyboard (`src/input.cpp`):
 | L / R | Q / E |
 | C-Up / C-Down / C-Left / C-Right | I / K / J / L |
 
+The keys are fixed scancodes, positional on the keyboard: on a non-QWERTY
+layout they are the keys in those places, not the letters printed on them.
+
+The keys are fixed scancodes, positional on the keyboard: on a non-QWERTY
+layout they are the keys in those places, not the letters printed on them.
+
 Any SDL game controller overrides the keyboard while attached: left stick is
 the control stick, A is A, B or X is B, the left shoulder button is Z, Start
 is Start, the D-pad is the D-pad, the triggers are L and R, and the right stick
 is the C buttons. The Back button (Select, View or Share on most pads) is not
 an N64 button: it saves the photo on screen, as P does on the keyboard (see
-"Photos").
+"Photos"). The first pad SDL recognises is the one used; a pad SDL has no
+mapping for is logged as such at start-up (`[SNAP-Input]`) and can be given
+one through SDL's `SDL_GAMECONTROLLERCONFIG` environment variable.
 
 ### The rule the port follows
 
@@ -125,11 +178,14 @@ an N64 button: it saves the photo on screen, as P does on the keyboard (see
 aspect ratio, anti-aliasing, overscan, the intro's camera hand-off, texture
 filtering, dithering: all start as the console had them. What you turn on in
 the in-game **Graphics** page (a new item on the game's own Options screen) or
-with the hotkeys is what changes, and only that. Two defaults are worth
+with the hotkeys is what changes, and only that. Three defaults are worth
 knowing about because they are not literally the console's: the 3D render
-resolution follows the window (`resolution_scale` 0; set 1 for 320x240), and
-2D content that would be scaled anyway is drawn sharp (`upscale_2d` 1; set 0
-for the original pixels). Both are one setting away from the original.
+resolution follows the window (`resolution_scale` 0; set 1 for 320x240), 2D
+content that would be scaled anyway is drawn sharp (`upscale_2d` 1; set 0
+for the original pixels), and the finished frame is put on screen with
+RT64's anti-aliased pixel scaling rather than raw nearest pixels
+(`present_filter` 2; set 0 for the blocks). Each is one setting away from
+the original.
 
 Two mechanics depend on the game reading back its own rendered frame: photo
 scoring re-renders the photographed Pokémon and counts pixels, and the
@@ -148,20 +204,23 @@ Original is the default because it is the console's rate.
 
 ### In-game pages
 
-Options > **Graphics**: Render Scale, Anti-Aliasing, Widescreen, Frame Rate,
-2D Detail, Filter, Dither, Fullscreen, Super Sampling, Texture Filter, Color
-Depth, Buffering, Overscan Crop, Cutscene Fix, Photo Detail, Jynx Recolor.
-Color Depth and Buffering take effect after a restart; everything else
-applies while the page is open.
+Options > **Graphics**, in the order the page shows them: Render Scale,
+Super Sampling, Anti-Aliasing, Widescreen, Frame Rate, 2D Detail, Filter,
+Texture Filter, Color Depth, Buffering, Dither, Fullscreen, Overscan Crop,
+Cutscene Fix, Photo Detail, Jynx Recolor. Color Depth and Buffering take
+effect after a restart; everything else applies while the page is open. The
+page's Frame Rate row switches between Original and Display; the Manual
+mode (`fps_mode` 2) is reached with F8 or the settings file, and the page
+leaves it alone.
 
 Options > **Sound**: Master Volume, Music Volume, Sound Effects, Shutter
 Volume, Speaker Output (Stereo/Mono), Background Mute.
 
 ### Hotkeys
 
-From `handle_settings_hotkey` in `src/settings.cpp`. Settings hotkeys also
-mark the file for writing. Keys marked *diagnostic* exist for investigating
-the renderer and are not features.
+From `handle_settings_hotkey` in `src/settings.cpp` (Esc is `src/main.cpp`'s).
+Settings hotkeys also mark the file for writing. Keys marked *diagnostic*
+exist for investigating the renderer and are not features.
 
 | Key | Effect |
 | --- | --- |
@@ -317,7 +376,9 @@ the defaults below are that file's.
 | `intro_fix` | `false` | Cutscene Fix: skips the one frame the console drew from inside the player model at the end of the Beach and River intros |
 | `photo_detail` | `false` | Photo Detail: Off draws Oak's photos and the album at native pixels as the console did; On serves them from the renderer's full-resolution render |
 | `jynx_vc` | `false` | Jynx Recolor, Jynx's face and hands: Off: the cartridge's black; On: the purple of the re-releases, matched to a Virtual Console capture |
-| `interpolate_camera` | `true` | interpolate the view as well as objects (F4) |
+| `interpolate_camera` | `true` | interpolate the view as well as objects (F4; no row on the Graphics page) |
+| `snap_station` | `false` | keep the Snap Station on port 4 from the title menu on, every start (see "The Snap Station") |
+| `graphics_api` | `0` | 0 Direct3D 12 (every run so far), 1 Vulkan (RT64's other backend, untried here; an escape hatch if D3D12 fails); restart |
 | `downsample` | `1` | Super Sampling factor |
 | `resolution_scale` | `0` | 0 follows the window; 1-8 caps the render scale in multiples of 320x240 |
 | `present_filter` | `2` | 0 nearest, 1 linear, 2 RT64's anti-aliased pixel scaling |
@@ -337,10 +398,24 @@ every photo the game renders is saved to `photos/` without a key press, so a
 replay can prove the export). They are development switches; the source is
 their documentation.
 
+## Known limitations
+
+* Some 2D content is drawn without a name the interpolation can pair
+  (the photo panels, Oak's thumbnails and full-screen backgrounds while they
+  slide during a transition) and steps at the game's rate when it moves;
+  named sprites and menu frames, the HUD and the fades interpolate.
+* The Snap Station's printer lettering is set from a typeface of the same
+  construction as the printer's, whose own character set no source records,
+  and its pass timings are estimates from footage without a clock.
+* Vulkan (`graphics_api` 1) is compiled in but has never been run by the
+  developer; it exists for a machine whose Direct3D 12 path fails.
+* Keyboard bindings cannot be remapped.
+
 ## What has been verified, and what has not
 
-* Verified only in the sense that the developer has played it on the one
-  machine above and the renderer, audio, saving, the Graphics and Sound
+* Verified in the sense that the developer has played every course, the
+  report, the album, the Gallery and a Snap Station print on the one
+  machine above, and the renderer, audio, saving, the Graphics and Sound
   pages and the hotkeys listed here all come from the code as it stands
   (`src/settings.cpp`, `src/settings.h`, `src/input.cpp`, `src/main.cpp`).
 * `tools/release_check.py` is the headless suite a release build is put
@@ -350,10 +425,12 @@ their documentation.
   pacing and coherence numbers with no crash report, the recorded run to
   Oak's evaluation scores every photo with the scorer's healthy signature and
   exports the photos it shows, the settings file is valid, and the archive
-  carries everything it must. It opens the game window for each run and
-  takes about twelve minutes. There is no CI run, and no build on any other
-  machine is recorded in this repository. Anything not listed here should be
-  assumed untried.
+  carries everything it must; `--only station` puts the Snap Station print
+  through both relaunches and checks the sheets. Both passed on the 1.0.0
+  build. It opens the game window for each run and takes about twelve
+  minutes, plus eight for the station. There is no CI run, and no build on
+  any other machine is recorded in this repository. Anything not listed
+  here should be assumed untried.
 * The photo export (P, the controller's Back button, `photos/`) is checked
   by `SNAP_PHOTO_AUTOEXPORT` on an input replay that reaches Oak's check,
   not by hand: saving from the keyboard and from the controller has not been
@@ -368,8 +445,31 @@ their documentation.
 See `BUILDING.md`. Short version: the decompilation and IDO under WSL,
 N64Recomp for the game and the patches, CMake and MSVC on Windows, and a list
 of things git does not carry. `cpack -C Release` in the build directory then
-writes `Snap64Recomp-1.0.0-rc2-win64.zip` (step 13).
+writes `Snap64Recomp-1.0.0-win64.zip` (step 13).
+
+## Credits
+
+* The [Pokémon Snap decompilation](https://github.com/ethteck/pokemonsnap)
+  and everyone who worked on it: the port's patches are compiled against
+  its headers and symbols, and every fact about the game's code in this
+  README was read there.
+* [N64Recomp](https://github.com/N64Recomp/N64Recomp) and
+  [N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime) by
+  Wiseguy and contributors, the recompiler and runtime this port stands on,
+  and the [Zelda64Recomp](https://github.com/Zelda64Recomp/Zelda64Recomp)
+  project whose structure it follows.
+* [RT64](https://github.com/rt64/rt64) by Dario and contributors, the
+  renderer, and its frame interpolation this port extends.
+* James Chambers (jamchamb), whose 2021 work recovered the Snap Station
+  protocol from the cartridge without a station to test against.
+* [SDL2](https://libsdl.org), the DirectX Shader Compiler, and the libraries
+  named in `NOTICE.md`.
+* The Roboto Project Authors, for the typeface the printer's lettering is
+  set from.
+* Jack & Beans: the port itself, and the playtesting of every course.
 
 ## License
 
-GPLv3. See `LICENSE` and `NOTICE.md`.
+GPLv3. See `LICENSE` and `NOTICE.md`. The port's own code is the author's
+and GPLv3; the game is Nintendo's, Creatures', GAME FREAK's and HAL's, and
+nothing of it is here.

@@ -164,9 +164,8 @@ N64Recomp's own (every ALLOC section of the ELF, data and bss included, with
 `.index` equal to the ELF section header index) and drops librecomp's
 `*_recomp` reimplementations from the function arrays; the tool's docstring
 lists every rule. Against the recompiler output in this tree the tool
-reproduces the tracked file exactly, apart from the header line (the tracked
-file still names a `gen_overlays2.py` that no longer exists) and the address
-shifts caused by the stale ELF described in step 2.
+reproduces the tracked file exactly, apart from the address shifts caused by
+the stale ELF described in step 2.
 
 ### 7. Symbol files for the patch build (only when the decomp's symbols change)
 
@@ -267,7 +266,7 @@ with `Snap64Recomp.map` (the linker map, `/MAP`) beside it.
 Configure also writes `build-win/generated/version.h` and
 `build-win/generated/snap64.rc` from `src/version.h.in` and
 `src/snap64.rc.in`. The version is typed once, in `CMakeLists.txt`
-(`project(Snap64Recomp VERSION 1.0.0)` plus `SNAP_VERSION_PRERELEASE`, `rc2`
+(`project(Snap64Recomp VERSION 1.0.0)` plus `SNAP_VERSION_PRERELEASE`, `""` for a final release, `""` for a final release, `rc2` for the candidate before it for the candidate before it
 today, empty for a final), and reaches the title bar, the log banner, the
 title screen's credits line, the executable's version resource (Properties >
 Details) and the package name from there.
@@ -299,7 +298,7 @@ still resolve against the working directory.
     cd build-win
     cpack -C Release
 
-writes `Snap64Recomp-1.0.0-rc2-win64.zip` and a `.sha256` beside it in
+writes `Snap64Recomp-1.0.0-win64.zip` and a `.sha256` beside it in
 `build-win`. The ZIP holds one folder of the same name: `Snap64Recomp.exe`,
 `Snap64Recomp.map`, the three DLLs, `menu_text/recomp_logo.png`, `LICENSE`,
 `NOTICE.md`, `README.md` and `licenses/` -- one `.txt` per component in
@@ -321,7 +320,14 @@ vendored copies carry none:
   without the DXC licence is not meant to be produced.
 
 To cut a release: change `project(Snap64Recomp VERSION ...)` and
-`SNAP_VERSION_PRERELEASE` in `CMakeLists.txt`, reconfigure, rebuild, `cpack`.
+`SNAP_VERSION_PRERELEASE` in `CMakeLists.txt`, grep `README.md` and
+`BUILDING.md` for the old version string, reconfigure, rebuild, run
+`python tools/release_check.py build-win/Release --zip <the zip>` and
+`--only station`, `cpack`, then `git tag -a v<version> -m "..."` on the
+commit the archive was built from and fast-forward `main` to it (the
+code lives on `snap-port`; `main` must show it). The executable is built
+with `/d1trimfile` and the shipped linker map is filtered, so no build
+path from the machine that made the release reaches the archive.
 The credits face on the title screen is harvested from the copyright block
 and has no hyphen and no `2`, `3` or `7` (`src/version.h.in`); a version
 that needs one of those is reported at the first main-menu load
@@ -376,7 +382,8 @@ took 41 s and found the ROM and the patches, and the build took 4 min 4 s with
 no errors, 10 compiler warnings and the linker's `LNK4088` (the port links
 with `/FORCE:MULTIPLE`, `CMakeLists.txt`; the `/IGNORE:4088` beside it does
 not silence that one). `build/Release` held `Snap64Recomp.exe` (10,083,840 bytes; the
-version resource reads `1.0.0-rc1`), `SDL2.dll`, `dxcompiler.dll` and
+version resource read `1.0.0-rc1`, the number of the day; the release is
+`1.0.0`), `SDL2.dll`, `dxcompiler.dll` and
 `dxil.dll` (the last two byte-identical to `lib/rt64/src/contrib/dxc/bin/x64/`),
 `Snap64Recomp.map` and `menu_text/recomp_logo.png`. The fetched trees were
 diffed against the developer's own: identical apart from zstd's two test-suite
