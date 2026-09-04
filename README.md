@@ -220,7 +220,9 @@ own lettering. Choosing it attaches the station to port 4 for this run and
 opens the game's own Gallery, exactly as the Gallery entry does; nothing is
 written to the settings. (The console at home had no station, so port 4
 is empty otherwise; `"snap_station": true` in `snapsettings.json` keeps it
-attached on every start instead, from a few seconds after boot.)
+attached on every start instead, from the moment the title menu is up: the
+game tests port 4 for the printer once at boot and would go straight to the
+printer's display if it found one, so the station appears after that test.)
 
 In the Gallery with the station attached, the game shows the Print button
 the kiosk showed, above Save, with the game's own help text about a print
