@@ -332,7 +332,9 @@ namespace RT64 {
             // than through the scene maps, because a rectangle never enters a
             // scene: GameFrame::set admits only perspective and orthographic
             // projections, so nothing below this ever sees one.
-            snapMatchRects(curWorkload, prevWorkload);
+            if (snapMatchRects(curWorkload, prevWorkload)) {
+                workloadsModified[workloads[w]].rdpParams = true;
+            }
             workloadMap.prevTransformsMapped.clear();
             workloadMap.prevTransformsMapped.resize(prevWorkload.drawData.worldTransforms.size());
             workloadMap.prevTilesMapped.clear();
@@ -1250,6 +1252,13 @@ namespace RT64 {
         fflush(stdout);
     }
 
+    // Pokemon Snap port: whether two primitive colours are the same bytes.
+    static bool snapSameColor(const interop::float4 &a, const interop::float4 &b) {
+        const float ax = a.x, ay = a.y, az = a.z, aw = a.w;
+        const float bx = b.x, by = b.y, bz = b.z, bw = b.w;
+        return (ax == bx) && (ay == by) && (az == bz) && (aw == bw);
+    }
+
     // A colour the game steps once per frame steps at the game's rate while
     // everything around it moves at the display's, because the interpolation
     // blends transforms and never colours. The fade to black between screens
@@ -1302,10 +1311,20 @@ namespace RT64 {
                 (a.geometryMode == b.geometryMode) && (a.triangleCount == b.triangleCount) && (a.tileCount == b.tileCount);
         };
 
-        auto sameColor = [](const interop::float4 &a, const interop::float4 &b) {
-            const float ax = a.x, ay = a.y, az = a.z, aw = a.w;
-            const float bx = b.x, by = b.y, bz = b.z, bw = b.w;
-            return (ax == bx) && (ay == by) && (az == bz) && (aw == bw);
+        // F12 (the mark key) asks for the next frames' pairs; this reports
+        // every single-matrix triangle call of two triangles or fewer -- the
+        // fade's quad among them -- and what became of it, so a fade that
+        // still steps says why from the log alone.
+        const bool dump = snapdiag::pairDumpPending().load(std::memory_order_relaxed) > 0;
+        uint32_t dumpConsidered = 0;
+        uint32_t dumpMapped = 0;
+        uint32_t dumpPaired = 0;
+        auto report = [&](const DrawCall &call, const char *what) {
+            if (dump && (call.triangleCount <= 2)) {
+                fprintf(stdout, "[SNAP-PRIM] tri call %u (%u tris, matrix %u, cc %08X%08X, prim %.2f %.2f %.2f a %.2f): %s\n",
+                    call.callIndex, call.triangleCount, call.minWorldMatrix, call.colorCombiner.H, call.colorCombiner.L,
+                    float(call.rdpParams.primColor.x), float(call.rdpParams.primColor.y), float(call.rdpParams.primColor.z), float(call.rdpParams.primColor.w), what);
+            }
         };
 
         // This frame's single-matrix calls, counted per transform so the k-th
@@ -1329,26 +1348,38 @@ namespace RT64 {
 
                     const uint32_t transformIndex = call.minWorldMatrix;
                     const uint32_t ordinal = seenByTransform[transformIndex]++;
+                    dumpConsidered++;
                     if (transformIndex >= curWorkloadMap.transforms.size()) {
+                        report(call, "matrix index outside the transform map");
                         continue;
                     }
 
                     const GameFrameMap::TransformMap &transformMap = curWorkloadMap.transforms[transformIndex];
                     if (!transformMap.mapped) {
+                        report(call, "transform not matched to last frame");
                         continue;
                     }
 
+                    dumpMapped++;
                     auto prevIt = prevByTransform.find(transformMap.prevTransformIndex);
                     if ((prevIt == prevByTransform.end()) || (ordinal >= prevIt->second.size())) {
+                        report(call, "no call in the same place under last frame's transform");
                         continue;
                     }
 
                     const DrawCall &prevCall = *prevIt->second[ordinal];
-                    if (!sameDraw(call, prevCall) || sameColor(call.rdpParams.primColor, prevCall.rdpParams.primColor)) {
+                    if (!sameDraw(call, prevCall)) {
+                        report(call, "last frame's call there is a different draw");
+                        continue;
+                    }
+
+                    if (snapSameColor(call.rdpParams.primColor, prevCall.rdpParams.primColor)) {
+                        report(call, "same primitive colour as last frame");
                         continue;
                     }
 
                     if (call.callIndex >= curWorkload.drawData.rdpParams.size()) {
+                        report(call, "call index outside the RDP parameters");
                         continue;
                     }
 
@@ -1356,14 +1387,21 @@ namespace RT64 {
                     params.snapPrevPrimColor = prevCall.rdpParams.primColor;
                     params.snapPrimBlend = 1.0f;
                     changed = true;
+                    dumpPaired++;
+                    report(call, "PAIRED: colour blends from last frame's");
                 }
             }
+        }
+
+        if (dump) {
+            fprintf(stdout, "[SNAP-PRIM] %u single-matrix triangle calls, %u under matched transforms, %u colour pairs\n",
+                dumpConsidered, dumpMapped, dumpPaired);
         }
 
         return changed;
     }
 
-    void GameFrame::snapMatchRects(Workload &curWorkload, const Workload &prevWorkload) {
+    bool GameFrame::snapMatchRects(Workload &curWorkload, const Workload &prevWorkload) {
         // The rectangle AND the rate it sampled its texture at. A rectangle
         // that grew while its texel rate held still is uncovering more of a
         // picture; one whose rate changed is being rescaled. They look the same
@@ -1372,9 +1410,11 @@ namespace RT64 {
             FixedRect rect;
             int16_t dsdx;
             int16_t dtdy;
+            interop::float4 primColor;
         };
 
         thread_local std::unordered_map<uint64_t, PrevRect> prevRects;
+        bool changed = false;
         prevRects.clear();
 
         // How many rectangles each element drew, on each side.
@@ -1445,9 +1485,9 @@ namespace RT64 {
                 for (uint32_t c = 0; c < proj.gameCallCount; c++) {
                     const DrawCall &call = proj.gameCalls[c].callDesc;
                     if (call.snapRectId != 0) {
-                        prevRects.insert({ keyOf(call), PrevRect{ call.rect, call.rectDsdx, call.rectDtdy } });
+                        prevRects.insert({ keyOf(call), PrevRect{ call.rect, call.rectDsdx, call.rectDtdy, call.rdpParams.primColor } });
                         prevCounts[call.snapRectId]++;
-                        prevById[call.snapRectId].push_back(PrevRect{ call.rect, call.rectDsdx, call.rectDtdy });
+                        prevById[call.snapRectId].push_back(PrevRect{ call.rect, call.rectDsdx, call.rectDtdy, call.rdpParams.primColor });
                     }
                     else if (countRectStats) {
                         prevUnnamed.insert(cornersOf(call.rect));
@@ -1457,7 +1497,7 @@ namespace RT64 {
         }
 
         if (prevRects.empty()) {
-            return;
+            return false;
         }
 
         // Counted before anything is paired: whether ordinal three is
@@ -1687,6 +1727,25 @@ namespace RT64 {
                     call.snapPrevDtdy = paired->dtdy;
                     call.snapRectMapped = true;
 
+                    // A sprite fading is the same rectangle drawn with a
+                    // different primitive colour (the window library and the
+                    // sprite library both set the sprite's red, green, blue
+                    // and alpha there); the shader blends it between the two
+                    // frames the same way it blends a triangle call's (see
+                    // snapMatchPrimColors).
+                    if (!snapSameColor(call.rdpParams.primColor, paired->primColor) && (call.callIndex < curWorkload.drawData.rdpParams.size())) {
+                        interop::RDPParams &params = curWorkload.drawData.rdpParams[call.callIndex];
+                        params.snapPrevPrimColor = paired->primColor;
+                        params.snapPrimBlend = 1.0f;
+                        changed = true;
+                        if (snapdiag::pairDumpPending().load(std::memory_order_relaxed) > 0) {
+                            fprintf(stdout, "[SNAP-PRIM] f%u rect id %08X ord %u: colour (%.2f %.2f %.2f a %.2f) -> (%.2f %.2f %.2f a %.2f)\n",
+                                f, call.snapRectId, call.snapRectOrdinal,
+                                float(paired->primColor.x), float(paired->primColor.y), float(paired->primColor.z), float(paired->primColor.w),
+                                float(call.rdpParams.primColor.x), float(call.rdpParams.primColor.y), float(call.rdpParams.primColor.z), float(call.rdpParams.primColor.w));
+                        }
+                    }
+
                     // The mark key asks for the next frames' actual pairs. One
                     // line per pair: what joined what. Wrong pairs are visible
                     // as lines whose two rectangles are not the same thing.
@@ -1768,6 +1827,8 @@ namespace RT64 {
                 }
             }
         }
+
+        return changed;
     }
 
     void GameFrame::matchTransform(Workload &curWorkload, const Workload &prevWorkload, GameFrameMap::WorkloadMap &curWorkloadMap, const GameFrameMap::WorkloadMap *prevWorkloadMap, uint32_t curTransformIndex, uint32_t prevTransformIndex, ModifiedBuffers &modifiedBuffers, bool computeVelocities) {
