@@ -38,6 +38,25 @@ extern "C" void snap_publish_ai_len(uint8_t* rdram);
 // Pull in the recompiled function declarations and overlay tables.
 #include "recomp_overlays.inl"
 
+#if SNAP_HAS_PATCH_BIN
+// The game-side patches (patches/src, recompiled into RecompiledPatches):
+// their section table, and the bytes of the patch ELF -- code the recompiler
+// turned into C, and the .data section IDO keeps every float literal and
+// table in. librecomp copies those bytes to patch_rdram_start, where
+// patch.ld links them, before the game runs. Without the copy a patch that
+// read one of its own constants read zero: a comparison against 3.2f was a
+// comparison against nothing, and the fade quad it should have widened
+// stayed as it was.
+#include "../RecompiledPatches/recomp_overlays.inl"
+extern "C" const unsigned char snap_patches_bin[];
+extern "C" const size_t snap_patches_bin_size;
+static void snap_register_patches() {
+    recomp::overlays::register_patches(reinterpret_cast<const char*>(snap_patches_bin), snap_patches_bin_size, section_table, ARRLEN(section_table));
+}
+#else
+static void snap_register_patches() {}
+#endif
+
 // Forward-declare the recomp entrypoint (defined in RecompiledFuncs/funcs.h,
 // already included transitively through recomp_overlays.inl -> funcs.h).
 
@@ -545,6 +564,7 @@ int main(int argc, char* argv[]) {
     };
 
     recomp::overlays::register_overlays(section_table, overlays_by_index);
+    snap_register_patches();
 
     // -----------------------------------------------------------------------
     // 2. Register the game entry

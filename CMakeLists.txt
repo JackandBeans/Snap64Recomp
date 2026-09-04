@@ -192,6 +192,25 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/RecompiledPatches/patches.c")
         # otherwise replace with its math intrinsics and then reject for
         # taking the recompiler's two arguments.
         PROPERTIES COMPILE_OPTIONS "$<IF:$<BOOL:${MSVC}>,/w;/O2;/Oi-,-w>")
+
+    # The patch ELF's loadable bytes: code the recompiler already turned into
+    # C, and the .data section holding every patch's constants (IDO keeps
+    # float literals and tables there). Embedded here and handed to librecomp
+    # at start-up (src/main.cpp, snap_register_patches), which copies them to
+    # the address the patches are linked at. Without the copy a patch that
+    # read one of its own constants read zero.
+    set(SNAP_PATCH_BIN "${CMAKE_CURRENT_SOURCE_DIR}/patches/build/patches.bin")
+    if (NOT EXISTS "${SNAP_PATCH_BIN}")
+        message(FATAL_ERROR "RecompiledPatches/patches.c exists but patches/build/patches.bin does not: run make -C patches (BUILDING.md, step 8)")
+    endif()
+    set(SNAP_PATCH_BIN_C "${CMAKE_CURRENT_BINARY_DIR}/generated/snap_patches_bin.c")
+    add_custom_command(
+        OUTPUT "${SNAP_PATCH_BIN_C}"
+        COMMAND ${CMAKE_COMMAND} "-DINPUT=${SNAP_PATCH_BIN}" "-DOUTPUT=${SNAP_PATCH_BIN_C}" -DSYMBOL=snap_patches_bin -P "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_bin.cmake"
+        DEPENDS "${SNAP_PATCH_BIN}" "${CMAKE_CURRENT_SOURCE_DIR}/tools/embed_bin.cmake"
+        COMMENT "Embedding patches/build/patches.bin")
+    list(APPEND SNAP_PATCH_SOURCES "${SNAP_PATCH_BIN_C}")
+    set(SNAP_HAS_PATCH_BIN 1)
 endif()
 
 set(SNAP_SOURCES
@@ -286,6 +305,10 @@ endif()
 # link.exe resolves cyclic static libraries on its own and reports the GNU
 # flags as LNK4044 on every link, so they are only passed where they mean
 # something.
+if (SNAP_HAS_PATCH_BIN)
+    target_compile_definitions(Snap64Recomp PRIVATE SNAP_HAS_PATCH_BIN=1)
+endif()
+
 target_link_libraries(Snap64Recomp PRIVATE
     recomp_funcs
     librecomp

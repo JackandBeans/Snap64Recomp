@@ -16,6 +16,10 @@ CC := $(DECOMP)/tools/ido7.1/cc
 LD := $(CROSS)ld
 
 TARGET  := build/patches.elf
+# The ELF's loadable bytes, code and data, from the link address up: CMake
+# embeds them in the executable and librecomp copies them into memory at
+# start-up, which is how a patch's constants become readable (patch.ld).
+BINARY  := build/patches.bin
 SOURCES := $(wildcard src/*.c)
 OBJECTS := $(SOURCES:src/%.c=build/%.o)
 
@@ -28,11 +32,14 @@ CFLAGS := -G 0 -non_shared -Xcpluscomm -nostdinc -Wab,-r4300_mul -O2 -mips2     
 # fixed locations rather than symbols to be matched.
 LDFLAGS := -T game_syms.ld -T patch.ld --emit-relocs --no-check-sections            -nostdlib --unresolved-symbols=ignore-all --noinhibit-exec
 
-all: $(TARGET)
+all: $(TARGET) $(BINARY)
 
 $(TARGET): $(OBJECTS) patch.ld game_syms.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(LDFLAGS) -o $@ $(OBJECTS)
+
+$(BINARY): $(TARGET)
+	$(CROSS)objcopy -O binary $< $@
 
 build/%.o: src/%.c
 	@mkdir -p $(dir $@)

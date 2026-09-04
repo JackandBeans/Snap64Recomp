@@ -187,6 +187,12 @@ tree.
 The first compiles `patches/src/*.c` with the decomp's IDO 7.1 against the
 decomp's headers and links `patches/build/patches.elf` with
 `mips-linux-gnu-ld` (`patches/Makefile`, `patches/patch.ld`, `patches/game_syms.ld`).
+The first also writes `patches/build/patches.bin`, the ELF's loadable bytes;
+CMake embeds them in the executable and librecomp copies them into memory at
+start-up, which is how the patches' `.data` section -- every float literal
+and table IDO puts there -- becomes readable (`patches/patch.ld`,
+`src/main.cpp`).
+
 The second writes `RecompiledPatches/patches.c`, which CMake compiles straight
 into the executable so that each patched function is resolved before the
 linker reaches the recompiled game. `patches/README.md` explains the mechanism.
