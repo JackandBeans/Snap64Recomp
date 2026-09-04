@@ -236,8 +236,8 @@ game's own composition: a white card and the photo filling it but for a
 hem; on the fourth slot alone the game draws its black rights line along
 the bottom, for no reason any source explains. When the display
 ends the sixteen captures are laid out into `stickers/<date>/sheet.png`
-(and `sheet_presented.png` from the renderer's frames, with the singles
-next to them). The kiosk's printer had a screen of its own, laid over the
+(and `sheet_presented.png` from the renderer's frames, with the sixteen
+singles in `slots/`). The kiosk's printer had a screen of its own, laid over the
 video: after each slot it showed the sticker grid it had collected so far,
 and after the last one that grid under "PRINTING... PLEASE WAIT" with three
 marks that became stars one by one as its three passes finished. The port

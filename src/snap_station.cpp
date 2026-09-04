@@ -785,16 +785,16 @@ void poll_capture(uint8_t* rdram, Station& s) {
         // Encoded on its own thread: this runs on a guest thread, and the
         // runtime runs one guest thread at a time, so time spent here is
         // time the whole game stands still.
-        std::thread([path = s.sheetDir / name, w = f.width, h = f.height, rgb = f.rgb]() {
+        std::thread([path = s.sheetDir / "slots" / name, w = f.width, h = f.height, rgb = f.rgb]() {
             write_png(path, w, h, rgb.data());
         }).detach();
     }
     if (!arrived.empty()) {
         snprintf(name, sizeof(name), "slot_%02d_presented.bmp", slot);
         std::error_code ec;
-        std::filesystem::rename(arrived, s.sheetDir / name, ec);
+        std::filesystem::rename(arrived, s.sheetDir / "slots" / name, ec);
         if (!ec) {
-            f.presented = s.sheetDir / name;
+            f.presented = s.sheetDir / "slots" / name;
         }
     } else {
         say("slot %d: the presented frame never arrived; the framebuffer alone was kept", slot);
@@ -905,7 +905,7 @@ void finish_sheet(Station& s) {
         for (size_t i = 0; i < presented.size(); i++) {
             char name[64];
             snprintf(name, sizeof(name), "slot_%02zu_presented.png", i + 1);
-            if (write_png(s.sheetDir / name, pw, ph, presented[i].data())) {
+            if (write_png(s.sheetDir / "slots" / name, pw, ph, presented[i].data())) {
                 std::error_code ec;
                 std::filesystem::remove(s.frames[i].presented, ec);
             }
@@ -954,9 +954,19 @@ void on_message(uint8_t* rdram, Station& s, uint8_t msg) {
         case MsgPhotoShown:
             if (s.sheetDir.empty()) {
                 s.sheetDir = base_path(OutputDirName) / timestamp_now();
-                std::error_code ec;
-                std::filesystem::create_directories(s.sheetDir, ec);
             }
+            {
+                std::error_code ec;
+                std::filesystem::create_directories(s.sheetDir / "slots", ec);
+            }
+            // The game says the next photo is on screen: whatever the
+            // printer's display still shows comes down now, before the
+            // capture, which must photograph the game's frame. Two slots in
+            // a row usually show the same photo (each fills a 2x2 block), so
+            // the watcher that looks for the picture to change cannot be the
+            // only thing that ends the grid.
+            snap_overlay_hide();
+            s.slotPhase = 0;
             s.busy = true;
             arm_capture(s);
             break;

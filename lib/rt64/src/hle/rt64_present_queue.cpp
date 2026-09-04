@@ -734,7 +734,10 @@ namespace {
                 // of the frame (rt64_snap_overlay.h). Uploaded here, on the
                 // present thread, before the render pass opens; the previous
                 // present's command list was waited on, so the upload buffer
-                // is free to map.
+                // is free to map. A present that shows the printer's picture
+                // is never captured as a frame: the station's capture waits
+                // for the next present that shows the game.
+                bool overlayShown = false;
                 {
                     SnapOverlay::State &ov = SnapOverlay::state();
                     std::lock_guard<std::mutex> ovLock(ov.mutex);
@@ -777,6 +780,7 @@ namespace {
                             // top-left corner at a fraction of the size.
                             renderParams.resolutionScale = { 1.0f, 1.0f };
                             renderParams.downsamplingScale = 1;
+                            overlayShown = true;
                         }
                     }
                 }
@@ -791,7 +795,8 @@ namespace {
                     // Pokemon Snap port: while the game side is dumping its
                     // framebuffers around a churn frame, also photograph the
                     // image actually being presented, interpolation included.
-                    if ((snapdiag::captureEnabled() || snapPcapScheduled() || (snap_frame_dump_station.load() > 0)) &&
+                    if (!overlayShown &&
+                        (snapdiag::captureEnabled() || snapPcapScheduled() || (snap_frame_dump_station.load() > 0)) &&
                         (snap_frame_dump_pending.load() > 0)) {
                         // The window is consumed here. It used to be counted down by
                         // the game-side dumper, which no longer exists, so an armed
