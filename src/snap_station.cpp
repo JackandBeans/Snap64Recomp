@@ -485,16 +485,18 @@ constexpr int StarBlinks = 3;
 constexpr int PrintFinalHoldMs = 2500;
 
 // The printer's on-screen-display face, measured against the sticker grid
-// in a side-by-side with the real screen (2026-09-03): capitals thirty-six
-// pixels tall and about twenty wide, strokes four wide and three tall (a
-// character generator's non-square dots), eleven cells of "PRINTING..." or
-// "PLEASE WAIT" spanning some 290 pixels, so a twenty-seven pixel pitch.
-// Five by twelve here, each dot four by three. Only the letters its two
-// lines use.
+// in two photographs of the real screen (2026-09-03; the grid's cells are
+// 160 by 120, the one known size in them): capitals thirty-six pixels tall
+// and sixteen wide, stems four wide and bars three tall, on a twenty-three
+// pixel pitch, so seven pixels between letters. Five by twelve dots of
+// three by three, each dot widened a pixel to the right (OsdFontBoldX).
+// Only the letters its two lines use; the three dots after PRINTING are
+// not on the letter pitch and are drawn on their own (osd_printing).
 constexpr int OsdFontRows = 12;
-constexpr int OsdFontScaleX = 4;
+constexpr int OsdFontScaleX = 3;
 constexpr int OsdFontScaleY = 3;
-constexpr int OsdFontAdvance = 27;
+constexpr int OsdFontBoldX = 1;
+constexpr int OsdFontAdvance = 23;
 struct OsdGlyph {
     char ch;
     const char* rows[OsdFontRows];
@@ -564,16 +566,18 @@ void osd_put(std::vector<uint8_t>& img, int x, int y, uint8_t r, uint8_t g, uint
 
 // A glyph at a pixel scale: white, with a black ring one glyph pixel wide, the
 // way an on-screen display keeps its text legible over any picture.
-// A glyph's dots are scaleX by scaleY pixels; the black ring around the
-// white is one dot wide, as the video's character generator drew it.
-void osd_glyph(std::vector<uint8_t>& img, const char* const* rows, int nrows, int x, int y, int scaleX, int scaleY) {
+// A glyph's dots are scaleX by scaleY pixels, each widened by boldX to the
+// right (a stem is then scaleX + boldX wide, a bar scaleY tall); the black
+// ring around the white is one dot wide, as the video's character
+// generator drew it.
+void osd_glyph(std::vector<uint8_t>& img, const char* const* rows, int nrows, int x, int y, int scaleX, int scaleY, int boldX) {
     const int ncols = int(std::strlen(rows[0]));
     auto ink = [&](int r, int c) {
         return (r >= 0) && (r < nrows) && (c >= 0) && (c < ncols) && (rows[r][c] == '#');
     };
     auto dot = [&](int r, int c, uint8_t v) {
         for (int sy = 0; sy < scaleY; sy++) {
-            for (int sx = 0; sx < scaleX; sx++) {
+            for (int sx = 0; sx < scaleX + boldX; sx++) {
                 osd_put(img, x + c * scaleX + sx, y + r * scaleY + sy, v, v, v);
             }
         }
@@ -608,7 +612,7 @@ void osd_text(std::vector<uint8_t>& img, const char* text, int x, int y) {
         if (*c != ' ') {
             for (const OsdGlyph& g : kOsdFont) {
                 if (g.ch == *c) {
-                    osd_glyph(img, g.rows, OsdFontRows, x, y, OsdFontScaleX, OsdFontScaleY);
+                    osd_glyph(img, g.rows, OsdFontRows, x, y, OsdFontScaleX, OsdFontScaleY, OsdFontBoldX);
                     break;
                 }
             }
@@ -636,18 +640,19 @@ void osd_bar(std::vector<uint8_t>& img, int cx, int cy, int w, int h) {
 // come, a star for one done; a blinking star is a star or nothing.
 enum class Mark { Dash, Star, Blank };
 void osd_marks(std::vector<uint8_t>& img, const Mark marks[3]) {
-    // Over the lower part of the top row's right-hand photos, forty-eight
-    // pixels apart, thirty-four pixels tall: measured against the sticker
-    // grid in the footage and the side-by-side, the one thing in them with
-    // known dimensions.
+    // Over the lower part of the top row's third and fourth photos, centred
+    // 445, 498 and 551 pixels in and 93 down, fifty-three apart: the stars
+    // thirty-two across, the dashes twenty-four by six. Measured against
+    // the sticker grid in two photographs of the real screen, the one thing
+    // in them with known dimensions.
     for (int i = 0; i < 3; i++) {
-        const int cx = 410 + i * 48;
-        const int cy = 100;
+        const int cx = 445 + i * 53;
+        const int cy = 93;
         if (marks[i] == Mark::Star) {
-            osd_star(img, cx, cy, 17.0f);
+            osd_star(img, cx, cy, 16.0f);
         }
         else if (marks[i] == Mark::Dash) {
-            osd_bar(img, cx, cy, 32, 4);
+            osd_bar(img, cx, cy, 23, 5);
         }
     }
 }
@@ -695,11 +700,18 @@ std::vector<uint8_t> osd_grid(const std::vector<Frame>& frames) {
 
 std::vector<uint8_t> osd_printing(const std::vector<uint8_t>& grid, const Mark marks[3]) {
     std::vector<uint8_t> img = grid;
-    // Where the side-by-side has them against its grid: the first line's
-    // top on the line between the second and third rows, the second line
-    // sixty-two lower, both starting a few pixels left of the second column.
-    osd_text(img, "PRINTING...", 152, 240);
-    osd_text(img, "PLEASE WAIT", 152, 302);
+    // Where the photographs have them against the grid: the first line's
+    // top twenty-four pixels above the line between the second and third
+    // rows, so that line crosses the letters two thirds of the way down;
+    // the second line's top seventy-four lower; both starting fourteen
+    // pixels into the second column. The three dots after PRINTING sit on the
+    // baseline as seven-pixel squares twenty-five apart, wider apart than
+    // the letters.
+    osd_text(img, "PRINTING", 174, 216);
+    for (int i = 0; i < 3; i++) {
+        osd_bar(img, 387 + i * 25, 248, 6, 6);
+    }
+    osd_text(img, "PLEASE WAIT", 174, 290);
     osd_marks(img, marks);
     return img;
 }
