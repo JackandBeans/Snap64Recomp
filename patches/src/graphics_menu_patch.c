@@ -1723,6 +1723,12 @@ void func_800E2058_A095E8(void) {
  * of width 0: the title face did not harvest), the menu is the stock four.
  * ========================================================================= */
 #define MBOX_TITLE_REQ     (*(volatile u8*)  (SNAP_GFX_MAILBOX + 0x38))
+/* Set to 1 whenever the title menu is built: the host attaches the Snap
+ * Station (setting on) only once this has happened, because the game's boot
+ * tests port 4 for the printer once (func_8009B2BC) and goes straight to the
+ * printer's display if it finds one; a station that appeared on a timer
+ * raced that test on a slow boot. Cleared by the host when read. */
+#define MBOX_TITLE_SEEN    (*(volatile u8*)  (SNAP_GFX_MAILBOX + 0x3C))
 #define SCRATCH_TITLE_GOBJ (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x50))
 
 /* Five rows at the stock four-row pitch of 18. The block sits so the
@@ -1827,6 +1833,7 @@ static void snap_title_row(GObj* gobj, s16 x, s16 y) {
 u8 func_800E33C8_A0A958(GObj** gobjs) {
     GObj* station;
 
+    MBOX_TITLE_SEEN = 1;
     if (D_800E82ED_A0F87D == 0) {
         gobjs[0] = D_800E82CC_A0F85C;
         snap_title_row(gobjs[0], 127, 138);

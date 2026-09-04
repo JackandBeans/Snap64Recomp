@@ -865,6 +865,7 @@ void seed_mailbox() {
     write_u8(MailboxAddr + 0x16, s.photo_detail ? 1 : 0);
     write_u8(MailboxAddr + 0x17, s.jynx_vc ? 1 : 0);
     write_u8(MailboxAddr + 0x38, 0);   // no title request pending
+    write_u8(MailboxAddr + 0x3C, 0);   // the title menu has not been built yet
     write_u32(MailboxAddr + 0x4, 0);
     // The SOUND bank: its own sequence word and six value bytes, read live
     // by the patched audio functions (volumes as straight percentages) and
@@ -1354,6 +1355,10 @@ void poll_menu_mailbox(uint8_t* rdram) {
     }
     // The title screen's Snap Station item: the patch sets the byte when it
     // is chosen, and port 4 carries the station for the rest of this run.
+    if (read_u8_mail(MailboxAddr + 0x3C) != 0) {
+        write_u8(MailboxAddr + 0x3C, 0);
+        station_title_reached();
+    }
     if (read_u8_mail(MailboxAddr + 0x38) != 0) {
         write_u8(MailboxAddr + 0x38, 0);
         station_request_from_title();

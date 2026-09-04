@@ -82,7 +82,6 @@ constexpr uint8_t MsgTooFewPhotos = 0x10;  // func_801DC8A0_AA18E0(2): fewer tha
 
 constexpr int SlotCount = 16;        // func_8009B40C runs slots 0..15, then 16 ends it
 constexpr int SheetColumns = 4;      // ROM 0xAAA508: 4x4, each photo a 2x2 block
-constexpr int PresenceDelaySeconds = 5;
 constexpr const char* MarkerName = "snapstation.job";
 constexpr const char* OutputDirName = "stickers";
 constexpr const char* SaveFileRel = "saves/pokemonsnap.bin";
@@ -1046,17 +1045,7 @@ void on_message(uint8_t* rdram, Station& s, uint8_t msg) {
 // Turning the setting off takes effect at the next boot.
 bool present_now() {
     Station& s = st();
-    if (s.jobPending.load() || s.everPresent.load()) {
-        return true;
-    }
-    if (!s.enabled.load()) {
-        return false;
-    }
-    if ((std::chrono::steady_clock::now() - s.start) > std::chrono::seconds(PresenceDelaySeconds)) {
-        s.everPresent.store(true);
-        return true;
-    }
-    return false;
+    return s.jobPending.load() || s.everPresent.load();
 }
 
 #if defined(_WIN32)
@@ -1127,6 +1116,16 @@ void station_request_from_title() {
     Station& s = st();
     if (!s.everPresent.exchange(true)) {
         say("chosen from the title screen: port 4 carries the station for the rest of this run");
+    }
+}
+
+void station_title_reached() {
+    Station& s = st();
+    if (!s.enabled.load() || s.jobPending.load()) {
+        return;
+    }
+    if (!s.everPresent.exchange(true)) {
+        say("the title screen is up: port 4 carries the station from here (setting on)");
     }
 }
 

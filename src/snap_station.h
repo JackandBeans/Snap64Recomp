@@ -86,11 +86,20 @@ void station_set_enabled(bool enabled);
 // process ends, whatever the setting says. Nothing is written to the settings.
 void station_request_from_title();
 
+// The title menu has been built (menu_assets.cpp relays the patch's mailbox
+// byte): with the setting on, port 4 carries the station from now until this
+// process ends. The game tests port 4 for the printer once at boot
+// (func_8009B2BC) and goes straight to the printer's display if it finds one,
+// so the station must not exist before the title; a timer used to stand in
+// for this and lost the race on a slow boot.
+void station_title_reached();
+
 // Whether port 4 reports a controller with a pak right now. True from the
 // first instruction when a print job is pending, so the game's boot sees the
-// station; otherwise only from five seconds after start, so a boot with the
-// setting on goes to the title screen and the game's periodic detection finds
-// the station afterwards, the way the kiosk's own enable switch was used.
+// station; otherwise only once the title menu is up (station_title_reached)
+// or the title's Snap Station item was chosen, so a boot with the setting on
+// goes to the title screen and the game's periodic detection finds the
+// station afterwards, the way the kiosk's own enable switch was used.
 bool station_port4_present();
 
 // The Controller Pak RAM calls the game makes through __osContRamWrite and
