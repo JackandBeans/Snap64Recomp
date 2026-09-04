@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/logo.png" width="640" alt="Snap64 Recomp"></p>
+
 # Snap64 Recomp
 
 A native Windows port of the Nintendo 64 game *Pokémon Snap* (US release),
