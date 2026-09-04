@@ -1122,6 +1122,19 @@ namespace RT64 {
         // Check if the texture needs to be updated.
         auto &drawCall = state->drawCall;
         if ((drawCall.textureOn != textureState.on) || (drawCall.textureTile != textureState.tile) || (drawCall.textureLevels != textureState.levels)) {
+            // Pokemon Snap port: the triangles still pending were drawn under
+            // the texture state the call holds now, and they are recorded
+            // with it before the new state replaces it. Written in place
+            // before the flush, the recorded copy of the last call before
+            // every texture change carried the NEXT call's state: untextured
+            // triangles followed by a textured part read as textured. The
+            // renderer never reads the recorded field, but the Jynx recolour
+            // (render/rt64_snap_recolor.h) asks it whether the texture was
+            // off, and missed the face whenever a textured part came next --
+            // the far and viewfinder models end their face with the display
+            // list. Flushing here is what checkDrawState does a few lines
+            // down; it only happens earlier, with the call still whole.
+            state->flush();
             drawCall.textureOn = textureState.on;
             drawCall.textureTile = textureState.tile;
             drawCall.textureLevels = textureState.levels;

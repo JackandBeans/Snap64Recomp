@@ -1128,6 +1128,9 @@ namespace RT64 {
         // Check if the texture needs to be updated.
         DrawCall &drawCall = state->drawCall;
         if (!drawCall.textureOn || (drawCall.textureTile != tile) || (drawCall.textureLevels != levels)) {
+            // Pokemon Snap port: the pending call keeps the texture state it
+            // was drawn with (see RSP::drawIndexedTri).
+            state->flush();
             drawCall.textureOn = 1;
             drawCall.textureTile = tile;
             drawCall.textureLevels = levels;
@@ -1381,6 +1384,9 @@ namespace RT64 {
         // Check if the texture needs to be updated.
         DrawCall &drawCall = state->drawCall;
         if (!drawCall.textureOn || (drawCall.textureTile != tile) || (drawCall.textureLevels != 1)) {
+            // Pokemon Snap port: the pending call keeps the texture state it
+            // was drawn with (see RSP::drawIndexedTri).
+            state->flush();
             drawCall.textureOn = 1;
             drawCall.textureTile = tile;
             drawCall.textureLevels = 1;

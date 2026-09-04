@@ -18,15 +18,15 @@
 //
 // What the re-releases did. Nintendo's Wii Virtual Console (2007) showed the
 // face purple; the Wii U release kept the hands as they were; the Switch
-// Online release (2022) recoloured the hands too. The exact colour values
-// those releases use are not publicly documented, so this recolour does not
-// try to reproduce them. It takes the purple from Nintendo's official Jynx
-// artwork instead, and it recolours the hands as well: the Switch Online
-// look.
+// Online release (2022) recoloured the hands too. The bytes those releases
+// set are not public, so this recolour matches their LOOK instead: the
+// primitive colour below puts on screen, under the game's own lighting,
+// the purple a capture of the Virtual Console shows (see ReleasePurple).
+// The hands take the same colour: the Switch Online look.
 //
 // What this does. When the setting is on, a draw call that is exactly one of
 // those runs -- texture off, that combiner, that primitive colour, alpha
-// 255 -- has its primitive colour replaced by the artwork purple on the copy
+// 255 -- has its primitive colour replaced by the release purple on the copy
 // of the call the renderer records. The shade the combiner multiplies it
 // with is the game's own lighting, so every gradient the console gave the
 // black face is kept; the RDP's own primitive colour is left as the
@@ -65,19 +65,22 @@ namespace RT64 {
         // reads under the Cave's lighting was not checked by the port.
         constexpr RGB8 CartridgeHands{ 80, 88, 112 };
 
-        // The purple both become. This is the official-artwork purple, NOT the
-        // Virtual Console texel value, which is not publicly available.
-        // Source: Nintendo's official Jynx artwork as served by Bulbapedia,
-        // https://archives.bulbagarden.net/media/upload/0/07/0124Jynx.png
-        // (541x541), read in a browser on 2026-09-02 and sampled in place;
-        // no copy of the image was made. Two 12x12 regions on the flat of
-        // the left and right cheeks averaged (163,134,181) and (163,135,182)
-        // with a per-channel standard deviation under 3; the value below is
-        // the left cheek's, the darker of the two. The artwork's hands sit
-        // in its cel shadow at (124,102,132); the recolour gives the hands
-        // the face's purple rather than that shadow tone, because in the
-        // game the shading comes from the lights, not from the colour.
-        constexpr RGB8 ArtworkPurple{ 163, 134, 181 };
+        // The purple both become: the Virtual Console's look, derived on
+        // 2026-09-03 from a capture of the re-release the port's author
+        // supplied (a 460x426 web image of the Cave's Jynx, compressed video
+        // uploaded again, so a look and not a byte). Its lit forehead and
+        // cheek average (86,50,137) and (90,54,146) over 7x7 windows. The
+        // combiner draws the face as primitive colour times the lit shade,
+        // and the shade on that part of the face was measured on the port's
+        // own capture of the same Jynx: under a primitive colour of
+        // (163,134,181), an earlier lavender taken from Nintendo's artwork,
+        // the lit forehead read (150,121,164), a shade of 0.91 on every
+        // channel. The primitive colour that puts the reference's lit face
+        // on screen under that shade is the mean of the two windows over
+        // 0.91: (97,57,156). The reference's hands read (65,36,116) where
+        // they face away, the same colour the face has in its own shadow,
+        // so the hands take the face's value and the lights do the rest.
+        constexpr RGB8 ReleasePurple{ 97, 57, 156 };
 
         // RDP::setPrimColor stores each byte as byte / 255.0f; this recovers
         // the byte exactly for every value it can have produced.
@@ -156,9 +159,9 @@ namespace RT64 {
                 return false;
             }
             interop::float4 &prim = call.rdpParams.primColor;
-            prim.x = ArtworkPurple.r / 255.0f;
-            prim.y = ArtworkPurple.g / 255.0f;
-            prim.z = ArtworkPurple.b / 255.0f;
+            prim.x = ReleasePurple.r / 255.0f;
+            prim.y = ReleasePurple.g / 255.0f;
+            prim.z = ReleasePurple.b / 255.0f;
             if (snapdiag::statsEnabled()) {
                 static bool faceReported = false;
                 static bool handsReported = false;
@@ -168,7 +171,7 @@ namespace RT64 {
                     std::printf("[SNAP-JYNX] %s prim #%02X%02X%02X -> #%02X%02X%02X (%u triangles)\n",
                         (from == &CartridgeFace) ? "face" : "hands",
                         from->r, from->g, from->b,
-                        ArtworkPurple.r, ArtworkPurple.g, ArtworkPurple.b,
+                        ReleasePurple.r, ReleasePurple.g, ReleasePurple.b,
                         call.triangleCount);
                     std::fflush(stdout);
                 }

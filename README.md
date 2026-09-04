@@ -307,7 +307,7 @@ the defaults below are that file's.
 | `crop_left`, `crop_right`, `crop_top`, `crop_bottom` | `16`, `16`, `12`, `12` | pixels hidden per side when the crop is on |
 | `intro_fix` | `false` | Cutscene Fix: skips the one frame the console drew from inside the player model at the end of the Beach and River intros |
 | `photo_detail` | `false` | Photo Detail: Off draws Oak's photos and the album at native pixels as the console did; On serves them from the renderer's full-resolution render |
-| `jynx_vc` | `false` | Jynx Recolor, Jynx's face and hands: Off: the cartridge's black; On: the purple of the re-releases, from the official artwork |
+| `jynx_vc` | `false` | Jynx Recolor, Jynx's face and hands: Off: the cartridge's black; On: the purple of the re-releases, matched to a Virtual Console capture |
 | `interpolate_camera` | `true` | interpolate the view as well as objects (F4) |
 | `downsample` | `1` | Super Sampling factor |
 | `resolution_scale` | `0` | 0 follows the window; 1-8 caps the render scale in multiples of 320x240 |

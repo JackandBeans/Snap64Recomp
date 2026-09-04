@@ -121,7 +121,7 @@ struct Settings {
     // the primitive colour of untextured triangles. Every release Nintendo
     // has sold since the 2007 Virtual Console shows them purple. Off, the
     // port draws the cartridge. On, the renderer swaps that primitive colour
-    // for the purple of Nintendo's official artwork on each draw; the
+    // for a purple matched to a capture of the Virtual Console on each draw; the
     // shading is the game's own lighting and no pixels of anyone's are
     // shipped. Off by default: the console's look.
     // Mailbox byte 0x80C00017, seeded from here and edited by the GRAPHICS
