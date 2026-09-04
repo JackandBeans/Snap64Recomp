@@ -17,6 +17,7 @@
 #include <chrono>
 #include <cstdlib>
 #include <mutex>
+#include <stdexcept>
 
 #include "librecomp/game.hpp"
 #include "librecomp/overlays.hpp"
@@ -515,6 +516,22 @@ int main(int argc, char* argv[]) {
     (void)argv;
 
 #if defined(_WIN32)
+    // One copy at a time. A second launch from the same folder would race
+    // the first for the save file and the log. The Snap Station's relaunch
+    // starts the next copy while this one is still quitting, so a newcomer
+    // waits for the holder to exit rather than refusing at once; only a
+    // holder that is still running after the wait means a real second copy.
+    {
+        HANDLE instance = CreateMutexW(nullptr, FALSE, L"Local\\Snap64Recomp.instance");
+        if (instance != nullptr) {
+            const DWORD wait = WaitForSingleObject(instance, 25000);
+            if ((wait != WAIT_OBJECT_0) && (wait != WAIT_ABANDONED)) {
+                error_message_box("Snap64 Recomp is already running. Close the other window first.");
+                return 0;
+            }
+        }
+    }
+
     snap_bind_stdio();
     AddVectoredExceptionHandler(1, snap_veh);
 
@@ -647,7 +664,18 @@ int main(int argc, char* argv[]) {
     // executable's directory, never the working directory: a shortcut with a
     // different "Start in" used to lose all of them.
     recomp::register_config_path(snap::base_dir());
-    recomp::start(config);
+    try {
+        recomp::start(config);
+    }
+    catch (const std::exception& e) {
+        // The renderer's setup throws when the graphics device cannot be
+        // created (no Direct3D 12, a driver that refuses). Say so, in a
+        // dialog and in the log, instead of dying silently.
+        std::string msg = std::string("The game could not start: ") + e.what() +
+            "\n\nIf this is a graphics error, update the GPU driver, or set \"graphics_api\": 1 in snapsettings.json to try Vulkan.";
+        error_message_box(msg.c_str());
+        return 1;
+    }
 
     // An edit inside the last debounce window (a hotkey, or a page edit on
     // the game thread) has not reached the disk yet; write it now. Nothing

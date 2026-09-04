@@ -93,6 +93,7 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         s.msaa               = j.value("msaa", s.msaa);
         s.fps_mode           = j.value("fps_mode", s.fps_mode);
         s.fps_manual_target  = j.value("fps_manual_target", s.fps_manual_target);
+        s.graphics_api       = std::clamp(j.value("graphics_api", s.graphics_api), 0, 1);
         // "stereo" is the honest name; "hq_sound" was the same flag before
         // the SOUND page existed, so an old file still reads correctly.
         s.stereo             = j.value("stereo", j.value("hq_sound", s.stereo));
@@ -230,6 +231,7 @@ bool save_settings() {
         {"msaa",                  copy.msaa},
         {"fps_mode",              copy.fps_mode},
         {"fps_manual_target",     copy.fps_manual_target},
+        {"graphics_api",          copy.graphics_api},
         {"stereo",                copy.stereo},
         {"master_volume",         copy.master_volume},
         {"music_volume",          copy.music_volume},

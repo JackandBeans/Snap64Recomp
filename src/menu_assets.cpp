@@ -1403,7 +1403,14 @@ void poll_menu_mailbox(uint8_t* rdram) {
         const uint8_t msaaIndex = read_u8_mail(MailboxAddr + 0x9);
         s.msaa = (msaaIndex >= 3) ? 8 : (msaaIndex == 2) ? 4 : (msaaIndex == 1) ? 2 : 0;
         s.widescreen = read_u8_mail(MailboxAddr + 0xA) != 0;
-        s.fps_mode = (read_u8_mail(MailboxAddr + 0xB) != 0) ? 1 : 0;
+        {
+            // The row has two states, Original and Display; Manual (2) is
+            // set by F8 or the file. A page edit used to write the row's
+            // boolean back over it, so editing any other row silently
+            // dropped Manual to Display. On stays whatever "on" was.
+            const bool on = read_u8_mail(MailboxAddr + 0xB) != 0;
+            s.fps_mode = on ? ((s.fps_mode == 2) ? 2 : 1) : 0;
+        }
         s.upscale_2d = std::min<int>(read_u8_mail(MailboxAddr + 0xC), 2);
         s.present_filter = std::min<int>(read_u8_mail(MailboxAddr + 0xD), 2);
         s.dither_noise = read_u8_mail(MailboxAddr + 0xE) != 0;

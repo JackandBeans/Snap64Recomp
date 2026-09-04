@@ -116,6 +116,14 @@ static void try_open_controller() {
                 break;
             }
         }
+        else {
+            // A pad SDL has no mapping for is silent otherwise; say it was
+            // seen, so a player knows why it does nothing and can hand SDL a
+            // mapping through SDL_GAMECONTROLLERCONFIG (README, Controls).
+            const char* name = SDL_JoystickNameForIndex(i);
+            printf("[SNAP-Input] joystick %d (%s) has no game controller mapping; it is not used\n",
+                   i, name ? name : "unnamed");
+        }
     }
 }
 

@@ -80,16 +80,16 @@ extern "C" uint32_t snap_run_table_take(uint32_t* entries, int64_t* nanos, uint3
 // Static dummy buffers required by RT64 (must persist for the lifetime of app)
 // ---------------------------------------------------------------------------
 
-// ROM header placeholder â€” RT64 reads the first 0x40 bytes for cartridge info.
+// ROM header placeholder -- RT64 reads the first 0x40 bytes for cartridge info.
 // We don't need real header data for HLE rendering.
 static uint8_t s_dummy_rom_header[0x40] = {};
 
-// SP DMEM/IMEM â€” RT64's RSP HLE doesn't use these but the core struct must be
+// SP DMEM/IMEM -- RT64's RSP HLE doesn't use these but the core struct must be
 // non-null to avoid null-dereferences inside RT64's state setup paths.
 static uint8_t s_DMEM[0x1000] = {};
 static uint8_t s_IMEM[0x1000] = {};
 
-// RDP / MI register storage â€” RT64 may read/write these during HLE rendering.
+// RDP / MI register storage -- RT64 may read/write these during HLE rendering.
 // Providing real zero-initialised storage prevents nullptr dereferences.
 static unsigned int s_MI_INTR_REG     = 0;
 static unsigned int s_DPC_START_REG   = 0;
@@ -101,7 +101,7 @@ static unsigned int s_DPC_BUFBUSY_REG = 0;
 static unsigned int s_DPC_PIPEBUSY_REG= 0;
 static unsigned int s_DPC_TMEM_REG    = 0;
 
-// No-op interrupt check â€” the recompiler runtime handles interrupts itself.
+// No-op interrupt check -- the recompiler runtime handles interrupts itself.
 static void dummy_check_interrupts() {}
 
 // ---------------------------------------------------------------------------
@@ -130,7 +130,7 @@ public:
         // The RDRAM pointer is the base of the emulated N64 memory.
         core.RDRAM = rdram;
 
-        // Use the static dummy header â€” real ROM header bytes are not needed for HLE.
+        // Use the static dummy header -- real ROM header bytes are not needed for HLE.
         core.HEADER = s_dummy_rom_header;
 
         // DMEM/IMEM must be non-null; RT64 may reference them during state init.
@@ -141,7 +141,7 @@ public:
         // interrupt delivery; RT64 does not need to trigger them directly.
         core.checkInterrupts = dummy_check_interrupts;
 
-        // RDP / MI registers â€” provide real storage so RT64 can read/write safely.
+        // RDP / MI registers -- provide real storage so RT64 can read/write safely.
         core.MI_INTR_REG      = &s_MI_INTR_REG;
         core.DPC_START_REG    = &s_DPC_START_REG;
         core.DPC_END_REG      = &s_DPC_END_REG;
@@ -200,6 +200,13 @@ public:
 
         // Enable developer/debug mode if requested.
         app_->userConfig.developerMode = developer_mode;
+
+        // The backend, chosen before setup creates the device: Direct3D 12
+        // unless the settings file asks for Vulkan (settings.h, graphics_api).
+        app_->userConfig.graphicsAPI = (snap::settings().graphics_api == 1)
+            ? RT64::UserConfiguration::GraphicsAPI::Vulkan
+            : RT64::UserConfiguration::GraphicsAPI::D3D12;
+        printf("[SNAP] graphics API: %s\n", (snap::settings().graphics_api == 1) ? "Vulkan (settings)" : "Direct3D 12");
 
         // Boot with the saved graphics settings rather than defaults: the
         // antialiasing level in particular tears down and rebuilds the whole
@@ -554,7 +561,7 @@ public:
         // separate write here also let it land on a value the game had set in
         // the meantime, which dropped the indicator for a frame.
 
-        // Process the display list. Pass 0 for dlEndAddress â€” RT64 will walk
+        // Process the display list. Pass 0 for dlEndAddress -- RT64 will walk
         // the list until it encounters a G_ENDDL command.
         // Walked on the game thread, so it is part of the tick the slow-frame
         // line reports and not part of the renderer wait below.
@@ -710,12 +717,14 @@ public:
         if (app_ && app_->presentQueue) {
             return app_->presentQueue->ext.sharedResources->swapChainRate;
         }
-        // Pokemon Snap targets 30fps (NTSC) â€” use as fallback.
+        // Pokemon Snap targets 30fps (NTSC) -- use as fallback.
         return 30;
     }
 
     float get_resolution_scale() const override {
-        // TODO: Return configurable resolution scale from RT64.
+        // ultramodern asks for this only to size things the port does not
+        // let it size: RT64 is told the resolution directly (above), so the
+        // answer is deliberately 1.
         return 1.0f;
     }
 
