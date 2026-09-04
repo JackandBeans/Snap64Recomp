@@ -407,6 +407,13 @@ their documentation.
 * Vulkan (`graphics_api` 1) is compiled in but has never been run by the
   developer; it exists for a machine whose Direct3D 12 path fails.
 * Keyboard bindings cannot be remapped.
+* With Overscan Crop off, the whole 320x240 frame is on screen, including
+  the columns and rows a television hid, and some of the game's own art has
+  edges there: the lab backdrop's leftmost pixel column and top row are
+  pale in the picture itself, so a thin light strip shows at the left of the
+  lab's translucent panel. The console drew the same pixels (verified
+  against the picture as the game holds it in memory); Overscan Crop (F2)
+  is the television's view.
 
 ## What has been verified, and what has not
 

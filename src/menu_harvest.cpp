@@ -971,18 +971,28 @@ float nearest_core(const std::vector<bool>& core, int w, int h, int x, int y) {
     return std::sqrt(best);
 }
 
+// The face's intensities sit on sixteen levels (255 * n / 16: 16, 32, 48 ...
+// 239, 255); a drawn pixel takes the nearest so it cannot be told from a
+// harvested one.
+uint8_t title_face_level(float i) {
+    const float n = std::floor(i * 16.0f / 255.0f + 0.5f);
+    return uint8_t(std::min(255.0f, std::floor(255.0f * n / 16.0f + 0.5f)));
+}
+
 // The S, built from the face's own C rather than drawn: the C's top arc and
 // upper stem as they are (cell rows 0-3), its bottom arc mirrored left to
-// right (rows 9 on), and between them a spine of the C's stroke weight: a
+// right (rows 10 on), and between them a spine of the C's stroke weight: a
 // stroke 2.3 pixels wide from the upper-left stem to the lower-right one,
 // its coverage sampled eight by eight per pixel so its steps are
 // anti-aliased the way every diagonal of the face is (a hard pixel
 // staircase read sharper than its neighbours on the title screen). Around
 // the whole letter the face's shadow falloff, where the C's own shadow does
-// not already reach. Needs the C as harvested (an 11-column cell with the
-// core at column 2); anything else falls back to the drawn S in kTitleSynth.
+// not already reach. The geometry is the C's as cut_title_cell cuts it: a
+// 9-wide cell, the seven-column core at columns 1..7 (cs 1, ce 8); a C of
+// any other shape falls back to the drawn S in kTitleSynth, and
+// harvest_title logs which one the title got.
 bool synth_title_s_from_c(const Cell& c, Cell& out) {
-    if ((c.w != 11) || (c.cs != 2) || (c.px.size() != size_t(c.w) * size_t(kMenuTtlCellH))) {
+    if ((c.w != 9) || (c.cs != 1) || (c.ce != 8) || (c.px.size() != size_t(c.w) * size_t(kMenuTtlCellH))) {
         return false;
     }
     out = c;
@@ -991,10 +1001,8 @@ bool synth_title_s_from_c(const Cell& c, Cell& out) {
             out.px[size_t(r) * size_t(c.w) + size_t(x)] = c.px[size_t(r) * size_t(c.w) + size_t(c.w - 1 - x)];
         }
     }
-    // The spine's coverage, in cell coordinates (the harvested cell is 11
-    // wide with the core from column 2; the mirror in the scratch notes
-    // measured the stroke on the 9-wide cut, hence the +1).
-    const float x0 = 2.3f + 1.0f, y0 = 4.2f, x1 = 7.6f + 1.0f, y1 = 8.9f, width = 2.3f;
+    // The spine, in cell coordinates (columns 0..8, rows 0..15).
+    const float x0 = 2.3f, y0 = 4.2f, x1 = 7.6f, y1 = 8.9f, width = 2.3f;
     const float dxl = x1 - x0, dyl = y1 - y0;
     const float len = std::sqrt(dxl * dxl + dyl * dyl);
     const float ux = dxl / len, uy = dyl / len;
@@ -1037,12 +1045,12 @@ bool synth_title_s_from_c(const Cell& c, Cell& out) {
             if ((y >= 4) && (y < 10)) {
                 const float cv = cov[at];
                 if (cv > 0.5f) {
-                    p.i = uint8_t(std::min(255.0f, 128.0f + (cv - 0.5f) * 2.0f * 127.0f) + 0.5f);
+                    p.i = title_face_level(std::min(255.0f, 128.0f + (cv - 0.5f) * 2.0f * 127.0f));
                     p.a = 255;
                 }
                 else {
                     const uint8_t shadow = title_shadow_alpha(nearest_core(core, c.w, kMenuTtlCellH, x, y));
-                    p.i = uint8_t(std::min(255.0f, cv * 2.0f * 200.0f) + 0.5f);
+                    p.i = title_face_level(std::min(255.0f, cv * 2.0f * 200.0f));
                     p.a = std::max(shadow, uint8_t((cv > 0.3f) ? 255 : 0));
                 }
             }
@@ -1108,9 +1116,14 @@ bool harvest_title(const Segment& seg, Table& ttl, std::string& why) {
         }
     }
     if ((ttl.count('S') == 0) && (ttl.count('C') != 0)) {
+        const Cell& c = ttl['C'];
         Cell s;
-        if (synth_title_s_from_c(ttl['C'], s)) {
+        if (synth_title_s_from_c(c, s)) {
             ttl['S'] = s;
+            printf("[SNAP-MENU] title S built from the C (cell %d wide, core %d..%d)\n", c.w, c.cs, c.ce);
+        }
+        else {
+            printf("[SNAP-MENU] title S drawn: the C cell is %d wide, core %d..%d, not the 9/1/8 the S is built on\n", c.w, c.cs, c.ce);
         }
     }
     for (const SynthGlyph& s : kTitleSynth) {
