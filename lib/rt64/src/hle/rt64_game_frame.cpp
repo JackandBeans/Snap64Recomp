@@ -462,6 +462,26 @@ namespace RT64 {
         matchScenes(perspectiveScenes, prevFrame.perspectiveScenes);
         matchScenes(orthographicScenes, prevFrame.orthographicScenes);
 
+        // Pokemon Snap port: colours the game steps once per frame are blended
+        // by the shader between the matched frames. After the scenes, so the
+        // transform verdicts this reads are the final ones.
+        for (uint32_t w = 0; w < workloads.size(); w++) {
+            if (w >= prevFrame.workloads.size()) {
+                continue;
+            }
+
+            const GameFrameMap::WorkloadMap &workloadMap = frameMap.workloads[workloads[w]];
+            if (!workloadMap.mapped) {
+                continue;
+            }
+
+            Workload &curWorkload = workloadQueue.workloads[workloads[w]];
+            const Workload &prevWorkload = workloadQueue.workloads[workloadMap.prevWorkloadIndex];
+            if (snapMatchPrimColors(curWorkload, prevWorkload, workloadMap)) {
+                workloadsModified[workloads[w]].rdpParams = true;
+            }
+        }
+
         if (!workloadsModified.empty()) {
             thread_local std::vector<BufferUploader::Upload> uploads;
             uploads.clear();
@@ -474,6 +494,13 @@ namespace RT64 {
 
                 if (it.second.texcoordVelocity) {
                     uploads.emplace_back(BufferUploader::Upload{ workload.drawData.tcVelFloats.data(), { 0, workload.drawData.tcVelFloats.size() }, sizeof(float), RenderBufferFlag::FORMATTED, { RenderFormat::R32_FLOAT }, &workload.drawBuffers.texcoordVelocityBuffer });
+                }
+
+                // Pokemon Snap port: the RDP parameters went up when the frame
+                // was submitted, before any matching; a previous primitive
+                // colour noted since has to go up again.
+                if (it.second.rdpParams) {
+                    uploads.emplace_back(BufferUploader::Upload{ workload.drawData.rdpParams.data(), { 0, workload.drawData.rdpParams.size() }, sizeof(interop::RDPParams), RenderBufferFlag::STORAGE, { }, &workload.drawBuffers.rdpParamsBuffer });
                 }
             }
 
@@ -1221,6 +1248,119 @@ namespace RT64 {
             int(prevDsdx), int(prevDtdy), int(call.rectDsdx), int(call.rectDtdy),
             sameRate ? "UNCOVERING (clip blended)" : "RESCALING (viewport blended)");
         fflush(stdout);
+    }
+
+    // A colour the game steps once per frame steps at the game's rate while
+    // everything around it moves at the display's, because the interpolation
+    // blends transforms and never colours. The fade to black between screens
+    // is the case that shows: a full-screen quad whose primitive alpha the
+    // game moves by 255 / (seconds * 60) per tick (decomp app_render/52DE0.c).
+    //
+    // A triangle call whose single world transform was matched to last frame's
+    // is looked up under that previous transform; the call in the same place
+    // there with the same combiner, other mode, geometry mode, triangle count
+    // and tile count is the same draw. Where its primitive colour differs, the
+    // previous colour is noted on this frame's recorded parameters and the
+    // raster shader blends from it by the sub-frame's weight (RasterPS.hlsl,
+    // FramebufferParams::snapPrimWeight). A call under an unmatched transform,
+    // spanning more than one matrix, drawn differently, or drawn for the first
+    // time is left as the game drew it. The parameters are compared and
+    // written per call, never stored across frames.
+    bool GameFrame::snapMatchPrimColors(Workload &curWorkload, const Workload &prevWorkload, const GameFrameMap::WorkloadMap &curWorkloadMap) {
+        auto trianglesOf = [](const Projection &proj) {
+            return (proj.type == Projection::Type::Perspective) || (proj.type == Projection::Type::Orthographic);
+        };
+
+        // The previous frame's single-matrix calls, per world transform, in
+        // the order they were drawn.
+        thread_local std::unordered_map<uint32_t, std::vector<const DrawCall *>> prevByTransform;
+        prevByTransform.clear();
+        for (uint32_t f = 0; f < prevWorkload.fbPairCount; f++) {
+            const FramebufferPair &fbPair = prevWorkload.fbPairs[f];
+            for (uint32_t p = 0; p < fbPair.projectionCount; p++) {
+                const Projection &proj = fbPair.projections[p];
+                if (!trianglesOf(proj)) {
+                    continue;
+                }
+
+                for (uint32_t c = 0; c < proj.gameCallCount; c++) {
+                    const DrawCall &call = proj.gameCalls[c].callDesc;
+                    if (call.minWorldMatrix == call.maxWorldMatrix) {
+                        prevByTransform[call.minWorldMatrix].push_back(&call);
+                    }
+                }
+            }
+        }
+
+        if (prevByTransform.empty()) {
+            return false;
+        }
+
+        auto sameDraw = [](const DrawCall &a, const DrawCall &b) {
+            return (a.colorCombiner.L == b.colorCombiner.L) && (a.colorCombiner.H == b.colorCombiner.H) &&
+                (a.otherMode.L == b.otherMode.L) && (a.otherMode.H == b.otherMode.H) &&
+                (a.geometryMode == b.geometryMode) && (a.triangleCount == b.triangleCount) && (a.tileCount == b.tileCount);
+        };
+
+        auto sameColor = [](const interop::float4 &a, const interop::float4 &b) {
+            const float ax = a.x, ay = a.y, az = a.z, aw = a.w;
+            const float bx = b.x, by = b.y, bz = b.z, bw = b.w;
+            return (ax == bx) && (ay == by) && (az == bz) && (aw == bw);
+        };
+
+        // This frame's single-matrix calls, counted per transform so the k-th
+        // call under a transform pairs with the k-th under its previous one.
+        thread_local std::unordered_map<uint32_t, uint32_t> seenByTransform;
+        seenByTransform.clear();
+        bool changed = false;
+        for (uint32_t f = 0; f < curWorkload.fbPairCount; f++) {
+            const FramebufferPair &fbPair = curWorkload.fbPairs[f];
+            for (uint32_t p = 0; p < fbPair.projectionCount; p++) {
+                const Projection &proj = fbPair.projections[p];
+                if (!trianglesOf(proj)) {
+                    continue;
+                }
+
+                for (uint32_t c = 0; c < proj.gameCallCount; c++) {
+                    const DrawCall &call = proj.gameCalls[c].callDesc;
+                    if (call.minWorldMatrix != call.maxWorldMatrix) {
+                        continue;
+                    }
+
+                    const uint32_t transformIndex = call.minWorldMatrix;
+                    const uint32_t ordinal = seenByTransform[transformIndex]++;
+                    if (transformIndex >= curWorkloadMap.transforms.size()) {
+                        continue;
+                    }
+
+                    const GameFrameMap::TransformMap &transformMap = curWorkloadMap.transforms[transformIndex];
+                    if (!transformMap.mapped) {
+                        continue;
+                    }
+
+                    auto prevIt = prevByTransform.find(transformMap.prevTransformIndex);
+                    if ((prevIt == prevByTransform.end()) || (ordinal >= prevIt->second.size())) {
+                        continue;
+                    }
+
+                    const DrawCall &prevCall = *prevIt->second[ordinal];
+                    if (!sameDraw(call, prevCall) || sameColor(call.rdpParams.primColor, prevCall.rdpParams.primColor)) {
+                        continue;
+                    }
+
+                    if (call.callIndex >= curWorkload.drawData.rdpParams.size()) {
+                        continue;
+                    }
+
+                    interop::RDPParams &params = curWorkload.drawData.rdpParams[call.callIndex];
+                    params.snapPrevPrimColor = prevCall.rdpParams.primColor;
+                    params.snapPrimBlend = 1.0f;
+                    changed = true;
+                }
+            }
+        }
+
+        return changed;
     }
 
     void GameFrame::snapMatchRects(Workload &curWorkload, const Workload &prevWorkload) {

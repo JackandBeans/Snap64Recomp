@@ -107,14 +107,18 @@ namespace RT64 {
     struct ModifiedBuffers {
         bool positionVelocity = false;
         bool texcoordVelocity = false;
+        // Pokemon Snap port: the RDP parameters were changed after their
+        // upload (a previous primitive colour was noted on a call).
+        bool rdpParams = false;
 
         void merge(const ModifiedBuffers &modifiedBuffers) {
             positionVelocity |= modifiedBuffers.positionVelocity;
             texcoordVelocity |= modifiedBuffers.texcoordVelocity;
+            rdpParams |= modifiedBuffers.rdpParams;
         }
 
         bool empty() const {
-            return !positionVelocity && !texcoordVelocity;
+            return !positionVelocity && !texcoordVelocity && !rdpParams;
         }
     };
 
@@ -154,6 +158,11 @@ namespace RT64 {
         // Pokemon Snap port: find where each tagged rectangle was drawn last
         // frame, so the renderer can move it between the two positions.
         static void snapMatchRects(Workload &curWorkload, const Workload &prevWorkload);
+        // Pokemon Snap port: note, on each triangle call whose transform was
+        // matched, the primitive colour the same draw had last frame, so the
+        // shader can blend a colour the game steps once per frame. Returns
+        // whether any call's parameters were changed.
+        static bool snapMatchPrimColors(Workload &curWorkload, const Workload &prevWorkload, const GameFrameMap::WorkloadMap &curWorkloadMap);
         void buildCallHashMap(uint32_t sceneProjIndex, const Workload &workload, const Projection &proj, std::multimap<uint64_t, GameCallMap> &hashMap) const;
         void buildTransformIdMap(const Workload &workload, std::multimap<uint32_t, uint32_t> &idMap, std::vector<uint32_t> &ignoredIdVector) const;
         uint64_t hashFromCall(const GameCall &call, uint32_t matrixIdHash) const;

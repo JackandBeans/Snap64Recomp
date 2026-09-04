@@ -19,6 +19,15 @@ namespace interop {
         float3 keyCenter;
         float3 keyScale;
         int convertK[6];
+        // Pokemon Snap port: when snapPrimBlend is set, the primitive colour
+        // this call had in the previous matched frame; the raster shader
+        // blends from it to primColor by the sub-frame's weight
+        // (hle/rt64_game_frame.cpp, GameFrame::snapMatchPrimColors).
+        float4 snapPrevPrimColor;
+        float snapPrimBlend;
+        float snapPrimPad0;
+        float snapPrimPad1;
+        float snapPrimPad2;
     };
 #ifdef HLSL_CPU
 };

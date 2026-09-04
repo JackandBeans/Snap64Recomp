@@ -181,7 +181,16 @@ LIBRARY_EXPORT bool RasterPS(const RenderParams rp, float4 vertexPosition, float
     ccInputs.alphaOnly = false;
     ccInputs.texVal0 = texVal0;
     ccInputs.texVal1 = texVal1;
-    ccInputs.primColor = instanceRDPParams[instanceIndex].primColor;
+    // Pokemon Snap port: a primitive colour the game stepped between the two
+    // matched frames is blended by the sub-frame's weight, so a fade the
+    // game moves once per frame moves once per image (hle/rt64_game_frame.cpp,
+    // GameFrame::snapMatchPrimColors).
+    float4 primColor = instanceRDPParams[instanceIndex].primColor;
+    if (instanceRDPParams[instanceIndex].snapPrimBlend > 0.5f) {
+        primColor = lerp(instanceRDPParams[instanceIndex].snapPrevPrimColor, primColor, FbParams.snapPrimWeight);
+    }
+
+    ccInputs.primColor = primColor;
     ccInputs.shadeColor = shadeColor;
     ccInputs.envColor = instanceRDPParams[instanceIndex].envColor;
     ccInputs.keyCenter = instanceRDPParams[instanceIndex].keyCenter;

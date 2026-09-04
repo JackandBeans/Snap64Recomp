@@ -1357,6 +1357,7 @@ namespace RT64 {
         fbParams.resolution = { p.targetWidth / p.resolutionScale.x, p.targetHeight / p.resolutionScale.y };
         fbParams.resolutionScale = p.resolutionScale;
         fbParams.horizontalMisalignment = p.horizontalMisalignment;
+        fbParams.snapPrimWeight = p.snapRectWeight;
         framebufferCount++;
 
         while (framebufferCount > framebufferVector.size()) {

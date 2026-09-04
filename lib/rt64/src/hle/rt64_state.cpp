@@ -132,6 +132,11 @@ namespace RT64 {
         drawCall.rdpParams.envColor = { 0.0f, 0.0f, 0.0f, 0.0f };
         drawCall.rdpParams.fogColor = { 0.0f, 0.0f, 0.0f, 0.0f };
         drawCall.rdpParams.blendColor = { 0.0f, 0.0f, 0.0f, 0.0f };
+        drawCall.rdpParams.snapPrevPrimColor = { 0.0f, 0.0f, 0.0f, 0.0f };
+        drawCall.rdpParams.snapPrimBlend = 0.0f;
+        drawCall.rdpParams.snapPrimPad0 = 0.0f;
+        drawCall.rdpParams.snapPrimPad1 = 0.0f;
+        drawCall.rdpParams.snapPrimPad2 = 0.0f;
         drawCall.cullBothMask = 0;
         drawCall.shadingSmoothMask = 0;
         drawCall.NoN = false;

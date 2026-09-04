@@ -136,6 +136,10 @@ scoring re-renders the photographed Pokémon and counts pixels, and the
 viewfinder's red focus dot is found by copying tiles of the colour buffer.
 Frame interpolation (Frame Rate set to Display or Manual) presents frames the
 game never drew; the window title says `interpolation ON (F8)` while it is on.
+Colours the game steps once per frame are blended too: the fade to black
+between screens is a full-screen quad whose alpha the game moves per tick,
+and a draw matched to its previous frame's blends that colour between the
+two, so the fade moves at the display's rate like everything behind it.
 Photo scoring was measured working with it on (five photos, the game's own
 pixel counts reproduced exactly), because the readback uses the frames the
 game draws, not the synthetic ones between them. The focus dot under
