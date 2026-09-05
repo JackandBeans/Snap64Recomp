@@ -321,7 +321,7 @@ void apply_graphics_settings() {
     // RT64's developer mode, for whoever makes a texture pack: its texture
     // dump is the only source of the hashes a pack is keyed on. A launch-time
     // environment switch, never a setting, and off for every player; RT64
-    // takes F1 and F2 for its own panels while it is on (README, "Mods and
+    // takes F1 to F4 for its own panels while it is on (README, "Mods and
     // texture packs").
     cfg.developer_mode = (getenv("SNAP_DEV") != nullptr);
 

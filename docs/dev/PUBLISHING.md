@@ -20,7 +20,7 @@ is yours to press.
    Create the GitHub account with that address; the username is yours to
    choose (the walkthrough below writes `<your-username>`).
 
-2. **Screenshots: done.** Thirteen are in `docs/screenshots/` (named 01 to 13),
+2. **Screenshots: done.** Nineteen are in `docs/screenshots/` (named 01 to 19),
    cropped to the game area; the README shows six. For the release page,
    drag `01-title.png`, `04-beach.png` and `13-printer-stars.png` into the
    description.
@@ -89,4 +89,4 @@ tokens > Tokens (classic), scope `repo`).
 - If a rights holder writes: reply promptly, take the repository private
   while you read it, and do not argue in public. The project distributes no
   game data, which is the line that matters; the README says so in its
-  first paragraph.
+  first paragraph, and NOTICE.md says what is derived from the game.

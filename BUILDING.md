@@ -26,7 +26,10 @@ non-MSVC branches; no build on another platform is recorded in this repository.
 * Visual Studio 2019 with the C++ workload (the recorded build used MSVC
   19.29.30159 through the `Visual Studio 16 2019` generator, platform `x64`).
 * CMake 3.20 or newer (the recorded build used 4.4.2).
-* Python 3 (any recent version; the tools use only the standard library).
+* Python 3 (any recent version). The build-pipeline scripts (`fetch_deps`,
+  `gen_reference_syms`, `gen_overlays`, `hook_funcs`) use only the standard
+  library; the asset and checking scripts need Pillow, NumPy and SciPy
+  (`tools/README.md`).
 * Git for Windows on `PATH`, and access to github.com for
   `tools/fetch_deps.py` (step 10).
 

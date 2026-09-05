@@ -7,11 +7,12 @@
  * SNAP_VERSION_PRERELEASE there, and nowhere else.
  *
  * "JackandBeans" is the port's name for itself on the title screen, after
- * "Jack & Beans", the project the game itself began as at HAL -- the
- * unused JACK and BEANS prototype logo still ships inside the title
- * screen's own data -- which makes it the one name tied to this game
- * that is ours to use. It is the codename on the title screen's credits
- * line; "Snap64 Recomp" is the product name on every other surface.
+ * Jack and Beans, the HAL team that began the game as a photography game
+ * called Jack and the Beanstalk -- their unused JACK AND BEANS prototype
+ * logo still ships inside the title screen's own data -- which makes it
+ * the one name tied to this game that is ours to use. It is the codename
+ * on the title screen's credits line; "Snap64 Recomp" is the product name
+ * on every other surface.
  */
 #ifndef SNAP_VERSION_H
 #define SNAP_VERSION_H
@@ -20,9 +21,9 @@
 #define SNAP_PORT_NAME_W    L"@SNAP_PRODUCT_NAME@"
 // The port's own name for itself, chosen by its author as an homage to the
 // team behind the original game. It is the first thing on the title screen's
-// credits line and appears nowhere else; the product name above is what the
-// window, the dialogs and the package carry, so the trademark is never the
-// product's name.
+// credits line and the boot log's first line, and appears nowhere else; the
+// product name above is what the window, the dialogs and the package carry,
+// so the trademark is never the product's name.
 #define SNAP_PORT_CODENAME  "JackandBeans"
 
 #define SNAP_VERSION_MAJOR  @PROJECT_VERSION_MAJOR@

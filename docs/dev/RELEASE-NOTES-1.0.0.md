@@ -2,9 +2,8 @@
 
 Paste the section below into the GitHub release's description. Attach
 `Snap64Recomp-1.0.0-win64.zip` and `Snap64Recomp-1.0.0-win64.zip.sha256`
-from `build-win/`. Two or three screenshots (the title screen, a course,
-the Graphics page) above the text make the page; take them from the
-playtest copy at the window's natural size.
+from `build-win/`. Drop `01-title.png`, `04-beach.png` and
+`13-printer-stars.png` from `docs/screenshots/` above the text.
 
 ---
 

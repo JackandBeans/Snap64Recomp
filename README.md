@@ -11,13 +11,18 @@ translates the game's MIPS code into C, [N64ModernRuntime](https://github.com/N6
 input and audio. The game's own code runs; the port changes how it is hosted,
 and every change to how it *looks* is off unless you turn it on.
 
+This project is not affiliated with, endorsed by or connected to Nintendo,
+Creatures Inc., GAME FREAK inc., HAL Laboratory or The Pokémon Company;
+Pokémon and Pokémon Snap are their trademarks, and the game is theirs. No
+game data is included: you supply your own cartridge dump. The executable
+does contain the game's code, translated from the builder's own dump into C
+by N64Recomp and compiled, as every N64Recomp port does; `NOTICE.md` says
+exactly what is derived from the game and how.
+
 The title screen's credits line reads `JackandBeans (Snap64 Recomp) · v1.0.0`:
-"JackandBeans" is the name the port's author goes by, an homage to the team
-behind the original game (`src/version.h.in` explains why), "Snap64 Recomp"
-is the port's name, and `1.0.0` is its version. This project is not affiliated with, endorsed by or connected to
-Nintendo, Creatures Inc., GAME FREAK inc., HAL Laboratory or The Pokémon
-Company; Pokémon and Pokémon Snap are their trademarks, and the game is
-theirs. Nothing of the game is included: you supply your own cartridge dump.
+"JackandBeans" is the name the port's author goes by, after the HAL team
+that made the game ("The game, and its history" below), "Snap64 Recomp" is
+the port's name, and `1.0.0` is its version.
 The people and projects this port stands on are thanked under
 [Thanks](#thanks) below.
 
@@ -82,8 +87,9 @@ choice to the score sheet, the Camera Check) are in `docs/screenshots/`.
 
 * A 64-bit Windows 10 or 11 PC (the port asks Windows for per-monitor DPI
   awareness, which needs Windows 10 version 1703 or later). The executable
-  loads `d3d12.dll`, `dxgi.dll` and `vulkan-1.dll` from the system, so the
-  GPU driver must provide Direct3D 12 and the Vulkan loader. The Visual C++
+  imports `d3d12.dll`, `dxgi.dll` and `d3dcompiler_47.dll` from Windows, so
+  the GPU driver must provide Direct3D 12; `vulkan-1.dll` is loaded only if
+  you switch `graphics_api` to Vulkan. The Visual C++
   runtime is linked into the executable; nothing else has to be installed.
 * **Your own dump of the US cartridge**, SHA-1
   `edc7c49cc568c045fe48be0d18011c30f393cbaf` (the checksum the
@@ -115,9 +121,9 @@ to the executable. No console opens: the log is `snap64.log` next to the
 executable, the previous run's is kept as `snap64.prev.log`, and it is the
 first thing to include in a bug report. Started from a terminal, or with its
 output redirected, the port writes there instead and the file is not touched.
-A second copy started from the same folder waits for the first to exit
-(the Snap Station relaunches itself that way) and otherwise tells you the
-port is already running.
+A second copy started while the first is running, from any folder, waits up
+to 25 seconds for it to exit (the Snap Station relaunches itself that way)
+and otherwise tells you the port is already running.
 
 **If Windows or your antivirus objects.** The executable is not signed, so
 the first start may bring up SmartScreen's "Windows protected your PC";
@@ -145,7 +151,7 @@ Everything is in the folder with the executable.
 | --- | --- |
 | `pokemonsnap.z64` | your ROM (you provide it) |
 | `snapsettings.json`, `snapsettings.json.bak` | settings, written by the in-game Graphics and Sound pages and by the hotkeys |
-| `saves/pokemonsnap.bin`, `saves/pokemonsnap.bin.bak` | the game's save data (its EEPROM image) |
+| `saves/pokemonsnap.bin`, `saves/pokemonsnap.bin.bak` | the game's save data, one file (a raw image of the cartridge's save memory) |
 | `photos/` | the photos you save with P or the controller's Back button (see "Photos"); created on the first save |
 | `cache/` | RT64's compiled shaders, the driver's pipeline cache and the seen-shader list; safe to delete, the next start is slower |
 | `snap64.log`, `snap64.prev.log` | the log of this run and of the one before it, written when the port was not started from a terminal |
@@ -153,6 +159,7 @@ Everything is in the folder with the executable.
 | `texture_packs/` | HD texture packs you install yourself, scanned once at start-up; created empty, none ships with this port (see "Mods and texture packs") |
 | `stickers/` | the sticker sheets the Snap Station prints (see "The Snap Station"); created on the first print |
 | `menu_text/recomp_logo.png` | the "Recomp" wordmark on the title screen |
+| `SDL2.dll`, `dxcompiler.dll`, `dxil.dll` | the window, input and audio library, and the shader compiler and validator the renderer needs; leave them beside the executable |
 | `Snap64Recomp.map` | the linker map; include it with crash reports (the `[SNAP-AV]` lines in the log are decoded against it) |
 | `LICENSE`, `NOTICE.md`, `licenses/` | licences |
 
@@ -328,9 +335,10 @@ normal boot, as the kiosk reset the console a second time. That boot opens
 the sheet's folder for you, the way the kiosk handed over the stickers; the
 station is not attached to it, so the title is the ordinary one until you
 choose Snap Station again. Both relaunches come back fullscreen if the
-print was started fullscreen. The lettering on that screen is set from bitmaps of Roboto Regular
-(Apache License 2.0), a freely licensed grotesque of the same construction
-as the printer's own, which cannot be read off a photographed screen;
+print was started fullscreen. The lettering on that screen is set from
+bitmaps of Roboto Regular (Apache License 2.0), a freely licensed grotesque
+of the same construction as the printer's own, which cannot be read off a
+photographed screen;
 `tools/osd_font_gen.py` regenerates them.
 
 What the sheet cannot be: the physical stickers were postage-stamp-sized
@@ -414,9 +422,11 @@ which do not drift between runs the way input readings do),
 `SNAP_PHOTO_AUTOEXPORT` (with `SNAP_STATS`: every photo the game renders is
 saved to `photos/` without a key press, so a replay can prove the export),
 `SNAP_ZDUMP_EVERY` and `SNAP_ZDUMP_START` (with `SNAP_STATS`: the game's
-z-buffer dumped from memory on a reading schedule) and `SNAP_FX_TAGS=0` (the
-effect system's rectangles left unnamed). They are development switches;
-the source is their documentation.
+z-buffer dumped from memory on a reading schedule), `SNAP_FX_TAGS=0` (the
+effect system's rectangles left unnamed), `SNAP_DEV` (RT64's developer
+mode, "Mods and texture packs") and `SNAP_MENU_FONT_DUMP` (the harvested
+menu font written out). They are development switches; the source is their
+documentation.
 
 ## Known limitations
 
@@ -548,11 +558,12 @@ README is that person; no model played the game.
 Every line of the port's own code, its tools and its documentation, this
 README included, was written by Anthropic's Claude models running in Claude
 Code under that direction. The models were Claude Fable 5.1 and Claude
-Fable 5, with Claude Opus 5 for a large share of the commits, Claude Sonnet
-5 in some sessions, and two commits by Claude Opus 4.8. The trailer on each
-commit names the model that wrote it
-(`git log --format=%(trailers:key=Co-Authored-By)`); the earliest
-forty-six commits (17 to 24 August 2026) predate the trailer rule. Fable
+Fable 5, with Claude Opus 5 for a large share of the commits and two
+commits by Claude Opus 4.8; the author also used Claude Sonnet 5 in some
+sessions, and no commit names it. A commit's trailer names the model that
+wrote it (`git log --format=%(trailers:key=Co-Authored-By)`); forty-six
+commits between 18 and 24 August 2026 carry none, from sessions before the
+rule was kept every time. Fable
 5.1, the newest of them, carried the release work: the Snap Station from
 the decompiled protocol to the printer's display, the renderer's
 frame-pacing and identity work, and the audit and packaging of this
@@ -607,7 +618,7 @@ None of this would exist without:
   set from.
 * Anthropic's Claude, which wrote the port ("How it was made" above).
 * The team at HAL Laboratory who made the game in 1999, and whose unused
-  "Jack & Beans" prototype logo, still inside the cartridge, gave the
+  "JACK AND BEANS" prototype logo, still inside the cartridge, gave the
   port's author a name.
 * Everyone who plays it and reports what they see: the first reports from
   other machines are what 1.0.1 will be made of.

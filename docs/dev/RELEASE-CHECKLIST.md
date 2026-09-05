@@ -2,8 +2,18 @@
 
 Compiled 2026-09-04 from a six-lens audit of the repository plus the
 automated suite's results on the rc2 build (18/18, station 5/5). Internal:
-this file, like OVERNIGHT-REPORT-2026-09-03.md, is a working note and should
-leave `docs/` before the repository goes public (item 3.2).
+this file, like OVERNIGHT-REPORT-2026-09-03.md, is a working note kept under
+`docs/dev/` (item 2.14), with `docs/dev/README.md` saying what it is.
+
+**Status on 2026-09-05, before the push.** The executable in the archive is
+built from the release commit, which differs from the last executable the
+suite ran on by the credits string (JackandBeans) and by comments only. On
+that earlier executable the suite passed 21 of 22 on a cold shader cache
+and the one failure (the menu check) passed on re-run; the Snap Station
+print check has NOT been completed on any executable carrying the particle
+depth fix: it was stopped mid-way at the author's request. A full suite run
+plus `--only station` on the archived executable is the remaining
+verification before the push, and this paragraph is replaced by its result.
 
 Legend: **decide** = only the author can settle it; **do** = mechanical, can
 be done on request; **verify** = needs a person or another machine.

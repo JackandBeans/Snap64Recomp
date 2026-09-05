@@ -96,7 +96,8 @@ LIBRARY_EXPORT bool RasterPS(const RenderParams rp, float4 vertexPosition, float
     }
 
     // Quantise the depth this fragment writes onto the hardware's grid. This has to happen after
-    // the clipping above, which must keep testing the raw interpolated value because the hardware
+    // the clipping above, which must keep testing the raw interpolated value (or, for a G_ZS_PRIM
+    // draw, the primitive depth read above) because the hardware
     // clips before it encodes, and after interpolation, which is the only point at which the
     // hardware quantises at all. Snapping per vertex instead flattens the depth gradient across
     // large polygons and loses the geometry entirely.

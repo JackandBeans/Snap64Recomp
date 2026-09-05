@@ -70,10 +70,12 @@ The other `renRenderModelNodeType*` and `renRenderModelType*` functions take
 the same one-line addition when wanted; this one is the smallest and was done
 first.
 
-## render-matrix-tagging.patch
+## The earlier route, and why it was abandoned
 
-An earlier attempt at the same goal by editing the decomp directly and
-rebuilding the ROM. Superseded by the patch mechanism above, which needs no
-rebuild, and kept only as a record of why: growing `.main` by 0x50 bytes moved
+An earlier attempt at the same goal edited the decomp's `render.c` directly
+and rebuilt the ROM (a diff of it was kept here as `render-matrix-tagging.patch`
+until the release; it carried the decomp's own lines and is gone). It was
+superseded by the patch mechanism above, which needs no rebuild; the record
+of why is worth keeping: growing `.main` by 0x50 bytes moved
 `.main_bss`, invalidated the `manual_funcs` addresses and the overlay table,
 and left the original cartridge no longer matching the recompiled code.
