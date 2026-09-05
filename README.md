@@ -424,7 +424,7 @@ the defaults below are that file's.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `fullscreen` | `false` | not persisted across runs: every boot starts windowed, except that the Snap Station's own relaunches return in the state the print started in |
-| `widescreen` | `false` | RT64 Expand: a true 16:9 field of view, not a stretch |
+| `widescreen` | `false` | RT64 Expand: a true 16:9 field of view, not a stretch; the game still culls by its 4:3 view, so objects at the edges vanish ("Known limitations") |
 | `msaa` | `0` | 0, 2, 4 or 8 |
 | `fps_mode` | `0` | 0 Original, 1 Display refresh, 2 Manual (`fps_manual_target`) |
 | `fps_manual_target` | `120` | |
@@ -467,6 +467,14 @@ documentation.
 
 ## Known limitations
 
+* **Widescreen is untested beyond the Beach, and has a known fault there.**
+  The game decides what to draw from its own 4:3 view, so with the wider
+  field of view Pokémon and objects that sit outside the original frame's
+  edges are not drawn: they vanish at the sides of the picture and pop in
+  when the 4:3 frame reaches them. Widening the game's own culling needs a
+  game-side patch and is on the list for 1.0.1. Until then Widescreen is
+  what it says on the page, opt-in, and the console's 4:3 view is the one
+  every course was played and verified in.
 * Some 2D content is drawn without a name the interpolation can pair
   (the photo panels, Oak's thumbnails and full-screen backgrounds while they
   slide during a transition) and steps at the game's rate when it moves;
