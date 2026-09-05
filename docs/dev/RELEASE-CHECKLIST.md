@@ -28,6 +28,11 @@ public, `main` and `v1.0.0` pushed, and the release created on the tag with
 the notes, three screenshots, the archive and its `.sha256`, marked latest.
 The archive downloaded back from GitHub has the checksum above; the badge,
 the README and the screenshots resolve from outside.
+The archive's assets were replaced once after publication, on the same day,
+with a repack around the README's corrected Leonhart wording (`main` at
+daf6d20): the executable inside is byte-identical (b5cdc20d), the archive's
+checksum now begins 55a8da71, and the download and its `.sha256` were
+verified again from GitHub.
 
 Legend: **decide** = only the author can settle it; **do** = mechanical, can
 be done on request; **verify** = needs a person or another machine.
