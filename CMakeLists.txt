@@ -1,5 +1,8 @@
-﻿cmake_minimum_required(VERSION 3.20)
+cmake_minimum_required(VERSION 3.20)
 project(Snap64Recomp VERSION 1.0.0 LANGUAGES C CXX)
+if(APPLE)
+    enable_language(OBJC OBJCXX)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -49,7 +52,7 @@ message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 # =============================================================================
 # Find dependencies
 # =============================================================================
-if (WIN32)
+if (WIN32 OR APPLE)
     set(SDL_TEST OFF CACHE BOOL "" FORCE)
     set(SDL2_DISABLE_INSTALL ON CACHE BOOL "" FORCE)
     add_subdirectory(lib/SDL EXCLUDE_FROM_ALL)
@@ -111,6 +114,7 @@ if (MSVC)
     target_compile_options(recomp_funcs PRIVATE /w /bigobj /O2)
 else()
 target_compile_options(recomp_funcs PRIVATE
+    -fno-strict-aliasing
     -g
     -Wno-unused-variable
     -Wno-unused-parameter
@@ -200,7 +204,7 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/RecompiledPatches/patches.c")
         # /Oi-: the game has functions named sinf and cosf, which MSVC would
         # otherwise replace with its math intrinsics and then reject for
         # taking the recompiler's two arguments.
-        PROPERTIES COMPILE_OPTIONS "$<IF:$<BOOL:${MSVC}>,/w;/O2;/Oi-,-w>")
+        PROPERTIES COMPILE_OPTIONS "$<IF:$<BOOL:${MSVC}>,/w;/O2;/Oi-,-w;-Wno-implicit-function-declaration>")
 
     # The patch ELF's loadable bytes: code the recompiler already turned into
     # C, and the .data section holding every patch's constants (IDO keeps
@@ -230,6 +234,7 @@ set(SNAP_SOURCES
     src/rsp_microcode.cpp
     src/audio.cpp
     src/input.cpp
+    src/controller_support.cpp
     src/os_stubs.cpp
     src/overlay_hook.cpp
     src/matrix_tags.cpp
@@ -253,7 +258,7 @@ set(SNAP_SOURCES
 )
 
 # librecomp's RSP vector-unit implementation uses SSSE3 intrinsics.
-if (NOT MSVC)
+if (NOT MSVC AND CMAKE_SYSTEM_PROCESSOR MATCHES "x86_64|AMD64")
     set_source_files_properties("${SNAP_ASPMAIN_CPP}" PROPERTIES COMPILE_OPTIONS "-msse4.1")
 endif()
 
@@ -334,7 +339,7 @@ if (MSVC)
     # ld, which also covers symbols such as guMtxF2L appearing in several
     # overlay sections.
     target_link_options(Snap64Recomp PRIVATE /FORCE:MULTIPLE /IGNORE:4006 /IGNORE:4088)
-else()
+elseif (NOT APPLE)
     target_link_options(Snap64Recomp PRIVATE
         -Wl,--start-group
         -Wl,--end-group
@@ -356,7 +361,7 @@ endif()
 
 # Compiler warnings for game code
 if (NOT MSVC)
-    target_compile_options(Snap64Recomp PRIVATE -Wall -Wextra -Wno-unused-parameter)
+    target_compile_options(Snap64Recomp PRIVATE -fno-strict-aliasing -Wall -Wextra -Wno-unused-parameter)
 endif()
 
 # =============================================================================
@@ -502,10 +507,16 @@ include(CPack)
 message(STATUS "RT64 backend: ${BUILD_RT64}")
 message(STATUS "Recompiled function sources: ${RECOMP_FUNC_SOURCES}")
 
-
-
-
-
-
-
-
+if(APPLE)
+    file(GLOB_RECURSE SNAP_SETTINGS_SWIFT CONFIGURE_DEPENDS "${CMAKE_SOURCE_DIR}/macos/native-settings/*.swift")
+    set(SNAP_SETTINGS_LIB "${CMAKE_BINARY_DIR}/libSnapSettings.dylib")
+    add_custom_command(OUTPUT "${SNAP_SETTINGS_LIB}"
+        COMMAND xcrun swiftc -swift-version 5 -O -emit-library -parse-as-library
+            -module-name SnapSettings -target arm64-apple-macos14.0
+            -Xlinker -install_name -Xlinker @rpath/libSnapSettings.dylib
+            ${SNAP_SETTINGS_SWIFT} -o "${SNAP_SETTINGS_LIB}"
+        DEPENDS ${SNAP_SETTINGS_SWIFT} VERBATIM)
+    add_custom_target(snap_settings_native DEPENDS "${SNAP_SETTINGS_LIB}")
+    add_dependencies(Snap64Recomp snap_settings_native)
+    target_link_libraries(Snap64Recomp PRIVATE "${SNAP_SETTINGS_LIB}")
+endif()

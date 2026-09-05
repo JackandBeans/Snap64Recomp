@@ -203,10 +203,15 @@ public:
 
         // The backend, chosen before setup creates the device: Direct3D 12
         // unless the settings file asks for Vulkan (settings.h, graphics_api).
+#if defined(__APPLE__)
+        app_->userConfig.graphicsAPI = RT64::UserConfiguration::GraphicsAPI::Metal;
+        printf("[SNAP] graphics API: Metal\n");
+#else
         app_->userConfig.graphicsAPI = (snap::settings().graphics_api == 1)
             ? RT64::UserConfiguration::GraphicsAPI::Vulkan
             : RT64::UserConfiguration::GraphicsAPI::D3D12;
         printf("[SNAP] graphics API: %s\n", (snap::settings().graphics_api == 1) ? "Vulkan (settings)" : "Direct3D 12");
+#endif
 
         // Boot with the saved graphics settings rather than defaults: the
         // antialiasing level in particular tears down and rebuilds the whole

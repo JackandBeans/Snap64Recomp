@@ -63,3 +63,10 @@ desktop.ini
 # N64Recomp ELF dumps (dump.toml, data_dump.toml): nothing reads them; keep local copies out of git.
 dump.toml
 data_dump.toml
+
+# Local macOS toolchain and products
+/build/
+/build-macos/
+/.macos-work/
+/dist/
+.DS_Store

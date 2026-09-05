@@ -5,7 +5,7 @@ set(CMAKE_CXX_VISIBILITY_PRESET hidden)
 
 if (APPLE)
     enable_language(OBJC OBJCXX)
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "10.15")
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0")
 endif()
 
 option(RT64_STATIC "Build RT64 as a static library" OFF)

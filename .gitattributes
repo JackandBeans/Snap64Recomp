@@ -10,6 +10,10 @@ patches/game_syms.ld            linguist-generated
 patches/pokemonsnap.syms.toml   linguist-generated
 # Binary assets, never diffed or line-ending converted.
 *.ico  binary
+*.icns binary
 *.png  binary
 *.bin  binary
 *.inputs binary
+
+# Unified patches intentionally prefix empty context lines with a space.
+macos/decomp-build.patch whitespace=-blank-at-eol

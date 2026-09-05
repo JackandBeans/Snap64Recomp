@@ -1,0 +1,29 @@
+diff --git a/configure.py b/configure.py
+index 3442dc8..ac93646 100755
+--- a/configure.py
++++ b/configure.py
+@@ -34,7 +34,7 @@ IDO_DEFS = "-DF3DEX_GBI_2 -D_LANGUAGE_C -DNDEBUG -D_FINALROM"
+ 
+ CROSS = "mips-linux-gnu-"
+ CROSS_AS = f"{CROSS}as"
+-CROSS_CPP = shutil.which(f"{CROSS}cpp") or shutil.which("cpp") or f"{CROSS}cpp"
++CROSS_CPP = "/usr/bin/clang -E -x assembler-with-cpp" if sys.platform == "darwin" else (shutil.which(f"{CROSS}cpp") or shutil.which("cpp") or f"{CROSS}cpp")
+ CROSS_LD = f"{CROSS}ld"
+ CROSS_STRIP = f"{CROSS}strip"
+ CROSS_OBJCOPY = f"{CROSS}objcopy"
+@@ -299,13 +299,13 @@ def create_build_script(linker_entries: List[LinkerEntry]):
+     ninja.rule(
+         "effect_sprites",
+         description="effect_sprites $in",
+-        command=f"{sys.executable} tools/build/effect_sprites.py $in $out",
++        command=f'"{sys.executable}" tools/build/effect_sprites.py $in $out',
+     )
+ 
+     ninja.rule(
+         "vpk0_compress",
+         description="vpk0 $in",
+-        command=f"{sys.executable} tools/vpk0.py $in $out",
++        command=f'"{sys.executable}" tools/vpk0.py $in $out',
+     )
+ 
+     for entry in linker_entries:
