@@ -36,6 +36,23 @@ Keyboard and controller mappings are under "Controls"; the Graphics and
 Sound pages are on the game's own Options screen; saves live in `saves/`
 next to the executable, so keep that folder when you update.
 
+## Screenshots
+
+<table><tr>
+<td><a href="docs/screenshots/01-title.png"><img src="docs/screenshots/01-title.png" width="400" alt="Title screen"></a></td>
+<td><a href="docs/screenshots/04-beach.png"><img src="docs/screenshots/04-beach.png" width="400" alt="Beach"></a></td>
+</tr><tr>
+<td><a href="docs/screenshots/06-volcano.png"><img src="docs/screenshots/06-volcano.png" width="400" alt="Volcano"></a></td>
+<td><a href="docs/screenshots/09-graphics.png"><img src="docs/screenshots/09-graphics.png" width="400" alt="The Graphics page"></a></td>
+</tr><tr>
+<td><a href="docs/screenshots/11-gallery-print.png"><img src="docs/screenshots/11-gallery-print.png" width="400" alt="The Gallery with the Snap Station's Print"></a></td>
+<td><a href="docs/screenshots/13-printer-stars.png"><img src="docs/screenshots/13-printer-stars.png" width="400" alt="The printer's display"></a></td>
+</tr></table>
+
+Taken from the 1.0.0 build at 1440p with Render Scale 8 and 8x anti-aliasing;
+the rest (the title menu, the course select, the Tunnel, the lab, the Options
+and Sound pages, the printer with its marks) are in `docs/screenshots/`.
+
 ## Status: 1.0.0
 
 * Built and run on one machine: Windows 11, MSVC 2019, a Direct3D 12 GPU. No

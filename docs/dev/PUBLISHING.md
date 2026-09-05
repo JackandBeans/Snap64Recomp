@@ -20,8 +20,10 @@ is yours to press.
    Create the GitHub account with that address; the username is yours to
    choose (the walkthrough below writes `<your-username>`).
 
-2. **Take screenshots** from the playtest copy: the title screen, a course,
-   the Graphics page. They go on the release page and in the README later.
+2. **Screenshots: done.** Thirteen are in `docs/screenshots/` (named 01 to 13),
+   cropped to the game area; the README shows six. For the release page,
+   drag `01-title.png`, `04-beach.png` and `13-printer-stars.png` into the
+   description.
 3. **Try the archive on a machine that has never built the port**, with a
    ROM: `build-win/Snap64Recomp-1.0.0-win64.zip`. It should start, find its
    folder, play, and print. This is the one check the suite cannot do.
