@@ -542,9 +542,10 @@ The same list, with a place to reply, is pinned under
 
 ## What has been verified, and what has not
 
-* Verified in the sense that the developer has played every course, the
-  report, the album, the Gallery and a Snap Station print on the one
-  machine above, and the renderer, audio, saving, the Graphics and Sound
+* Verified in the sense that the developer has play-tested the entire game
+  on the one machine above: every course from the Beach to Rainbow Cloud,
+  Oak's evaluations, the report, the album, the Gallery and a Snap Station
+  print, with the port's own screens and hotkeys along the way, and the renderer, audio, saving, the Graphics and Sound
   pages and the hotkeys listed here all come from the code as it stands
   (`src/settings.cpp`, `src/settings.h`, `src/input.cpp`, `src/main.cpp`).
 * `tools/release_check.py` is the headless suite a release build is put
@@ -690,8 +691,9 @@ below wrote it. JackandBeans is an individual with no studio, no
 collaborators and no funding behind this, who directed the work from the
 first commit on 17 August 2026 to this release. That direction was setting
 the rule the port follows (console behaviour by default), choosing what it
-would and would not do, testing every build on screen, and finding the
-reference material the work needed. That material was the references for
+would and would not do, play-testing every build on screen and the whole
+game through on the release build, and finding the reference material the
+work needed. That material was the references for
 the Snap Station, chief among them Leonhart's recording of a working kiosk,
 the main video of the station in use and the one the printer's display was
 measured against; a published Virtual Console screenshot, found through an
