@@ -51,7 +51,8 @@ next to the executable, so keep that folder when you update.
 
 Taken from the 1.0.0 build at 1440p with Render Scale 8 and 8x anti-aliasing;
 the rest (the title menu, the course select, the Tunnel, the lab, the Options
-and Sound pages, the printer with its marks) are in `docs/screenshots/`.
+and Sound pages, the printer with its marks, Oak's check from the photo
+choice to the score sheet, the Camera Check) are in `docs/screenshots/`.
 
 ## Status: 1.0.0
 
