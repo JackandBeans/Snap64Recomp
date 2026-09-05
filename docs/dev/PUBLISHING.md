@@ -17,8 +17,8 @@ is yours to press.
    from every historical file version that carried it and dropped two
    unused dumps from the first commit; `git grep -i <username>
    $(git rev-list --all)` is the check, and it finds nothing.
-   Create the GitHub account with that address; the username is yours to
-   choose (the walkthrough below writes `<your-username>`).
+   The GitHub account is `JackandBeans`, made with that address; the README
+   names it in "Reporting a bug".
 
 2. **Screenshots: done.** Nineteen are in `docs/screenshots/` (named 01 to 19),
    cropped to the game area; the README shows six. For the release page,
@@ -50,7 +50,7 @@ is yours to press.
 From the repository folder, in the app's terminal:
 
 ```bash
-git remote add origin https://github.com/<your-username>/Snap64Recomp.git
+git remote add origin https://github.com/JackandBeans/Snap64Recomp.git
 ```
 
 ```bash

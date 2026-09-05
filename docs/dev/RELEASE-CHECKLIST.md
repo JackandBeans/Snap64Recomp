@@ -5,15 +5,17 @@ automated suite's results on the rc2 build (18/18, station 5/5). Internal:
 this file, like OVERNIGHT-REPORT-2026-09-03.md, is a working note kept under
 `docs/dev/` (item 2.14), with `docs/dev/README.md` saying what it is.
 
-**Status on 2026-09-05, before the push.** The executable in the archive is
-built from the release commit, which differs from the last executable the
-suite ran on by the credits string (JackandBeans) and by comments only. On
-that earlier executable the suite passed 21 of 22 on a cold shader cache
-and the one failure (the menu check) passed on re-run; the Snap Station
-print check has NOT been completed on any executable carrying the particle
-depth fix: it was stopped mid-way at the author's request. A full suite run
-plus `--only station` on the archived executable is the remaining
-verification before the push, and this paragraph is replaced by its result.
+**Status on 2026-09-05, before the push.** The executable in the archive
+(`Snap64Recomp.exe`, SHA-256 beginning fdc01060; archive 2cb8239c) was
+built from the review commit, whose code differs from the last tested
+build by the credits string and comments only. The suite on that exact
+executable, run without SNAP_STATS in the environment and on a cold shader
+cache: 22 of 22 in 782 s (subsystem, stdio, attract, stats, score, settings,
+menu, package), then `--only station` 5 of 5 in 489 s (the print relaunch
+at 400 s, 16 of 16 slots, the sheet, the final boot). The docs-only commit
+that followed (this paragraph, the reference sources named, the GitHub
+username) leaves the executable's bytes unchanged; the archive was repacked
+around it and the package check re-run.
 
 Legend: **decide** = only the author can settle it; **do** = mechanical, can
 be done on request; **verify** = needs a person or another machine.

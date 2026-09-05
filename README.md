@@ -136,10 +136,11 @@ opens no network connection at all.
 in one file, with one earlier generation kept as `.bak`. Copy `saves/`
 somewhere else before updating the port or trying a Snap Station print.
 
-**Reporting a bug.** Open an issue on this project's GitHub repository (the
-one this README came from) and attach `snap64.log` from the run that went
-wrong, `Snap64Recomp.map` if the log has `[SNAP-AV]` lines, your
-`snapsettings.json`, and what you were doing. Say which GPU and driver you
+**Reporting a bug.** Open an issue at
+`https://github.com/JackandBeans/Snap64Recomp/issues` (the repository this
+README came from) and attach `snap64.log` from the run that went wrong,
+`Snap64Recomp.map` if the log has `[SNAP-AV]` lines, your `snapsettings.json`,
+and what you were doing. Say which GPU and driver you
 have; every run so far has been on one machine. The issue form asks for
 these; `CONTRIBUTING.md` has the ground rules for code.
 
@@ -330,7 +331,8 @@ and after the last one that grid under "PRINTING... PLEASE WAIT" with three
 marks that became stars one by one as its three passes finished. The port
 shows the same, composed from its captures (the grid is kept as
 `printer_display.png`); the pass times are an estimate, the footage this was
-taken from having no clock. Then the port relaunches itself once more into a
+taken from (Leonhart's recording of a working kiosk, "Thanks" below) having
+no clock. Then the port relaunches itself once more into a
 normal boot, as the kiosk reset the console a second time. That boot opens
 the sheet's folder for you, the way the kiosk handed over the stickers; the
 station is not attached to it, so the title is the ordinary one until you
@@ -338,8 +340,7 @@ choose Snap Station again. Both relaunches come back fullscreen if the
 print was started fullscreen. The lettering on that screen is set from
 bitmaps of Roboto Regular (Apache License 2.0), a freely licensed grotesque
 of the same construction as the printer's own, which cannot be read off a
-photographed screen;
-`tools/osd_font_gen.py` regenerates them.
+recording of a curved screen; `tools/osd_font_gen.py` regenerates them.
 
 What the sheet cannot be: the physical stickers were postage-stamp-sized
 prints of a captured analog video signal on a photo printer whose make,
@@ -399,7 +400,7 @@ the defaults below are that file's.
 | `crop_left`, `crop_right`, `crop_top`, `crop_bottom` | `16`, `16`, `12`, `12` | pixels hidden per side when the crop is on |
 | `intro_fix` | `false` | Cutscene Fix: skips the one frame the console drew from inside the player model at the end of the Beach and River intros |
 | `photo_detail` | `false` | Photo Detail: Off draws Oak's photos and the album at native pixels as the console did; On serves them from the renderer's full-resolution render |
-| `jynx_vc` | `false` | Jynx Recolor, Jynx's face and hands: Off: the cartridge's black; On: the purple of the re-releases, matched to a Virtual Console capture |
+| `jynx_vc` | `false` | Jynx Recolor, Jynx's face and hands: Off: the cartridge's black; On: the purple of the re-releases, matched to a published Virtual Console screenshot |
 | `interpolate_camera` | `true` | interpolate the view as well as objects (F4; no row on the Graphics page) |
 | `snap_station` | `false` | keep the Snap Station on port 4 from the title menu on, every start (see "The Snap Station") |
 | `graphics_api` | `0` | 0 Direct3D 12 (every run so far), 1 Vulkan (RT64's other backend, untried here; an escape hatch if D3D12 fails); restart |
@@ -549,11 +550,12 @@ chain, with the tools and inputs at each step, is `BUILDING.md`.
 with no studio, no collaborators and no funding behind this, who directed
 the work from the first commit on 17 August 2026 to this release: set the
 rule the port follows (console behaviour by default), chose what it would
-and would not do, tested every build on screen, and supplied the reference
-material the work needed, from the kiosk footage the printer's display was
-measured against to the Virtual Console capture behind Jynx Recolor and the
-renders the logo was composed from. "The developer" elsewhere in this
-README is that person; no model played the game.
+and would not do, tested every build on screen, and found the reference
+material the work needed: Leonhart's recording of a working kiosk, which the
+printer's display was measured against; a published Virtual Console
+screenshot, found through an image search, that the Jynx colour was matched
+from; and the renders the logo was composed from. "The developer" elsewhere
+in this README is that person; no model played the game.
 
 Every line of the port's own code, its tools and its documentation, this
 README included, was written by Anthropic's Claude models running in Claude
@@ -577,7 +579,7 @@ code before deciding whether a difference was the port's (the intro's
 off-by-one frame, the lab picture's pale edge, the station's boot-time
 printer test); measuring instead of eyeballing (frames compared pixel by
 pixel against the picture in the game's memory, the kiosk's lettering
-measured from photographs of a real screen); building their own
+measured from frames of a recording of a real screen); building their own
 verification (the headless suite that replays controller recordings
 through the real executable and reads back its log and captured frames);
 and writing down every finding, measurement, dead end and revert in the
@@ -609,6 +611,10 @@ None of this would exist without:
   renderer, and its frame interpolation this port extends.
 * James Chambers (jamchamb), whose 2021 work recovered the Snap Station
   protocol from the cartridge without a station to test against.
+* Leonhart, whose [recording of a working Snap Station
+  kiosk](https://youtu.be/lCnvpIEVpqo) is the only picture this port had of
+  the printer's own display: its sticker grid, its marks and stars, and the
+  pace of its three passes were all measured from those frames.
 * [ido-static-recomp](https://github.com/decompals/ido-static-recomp)
   by the decompals, which lets the decompilation's compiler, and so the
   port's patches, build on a modern machine.
