@@ -4,10 +4,11 @@
 
 * Keyboard and mouse support. In a course the mouse aims the camera (the
   cursor is captured while the course runs and the window has focus, and
-  free everywhere else), the left button is A, the right button Z, the
-  middle button B, the wheel C-Down and C-Up, and the side buttons C-Left
-  and C-Right, so the game's own scheme carries over: click to shoot,
-  right-click to zoom, wheel down for the flute. Sensitivity and vertical
+  free everywhere else); wherever the window has focus the left button is
+  A, the right button Z, the middle button B, the wheel C-Down and C-Up,
+  and the side buttons C-Left and C-Right, so the game's own scheme carries
+  over: click to shoot, right-click to zoom, wheel down for the flute, and
+  a click advances Oak's text. Sensitivity and vertical
   inversion are settings. Every keyboard and mouse binding is remappable
   through the settings file's `keys` table; the shipped layout is unchanged.
 * The README says Widescreen is untested beyond the Beach and that the

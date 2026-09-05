@@ -62,8 +62,10 @@ void input_handle_sdl_event(const SDL_Event& event);
 // Called once per update_gfx iteration on the main thread. Captures the
 // cursor (SDL relative mode: hidden, unbounded motion) while mouse aim is
 // on, the window has focus and a course is running (.app_level resident),
-// and releases it otherwise. Only the captured state feeds the game, so a
-// click on the window to focus it, or on a menu, never presses a button.
+// and releases it otherwise. Only the captured motion aims; the buttons
+// and wheel work whenever the window has focus, except for the quarter
+// second after focus arrives, so the click that focuses the window is not
+// a press.
 void input_update_mouse_capture();
 
 // The binding table: an N64 input's name ("a", "b", "z", "start", "l", "r",

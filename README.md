@@ -210,13 +210,14 @@ Keyboard and mouse (`src/input.cpp`), as the port ships them:
 | Start | Enter | | pause |
 | D-pad | Arrow keys | | |
 
-The mouse works while a course runs and the window has focus: the cursor
-is captured and hidden, its motion is the stick, and its buttons are the
-buttons above. Everywhere else (the title, the lab, Oak's check, the
-menus) the cursor is free and the mouse does nothing, so clicking the
-window never presses a button. Moving the mouse turns the view the way
-pushing the stick does: a brisk flick is full deflection, and a still
-mouse is a centred stick. `mouse_sensitivity` in the settings file scales
+The mouse's buttons work whenever the window has focus: a click is A, so
+it advances Oak's text and confirms a menu, and the rest are the buttons
+above. The click that gives the window focus does not count. Its motion
+aims only while a course runs: then the cursor is captured and hidden and
+its motion is the stick; everywhere else (the title, the lab, Oak's check,
+the menus) the cursor is free and moving it does nothing. Moving the mouse
+in a course turns the view the way pushing the stick does: a brisk flick
+is full deflection, and a still mouse is a centred stick. `mouse_sensitivity` in the settings file scales
 it (1 as shipped; 2 twice as quick), `mouse_invert_y` flips the vertical,
 and `mouse_aim` off leaves the mouse alone entirely.
 
@@ -463,7 +464,7 @@ the defaults below are that file's.
 | `jynx_vc` | `false` | Jynx Recolor, Jynx's face and hands: Off: the cartridge's black; On: the purple of the re-releases, matched to a published Virtual Console screenshot |
 | `interpolate_camera` | `true` | interpolate the view as well as objects (F4; no row on the Graphics page) |
 | `snap_station` | `false` | keep the Snap Station on port 4 from the title menu on, every start (see "The Snap Station") |
-| `mouse_aim` | `true` | the mouse aims and its buttons press, while a course runs and the window has focus ("Controls") |
+| `mouse_aim` | `true` | the mouse aims while a course runs and the window has focus ("Controls"); its buttons work whenever the window has focus, through `keys` |
 | `mouse_sensitivity` | `1.0` | how much motion is full deflection: 2 is twice as quick, 0.5 half; 0.1 to 10 |
 | `mouse_invert_y` | `false` | mouse forward tilts the view down |
 | `keys` | the table under "Controls" | what presses each input: SDL key names and the mouse names, one or a list |

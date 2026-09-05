@@ -24,15 +24,18 @@
  * left shoulder as Z, Start, the D-pad, the triggers as L and R, the right
  * stick as the C buttons, the left stick as the stick.
  *
- * The mouse feeds the game only while it is captured: mouse aim on in the
- * settings, the window focused, and a course running (.app_level resident,
+ * The mouse's buttons and wheel work whenever the window has focus, so a
+ * click advances Oak's text and confirms a menu the way A does. Its motion
+ * feeds the game only while it is captured: mouse aim on in the settings,
+ * the window focused, and a course running (.app_level resident,
  * src/overlay_hook.cpp). Then the cursor is hidden and its motion becomes
  * stick deflection, read as a rate: the motion of the last third of a
  * game frame, scaled so a brisk flick reaches full deflection. Outside a
- * course the cursor is free and the mouse does nothing, so a click on the
- * window at the title menu never presses A. A click is latched for a
- * little over one game frame so a tap between two of the game's reads is
- * never lost, and lands as exactly one press.
+ * course the cursor is free and the motion does nothing. The click that
+ * gives the window focus is not a press: buttons are ignored for a quarter
+ * second after focus arrives. A click is latched for a little over one
+ * game frame so a tap between two of the game's reads is never lost, and
+ * lands as exactly one press.
  *
  * Not an N64 button: SDL_CONTROLLER_BUTTON_BACK (Select on most pads) saves
  * the photo on screen, as the same button did on the Wii Virtual Console
@@ -193,6 +196,10 @@ int64_t now_us() {
 
 std::atomic<bool> g_focused{true};
 std::atomic<bool> g_captured{false};
+// The click that focuses the window arrives with the focus; until this
+// moment, buttons are not presses.
+std::atomic<int64_t> g_buttons_from{0};
+constexpr int64_t FocusSettleUs = 250000;
 std::atomic<uint32_t> g_mouse_held{0};                 // bit (1 << button index)
 std::atomic<int64_t> g_mouse_press_until[8] = {};       // latched presses, microseconds
 std::atomic<int64_t> g_wheel_up_until{0};
@@ -303,6 +310,8 @@ Bindings input_bindings() {
 
 void input_handle_sdl_event(const SDL_Event& event) {
     const bool captured = g_captured.load(std::memory_order_relaxed);
+    const bool buttons_live = g_focused.load(std::memory_order_relaxed) &&
+                              (now_us() >= g_buttons_from.load(std::memory_order_relaxed));
     switch (event.type) {
         case SDL_WINDOWEVENT:
             if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
@@ -310,6 +319,7 @@ void input_handle_sdl_event(const SDL_Event& event) {
                 clear_mouse();
             } else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
                 g_focused.store(true, std::memory_order_relaxed);
+                g_buttons_from.store(now_us() + FocusSettleUs, std::memory_order_relaxed);
             }
             break;
         case SDL_MOUSEMOTION:
@@ -320,7 +330,7 @@ void input_handle_sdl_event(const SDL_Event& event) {
             }
             break;
         case SDL_MOUSEBUTTONDOWN:
-            if (captured && event.button.button < 8) {
+            if (buttons_live && event.button.button < 8) {
                 g_mouse_held.fetch_or(1u << event.button.button, std::memory_order_relaxed);
                 g_mouse_press_until[event.button.button].store(now_us() + PressHoldUs, std::memory_order_relaxed);
             }
@@ -331,7 +341,7 @@ void input_handle_sdl_event(const SDL_Event& event) {
             }
             break;
         case SDL_MOUSEWHEEL:
-            if (captured) {
+            if (buttons_live) {
                 const int y = (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) ? -event.wheel.y : event.wheel.y;
                 if (y > 0) g_wheel_up_until.store(now_us() + PressHoldUs, std::memory_order_relaxed);
                 if (y < 0) g_wheel_down_until.store(now_us() + PressHoldUs, std::memory_order_relaxed);
@@ -617,8 +627,7 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
             table = resolved();
         }
         const int64_t t = now_us();
-        const uint32_t held = g_captured.load(std::memory_order_relaxed)
-                                  ? g_mouse_held.load(std::memory_order_relaxed) : 0u;
+        const uint32_t held = g_mouse_held.load(std::memory_order_relaxed);
         for (int i = 0; i < IN_COUNT; i++) {
             bool down = false;
             for (const Source& src : table->sources[i]) {
