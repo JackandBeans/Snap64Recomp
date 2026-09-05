@@ -3,8 +3,8 @@
 // version.h (CMakeLists.txt, "Version").
 #include <winver.h>
 
-// The executable icon (Explorer, the taskbar, the window). Drawn for the
-// port in the wordmark colours: src/snap64.ico, made by tools/icon_gen.py.
+// The executable icon (Explorer, the taskbar, the window): the port's logo,
+// docs/logo.png, composed into src/snap64.ico by tools/icon_gen.py.
 1 ICON "@CMAKE_CURRENT_SOURCE_DIR@/src/snap64.ico"
 
 VS_VERSION_INFO VERSIONINFO

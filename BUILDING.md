@@ -274,9 +274,9 @@ for a release, `rc1` and so on for the candidates before it), and reaches
 the title bar, the log banner, the title screen's credits line, the
 executable's version resource (Properties > Details) and the package name
 from there. The same resource file compiles in the executable's icon,
-`src/snap64.ico`, drawn by `tools/icon_gen.py` (Pillow) in the wordmark's
-colours; the `.ico` is tracked, so the generator runs only when the design
-changes.
+`src/snap64.ico`, composed from the logo (`docs/logo.png`) by
+`tools/icon_gen.py` (Pillow); the `.ico` is tracked, so the generator runs
+only when the logo changes.
 
 ### 12. Runtime files next to the executable
 

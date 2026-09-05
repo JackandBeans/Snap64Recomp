@@ -24,7 +24,8 @@ is yours to press.
    names it in "Reporting a bug".
 
 2. **Screenshots: done.** Nineteen are in `docs/screenshots/` (named 01 to 19),
-   cropped to the game area; the README shows six. For the release page,
+   cropped to the game area; the README shows eight and
+   `docs/SCREENSHOTS.md` all of them with captions. For the release page,
    drag `01-title.png`, `04-beach.png` and `13-printer-stars.png` into the
    description.
 3. **Try the archive on a machine that has never built the port**, with a

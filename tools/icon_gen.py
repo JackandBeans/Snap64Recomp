@@ -1,47 +1,58 @@
-# The executable's icon: src/snap64.ico, drawn here in the title wordmark's
-# colours (a yellow rounded tile with a dark-red rim and a camera lens).
-# Original art, nothing of the game's. Each size is drawn eight times
-# oversize and reduced, so the 16 and 32 px entries are crisp rather than a
-# blurred 256. Run from anywhere; needs Pillow. The .ico is tracked, so this
-# only needs running when the design changes.
+# The executable's icon, src/snap64.ico, composed from the port's logo,
+# docs/logo.png (the author's own art, nothing of the game's). Explorer,
+# the desktop and the taskbar's large sizes show the whole logo: the burst
+# with the Snap64 wordmark and the Recomp filmstrip, fitted to the square.
+# The two smallest entries (24 and 16 px), where the wordmark is a few
+# pixels tall, show the logo's film canister instead, so the icon still
+# reads as a shape in the taskbar's small mode and in a window's title bar.
+# Every size is reduced from the full-resolution logo with a Lanczos filter,
+# so no entry is an upscaled or blurred copy of another. Run from anywhere;
+# needs Pillow. The .ico is tracked, so this only needs running when the logo
+# changes.
 import os
-from PIL import Image, ImageDraw
+from PIL import Image
 
-YELLOW = (248, 192, 0, 255)
-RED = (168, 24, 0, 255)
-ORANGE = (224, 64, 0, 255)
-BLACK = (24, 16, 8, 255)
-WHITE = (255, 248, 224, 255)
-CLEAR = (0, 0, 0, 0)
+HERE = os.path.dirname(os.path.abspath(__file__))
+ROOT = os.path.dirname(HERE)
+LOGO = os.path.join(ROOT, 'docs', 'logo.png')
+OUT = os.path.join(ROOT, 'src', 'snap64.ico')
+
+# The canister in the logo's lower right (pixel box in docs/logo.png).
+CANISTER = (1000, 560, 1095, 700)
 
 
-def draw(s):
-    ss = 8
-    S = s * ss
-    im = Image.new('RGBA', (S, S), CLEAR)
-    d = ImageDraw.Draw(im)
-    rim = max(1, round(s * 0.075)) * ss
-    rad = int(S * 0.22)
-    d.rounded_rectangle((0, 0, S - 1, S - 1), rad, fill=RED)
-    d.rounded_rectangle((rim, rim, S - 1 - rim, S - 1 - rim), max(1, rad - rim), fill=YELLOW)
-    c = S / 2 + S * 0.03  # the lens sits a little low, under the button
+def alpha_bbox(im):
+    """The box of every pixel that is not fully transparent."""
+    return im.getchannel('A').point(lambda a: 255 if a > 8 else 0).getbbox()
 
-    def disc(r, col, cx=S / 2, cy=None):
-        cy = c if cy is None else cy
-        d.ellipse((cx - r, cy - r, cx + r, cy + r), fill=col)
 
-    disc(S * 0.30, RED)
-    disc(S * 0.24, ORANGE)
-    disc(S * 0.17, BLACK)
-    disc(S * 0.045, WHITE, S / 2 - S * 0.065, c - S * 0.065)
-    if s > 20:  # the shutter button on the rim, top left; too small below 24 px
-        d.rounded_rectangle((S * 0.20, S * 0.06, S * 0.36, S * 0.145), int(S * 0.02), fill=RED)
-    return im.resize((s, s), Image.LANCZOS)
+def fit(im, s, pad=0.02):
+    """im fitted into an s-by-s transparent square, centred, with a small
+    margin so the burst's tips do not touch the edge."""
+    im = im.crop(alpha_bbox(im))
+    w, h = im.size
+    inner = s * (1 - 2 * pad)
+    k = min(inner / w, inner / h)
+    im = im.resize((max(1, round(w * k)), max(1, round(h * k))), Image.LANCZOS)
+    sq = Image.new('RGBA', (s, s), (0, 0, 0, 0))
+    sq.paste(im, ((s - im.width) // 2, (s - im.height) // 2), im)
+    return sq
+
+
+def main():
+    logo = Image.open(LOGO).convert('RGBA')
+    canister = logo.crop(CANISTER)
+    frames = []
+    for s in (256, 128, 64, 48, 32):
+        frames.append(fit(logo, s))
+    for s in (24, 16):
+        frames.append(fit(canister, s, pad=0.0))
+    # Pillow writes one .ico with every frame as its own entry when given
+    # append_images; the first frame's size list must name them all.
+    frames[0].save(OUT, format='ICO', sizes=[f.size for f in frames],
+                   append_images=frames[1:])
+    print('wrote', OUT, [f.size for f in frames])
 
 
 if __name__ == '__main__':
-    sizes = [256, 64, 48, 32, 24, 16]
-    ims = [draw(s) for s in sizes]
-    out = os.path.join(os.path.dirname(os.path.abspath(__file__)), '..', 'src', 'snap64.ico')
-    ims[0].save(out, format='ICO', sizes=[(s, s) for s in sizes], append_images=ims[1:])
-    print('wrote', os.path.normpath(out), 'sizes', sizes)
+    main()

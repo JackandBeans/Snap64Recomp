@@ -65,20 +65,24 @@ next to the executable, so keep that folder when you update.
 ## Screenshots
 
 <table><tr>
-<td><a href="docs/screenshots/01-title.png"><img src="docs/screenshots/01-title.png" width="400" alt="Title screen"></a></td>
-<td><a href="docs/screenshots/04-beach.png"><img src="docs/screenshots/04-beach.png" width="400" alt="Beach"></a></td>
+<td><a href="docs/screenshots/01-title.png"><img src="docs/screenshots/01-title.png" width="400" alt="The title screen"></a></td>
+<td><a href="docs/screenshots/03-course-select.png"><img src="docs/screenshots/03-course-select.png" width="400" alt="Course select"></a></td>
 </tr><tr>
-<td><a href="docs/screenshots/06-volcano.png"><img src="docs/screenshots/06-volcano.png" width="400" alt="Volcano"></a></td>
-<td><a href="docs/screenshots/09-graphics.png"><img src="docs/screenshots/09-graphics.png" width="400" alt="The Graphics page"></a></td>
+<td><a href="docs/screenshots/04-beach.png"><img src="docs/screenshots/04-beach.png" width="400" alt="The Beach: Pikachu on the sand"></a></td>
+<td><a href="docs/screenshots/06-volcano.png"><img src="docs/screenshots/06-volcano.png" width="400" alt="The Volcano: Charizard's Flamethrower"></a></td>
+</tr><tr>
+<td><a href="docs/screenshots/16-oak-check-close.png"><img src="docs/screenshots/16-oak-check-close.png" width="400" alt="Oak's check: the chosen Pikachu photo"></a></td>
+<td><a href="docs/screenshots/09-graphics.png"><img src="docs/screenshots/09-graphics.png" width="400" alt="The port's Graphics page"></a></td>
 </tr><tr>
 <td><a href="docs/screenshots/11-gallery-print.png"><img src="docs/screenshots/11-gallery-print.png" width="400" alt="The Gallery with the Snap Station's Print"></a></td>
-<td><a href="docs/screenshots/13-printer-stars.png"><img src="docs/screenshots/13-printer-stars.png" width="400" alt="The printer's display"></a></td>
+<td><a href="docs/screenshots/13-printer-stars.png"><img src="docs/screenshots/13-printer-stars.png" width="400" alt="The printer's display, three stars"></a></td>
 </tr></table>
 
-Taken from the 1.0.0 build at 1440p with Render Scale 8 and 8x anti-aliasing;
-the rest (the title menu, the course select, the Tunnel, the lab, the Options
-and Sound pages, the printer with its marks, Oak's check from the photo
-choice to the score sheet, the Camera Check) are in `docs/screenshots/`.
+Taken from the 1.0.0 build at 1440p with Render Scale and Anti-Aliasing both
+at 8x on the Graphics page, cropped to the game's picture. All nineteen, with
+a caption each (the title menu, the Tunnel, the lab, the Options and Sound
+pages, the printer's marks, Oak's check from the photo choice to the score
+sheet, the Camera Check), are in [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md).
 
 ## Status: 1.0.0
 
