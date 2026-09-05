@@ -16,7 +16,12 @@ twice before that day, on builds differing only in the credits string, the
 file properties and the icon. The archive was repacked after the run, because the
 README and NOTICE inside it changed (this run's numbers, then a proofreading
 pass); the executable's bytes are unchanged and the package check passed
-again (5 of 5) each time.
+again (5 of 5) each time. The archive itself was then unpacked into an
+empty folder with a ROM beside the executable and run from there through
+the subsystem, stdio and attract checks, on a cold shader cache: 8 of 8 in
+123 s, the folder gaining `cache/`, `saves/`, `mod_config/` and the logs as
+the README describes. That is the nearest this machine can come to a
+stranger's first start; item 1.7 (another machine) stays open.
 
 Legend: **decide** = only the author can settle it; **do** = mechanical, can
 be done on request; **verify** = needs a person or another machine.
