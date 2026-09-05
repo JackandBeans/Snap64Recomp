@@ -25,15 +25,13 @@ does contain the game's code, translated from the builder's own dump into C
 by N64Recomp and compiled, as every N64Recomp port does; `NOTICE.md` says
 exactly what is derived from the game and how.
 
-The title screen's credits line reads `JackandBeans (Snap64 Recomp) · v1.0.0`:
-"JackandBeans" is the name the port's author goes by, after the HAL team
-that made the game ("The game, and its history" below), "Snap64 Recomp" is
-the port's name, and `1.0.0` is its version.
-The people and projects this port stands on are thanked under
-[Thanks](#thanks) below.
+The title screen's credits line, `JackandBeans (Snap64 Recomp) · v1.0.0`, is
+the author's name, the port's name and its version; the name comes from the
+HAL team that made the game ([The game, and its history](#the-game-and-its-history)).
+The people and projects this port stands on are thanked under [Thanks](#thanks).
 
 **Contents:** [Get it running](#get-it-running) ·
-[Screenshots](#screenshots) · [Status](#status-100) ·
+[Screenshots](#screenshots) ·
 [What you need](#what-you-need) · [Running](#running)
 ([where things live](#where-things-live), [controls](#controls),
 [the rule the port follows](#the-rule-the-port-follows),
@@ -41,26 +39,42 @@ The people and projects this port stands on are thanked under
 [the Snap Station](#the-snap-station),
 [mods and texture packs](#mods-and-texture-packs),
 [settings file](#settings-file)) ·
-[Known limitations](#known-limitations) ·
+[Known limitations](#known-limitations) · [Status](#status) ·
 [What has been verified](#what-has-been-verified-and-what-has-not) ·
 [Building](#building) · [The game, and its history](#the-game-and-its-history) ·
 [How it was made](#how-it-was-made) · [Thanks](#thanks) · [License](#license)
 
 ## Get it running
 
+You need a 64-bit Windows 10 or 11 PC whose graphics driver provides
+Direct3D 12, and your own dump of the US cartridge; nothing has to be
+installed. Then:
+
 1. Download `Snap64Recomp-1.0.0-win64.zip` from the
    [Releases](https://github.com/JackandBeans/Snap64Recomp/releases/latest)
-   page and unpack it anywhere.
-2. Put your own dump of the US cartridge, named `pokemonsnap.z64`, next to
-   `Snap64Recomp.exe` (its SHA-1 is under "What you need" below).
-3. Start `Snap64Recomp.exe`. Windows 10 or 11, 64-bit, a GPU driver with
-   Direct3D 12; nothing else to install. The first start compiles shaders and
-   takes a little longer; if SmartScreen objects, "More info", then "Run
-   anyway", once.
+   page and unpack it anywhere; it holds one folder,
+   `Snap64Recomp-1.0.0-win64`, with `Snap64Recomp.exe` inside.
+2. Put your own dump of the US cartridge (the ROM: the cartridge's contents
+   read out into one file) next to `Snap64Recomp.exe`, named
+   `pokemonsnap.z64`. You do not have to check the file yourself: a missing
+   or wrong one is reported in a dialog before the window opens, with the
+   expected and the actual checksum ("What you need" below has the expected
+   one).
+3. Start `Snap64Recomp.exe`. Because the executable is not signed, Windows
+   may first show a "Windows protected your PC" box (SmartScreen): click
+   "More info", then "Run anyway", and it will not ask again. The first start
+   then takes a little longer than later ones while the renderer builds the
+   shader programs your GPU needs; they are kept in `cache/`, so the next
+   start is quick.
 
-Keyboard and controller mappings are under "Controls"; the Graphics and
-Sound pages are on the game's own Options screen; saves live in `saves/`
-next to the executable, so keep that folder when you update.
+The window's maximize button switches to fullscreen (F11 does the same)
+and **Esc quits**. Keyboard and controller mappings are under
+[Controls](#controls); the Graphics and Sound pages are on the game's own
+Options screen, reached from the title menu ([In-game
+pages](#in-game-pages)); saves live in `saves/` next to the executable, so
+keep that folder when you update. If something goes wrong, the paragraphs
+under [Running](#running) say what Windows or an antivirus may object to
+and what to attach to a bug report.
 
 ## Screenshots
 
@@ -84,54 +98,33 @@ a caption each (the title menu, the Tunnel, the lab, the Options and Sound
 pages, the printer's marks, Oak's check from the photo choice to the score
 sheet, the Camera Check), are in [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md).
 
-## Status: 1.0.0
-
-* Built and run on one machine: Windows 11, MSVC 2019, a Direct3D 12 GPU. No
-  other platform, GPU or compiler has been tried; the first report from a
-  different machine is welcome, good or bad.
-* **Buildable from a clean checkout, in two steps beyond `git clone`.**
-  `python tools/fetch_deps.py` fetches the vendored trees (SDL,
-  DirectX-Headers, RT64's third-party trees) at the recorded upstream commits
-  and verifies them; the recompiled game and the recompiler's inputs
-  (`RecompiledFuncs/`, `RecompiledPatches/`, the ROM) are generated under WSL
-  from your own cartridge dump. A second checkout built this way, on this
-  machine, on 2026-09-02 (`BUILDING.md`, "What a clean checkout is missing").
-* No CI and no installer. The release archive is the ZIP that `cpack`
-  writes (`BUILDING.md`, step 13), after the headless suite in
-  `tools/release_check.py` has passed on it ("What has been verified").
-* Version `1.0.0`, typed once in `CMakeLists.txt` and shown in the title
-  bar, the log banner, the credits line, the executable's file properties and
-  the ZIP's name. `CHANGELOG.md` says what each release changed.
-* Licensed under the GPLv3 (`LICENSE`); `NOTICE.md` lists every third-party
-  component. No file in the tree carries the game's bytes: the menu font is
-  cut from the game's own sprites in memory at run time, and the audio
-  microcode is recompiled from the builder's ROM at build time (`NOTICE.md`,
-  last section).
-
 ## What you need
 
 * A 64-bit Windows 10 or 11 PC (the port asks Windows for per-monitor DPI
   awareness, which needs Windows 10 version 1703 or later). The executable
   imports `d3d12.dll`, `dxgi.dll` and `d3dcompiler_47.dll` from Windows, so
   the GPU driver must provide Direct3D 12; `vulkan-1.dll` is loaded only if
-  you switch `graphics_api` to Vulkan. The Visual C++
-  runtime is linked into the executable; nothing else has to be installed.
-* **Your own dump of the US cartridge**, SHA-1
-  `edc7c49cc568c045fe48be0d18011c30f393cbaf` (the checksum the
-  [decompilation project](https://github.com/ethteck/pokemonsnap) publishes).
-  Name it `pokemonsnap.z64` and put it next to `Snap64Recomp.exe` (the
-  port reads its own folder, not the working directory; see "Where things
-  live"). Byte-swapped `.v64` and little-endian
-  `.n64` dumps are accepted -- the runtime detects the order from the header
-  and corrects it in memory without touching the file -- but the file name is
-  fixed, so rename such a dump to `pokemonsnap.z64`. A missing, unreadable or
-  wrong-revision file produces a dialog before the window opens; a wrong dump
-  shows both the expected and the actual hash. The ROM is never included
-  with this project.
-* Beside `Snap64Recomp.exe`: `SDL2.dll`, `dxcompiler.dll`, `dxil.dll` (the
-  build places them there; `BUILDING.md`, step 12), and optionally
-  `menu_text/recomp_logo.png` for the "Recomp" badge under the title logo (no
-  file, no badge).
+  you switch the renderer to Vulkan (`graphics_api` in the settings file,
+  "Settings file" below). The Visual C++ runtime is linked into the
+  executable; nothing else has to be installed.
+* **Your own dump of the US cartridge**, whose SHA-1 checksum (a fingerprint
+  of the file's contents) is `edc7c49cc568c045fe48be0d18011c30f393cbaf`, the
+  value the [decompilation project](https://github.com/ethteck/pokemonsnap)
+  publishes. Name it `pokemonsnap.z64` and put it next to `Snap64Recomp.exe`
+  (the port reads its own folder, not the working directory; see "Where
+  things live"). A dump saved as `.v64` or `.n64` (the same data in another
+  byte order) works too: the port detects the order from the file's header
+  and corrects it in memory without touching the file. The file name is
+  fixed, though, so rename such a dump to `pokemonsnap.z64`. A file that is
+  missing, cannot be read or is another revision of the game produces a
+  dialog before the window opens; a wrong dump shows both the expected and
+  the actual checksum, so you need not compute it yourself. The ROM is never
+  included with this project.
+* Beside `Snap64Recomp.exe`: `SDL2.dll`, `dxcompiler.dll` and `dxil.dll`,
+  and optionally `menu_text/recomp_logo.png` for the "Recomp" badge under the
+  title logo (no file, no badge). The release ZIP already holds all of them;
+  if you build the port yourself, the build places them there
+  (`BUILDING.md`, step 12).
 
 ## Running
 
@@ -141,11 +134,15 @@ directory (`src/paths.cpp`). It opens a 1280x960 window titled
 `Snap64 Recomp 1.0.0`; `SNAP_WINDOW=WxH` in the environment opens it at
 an exact size instead (at least 320x240). The window's maximize button is the
 fullscreen switch; the in-game Graphics page and F11 do the same. **Esc
-quits.** Saves go to `saves/` and settings to `snapsettings.json`, both next
-to the executable. No console opens: the log is `snap64.log` next to the
-executable, the previous run's is kept as `snap64.prev.log`, and it is the
-first thing to include in a bug report. Started from a terminal, or with its
-output redirected, the port writes there instead and the file is not touched.
+quits.**
+
+Saves go to `saves/` and settings to `snapsettings.json`, both next to the
+executable. No console opens: the log is `snap64.log` next to the
+executable, and the previous run's log is kept as `snap64.prev.log`.
+`snap64.log` is the first thing to include in a bug report. Started from a
+terminal, or with its output redirected, the port writes the log there
+instead and the file is not touched.
+
 A second copy started while the first is running, from any folder, waits up
 to 25 seconds for it to exit (the Snap Station relaunches itself that way)
 and otherwise tells you the port is already running.
@@ -162,12 +159,12 @@ in one file, with one earlier generation kept as `.bak`. Copy `saves/`
 somewhere else before updating the port or trying a Snap Station print.
 
 **Reporting a bug.** Open an issue at
-`https://github.com/JackandBeans/Snap64Recomp/issues` (the repository this
-README came from) and attach `snap64.log` from the run that went wrong,
-`Snap64Recomp.map` if the log has `[SNAP-AV]` lines, your `snapsettings.json`,
-and what you were doing. Say which GPU and driver you
+[github.com/JackandBeans/Snap64Recomp/issues](https://github.com/JackandBeans/Snap64Recomp/issues)
+(the repository this README came from) and attach `snap64.log` from the run
+that went wrong, `Snap64Recomp.map` if the log has `[SNAP-AV]` lines, your
+`snapsettings.json`, and what you were doing. Say which GPU and driver you
 have; every run so far has been on one machine. The issue form asks for
-these; `CONTRIBUTING.md` has the ground rules for code.
+these; [CONTRIBUTING.md](CONTRIBUTING.md) has the ground rules for code.
 
 ### Where things live
 
@@ -227,28 +224,31 @@ aspect ratio, anti-aliasing, overscan, the intro's camera hand-off, texture
 filtering, dithering: all start as the console had them. What you turn on in
 the in-game **Graphics** page (a new item on the game's own Options screen) or
 with the hotkeys is what changes, and only that. Three defaults are worth
-knowing about because they are not literally the console's: the 3D render
-resolution follows the window (`resolution_scale` 0; set 1 for 320x240), 2D
-content that would be scaled anyway is drawn sharp (`upscale_2d` 1; set 0
-for the original pixels), and the finished frame is put on screen with
-RT64's anti-aliased pixel scaling rather than raw nearest pixels
-(`present_filter` 2; set 0 for the blocks). Each is one setting away from
-the original.
+knowing about because they are not literally the console's; the key in
+parentheses after each is its name in the settings file ("Settings file"
+below). The 3D render resolution follows the window (`resolution_scale` 0;
+set 1 for 320x240). 2D content that would be scaled anyway is drawn sharp
+(`upscale_2d` 1; set 0 for the original pixels). The finished frame is put
+on screen with RT64's anti-aliased pixel scaling rather than raw nearest
+pixels (`present_filter` 2; set 0 for the blocks). Each is one setting away
+from the original.
 
 Two mechanics depend on the game reading back its own rendered frame: photo
 scoring re-renders the photographed Pokémon and counts pixels, and the
 viewfinder's red focus dot is found by copying tiles of the colour buffer.
 Frame interpolation (Frame Rate set to Display or Manual) presents frames the
 game never drew; the window title says `interpolation ON (F8)` while it is on.
-Colours the game steps once per frame are blended too: the fade to black
-between screens is a full-screen quad whose alpha the game moves per tick,
-and a draw matched to its previous frame's blends that colour between the
-two, so the fade moves at the display's rate like everything behind it.
-Photo scoring was measured working with it on (five photos, the game's own
-pixel counts reproduced exactly), because the readback uses the frames the
-game draws, not the synthetic ones between them. The focus dot under
-interpolation has not been re-measured and should be treated as unverified.
-Original is the default because it is the console's rate.
+Colours the game steps once per frame are blended too. The fade to black
+between screens is a full-screen quad whose alpha the game moves once per
+tick; when that draw is matched to the same draw in the previous frame, the
+interpolation blends the colour between the two, so the fade moves at the
+display's rate like everything behind it.
+Photo scoring was measured working with interpolation on (five photos, the
+game's own pixel counts reproduced exactly), because the readback uses the
+frames the game draws, not the synthetic ones between them. The focus dot
+under interpolation has not been re-measured and should be treated as
+unverified. Original, the Frame Rate row's first choice, is the default
+because it is the console's rate.
 
 ### In-game pages
 
@@ -266,9 +266,10 @@ Volume, Speaker Output (Stereo/Mono), Background Mute.
 
 ### Hotkeys
 
-From `handle_settings_hotkey` in `src/settings.cpp` (Esc is `src/main.cpp`'s).
-Settings hotkeys also mark the file for writing. Keys marked *diagnostic*
-exist for investigating the renderer and are not features.
+The hotkeys are handled in `handle_settings_hotkey` in `src/settings.cpp`
+(Esc is handled in `src/main.cpp`). A hotkey that changes a setting also
+marks `snapsettings.json` for writing. Keys marked *diagnostic* exist for
+investigating the renderer and are not features.
 
 | Key | Effect |
 | --- | --- |
@@ -291,46 +292,50 @@ exist for investigating the renderer and are not features.
 
 ### Photos
 
-Every photo the game shows you -- the picks after a course, Oak's check, the
-album, the report -- is drawn the same way: the game rebuilds the photo's saved
-state as objects and renders them once into a 320x210 buffer in memory (the
-size it asks for varies by screen, up to that), then shows that buffer as a
-sprite. With render-to-RAM on, which it is unless you turn it off, the rendered
-pixels are written back into that buffer, which is what lets the game score
-photos at all. **P**, or the controller's **Back** button, saves that buffer's
-rendered region as a PNG: the photo at the game's own resolution, pixel for
-pixel, with no scaling, no frame and no text over it. Files go to `photos/`
-next to the executable, named `snap_YYYYMMDD_HHMMSS_<course>_NN.png` (the
-course is left out if the game's own record of it cannot be read), and the log
-prints `[SNAP] photo saved: <path>` or the reason it was not: no photo has been
-rendered yet, no photo is on screen, or render-to-RAM is off. Nintendo's 2007
-Wii Virtual Console release added the same thing -- Select in the album posted
-the photo on screen to the Wii Message Board -- so this is an enhancement with
-a precedent, and one that draws nothing on screen. The code is
-`src/photo_export.cpp`.
+**P**, or the controller's **Back** button, saves the photo on screen as a PNG:
+the photo at the game's own resolution, pixel for pixel, with no scaling, no
+frame and no text over it. Files go to `photos/` next to the executable, named
+`snap_YYYYMMDD_HHMMSS_<course>_NN.png` (the course is left out if the game's
+own record of it cannot be read), and the log prints `[SNAP] photo saved:
+<path>` or the reason it was not: no photo has been rendered yet, no photo is
+on screen, or render-to-RAM is off.
+
+What is saved is the game's own buffer. Every photo the game shows you (the
+picks after a course, Oak's check, the album, the report) is drawn the same
+way: the game rebuilds the photo's saved state as objects and renders them
+once into a 320x210 buffer in memory (the size it asks for varies by screen,
+up to that), then shows that buffer as a sprite. With render-to-RAM on, which
+it always is in ordinary play (only the F6 diagnostic under `SNAP_STATS=1`
+turns it off), the rendered pixels are written back into that buffer, which is
+what lets the game score photos at all, and the export writes that buffer's
+rendered region out. Nintendo's 2007 Wii Virtual Console release added the
+same thing (Select in the album posted the photo on screen to the Wii Message
+Board), so this is an enhancement with a precedent, and one that draws nothing
+on screen. The code is `src/photo_export.cpp`.
 
 ### The Snap Station
 
-The Pokémon Snap Station was the Blockbuster Video kiosk of 1999 (Lawson
-stores in Japan) that printed a player's photos as a sheet of sixteen
-stickers, for three dollars (300 yen) of credit carried on a Pokémon smart
-card. Inside it a Nintendo 64 with the Expansion Pak ran the ordinary
-retail cartridge, and the printer sat on controller port 4, where the game
-speaks to it as if it were a Controller Pak; every retail cartridge carries
-the code, and the protocol was recovered without a station by James Chambers
-in 2021 and matches the decompilation line for line. The port emulates the
-device on port 4.
+The port emulates the Pokémon Snap Station's printer on controller port 4.
+The station was the Blockbuster Video kiosk of 1999 (Lawson stores in Japan)
+that printed a player's photos as a sheet of sixteen stickers; inside it a
+Nintendo 64 with the Expansion Pak ran the ordinary retail cartridge, and the
+printer sat on controller port 4, where the game speaks to it as if it were a
+Controller Pak. Every retail cartridge carries the code, and the protocol was
+recovered without a station by James Chambers in 2021 and matches the
+decompilation line for line. The kiosk's own story (the cards, the prices,
+how many were built) is under [The game, and its history](#the-game-and-its-history).
 
 It is reached from the title screen. Once the saved report holds more than
 three species, the game adds its Gallery entry to the title menu, and the
 port adds a fifth entry below it, **Snap Station**, drawn in the title's
 own lettering. Choosing it attaches the station to port 4 for this run and
 opens the game's own Gallery, exactly as the Gallery entry does; nothing is
-written to the settings. (The console at home had no station, so port 4
-is empty otherwise; `"snap_station": true` in `snapsettings.json` keeps it
-attached on every start instead, from the moment the title menu is up: the
-game tests port 4 for the printer once at boot and would go straight to the
-printer's display if it found one, so the station appears after that test.)
+written to the settings. The console at home had no station, so port 4
+is empty otherwise. `"snap_station": true` in `snapsettings.json` keeps the
+station attached on every start instead, from the moment the title menu is
+up. It cannot be attached earlier: the game tests port 4 for the printer
+once at boot and would go straight to the printer's display if it found one,
+so the station appears after that test.
 
 In the Gallery with the station attached, the game shows the Print button
 the kiosk showed, above Save, with the game's own help text about a print
@@ -351,15 +356,19 @@ hem; on the fourth slot alone the game draws its black rights line along
 the bottom, for no reason any source explains. When the display
 ends the sixteen captures are laid out into `stickers/<date>/sheet.png`
 (and `sheet_presented.png` from the renderer's frames, with the sixteen
-singles in `slots/`). The kiosk's printer had a screen of its own, laid over the
-video: after each slot it showed the sticker grid it had collected so far,
-and after the last one that grid under "PRINTING... PLEASE WAIT" with three
-marks that became stars one by one as its three passes finished. The port
-shows the same, composed from its captures (the grid is kept as
-`printer_display.png`); the pass times are an estimate, the footage this was
-taken from (Leonhart's recording of a working kiosk, "Thanks" below) having
-no clock. Then the port relaunches itself once more into a
-normal boot, as the kiosk reset the console a second time. That boot opens
+singles in `slots/`).
+
+The kiosk's printer had a screen of its own, laid over the video: after each
+slot it showed the sticker grid it had collected so far, and after the last
+one that grid under "PRINTING... PLEASE WAIT" with three marks that became
+stars one by one as its three passes finished. The port shows the same,
+composed from its captures (the grid is kept as `printer_display.png`). The
+pass times are an estimate, because the footage they were taken from
+(Leonhart's recording of a working kiosk, [Thanks](#thanks) below) has no
+clock.
+
+Then the port relaunches itself once more into a normal boot, as the kiosk
+reset the console a second time. That boot opens
 the sheet's folder for you, the way the kiosk handed over the stickers; the
 station is not attached to it, so the title is the ordinary one until you
 choose Snap Station again. Both relaunches come back fullscreen if the
@@ -369,12 +378,12 @@ of the same construction as the printer's own, which cannot be read off a
 recording of a curved screen; `tools/osd_font_gen.py` regenerates them.
 
 What the sheet cannot be: the physical stickers were postage-stamp-sized
-prints of a captured analog video signal on a photo printer whose make,
-media size and colour processing the public sources do not agree on, so the
-files are the pixels the game sent at their native size and the layout the
+prints of a captured analog video signal, made on a photo printer whose make,
+media size and colour processing the public sources do not agree on. So the
+files are the pixels the game sent, at their native size and in the layout the
 game defined, not a scan of a Blockbuster sheet. Nothing of the kiosk ships
-with the port; every pixel on the sheet is the player's own photo drawn by
-the game from the player's own save.
+with the port; every pixel on the sheet is the player's own photo drawn by the
+game from the player's own save.
 
 ### Mods and texture packs
 
@@ -465,7 +474,10 @@ documentation.
   construction as the printer's, whose own character set no source records,
   and its pass timings are estimates from footage without a clock.
 * Vulkan (`graphics_api` 1) is compiled in but has never been run by the
-  developer; it exists for a machine whose Direct3D 12 path fails.
+  developer; it exists for a machine whose Direct3D 12 path fails. To try
+  it, add `"graphics_api": 1` to `snapsettings.json` next to the executable,
+  or create that file containing just `{"graphics_api": 1}` (a key the file
+  lacks keeps its default), and start the port again.
 * Keyboard bindings cannot be remapped.
 * With Overscan Crop off, the whole 320x240 frame is on screen, including
   the columns and rows a television hid, and some of the game's own art has
@@ -474,6 +486,30 @@ documentation.
   lab's translucent panel. The console drew the same pixels (verified
   against the picture as the game holds it in memory); Overscan Crop (F2)
   is the television's view.
+
+## Status
+
+* Built and run on one machine: Windows 11, MSVC 2019, a Direct3D 12 GPU. No
+  other platform, GPU or compiler has been tried; the first report from a
+  different machine is welcome, good or bad.
+* **Buildable from a clean checkout, in two steps beyond `git clone`.**
+  `python tools/fetch_deps.py` fetches the vendored trees (SDL,
+  DirectX-Headers, RT64's third-party trees) at the recorded upstream commits
+  and verifies them; the recompiled game and the recompiler's inputs
+  (`RecompiledFuncs/`, `RecompiledPatches/`, the ROM) are generated under WSL
+  from your own cartridge dump. A second checkout built this way, on this
+  machine, on 2026-09-02 (`BUILDING.md`, "What a clean checkout is missing").
+* No CI and no installer. The release archive is the ZIP that `cpack`
+  writes (`BUILDING.md`, step 13), after the headless suite in
+  `tools/release_check.py` has passed on it ("What has been verified").
+* Version `1.0.0`, typed once in `CMakeLists.txt` and shown in the title
+  bar, the log banner, the credits line, the executable's file properties and
+  the ZIP's name. `CHANGELOG.md` says what each release changed.
+* Licensed under the GPLv3 (`LICENSE`); `NOTICE.md` lists every third-party
+  component. No file in the tree carries the game's bytes: the menu font is
+  cut from the game's own sprites in memory at run time, and the audio
+  microcode is recompiled from the builder's ROM at build time (`NOTICE.md`,
+  last section).
 
 ## What has been verified, and what has not
 
@@ -491,12 +527,12 @@ documentation.
   exports the photos it shows, the settings file is valid, and the archive
   carries everything it must; `--only station` puts the Snap Station print
   through both relaunches and checks the sheets. On the 1.0.0 executable,
-  run without diagnostics in the environment and on a cold shader cache:
-  22 of 22 checks in 782 seconds, and the station's 5 of 5 in 489. It
-  opens the game window for each run and takes about thirteen minutes, plus
-  eight for the station. There is no CI run, and no build on
-  any other machine is recorded in this repository. Anything not listed
-  here should be assumed untried.
+  run without diagnostics in the environment and on a cold shader cache,
+  the suite passed 22 of 22 checks in 782 seconds, and the station's 5 of 5
+  in 489. The suite opens the game window for each run and takes about
+  thirteen minutes, plus eight for the station. There is no CI run, and no
+  build on any other machine is recorded in this repository. Anything not
+  listed here should be assumed untried.
 * The photo export (P, the controller's Back button, `photos/`) is checked
   by `SNAP_PHOTO_AUTOEXPORT` on an input replay that reaches Oak's check,
   not by hand: saving from the keyboard and from the controller has not been
@@ -508,88 +544,95 @@ documentation.
 
 ## Building
 
-See `BUILDING.md`. Short version: the decompilation and IDO under WSL,
-N64Recomp for the game and the patches, CMake and MSVC on Windows, and a list
-of things git does not carry. `cpack -C Release` in the build directory then
-writes `Snap64Recomp-1.0.0-win64.zip` (step 13).
+See [BUILDING.md](BUILDING.md). Short version: the decompilation and IDO under
+WSL, N64Recomp for the game and the patches, CMake and MSVC on Windows, and a
+list of things git does not carry
+([What a clean checkout is missing](BUILDING.md#what-a-clean-checkout-is-missing)).
+`cpack -C Release` in the build directory then writes
+`Snap64Recomp-1.0.0-win64.zip` ([step 13](BUILDING.md#13-package)).
 
 ## The game, and its history
 
 Pokémon Snap was made at HAL Laboratory, with Pax Softnica assisting, and
 published by Nintendo: Japan on 21 March 1999, North America in the summer
-of 1999 (sources give 30 June and 26 July), Europe on 15 September 2000. It
-did not begin as a Pokémon game. In 1995 a small team at HAL under Yoichi
-Yamamoto, with Satoru Iwata (then HAL's president, later Nintendo's) and
-Shigeru Miyamoto producing, began a photography game called *Jack and the
-Beanstalk* for the 64DD disk drive, and took the name **Jack and Beans**
-for itself. Iwata told the story in an Iwata Asks interview in 2010: the
-game "wasn't a Pokémon game, but rather a normal game in which you took
-photos, but the motivation for playing the game wasn't clear"; the question
-of what players would want to photograph was answered with Pokémon, in what
-he called a somewhat forced switch, and Masanobu Yamamoto, a designer on
-the team, said the change "clarified what we should do and the direction we
-should head" and "had saved us". Pokémon Snap was shown for the 64DD at
-Nintendo Space World in November 1997; the disk version was dropped
-(reported in January 1999) and the game shipped on a cartridge. The team's
-name is still in the game: its "JACK and BEANS" logo is shown in the
-opening beside HAL's and Nintendo's, and the staff roll opens with it, under
-"POKéMON SNAP Staff" and above the directors (the credits table is
+of 1999 (sources give 30 June and 26 July), Europe on 15 September 2000.
+
+It did not begin as a Pokémon game. In 1995 a small team at HAL under
+Yoichi Yamamoto, with Satoru Iwata (then HAL's president, later Nintendo's)
+and Shigeru Miyamoto producing, began a photography game called *Jack and
+the Beanstalk* for the 64DD disk drive, and took the name **Jack and
+Beans** for itself. Iwata told the story in an Iwata Asks interview in
+2010. The game, he said, "wasn't a Pokémon game, but rather a normal game
+in which you took photos, but the motivation for playing the game wasn't
+clear". The question of what players would want to photograph was answered
+with Pokémon, in what he called a somewhat forced switch. Masanobu
+Yamamoto, a designer on the team, said in the same interview that the
+change "clarified what we should do and the direction we should head" and
+"had saved us". Pokémon Snap was shown for the 64DD at Nintendo Space World
+in November 1997; the disk version was dropped (reported in January 1999)
+and the game shipped on a cartridge.
+
+The team's name is still in the game. Its "JACK and BEANS" logo is shown in
+the opening beside HAL's and Nintendo's, and the staff roll opens with it,
+under "POKéMON SNAP Staff" and above the directors (the credits table is
 `src/credits/A94940.c` in the decompilation). That is the name the port's
 author took, and why.
 
-Yoichi Yamamoto, Koji Inokuchi and Akira Takeshima directed; Iwata,
-Miyamoto and Kenji Miki produced; Ikuko Mimori wrote the music. Sixty-three
-of the first 151 Pokémon appear, across seven courses: Beach, Tunnel,
-Volcano, River, Cave, Valley and Rainbow Cloud. The game sold more than 1.5
-million copies by the end of 1999, was the best-selling Nintendo 64 game in
-the United States that year, and took the Interactive Achievement Award for
-console children's and family title of the year.
+Yoichi Yamamoto, Koji Inokuchi and Akira Takeshima directed; Iwata, Miyamoto
+and Kenji Miki produced; Ikuko Mimori wrote the music. Sixty-three of the
+first 151 Pokémon appear, across seven courses: Beach, Tunnel, Volcano, River,
+Cave, Valley and Rainbow Cloud. The game sold more than 1.5 million copies by
+the end of 1999, was the best-selling Nintendo 64 game in the United States
+that year, and took the Interactive Achievement Award for console children's
+and family title of the year.  Two things about the original release shaped
+this port. The first was the kiosk. In 1999 Nintendo put Pokémon Snap Station
+kiosks into Blockbuster Video stores in the United States (the deal was
+announced in May 1999) and Lawson convenience stores in Japan: a Nintendo 64
+in a blue cabinet with a slot for the player's own cartridge, a sticker
+printer on controller port 4, and a card reader. A player bought print credit
+on one of five Pokémon smart cards (Bulbasaur, Charmander, Squirtle, Pikachu
+and Jigglypuff), brought a save in, and left with a sheet of sixteen
+postage-stamp stickers of their own photos, for three dollars or 300 yen;
+Blockbuster ran a "Take Your Best Shot" contest around them. About 4,500 units
+were built, by the Arcade Museum's count; most were later converted into demo
+units for other games or recalled, and a working one is a rarity. The
+cartridge's code for the printer was recovered without a station by James
+Chambers in 2021, from the ROM, a debugger and a controller-bus tool of his
+own, and it matches the decompilation; the port emulates the device ("The Snap
+Station" above).
 
-Two things about the original release shaped this port. In 1999 Nintendo
-put Pokémon Snap Station kiosks into Blockbuster Video stores in the United
-States (the deal was announced in May 1999) and Lawson convenience stores in
-Japan: a Nintendo 64 in a blue cabinet with a slot for the player's own
-cartridge, a sticker printer on controller port 4, and a card reader. A
-player bought print credit on one of five Pokémon smart cards (Bulbasaur,
-Charmander, Squirtle, Pikachu and Jigglypuff), brought a save in, and left
-with a sheet of sixteen postage-stamp stickers of their own photos, for
-three dollars or 300 yen; Blockbuster ran a "Take Your Best Shot" contest
-around them. About 4,500 units were built, by the Arcade Museum's count;
-most were later converted into demo units for other games or recalled, and
-a working one is a rarity. The cartridge's code for the printer was
-recovered without a station by James Chambers in 2021, from the ROM, a
-debugger and a controller-bus tool of his own, and it matches the
-decompilation; the port emulates the device ("The Snap Station" above).
-And when Nintendo re-released the game on the Wii's Virtual Console in
-December 2007 (Wii U in 2016 and 2017, Nintendo Switch Online on 24 June
-2022), it replaced the kiosk with saving photos to the Wii Message Board,
-from which they could go to an SD card or to friends (the Wii U version
-sent them to Miiverse instead), and recoloured Jynx from black to purple as
-it had in its other early Pokémon re-releases; the port's photo export and
-Jynx Recolor options are those two changes, reproduced and off by default.
+The second was the re-release. When Nintendo brought the game to the Wii's
+Virtual Console in December 2007 (Wii U in 2016 and 2017, Nintendo Switch
+Online on 24 June 2022), it replaced the kiosk with saving photos to the
+Wii Message Board, from which they could go to an SD card or to friends
+(the Wii U version sent them to Miiverse instead). It also recoloured Jynx
+from black to purple, as it had in its other early Pokémon re-releases.
+The port's photo export and Jynx Recolor options are those two changes,
+reproduced and off by default.
 
 The port could not exist without the
 [decompilation](https://github.com/ethteck/pokemonsnap), the community's
-years of work turning the cartridge back into readable C, which is where
-every statement about the game's own behaviour in this README was checked.
+years of work turning the cartridge back into readable C. Every statement
+in this README about the game's own behaviour was checked there.
 
-Sources: [Wikipedia](https://en.wikipedia.org/wiki/Pok%C3%A9mon_Snap);
-[Iwata Asks: Kirby's Epic Yarn, part 4](https://www.nintendo.com/en-gb/Iwata-Asks/Iwata-Asks-Kirby-s-Epic-Yarn/Iwata-Asks-Kirby-s-Epic-Yarn/4-Surprise-Fun-and-Warmth/4-Surprise-Fun-and-Warmth-207100.html)
-(Nintendo, October 2010), for Iwata's and Masanobu Yamamoto's words;
-[Nintendo Life, "Pokémon Snap: The 64DD Origins Of A Picture-Perfect
-Spin-Off"](https://www.nintendolife.com/news/2021/04/feature_pokemon_snap_-_the_64dd_origins_of_a_picture-perfect_spin-off)
-(2021); [Unseen64, "Jack and the Beanstalk [N64 DD -
-Cancelled]"](https://www.unseen64.net/2010/10/29/jack-and-the-beanstalk-nintendo-64-dd-cancelled/)
-(2010); [Nintendo World Report, "Know Your Nintendo Developers: Pokémon
-Snap"](http://www.nintendoworldreport.com/feature/43893/know-your-nintendo-developers-pokemon-snap)
-(2017); [Bulbapedia](https://bulbapedia.bulbagarden.net/wiki/Pok%C3%A9mon_Snap),
-for the kiosk's cards and prices; [Serebii, Virtual Console
-changes](https://www.serebii.net/snap/virtualconsole.shtml); [TheGamer, "I
-Almost Bought A Pokemon Snap Station
-(Twice)"](https://www.thegamer.com/nintendo-pokemon-snap-station/) (2021),
-for the Arcade Museum's count; [jamchamb, "Reversing the Pokémon Snap
-Station without a Snap Station"](https://jamchamb.net/2021/08/17/snap-station.html)
-(2021).
+Sources:
+
+* [Wikipedia](https://en.wikipedia.org/wiki/Pok%C3%A9mon_Snap).
+* [Iwata Asks: Kirby's Epic Yarn, part 4](https://www.nintendo.com/en-gb/Iwata-Asks/Iwata-Asks-Kirby-s-Epic-Yarn/Iwata-Asks-Kirby-s-Epic-Yarn/4-Surprise-Fun-and-Warmth/4-Surprise-Fun-and-Warmth-207100.html)
+  (Nintendo, October 2010), for Iwata's and Masanobu Yamamoto's words.
+* [Nintendo Life, "Pokémon Snap: The 64DD Origins Of A Picture-Perfect Spin-Off"](https://www.nintendolife.com/news/2021/04/feature_pokemon_snap_-_the_64dd_origins_of_a_picture-perfect_spin-off)
+  (2021).
+* [Unseen64, "Jack and the Beanstalk [N64 DD - Cancelled]"](https://www.unseen64.net/2010/10/29/jack-and-the-beanstalk-nintendo-64-dd-cancelled/)
+  (2010).
+* [Nintendo World Report, "Know Your Nintendo Developers: Pokémon Snap"](http://www.nintendoworldreport.com/feature/43893/know-your-nintendo-developers-pokemon-snap)
+  (2017).
+* [Bulbapedia](https://bulbapedia.bulbagarden.net/wiki/Pok%C3%A9mon_Snap),
+  for the kiosk's cards and prices.
+* [Serebii, Virtual Console changes](https://www.serebii.net/snap/virtualconsole.shtml).
+* [TheGamer, "I Almost Bought A Pokemon Snap Station (Twice)"](https://www.thegamer.com/nintendo-pokemon-snap-station/)
+  (2021), for the Arcade Museum's count.
+* [jamchamb, "Reversing the Pokémon Snap Station without a Snap Station"](https://jamchamb.net/2021/08/17/snap-station.html)
+  (2021).
 
 ## How it was made
 
@@ -598,28 +641,31 @@ Two answers, because the question has two parts.
 **What the port is, mechanically.** N64Recomp reads the game's code out of
 the builder's own cartridge dump and writes it out as C, one function at a
 time, at build time; none of that output is in this repository. That C is
-compiled and linked with librecomp and ultramodern, which give it the
-console's operating system calls, with RT64, which turns the game's display
-lists into Direct3D 12, and with the port's own code under `src/`: the
-window, input, audio and settings, the identity the frame interpolation
-pairs objects and sprites by, the menu pages composed from the game's own
-sprite font, the photo export and the Snap Station. Where the game's own
+compiled and linked with three other things: librecomp and ultramodern,
+which give it the console's operating system calls; RT64, which turns the
+game's display lists into Direct3D 12; and the port's own code under
+`src/`. That code is the window, input, audio and settings, the identity
+the frame interpolation pairs objects and sprites by, the menu pages
+composed from the game's own sprite font, the photo export and the Snap
+Station. Where the game's own
 behaviour had to change for a feature (the Graphics page on its Options
 screen, the fifth title entry, the intro's camera fix), the changed function
 is a copy of its decompiled source under `patches/src`, compiled with the
 decompilation's own IDO toolchain and loaded over the original. The whole
 chain, with the tools and inputs at each step, is `BUILDING.md`.
 
-**Who wrote it.** One person, not a team. JackandBeans is an individual
-with no studio, no collaborators and no funding behind this, who directed
-the work from the first commit on 17 August 2026 to this release: set the
-rule the port follows (console behaviour by default), chose what it would
-and would not do, tested every build on screen, and found the reference
-material the work needed: Leonhart's recording of a working kiosk, which the
-printer's display was measured against; a published Virtual Console
-screenshot, found through an image search, that the Jynx colour was matched
-from; and the renders the logo was composed from. "The developer" elsewhere
-in this README is that person; no model played the game.
+**Who wrote it.** One person directed it, not a team, and the models named
+below wrote it. JackandBeans is an individual with no studio, no
+collaborators and no funding behind this, who directed the work from the
+first commit on 17 August 2026 to this release. That direction was setting
+the rule the port follows (console behaviour by default), choosing what it
+would and would not do, testing every build on screen, and finding the
+reference material the work needed. That material was Leonhart's recording
+of a working kiosk, which the printer's display was measured against; a
+published Virtual Console screenshot, found through an image search, that
+the Jynx colour was matched from; and the renders the logo was composed
+from. "The developer" elsewhere in this README is that person; no model
+played the game.
 
 Every line of the port's own code, its tools and its documentation, this
 README included, was written by Anthropic's Claude models running in Claude
@@ -628,26 +674,26 @@ Fable 5, with Claude Opus 5 for a large share of the commits and two
 commits by Claude Opus 4.8; the author also used Claude Sonnet 5 in some
 sessions, and no commit names it. A commit's trailer names the model that
 wrote it (`git log --format=%(trailers:key=Co-Authored-By)`); forty-six
-commits between 18 and 24 August 2026 carry none, from sessions before the
-rule was kept every time. Fable
-5.1, the newest of them, carried the release work: the Snap Station from
+commits between 18 and 24 August 2026 carry none, because they come from
+sessions before the trailer was added every time. Fable 5.1, the newest of
+them, carried the release work: the Snap Station from
 the decompiled protocol to the printer's display, the renderer's
 frame-pacing and identity work, and the audit and packaging of this
 release.
 
-What that meant in practice, which is the honest measure of what these
-models can do when someone directs and checks them: holding the
-decompilation, the runtime and RT64's source in view at once and changing
-one without breaking the others; finding the game's own behaviour in its
-code before deciding whether a difference was the port's (the intro's
-off-by-one frame, the lab picture's pale edge, the station's boot-time
-printer test); measuring instead of eyeballing (frames compared pixel by
-pixel against the picture in the game's memory, the kiosk's lettering
-measured from frames of a recording of a real screen); building their own
-verification (the headless suite that replays controller recordings
-through the real executable and reads back its log and captured frames);
-and writing down every finding, measurement, dead end and revert in the
-commit messages, which are the project's real notebook. What they cannot
+What that meant in practice is the honest measure of what these models can
+do when someone directs and checks them. They held the decompilation, the
+runtime and RT64's source in view at once and changed one without breaking
+the others. They found the game's own behaviour in its code before deciding
+whether a difference was the port's (the intro's off-by-one frame, the lab
+picture's pale edge, the station's boot-time printer test). They measured
+instead of eyeballing: frames were compared pixel by pixel against the
+picture in the game's memory, and the kiosk's lettering was measured from
+frames of a recording of a real screen. They built their own verification,
+the headless suite that replays controller recordings through the real
+executable and reads back its log and captured frames. And they wrote down
+every finding, measurement, dead end and revert in the commit messages,
+which are the project's real notebook. What they cannot
 do is see the screen or hold a controller: every judgement of how a thing
 looks or feels was the author's, made on one machine, and the port has not
 yet run on any other.
@@ -672,7 +718,7 @@ None of this would exist without:
   and the [Zelda64Recomp](https://github.com/Zelda64Recomp/Zelda64Recomp)
   project whose structure it follows.
 * [RT64](https://github.com/rt64/rt64) by Dario and contributors, the
-  renderer, and its frame interpolation this port extends.
+  renderer, whose frame interpolation this port extends.
 * James Chambers (jamchamb), whose [2021
   write-up](https://jamchamb.net/2021/08/17/snap-station.html) recovered the
   Snap Station protocol from the cartridge without a station to test
@@ -691,8 +737,8 @@ None of this would exist without:
 * The Roboto Project Authors, for the typeface the printer's lettering is
   set from.
 * Anthropic's Claude, which wrote the port ("How it was made" above).
-* The team at HAL Laboratory who made the game, Jack and Beans, whose
-  name, shown in the game's opening and at the head of its credits, gave the
+* Jack and Beans, the team at HAL Laboratory who made the game. Their name,
+  shown in the game's opening and at the head of its credits, gave the
   port's author a name.
 * Everyone who plays it and reports what they see: the first reports from
   other machines are what 1.0.1 will be made of.

@@ -357,16 +357,17 @@ the two symbol files. It does **not** contain:
    generating them needs the ROM, the decomp build and N64Recomp under WSL.
 4. `pokemonsnap.relocs.elf` and `pokemonsnap.z64` in the port root -- the
    recompiler's inputs (step 3); the ROM is also what CMake recompiles the
-   audio microcode from (step 9, `SNAP_ROM`).
+   audio microcode from (step 9, `SNAP_ROM`), so it is needed even when the
+   recompiled code is copied in rather than generated.
 5. The decomp, IDO, the MIPS binutils and N64Recomp themselves.
-6. `pokemonsnap.z64` in the port root (or `SNAP_ROM`), which configure needs
-   for the audio microcode (step 9).
 
 `.gitmodules` used to declare `lib/N64ModernRuntime` and `lib/rt64` as
 submodules without ever committing a gitlink; it has been removed, and
 VENDORING.md records what those directories actually are.
 
-There is no CI and no test suite. Packaging is `cpack` (step 13): the
+There is no CI. The headless suite, `tools/release_check.py`, is described
+under [Replays and the headless suite](#replays-and-the-headless-suite).
+Packaging is `cpack` (step 13): the
 `install()` rules lay out the portable folder, and the build stages the DLLs
 and the `menu_text` badge beside the executable (step 12). The ROM is the one
 file still placed by hand.

@@ -19,8 +19,8 @@ under it, the copyright block, and the port's credits line
 
 **The title menu.** New Game, Continue, Gallery and Options are the game's;
 **Snap Station**, the fifth entry, is the port's, drawn in the title's own
-face and shown once the saved report holds more than three species, like
-the Gallery entry above it.
+lettering. Like the Gallery entry above it, it is shown once the saved
+report holds more than three species.
 
 ## A course
 
@@ -41,6 +41,12 @@ the film counter top right and the item buttons bottom right.
 <a href="screenshots/06-volcano.png"><img src="screenshots/06-volcano.png" width="640" alt="The Volcano"></a>
 
 **The Volcano.** Charizard's Flamethrower fills the frame.
+
+<a href="screenshots/19-course-end.png"><img src="screenshots/19-course-end.png" width="640" alt="The Camera Check"></a>
+
+**The Camera Check.** At the end of every course, before Oak's check, the
+course's own tally: pictures, points,
+kinds, the high score and the challenge score.
 
 ## The lab
 
@@ -79,16 +85,17 @@ four photos are the print tray.
 
 <a href="screenshots/12-printer-marks.png"><img src="screenshots/12-printer-marks.png" width="640" alt="The printer's display, printing"></a>
 
-**The printer's display.** After the sixteen slots the kiosk's printer
-showed the sticker grid it had collected under "PRINTING... PLEASE WAIT",
-with three marks top right.
+**The printer's display.** Once the game had shown all sixteen sticker
+slots, the kiosk's printer showed the grid it had collected under
+"PRINTING... PLEASE WAIT", with three marks top right.
 
 <a href="screenshots/13-printer-stars.png"><img src="screenshots/13-printer-stars.png" width="640" alt="The printer's display, three stars"></a>
 
 **Three stars.** The marks became stars one by one as the printer's three
-passes finished; then the console reset into a normal boot, as the kiosk
-did. The display is composed from the port's own captures; its lettering is
-set from Roboto, since the printer's face cannot be read off a recording.
+passes finished; then the port relaunched itself into a normal boot, as the
+kiosk reset its console. The display is composed from the port's own
+captures. Its lettering is set from Roboto, since the printer's own typeface
+cannot be read off a recording.
 
 ## Oak's check
 
@@ -103,8 +110,8 @@ goes to Oak.
 
 <a href="screenshots/16-oak-check-close.png"><img src="screenshots/16-oak-check-close.png" width="640" alt="Oak looking at a Pikachu photo"></a>
 
-**The photo, close.** Oak with the chosen Pikachu; the photo is the game's
-own re-render of the saved shot, which is how it scores.
+**The photo, close.** Oak with the chosen Pikachu. The photo is the game's
+own re-render of the saved shot; the score is counted from that render.
 
 <a href="screenshots/17-oak-check-score.png"><img src="screenshots/17-oak-check-score.png" width="640" alt="The score for a photo"></a>
 
@@ -115,8 +122,3 @@ this time.
 
 **The evaluation.** Kinds of Pokémon in the report and the report score,
 saved to the PKMN Report.
-
-<a href="screenshots/19-course-end.png"><img src="screenshots/19-course-end.png" width="640" alt="The Camera Check"></a>
-
-**The Camera Check.** The course's own tally before Oak: pictures, points,
-kinds, the high score and the challenge score.
