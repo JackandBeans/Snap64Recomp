@@ -1,5 +1,11 @@
 <p align="center"><img src="docs/logo.png" width="640" alt="Snap64 Recomp"></p>
 
+<p align="center">
+<a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License: GPLv3"></a>
+<a href="https://github.com/JackandBeans/Snap64Recomp/releases/latest"><img src="https://img.shields.io/github/v/release/JackandBeans/Snap64Recomp?label=release" alt="Latest release"></a>
+<img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-lightgrey" alt="Platform: Windows 10 or 11, x64">
+</p>
+
 # Snap64 Recomp
 
 By Jack & Beans. A native Windows port of the Nintendo 64 game *Pokémon Snap*
@@ -26,10 +32,25 @@ the port's name, and `1.0.0` is its version.
 The people and projects this port stands on are thanked under
 [Thanks](#thanks) below.
 
+**Contents:** [Get it running](#get-it-running) ·
+[Screenshots](#screenshots) · [Status](#status-100) ·
+[What you need](#what-you-need) · [Running](#running)
+([where things live](#where-things-live), [controls](#controls),
+[the rule the port follows](#the-rule-the-port-follows),
+[in-game pages](#in-game-pages), [hotkeys](#hotkeys), [photos](#photos),
+[the Snap Station](#the-snap-station),
+[mods and texture packs](#mods-and-texture-packs),
+[settings file](#settings-file)) ·
+[Known limitations](#known-limitations) ·
+[What has been verified](#what-has-been-verified-and-what-has-not) ·
+[Building](#building) · [The game, and its history](#the-game-and-its-history) ·
+[How it was made](#how-it-was-made) · [Thanks](#thanks) · [License](#license)
+
 ## Get it running
 
 1. Download `Snap64Recomp-1.0.0-win64.zip` from the
-   [Releases](../../releases/latest) page and unpack it anywhere.
+   [Releases](https://github.com/JackandBeans/Snap64Recomp/releases/latest)
+   page and unpack it anywhere.
 2. Put your own dump of the US cartridge, named `pokemonsnap.z64`, next to
    `Snap64Recomp.exe` (its SHA-1 is under "What you need" below).
 3. Start `Snap64Recomp.exe`. Windows 10 or 11, 64-bit, a GPU driver with
@@ -288,7 +309,8 @@ a precedent, and one that draws nothing on screen. The code is
 
 The Pokémon Snap Station was the Blockbuster Video kiosk of 1999 (Lawson
 stores in Japan) that printed a player's photos as a sheet of sixteen
-stickers. Inside it a Nintendo 64 with the Expansion Pak ran the ordinary
+stickers, for three dollars (300 yen) of credit carried on a Pokémon smart
+card. Inside it a Nintendo 64 with the Expansion Pak ran the ordinary
 retail cartridge, and the printer sat on controller port 4, where the game
 speaks to it as if it were a Controller Pak; every retail cartridge carries
 the code, and the protocol was recovered without a station by James Chambers
@@ -464,9 +486,11 @@ documentation.
   Oak's evaluation scores every photo with the scorer's healthy signature and
   exports the photos it shows, the settings file is valid, and the archive
   carries everything it must; `--only station` puts the Snap Station print
-  through both relaunches and checks the sheets. Both passed on the 1.0.0
-  build. It opens the game window for each run and takes about twelve
-  minutes, plus eight for the station. There is no CI run, and no build on
+  through both relaunches and checks the sheets. On the 1.0.0 executable,
+  run without diagnostics in the environment and on a cold shader cache:
+  22 of 22 checks in 782 seconds, and the station's 5 of 5 in 489. It
+  opens the game window for each run and takes about thirteen minutes, plus
+  eight for the station. There is no CI run, and no build on
   any other machine is recorded in this repository. Anything not listed
   here should be assumed untried.
 * The photo export (P, the controller's Back button, `photos/`) is checked
@@ -487,45 +511,81 @@ writes `Snap64Recomp-1.0.0-win64.zip` (step 13).
 
 ## The game, and its history
 
-Pokémon Snap was made at HAL Laboratory with Pax Softnica and published by
-Nintendo: Japan on 21 March 1999, North America that summer, Europe on 15
-September 2000. It did not begin as a Pokémon game. It began as a
-photography game called *Jack and the Beanstalk*, planned for the 64DD disk
-drive, and the HAL team that made it was called **Jack and Beans**; Satoru
-Iwata, then at HAL and later Nintendo's president, recalled that it
-"wasn't a Pokémon game, but rather a normal game in which you took
-photos". The 64DD version was dropped in January 1999 and the game shipped
-on a cartridge, which still carries the team's unused "JACK AND BEANS"
-prototype logo in the title screen's data. That is the name the port's
-author took, and why. Yoichi Yamamoto directed, with Koji Inokuchi and
-Akira Takeshima; Iwata and Shigeru Miyamoto produced. It sold more than
-1.5 million copies by the end of 1999.
+Pokémon Snap was made at HAL Laboratory, with Pax Softnica assisting, and
+published by Nintendo: Japan on 21 March 1999, North America in the summer
+of 1999 (sources give 30 June and 26 July), Europe on 15 September 2000. It
+did not begin as a Pokémon game. In 1995 a small team at HAL under Yoichi
+Yamamoto, with Satoru Iwata (then HAL's president, later Nintendo's) and
+Shigeru Miyamoto producing, began a photography game called *Jack and the
+Beanstalk* for the 64DD disk drive, and took the name **Jack and Beans**
+for itself. Iwata told the story in an Iwata Asks interview in 2010: the
+game "wasn't a Pokémon game, but rather a normal game in which you took
+photos, but the motivation for playing the game wasn't clear"; the question
+of what players would want to photograph was answered with Pokémon, in what
+he called a somewhat forced switch, and Masanobu Yamamoto, a designer on
+the team, said the change "clarified what we should do and the direction we
+should head" and "had saved us". Pokémon Snap was shown for the 64DD at
+Nintendo Space World in November 1997; the disk version was dropped
+(reported in January 1999) and the game shipped on a cartridge. The team's
+name is still in the game: its "JACK and BEANS" logo is shown in the
+opening beside HAL's and Nintendo's, and the staff roll opens with it, under
+"POKéMON SNAP Staff" and above the directors (the credits table is
+`src/credits/A94940.c` in the decompilation). That is the name the port's
+author took, and why.
+
+Yoichi Yamamoto, Koji Inokuchi and Akira Takeshima directed; Iwata,
+Miyamoto and Kenji Miki produced; Ikuko Mimori wrote the music. Sixty-three
+of the first 151 Pokémon appear, across seven courses: Beach, Tunnel,
+Volcano, River, Cave, Valley and Rainbow Cloud. The game sold more than 1.5
+million copies by the end of 1999, was the best-selling Nintendo 64 game in
+the United States that year, and took the Interactive Achievement Award for
+console children's and family title of the year.
 
 Two things about the original release shaped this port. In 1999 Nintendo
 put Pokémon Snap Station kiosks into Blockbuster Video stores in the United
-States and Lawson convenience stores in Japan: a Nintendo 64 with the
-retail cartridge and a sticker printer on controller port 4, so a player
-could bring a save in and leave with a sheet of sixteen stickers of their
-own photos. The cartridge's code for that printer was recovered without a
-station by James Chambers in 2021 and matches the decompilation, and the
-port emulates the device ("The Snap Station" above). And when Nintendo
-re-released the game on the Wii's Virtual Console in December 2007 (Wii U
-in 2016 and 2017, Nintendo Switch Online in June 2022), it replaced the
-kiosk with posting photos to the Wii Message Board, and recoloured Jynx
-from black to purple as it had in the other early Pokémon games; the
-port's photo export and Jynx Recolor options are those two changes,
-reproduced and off by default.
+States (the deal was announced in May 1999) and Lawson convenience stores in
+Japan: a Nintendo 64 in a blue cabinet with a slot for the player's own
+cartridge, a sticker printer on controller port 4, and a card reader. A
+player bought print credit on one of five Pokémon smart cards (Bulbasaur,
+Charmander, Squirtle, Pikachu and Jigglypuff), brought a save in, and left
+with a sheet of sixteen postage-stamp stickers of their own photos, for
+three dollars or 300 yen; Blockbuster ran a "Take Your Best Shot" contest
+around them. About 4,500 units were built, by the Arcade Museum's count;
+most were later converted into demo units for other games or recalled, and
+a working one is a rarity. The cartridge's code for the printer was
+recovered without a station by James Chambers in 2021, from the ROM, a
+debugger and a controller-bus tool of his own, and it matches the
+decompilation; the port emulates the device ("The Snap Station" above).
+And when Nintendo re-released the game on the Wii's Virtual Console in
+December 2007 (Wii U in 2016 and 2017, Nintendo Switch Online on 24 June
+2022), it replaced the kiosk with saving photos to the Wii Message Board,
+from which they could go to an SD card or to friends (the Wii U version
+sent them to Miiverse instead), and recoloured Jynx from black to purple as
+it had in its other early Pokémon re-releases; the port's photo export and
+Jynx Recolor options are those two changes, reproduced and off by default.
 
 The port could not exist without the
 [decompilation](https://github.com/ethteck/pokemonsnap), the community's
 years of work turning the cartridge back into readable C, which is where
 every statement about the game's own behaviour in this README was checked.
 
-Sources: [Wikipedia](https://en.wikipedia.org/wiki/Pok%C3%A9mon_Snap),
-[Nintendo World Report, "Know Your Nintendo Developers: Pokémon
-Snap"](http://www.nintendoworldreport.com/feature/43893/know-your-nintendo-developers-pokemon-snap),
-[Serebii, Virtual Console changes](https://www.serebii.net/snap/virtualconsole.shtml),
-[jamchamb, "Pokémon Snap Station" (2021)](https://jamchamb.net/2021/08/17/snap-station.html).
+Sources: [Wikipedia](https://en.wikipedia.org/wiki/Pok%C3%A9mon_Snap);
+[Iwata Asks: Kirby's Epic Yarn, part 4](https://www.nintendo.com/en-gb/Iwata-Asks/Iwata-Asks-Kirby-s-Epic-Yarn/Iwata-Asks-Kirby-s-Epic-Yarn/4-Surprise-Fun-and-Warmth/4-Surprise-Fun-and-Warmth-207100.html)
+(Nintendo, October 2010), for Iwata's and Masanobu Yamamoto's words;
+[Nintendo Life, "Pokémon Snap: The 64DD Origins Of A Picture-Perfect
+Spin-Off"](https://www.nintendolife.com/news/2021/04/feature_pokemon_snap_-_the_64dd_origins_of_a_picture-perfect_spin-off)
+(2021); [Unseen64, "Jack and the Beanstalk [N64 DD -
+Cancelled]"](https://www.unseen64.net/2010/10/29/jack-and-the-beanstalk-nintendo-64-dd-cancelled/)
+(2010); [Nintendo World Report, "Know Your Nintendo Developers: Pokémon
+Snap"](http://www.nintendoworldreport.com/feature/43893/know-your-nintendo-developers-pokemon-snap)
+(2017); [Bulbapedia](https://bulbapedia.bulbagarden.net/wiki/Pok%C3%A9mon_Snap),
+for the kiosk's cards and prices; [Serebii, Virtual Console
+changes](https://www.serebii.net/snap/virtualconsole.shtml); [TheGamer, "I
+Almost Bought A Pokemon Snap Station
+(Twice)"](https://www.thegamer.com/nintendo-pokemon-snap-station/) (2021),
+for the Arcade Museum's count; [jamchamb, "Reversing the Pokémon Snap
+Station without a Snap Station"](https://jamchamb.net/2021/08/17/snap-station.html)
+(2021).
 
 ## How it was made
 
@@ -609,12 +669,16 @@ None of this would exist without:
   project whose structure it follows.
 * [RT64](https://github.com/rt64/rt64) by Dario and contributors, the
   renderer, and its frame interpolation this port extends.
-* James Chambers (jamchamb), whose 2021 work recovered the Snap Station
-  protocol from the cartridge without a station to test against.
-* Leonhart, whose [recording of a working Snap Station
-  kiosk](https://youtu.be/lCnvpIEVpqo) is the only picture this port had of
-  the printer's own display: its sticker grid, its marks and stars, and the
-  pace of its three passes were all measured from those frames.
+* James Chambers (jamchamb), whose [2021
+  write-up](https://jamchamb.net/2021/08/17/snap-station.html) recovered the
+  Snap Station protocol from the cartridge without a station to test
+  against; the port's emulation of the device follows it and the
+  decompilation.
+* Leonhart, whose recording of a working Snap Station kiosk, ["Using
+  Pokemon Snap Station For First Time In 20
+  Years!"](https://youtu.be/lCnvpIEVpqo), is the only picture this port had
+  of the printer's own display: its sticker grid, its marks and stars, and
+  the pace of its three passes were all measured from those frames.
 * [ido-static-recomp](https://github.com/decompals/ido-static-recomp)
   by the decompals, which lets the decompilation's compiler, and so the
   port's patches, build on a modern machine.
@@ -623,8 +687,8 @@ None of this would exist without:
 * The Roboto Project Authors, for the typeface the printer's lettering is
   set from.
 * Anthropic's Claude, which wrote the port ("How it was made" above).
-* The team at HAL Laboratory who made the game in 1999, and whose unused
-  "JACK AND BEANS" prototype logo, still inside the cartridge, gave the
+* The team at HAL Laboratory who made the game, Jack and Beans, whose
+  name, shown in the game's opening and at the head of its credits, gave the
   port's author a name.
 * Everyone who plays it and reports what they see: the first reports from
   other machines are what 1.0.1 will be made of.

@@ -8,7 +8,7 @@ is yours to press.
 
 ## Before pushing, once
 
-1. **Identity: done.** The project's address is snap64recomp@gmail.com and
+1. **Identity: done.** The project's address is `snap64recomp@gmail.com` and
    the author name is Jack & Beans. On 2026-09-04 every commit was rewritten
    to that name and address with `git filter-repo --mailmap` (the tag
    `v1.0.0` re-pointed with them, the Co-Authored-By trailers untouched),

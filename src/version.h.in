@@ -8,11 +8,11 @@
  *
  * "JackandBeans" is the port's name for itself on the title screen, after
  * Jack and Beans, the HAL team that began the game as a photography game
- * called Jack and the Beanstalk -- their unused JACK AND BEANS prototype
- * logo still ships inside the title screen's own data -- which makes it
- * the one name tied to this game that is ours to use. It is the codename
- * on the title screen's credits line; "Snap64 Recomp" is the product name
- * on every other surface.
+ * called Jack and the Beanstalk -- their JACK and BEANS logo still opens
+ * the game, and their name heads its staff roll -- which makes it the one
+ * name tied to this game that is ours to use. It is the codename on the
+ * title screen's credits line; "Snap64 Recomp" is the product name on
+ * every other surface.
  */
 #ifndef SNAP_VERSION_H
 #define SNAP_VERSION_H
