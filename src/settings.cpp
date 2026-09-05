@@ -17,6 +17,7 @@
 
 #include "json/json.hpp"
 #include "librecomp/files.hpp"
+#include "input.h"
 #include "paths.h"
 #include "photo_export.h"
 #include "ultramodern/config.hpp"
@@ -80,6 +81,7 @@ enum class SettingsRead { Ok, Unopenable, Rejected };
 // error, an empty file, or a key holding the wrong type -- with why set to
 // its message. out is untouched unless the whole file was accepted.
 static SettingsRead read_settings_file(const std::filesystem::path& path, Settings& out, std::string& why,
+                                       Bindings& keys_out, bool& keys_present,
                                        bool& carried_render_to_ram) {
     std::ifstream f(path);
     if (!f.good()) {
@@ -127,6 +129,27 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         s.photo_detail       = j.value("photo_detail", s.photo_detail);
         s.jynx_vc            = j.value("jynx_vc", s.jynx_vc);
         s.snap_station       = j.value("snap_station", s.snap_station);
+        s.mouse_aim          = j.value("mouse_aim", s.mouse_aim);
+        s.mouse_sensitivity  = std::clamp(j.value("mouse_sensitivity", s.mouse_sensitivity), 0.1f, 10.0f);
+        s.mouse_invert_y     = j.value("mouse_invert_y", s.mouse_invert_y);
+        // The binding table: "keys" maps an input's name to a key or mouse
+        // name, or to a list of them. Handed to input.cpp whole; it reports
+        // and skips what it cannot resolve (input.h).
+        keys_out.clear();
+        if (j.contains("keys") && j["keys"].is_object()) {
+            for (const auto& [name, value] : j["keys"].items()) {
+                std::vector<std::string> sources;
+                if (value.is_string()) {
+                    sources.push_back(value.get<std::string>());
+                } else if (value.is_array()) {
+                    for (const auto& v : value) {
+                        if (v.is_string()) sources.push_back(v.get<std::string>());
+                    }
+                }
+                keys_out[name] = std::move(sources);
+            }
+            keys_present = true;
+        }
         out = s;
         return SettingsRead::Ok;
     } catch (const std::exception& e) {
@@ -146,8 +169,10 @@ void load_settings() {
         loaded = s_settings;
     }
     bool carried_render_to_ram = false;
+    Bindings keys;
+    bool keys_present = false;
     std::string why;
-    const SettingsRead primary_read = read_settings_file(primary, loaded, why, carried_render_to_ram);
+    const SettingsRead primary_read = read_settings_file(primary, loaded, why, keys, keys_present, carried_render_to_ram);
     if (primary_read != SettingsRead::Ok) {
         // The backup is what recomp::write_file_with_backup left of the
         // previous file. It is consulted only when the primary is unusable:
@@ -156,7 +181,7 @@ void load_settings() {
         // parses is taken as it is, however old the backup.
         const char* primary_why = (primary_read == SettingsRead::Rejected) ? why.c_str() : "cannot be opened";
         std::string backup_why_text;
-        const SettingsRead backup_read = read_settings_file(backup, loaded, backup_why_text, carried_render_to_ram);
+        const SettingsRead backup_read = read_settings_file(backup, loaded, backup_why_text, keys, keys_present, carried_render_to_ram);
         if (backup_read == SettingsRead::Ok) {
             fprintf(stderr, "[SNAP-CFG] %s unusable (%s); loaded %s instead\n",
                     SETTINGS_FILE, primary_why, backup_name.c_str());
@@ -181,6 +206,12 @@ void load_settings() {
         // decides: every boot starts with it on, because photo scoring reads
         // the framebuffer it copies back (see settings.h).
         s_settings.render_to_ram = true;
+    }
+    // The binding table goes to input.cpp whole; absent from the file, the
+    // defaults apply and the next write puts every name in the file to edit.
+    input_set_bindings(keys_present ? keys : input_default_bindings());
+    if (!keys_present) {
+        settings_mark_dirty();
     }
     if (carried_render_to_ram) {
         printf("[SNAP-CFG] the settings file carries a render_to_ram key; it is a session-only diagnostic now, so the key was ignored and the next write drops it\n");
@@ -225,6 +256,10 @@ bool save_settings() {
         copy = s_settings;
     }
     // render_to_ram is deliberately absent: session-only, see settings.h.
+    nlohmann::json keys = nlohmann::json::object();
+    for (const auto& entry : input_bindings()) {
+        keys[entry.first] = entry.second;
+    }
     const nlohmann::json j{
         {"fullscreen",            copy.fullscreen},
         {"widescreen",            copy.widescreen},
@@ -257,9 +292,13 @@ bool save_settings() {
         {"photo_detail",          copy.photo_detail},
         {"jynx_vc",               copy.jynx_vc},
         {"snap_station",          copy.snap_station},
+        {"mouse_aim",             copy.mouse_aim},
+        {"mouse_sensitivity",     copy.mouse_sensitivity},
+        {"mouse_invert_y",        copy.mouse_invert_y},
+        {"keys",                  keys},
     };
-    // dump() throws only for a string that is not valid UTF-8, and every
-    // value above is a bool or an int.
+    // dump() throws only for a string that is not valid UTF-8; the key
+    // names above came through the parser or are this file's own.
     std::string text = j.dump(2);
     text += '\n';
     // Temporary file, forced to disk, then two atomic renames: the previous

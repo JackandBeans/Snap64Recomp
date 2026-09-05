@@ -2,25 +2,37 @@
  * @file input.cpp
  * @brief SDL2-based input implementation for Snap64 Recomp.
  *
- * Maps SDL2 game controller and keyboard input to N64 controller state.
- * Supports a single controller (port 0) with keyboard fallback.
+ * Maps SDL2 game controller, keyboard and mouse input to N64 controller
+ * state. Supports a single controller (port 0); the keyboard and the mouse
+ * are always attached.
  *
- * N64 button mapping:
- *   A       = SDL_CONTROLLER_BUTTON_A / Keyboard X
- *   B       = SDL_CONTROLLER_BUTTON_B / Keyboard Z
- *   Z       = SDL_CONTROLLER_BUTTON_LEFTSHOULDER / Keyboard L-Shift
- *   START   = SDL_CONTROLLER_BUTTON_START / Keyboard Return
- *   D-Up    = SDL_CONTROLLER_BUTTON_DPAD_UP / Keyboard Up
- *   D-Down  = SDL_CONTROLLER_BUTTON_DPAD_DOWN / Keyboard Down
- *   D-Left  = SDL_CONTROLLER_BUTTON_DPAD_LEFT / Keyboard Left
- *   D-Right = SDL_CONTROLLER_BUTTON_DPAD_RIGHT / Keyboard Right
- *   L       = SDL_CONTROLLER_AXIS_TRIGGERLEFT / Keyboard Q
- *   R       = SDL_CONTROLLER_AXIS_TRIGGERRIGHT / Keyboard E
- *   C-Up    = Right stick up / Keyboard I
- *   C-Down  = Right stick down / Keyboard K
- *   C-Left  = Right stick left / Keyboard J
- *   C-Right = Right stick right / Keyboard L
- *   Analog  = Left stick / Keyboard WASD
+ * The keyboard and the mouse go through one binding table, rewritable from
+ * the settings file ("keys"; input.h names the inputs and the sources). The
+ * layout the port ships with:
+ *   A       = X / Mouse Left            (the photo when zoomed, an apple when not)
+ *   B       = Z / Mouse Middle          (the pester ball)
+ *   Z       = Left Shift / Mouse Right  (zoom: hold or switch, the game's own option)
+ *   START   = Return
+ *   D-pad   = the arrow keys
+ *   L / R   = Q / E                     (R is the dash)
+ *   C-Up    = I / Wheel Up              (turn to face behind)
+ *   C-Down  = K / Wheel Down            (the Poke Flute)
+ *   C-Left  = J / Mouse X1              (turn left)
+ *   C-Right = L / Mouse X2              (turn right)
+ *   Stick   = W A S D, and the mouse's motion while a course runs
+ * The game controller keeps its own fixed mapping: A, B (X as well), the
+ * left shoulder as Z, Start, the D-pad, the triggers as L and R, the right
+ * stick as the C buttons, the left stick as the stick.
+ *
+ * The mouse feeds the game only while it is captured: mouse aim on in the
+ * settings, the window focused, and a course running (.app_level resident,
+ * src/overlay_hook.cpp). Then the cursor is hidden and its motion becomes
+ * stick deflection, read as a rate: the motion of the last third of a
+ * game frame, scaled so a brisk flick reaches full deflection. Outside a
+ * course the cursor is free and the mouse does nothing, so a click on the
+ * window at the title menu never presses A. A click is latched for a
+ * little over one game frame so a tap between two of the game's reads is
+ * never lost, and lands as exactly one press.
  *
  * Not an N64 button: SDL_CONTROLLER_BUTTON_BACK (Select on most pads) saves
  * the photo on screen, as the same button did on the Wii Virtual Console
@@ -31,6 +43,10 @@
 #include "input.h"
 
 #include <atomic>
+#include <chrono>
+#include <deque>
+#include <memory>
+#include <mutex>
 #include "hle/rt64_snap_diag.h"
 #include <vector>
 #include <cstdio>
@@ -40,6 +56,7 @@
 #include <SDL2/SDL.h>
 
 #include "photo_export.h"
+#include "settings.h"
 #include "snap_station.h"
 
 // Pokemon Snap port: how many more presented images to photograph. Lives in
@@ -71,6 +88,280 @@ namespace snap {
 // settings.cpp; set by the overlay hook on the first overlay load, which is
 // long before any photo can exist.
 extern uint8_t* g_rdram;
+// overlay_hook.cpp: true while a course's code overlay is resident.
+extern std::atomic<bool> g_app_level_resident;
+
+// ---------------------------------------------------------------------------
+// Bindings
+// ---------------------------------------------------------------------------
+
+namespace {
+
+enum InputIndex : int {
+    IN_A, IN_B, IN_Z, IN_START, IN_DU, IN_DD, IN_DL, IN_DR, IN_L, IN_R,
+    IN_CU, IN_CD, IN_CL, IN_CR, IN_STICK_UP, IN_STICK_DOWN, IN_STICK_LEFT, IN_STICK_RIGHT,
+    IN_COUNT
+};
+
+const char* const kInputNames[IN_COUNT] = {
+    "a", "b", "z", "start", "d_up", "d_down", "d_left", "d_right", "l", "r",
+    "c_up", "c_down", "c_left", "c_right", "stick_up", "stick_down", "stick_left", "stick_right",
+};
+
+const uint16_t kInputBits[IN_CR + 1] = {
+    N64_BTN_A, N64_BTN_B, N64_BTN_Z, N64_BTN_START, N64_BTN_DU, N64_BTN_DD, N64_BTN_DL, N64_BTN_DR,
+    N64_BTN_L, N64_BTN_R, N64_BTN_CU, N64_BTN_CD, N64_BTN_CL, N64_BTN_CR,
+};
+
+enum class SourceKind : uint8_t { Key, MouseButton, WheelUp, WheelDown };
+
+struct Source {
+    SourceKind kind;
+    int code;   // SDL_Scancode, or the SDL mouse button index
+};
+
+struct Resolved {
+    std::vector<Source> sources[IN_COUNT];
+};
+
+const Bindings& defaults() {
+    static const Bindings table = {
+        {"a",           {"X", "Mouse Left"}},
+        {"b",           {"Z", "Mouse Middle"}},
+        {"z",           {"Left Shift", "Mouse Right"}},
+        {"start",       {"Return"}},
+        {"d_up",        {"Up"}},
+        {"d_down",      {"Down"}},
+        {"d_left",      {"Left"}},
+        {"d_right",     {"Right"}},
+        {"l",           {"Q"}},
+        {"r",           {"E"}},
+        {"c_up",        {"I", "Wheel Up"}},
+        {"c_down",      {"K", "Wheel Down"}},
+        {"c_left",      {"J", "Mouse X1"}},
+        {"c_right",     {"L", "Mouse X2"}},
+        {"stick_up",    {"W"}},
+        {"stick_down",  {"S"}},
+        {"stick_left",  {"A"}},
+        {"stick_right", {"D"}},
+    };
+    return table;
+}
+
+bool resolve_source(const std::string& name, Source& out) {
+    struct { const char* name; SourceKind kind; int code; } mouse[] = {
+        {"Mouse Left",   SourceKind::MouseButton, SDL_BUTTON_LEFT},
+        {"Mouse Right",  SourceKind::MouseButton, SDL_BUTTON_RIGHT},
+        {"Mouse Middle", SourceKind::MouseButton, SDL_BUTTON_MIDDLE},
+        {"Mouse X1",     SourceKind::MouseButton, SDL_BUTTON_X1},
+        {"Mouse X2",     SourceKind::MouseButton, SDL_BUTTON_X2},
+        {"Wheel Up",     SourceKind::WheelUp,     0},
+        {"Wheel Down",   SourceKind::WheelDown,   0},
+    };
+    for (const auto& m : mouse) {
+        if (SDL_strcasecmp(name.c_str(), m.name) == 0) {
+            out = {m.kind, m.code};
+            return true;
+        }
+    }
+    const SDL_Scancode sc = SDL_GetScancodeFromName(name.c_str());
+    if (sc == SDL_SCANCODE_UNKNOWN) {
+        return false;
+    }
+    out = {SourceKind::Key, int(sc)};
+    return true;
+}
+
+std::mutex g_bindings_mutex;
+std::shared_ptr<const Resolved> g_resolved;   // read by the game's thread
+Bindings g_bindings_in_force;                 // the names, for the file
+
+std::shared_ptr<const Resolved> resolved() {
+    std::lock_guard<std::mutex> lock(g_bindings_mutex);
+    return g_resolved;
+}
+
+// ---------------------------------------------------------------------------
+// The mouse: written on the main thread (events), read on the game's thread
+// ---------------------------------------------------------------------------
+
+using Clock = std::chrono::steady_clock;
+
+int64_t now_us() {
+    return std::chrono::duration_cast<std::chrono::microseconds>(Clock::now().time_since_epoch()).count();
+}
+
+std::atomic<bool> g_focused{true};
+std::atomic<bool> g_captured{false};
+std::atomic<uint32_t> g_mouse_held{0};                 // bit (1 << button index)
+std::atomic<int64_t> g_mouse_press_until[8] = {};       // latched presses, microseconds
+std::atomic<int64_t> g_wheel_up_until{0};
+std::atomic<int64_t> g_wheel_down_until{0};
+
+// A press is reported for at least this long. The game samples its pad
+// once per frame (33 ms), so a click shorter than a frame could fall
+// between two reads; held this long it is seen by one frame or two, and
+// the game's own edge detection makes it one press either way.
+constexpr int64_t PressHoldUs = 45000;
+// The motion that becomes the stick: everything the mouse did over the
+// last third of a game frame, so the reading tracks the hand at any read
+// rate and settles to centre within a frame of the hand stopping.
+constexpr int64_t MotionWindowUs = 11000;
+constexpr int64_t MotionKeepUs = 100000;
+// Pixels of motion inside the window that reach full deflection at
+// sensitivity 1: about 2200 px/s, a brisk flick.
+constexpr float MotionFullDeflectionPx = 24.0f;
+
+struct Motion { int64_t t; float dx; float dy; };
+std::mutex g_motion_mutex;
+std::deque<Motion> g_motion;
+
+void clear_mouse() {
+    g_mouse_held.store(0, std::memory_order_relaxed);
+    for (auto& p : g_mouse_press_until) p.store(0, std::memory_order_relaxed);
+    g_wheel_up_until.store(0, std::memory_order_relaxed);
+    g_wheel_down_until.store(0, std::memory_order_relaxed);
+    std::lock_guard<std::mutex> lock(g_motion_mutex);
+    g_motion.clear();
+}
+
+bool source_down(const Source& src, const uint8_t* keys, uint32_t held, int64_t t) {
+    switch (src.kind) {
+        case SourceKind::Key:
+            return keys != nullptr && src.code >= 0 && src.code < SDL_NUM_SCANCODES && keys[src.code];
+        case SourceKind::MouseButton:
+            return (src.code >= 0) && (src.code < 8) &&
+                   (((held >> src.code) & 1u) || (t < g_mouse_press_until[src.code].load(std::memory_order_relaxed)));
+        case SourceKind::WheelUp:
+            return t < g_wheel_up_until.load(std::memory_order_relaxed);
+        case SourceKind::WheelDown:
+            return t < g_wheel_down_until.load(std::memory_order_relaxed);
+    }
+    return false;
+}
+
+} // namespace
+
+const Bindings& input_default_bindings() {
+    return defaults();
+}
+
+void input_set_bindings(const Bindings& bindings) {
+    auto r = std::make_shared<Resolved>();
+    Bindings in_force = defaults();
+    for (int i = 0; i < IN_COUNT; i++) {
+        const std::string name = kInputNames[i];
+        auto it = bindings.find(name);
+        const std::vector<std::string>& wanted = (it != bindings.end()) ? it->second : defaults().at(name);
+        std::vector<Source> sources;
+        std::vector<std::string> accepted;
+        for (const std::string& src_name : wanted) {
+            Source src{};
+            if (resolve_source(src_name, src)) {
+                sources.push_back(src);
+                accepted.push_back(src_name);
+            } else {
+                printf("[SNAP-Input] keys.%s: \"%s\" is not a key or mouse name SDL knows; skipped\n",
+                       name.c_str(), src_name.c_str());
+            }
+        }
+        if (sources.empty()) {
+            // Nothing usable was given: the default stays, so no input can
+            // be left with no way to press it.
+            for (const std::string& src_name : defaults().at(name)) {
+                Source src{};
+                if (resolve_source(src_name, src)) sources.push_back(src);
+            }
+            accepted = defaults().at(name);
+            if (it != bindings.end()) {
+                printf("[SNAP-Input] keys.%s: no usable source; the default stays\n", name.c_str());
+            }
+        }
+        r->sources[i] = std::move(sources);
+        in_force[name] = std::move(accepted);
+    }
+    for (const auto& entry : bindings) {
+        bool known = false;
+        for (const char* k : kInputNames) known = known || (entry.first == k);
+        if (!known) {
+            printf("[SNAP-Input] keys.%s: not an input this port has; ignored (input.h lists them)\n", entry.first.c_str());
+        }
+    }
+    fflush(stdout);
+    std::lock_guard<std::mutex> lock(g_bindings_mutex);
+    g_resolved = std::move(r);
+    g_bindings_in_force = std::move(in_force);
+}
+
+Bindings input_bindings() {
+    std::lock_guard<std::mutex> lock(g_bindings_mutex);
+    if (g_bindings_in_force.empty()) {
+        return defaults();
+    }
+    return g_bindings_in_force;
+}
+
+void input_handle_sdl_event(const SDL_Event& event) {
+    const bool captured = g_captured.load(std::memory_order_relaxed);
+    switch (event.type) {
+        case SDL_WINDOWEVENT:
+            if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
+                g_focused.store(false, std::memory_order_relaxed);
+                clear_mouse();
+            } else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
+                g_focused.store(true, std::memory_order_relaxed);
+            }
+            break;
+        case SDL_MOUSEMOTION:
+            if (captured) {
+                std::lock_guard<std::mutex> lock(g_motion_mutex);
+                g_motion.push_back({now_us(), float(event.motion.xrel), float(event.motion.yrel)});
+                while (g_motion.size() > 256) g_motion.pop_front();
+            }
+            break;
+        case SDL_MOUSEBUTTONDOWN:
+            if (captured && event.button.button < 8) {
+                g_mouse_held.fetch_or(1u << event.button.button, std::memory_order_relaxed);
+                g_mouse_press_until[event.button.button].store(now_us() + PressHoldUs, std::memory_order_relaxed);
+            }
+            break;
+        case SDL_MOUSEBUTTONUP:
+            if (event.button.button < 8) {
+                g_mouse_held.fetch_and(~(1u << event.button.button), std::memory_order_relaxed);
+            }
+            break;
+        case SDL_MOUSEWHEEL:
+            if (captured) {
+                const int y = (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) ? -event.wheel.y : event.wheel.y;
+                if (y > 0) g_wheel_up_until.store(now_us() + PressHoldUs, std::memory_order_relaxed);
+                if (y < 0) g_wheel_down_until.store(now_us() + PressHoldUs, std::memory_order_relaxed);
+            }
+            break;
+        default:
+            break;
+    }
+}
+
+void input_update_mouse_capture() {
+    const bool wanted = settings().mouse_aim &&
+                        g_focused.load(std::memory_order_relaxed) &&
+                        g_app_level_resident.load(std::memory_order_relaxed);
+    const bool current = g_captured.load(std::memory_order_relaxed);
+    if (wanted == current) {
+        return;
+    }
+    if (SDL_SetRelativeMouseMode(wanted ? SDL_TRUE : SDL_FALSE) != 0) {
+        printf("[SNAP-Input] mouse capture %s failed: %s\n", wanted ? "on" : "off", SDL_GetError());
+        fflush(stdout);
+        return;
+    }
+    g_captured.store(wanted, std::memory_order_relaxed);
+    if (!wanted) {
+        clear_mouse();
+    }
+    printf("[SNAP-Input] mouse %s\n", wanted ? "captured: it aims the camera" : "released");
+    fflush(stdout);
+}
 
 // ---------------------------------------------------------------------------
 // Internal state
@@ -316,31 +607,63 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
     float ay = 0.0f;
 
     // -----------------------------------------------------------------------
-    // Keyboard input
+    // Keyboard and mouse buttons, through the binding table
     // -----------------------------------------------------------------------
     const uint8_t* keys = SDL_GetKeyboardState(nullptr);
-    if (keys) {
-        // Buttons
-        if (keys[SDL_SCANCODE_X])       btn |= N64_BTN_A;
-        if (keys[SDL_SCANCODE_Z])       btn |= N64_BTN_B;
-        if (keys[SDL_SCANCODE_LSHIFT])  btn |= N64_BTN_Z;
-        if (keys[SDL_SCANCODE_RETURN])  btn |= N64_BTN_START;
-        if (keys[SDL_SCANCODE_UP])      btn |= N64_BTN_DU;
-        if (keys[SDL_SCANCODE_DOWN])    btn |= N64_BTN_DD;
-        if (keys[SDL_SCANCODE_LEFT])    btn |= N64_BTN_DL;
-        if (keys[SDL_SCANCODE_RIGHT])   btn |= N64_BTN_DR;
-        if (keys[SDL_SCANCODE_Q])       btn |= N64_BTN_L;
-        if (keys[SDL_SCANCODE_E])       btn |= N64_BTN_R;
-        if (keys[SDL_SCANCODE_I])       btn |= N64_BTN_CU;
-        if (keys[SDL_SCANCODE_K])       btn |= N64_BTN_CD;
-        if (keys[SDL_SCANCODE_J])       btn |= N64_BTN_CL;
-        if (keys[SDL_SCANCODE_L])       btn |= N64_BTN_CR;
+    {
+        std::shared_ptr<const Resolved> table = resolved();
+        if (table == nullptr) {
+            input_set_bindings(defaults());
+            table = resolved();
+        }
+        const int64_t t = now_us();
+        const uint32_t held = g_captured.load(std::memory_order_relaxed)
+                                  ? g_mouse_held.load(std::memory_order_relaxed) : 0u;
+        for (int i = 0; i < IN_COUNT; i++) {
+            bool down = false;
+            for (const Source& src : table->sources[i]) {
+                if (source_down(src, keys, held, t)) { down = true; break; }
+            }
+            if (!down) continue;
+            if (i <= IN_CR) {
+                btn |= kInputBits[i];
+            } else if (i == IN_STICK_UP) {
+                ay += 1.0f;
+            } else if (i == IN_STICK_DOWN) {
+                ay -= 1.0f;
+            } else if (i == IN_STICK_LEFT) {
+                ax -= 1.0f;
+            } else if (i == IN_STICK_RIGHT) {
+                ax += 1.0f;
+            }
+        }
+    }
 
-        // Analog stick from WASD
-        if (keys[SDL_SCANCODE_W]) ay += 1.0f;
-        if (keys[SDL_SCANCODE_S]) ay -= 1.0f;
-        if (keys[SDL_SCANCODE_A]) ax -= 1.0f;
-        if (keys[SDL_SCANCODE_D]) ax += 1.0f;
+    // -----------------------------------------------------------------------
+    // Mouse motion as the stick, while captured (a course, focused)
+    // -----------------------------------------------------------------------
+    if (g_captured.load(std::memory_order_relaxed)) {
+        const int64_t t = now_us();
+        float dx = 0.0f;
+        float dy = 0.0f;
+        {
+            std::lock_guard<std::mutex> lock(g_motion_mutex);
+            while (!g_motion.empty() && (g_motion.front().t < t - MotionKeepUs)) {
+                g_motion.pop_front();
+            }
+            for (const Motion& m : g_motion) {
+                if (m.t >= t - MotionWindowUs) {
+                    dx += m.dx;
+                    dy += m.dy;
+                }
+            }
+        }
+        const Settings& s = settings();
+        const float sens = std::fmax(0.1f, std::fmin(10.0f, s.mouse_sensitivity));
+        const float full = MotionFullDeflectionPx / sens;
+        // SDL's y grows downwards; the stick's grows upwards.
+        ax += dx / full;
+        ay += (s.mouse_invert_y ? dy : -dy) / full;
     }
 
     // -----------------------------------------------------------------------

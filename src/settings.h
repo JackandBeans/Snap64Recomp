@@ -147,6 +147,18 @@ struct Settings {
     // boot and must not find it then); the title screen's Snap Station item
     // attaches it for one run without this.
     bool  snap_station      = false;
+    // The mouse (src/input.cpp). While a course runs and the window has
+    // focus the cursor is captured and its motion is the stick; the mouse's
+    // buttons and wheel follow the binding table in the settings file
+    // ("keys"). Off, the mouse is never captured and never read. The table
+    // itself lives in input.cpp, not here: it is strings, and this struct's
+    // lock-free readers need word-sized fields (below).
+    bool  mouse_aim         = true;
+    // Multiplies the motion: 1 is a brisk flick to full deflection, 2 is
+    // twice as quick, 0.5 half. Bounded to 0.1 .. 10 where it is read.
+    float mouse_sensitivity = 1.0f;
+    // Mouse forward tilts the view down instead of up.
+    bool  mouse_invert_y    = false;
     // Interpolate the view and projection as well as object transforms.
     //
     // On, and it has to be: this game's camera lives in the projection stack,
@@ -225,8 +237,8 @@ struct Settings {
 // save_settings copies the struct under it, then serialises and writes the
 // copy with the lock released. Readers go through settings() without the
 // lock. In the language's terms that is a data race; it is tolerated on
-// purpose because every field is a bool or an int, which x86-64 and ARM64
-// store whole with one instruction, so a reader sees each field either
+// purpose because every field is a bool, an int or a float, which x86-64
+// and ARM64 store whole with one instruction, so a reader sees each field either
 // before or after its write and never torn. What a reader can see is a mix
 // of old and new fields for one frame -- a GraphicsConfig built from this
 // edit's msaa and the last edit's widescreen -- and the next read corrects

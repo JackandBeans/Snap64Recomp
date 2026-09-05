@@ -186,8 +186,15 @@ static void update_gfx(void* /*gfx_data*/) {
         }
     }
 
+    // The mouse's capture follows the settings, the focus and whether a
+    // course is running; decided here, on the thread that pumps events.
+    snap::input_update_mouse_capture();
+
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
+        // Mouse motion, buttons and wheel, and the window's focus, for the
+        // input layer; it consumes nothing this switch needs.
+        snap::input_handle_sdl_event(event);
         switch (event.type) {
             case SDL_QUIT:
                 // Named in the log because an unattended session was seen

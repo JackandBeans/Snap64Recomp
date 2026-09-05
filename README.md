@@ -194,20 +194,44 @@ deleted. The first start after the change rebuilds the cache once.
 
 ### Controls
 
-Keyboard (`src/input.cpp`):
+Keyboard and mouse (`src/input.cpp`), as the port ships them:
 
-| N64 | Key |
-| --- | --- |
-| Control stick | W A S D |
-| A / B | X / Z |
-| Z | Left Shift |
-| Start | Enter |
-| D-pad | Arrow keys |
-| L / R | Q / E |
-| C-Up / C-Down / C-Left / C-Right | I / K / J / L |
+| N64 | Key | Mouse | In a course |
+| --- | --- | --- | --- |
+| Control stick | W A S D | moving the mouse | aims the camera |
+| A | X | left button | the photo when zoomed, an apple when not |
+| B | Z | middle button | the pester ball |
+| Z | Left Shift | right button | zoom (hold or switch, the game's own option) |
+| R | E | | dash |
+| L | Q | | |
+| C-Down | K | wheel down | the Poké Flute |
+| C-Up | I | wheel up | turn to face behind |
+| C-Left / C-Right | J / L | side buttons (back / forward) | turn left / right |
+| Start | Enter | | pause |
+| D-pad | Arrow keys | | |
 
-The keys are fixed scancodes, positional on the keyboard: on a non-QWERTY
-layout they are the keys in those places, not the letters printed on them.
+The mouse works while a course runs and the window has focus: the cursor
+is captured and hidden, its motion is the stick, and its buttons are the
+buttons above. Everywhere else (the title, the lab, Oak's check, the
+menus) the cursor is free and the mouse does nothing, so clicking the
+window never presses a button. Moving the mouse turns the view the way
+pushing the stick does: a brisk flick is full deflection, and a still
+mouse is a centred stick. `mouse_sensitivity` in the settings file scales
+it (1 as shipped; 2 twice as quick), `mouse_invert_y` flips the vertical,
+and `mouse_aim` off leaves the mouse alone entirely.
+
+Every keyboard and mouse binding can be changed. The settings file's
+`keys` table names each input (`a`, `b`, `z`, `start`, `l`, `r`, `c_up`,
+`c_down`, `c_left`, `c_right`, `d_up`, `d_down`, `d_left`, `d_right`,
+`stick_up`, `stick_down`, `stick_left`, `stick_right`) and lists what
+presses it: SDL key names such as `"X"`, `"Left Shift"`, `"Return"`,
+`"Space"`, or the mouse names `"Mouse Left"`, `"Mouse Right"`,
+`"Mouse Middle"`, `"Mouse X1"`, `"Mouse X2"`, `"Wheel Up"`, `"Wheel Down"`.
+The file is written with the whole table in it after the first start, so
+editing is a matter of changing a name; a name the port cannot resolve is
+reported in the log and skipped, and an input left with nothing usable
+keeps its default. The keys are positional scancodes: on a non-QWERTY
+layout `"X"` is the key in X's place, not the letter printed on it.
 
 Any SDL game controller overrides the keyboard while attached: left stick is
 the control stick, A is A, B or X is B, the left shoulder button is Z, Start
@@ -439,6 +463,10 @@ the defaults below are that file's.
 | `jynx_vc` | `false` | Jynx Recolor, Jynx's face and hands: Off: the cartridge's black; On: the purple of the re-releases, matched to a published Virtual Console screenshot |
 | `interpolate_camera` | `true` | interpolate the view as well as objects (F4; no row on the Graphics page) |
 | `snap_station` | `false` | keep the Snap Station on port 4 from the title menu on, every start (see "The Snap Station") |
+| `mouse_aim` | `true` | the mouse aims and its buttons press, while a course runs and the window has focus ("Controls") |
+| `mouse_sensitivity` | `1.0` | how much motion is full deflection: 2 is twice as quick, 0.5 half; 0.1 to 10 |
+| `mouse_invert_y` | `false` | mouse forward tilts the view down |
+| `keys` | the table under "Controls" | what presses each input: SDL key names and the mouse names, one or a list |
 | `graphics_api` | `0` | 0 Direct3D 12 (every run so far), 1 Vulkan (RT64's other backend, untried here; an escape hatch if D3D12 fails); restart |
 | `downsample` | `1` | Super Sampling factor |
 | `resolution_scale` | `0` | 0 follows the window; 1-8 caps the render scale in multiples of 320x240 |
@@ -487,7 +515,6 @@ documentation.
   it, add `"graphics_api": 1` to `snapsettings.json` next to the executable,
   or create that file containing just `{"graphics_api": 1}` (a key the file
   lacks keeps its default), and start the port again.
-* Keyboard bindings cannot be remapped.
 * With Overscan Crop off, the whole 320x240 frame is on screen, including
   the columns and rows a television hid, and some of the game's own art has
   edges there: the lab backdrop's leftmost pixel column and top row are

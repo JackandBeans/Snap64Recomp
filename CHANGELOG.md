@@ -1,5 +1,18 @@
 # Changelog
 
+## 1.0.1 -- unreleased
+
+* Keyboard and mouse support. In a course the mouse aims the camera (the
+  cursor is captured while the course runs and the window has focus, and
+  free everywhere else), the left button is A, the right button Z, the
+  middle button B, the wheel C-Down and C-Up, and the side buttons C-Left
+  and C-Right, so the game's own scheme carries over: click to shoot,
+  right-click to zoom, wheel down for the flute. Sensitivity and vertical
+  inversion are settings. Every keyboard and mouse binding is remappable
+  through the settings file's `keys` table; the shipped layout is unchanged.
+* The README says Widescreen is untested beyond the Beach and that the
+  game culls by its 4:3 view, so objects at the edges vanish.
+
 ## 1.0.0 -- 2026-09-05
 
 The first release. A native Windows port of Pokémon Snap (US) by static
