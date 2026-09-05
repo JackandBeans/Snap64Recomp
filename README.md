@@ -545,8 +545,9 @@ The same list, with a place to reply, is pinned under
 * Verified in the sense that the developer has play-tested the entire game
   on the one machine above: every course from the Beach to Rainbow Cloud,
   Oak's evaluations, the report, the album, the Gallery and a Snap Station
-  print, with the port's own screens and hotkeys along the way, and the renderer, audio, saving, the Graphics and Sound
-  pages and the hotkeys listed here all come from the code as it stands
+  print, with the port's own screens and hotkeys along the way; and the
+  renderer, audio, saving, the Graphics and Sound pages and the hotkeys
+  listed here all come from the code as it stands
   (`src/settings.cpp`, `src/settings.h`, `src/input.cpp`, `src/main.cpp`).
 * `tools/release_check.py` is the headless suite a release build is put
   through: the executable is windowed, the log reaches a pipe or `snap64.log`,
