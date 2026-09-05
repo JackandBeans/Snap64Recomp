@@ -221,7 +221,12 @@ extern "C" void snap_fx_particle(uint8_t* rdram, recomp_context* ctx) {
     // order between passes is not.
     const uint32_t pass = static_cast<uint32_t>(MEM_W(0x1F8, ctx->r29)) & 3u;
 
-    if (!snapdiag::fxTaggingEnabled().load(std::memory_order_relaxed)) {
+    // Diagnostic: SNAP_FX_TAGS=0 in the environment leaves the stream untagged.
+    static const bool snapTagsOff = []() {
+        const char* e = std::getenv("SNAP_FX_TAGS");
+        return (e != nullptr) && (e[0] == '0');
+    }();
+    if (snapTagsOff || !snapdiag::fxTaggingEnabled().load(std::memory_order_relaxed)) {
         return;
     }
 

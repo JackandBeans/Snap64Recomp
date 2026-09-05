@@ -31,6 +31,8 @@
 #include "input.h"
 
 #include <atomic>
+#include "hle/rt64_snap_diag.h"
+#include <vector>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -239,6 +241,28 @@ static void snap_input_tap(uint16_t* buttons, float* x, float* y) {
     }
     for (uint32_t i = 0; i < pcapAtCount; i++) {
         if (pcapAt[i] == readingIndex) {
+            armCapture = true;
+        }
+    }
+    {
+        static std::vector<uint32_t> atFrames = [] {
+            std::vector<uint32_t> v;
+            if (const char* e = getenv("SNAP_PCAP_ATFRAME")) {
+                const char* c = e;
+                while (*c != 0) {
+                    char* after = nullptr;
+                    const unsigned long value = strtoul(c, &after, 10);
+                    if (after == c) break;
+                    v.push_back(uint32_t(value));
+                    c = (*after == ',') ? (after + 1) : after;
+                }
+            }
+            return v;
+        }();
+        static size_t atFrameNext = 0;
+        const uint32_t frameNow = snapdiag::gameFrameCounter().load(std::memory_order_relaxed);
+        if ((atFrameNext < atFrames.size()) && (frameNow >= atFrames[atFrameNext])) {
+            atFrameNext++;
             armCapture = true;
         }
     }

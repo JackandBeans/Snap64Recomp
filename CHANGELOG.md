@@ -36,5 +36,6 @@ recorded each draw call with the next call's texture state; the game-side
 patches' data section was never loaded into memory; the fade quad left a
 hairline of the scene along the screen's edge at high resolution; a photo's
 transparent void showed the Gallery through it; the Snap Station could race
-the game's boot-time printer test. All are in the git history with their
+the game's boot-time printer test; particles that carry their own depth (the
+effect system's dust and leaves) passed the depth test against every wall. All are in the git history with their
 reasoning.

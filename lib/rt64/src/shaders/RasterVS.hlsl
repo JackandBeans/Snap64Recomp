@@ -24,13 +24,25 @@ LIBRARY_EXPORT void RasterVS(const RenderParams rp, in float4 iPosition, in floa
     // Apply screen scale and offset.
     ndcPos.xy = (ndcPos.xy * gConstants.screenScale) + gConstants.screenOffset * ndcPos.w;
     
-    // Output a fixed depth value for the entire triangle.
+    // A draw that supplies its own depth (G_ZS_PRIM) is rasterised at the
+    // near plane; the pixel shader writes the primitive depth itself.
+    //
+    // Pokemon Snap port: this used to multiply the primitive depth in here,
+    // and on this build the value the vertex stage read back from the
+    // per-call parameters was not the call's own: every particle of the
+    // effect system landed near enough to pass the depth test against
+    // any wall, while the same array read from the pixel stage was right
+    // (the colour blend and the recolour depend on it every frame). The
+    // pixel stage already writes the fragment depth for every draw
+    // (SV_DepthGreaterEqual, quantised onto the console's grid), so it
+    // now writes the primitive depth too; rasterising at the near plane
+    // keeps its output no less than the interpolated value, which is
+    // what that output semantic requires.
     const OtherMode otherMode = { rp.omL, rp.omH };
     const bool copyMode = (otherMode.cycleType() == G_CYC_COPY);
     const bool zSourcePrim = (otherMode.zSource() == G_ZS_PRIM);
     if (!copyMode && zSourcePrim) {
-        const uint instanceIndex = instanceRenderIndices[gConstants.renderIndex].instanceIndex;
-        ndcPos.z = instanceRDPParams[instanceIndex].primDepth.x * ndcPos.w;
+        ndcPos.z = 0.0f;
     }
 
     oPosition = ndcPos;

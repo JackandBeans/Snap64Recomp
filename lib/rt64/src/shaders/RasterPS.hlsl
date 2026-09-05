@@ -64,6 +64,10 @@ LIBRARY_EXPORT bool RasterPS(const RenderParams rp, float4 vertexPosition, float
     const bool depthClampNear = renderFlagNoN(rp.flags);
     const bool depthDecal = (otherMode.zMode() == ZMODE_DEC);
     const bool zSourcePrim = (otherMode.zSource() == G_ZS_PRIM);
+    // Pokemon Snap port: a G_ZS_PRIM draw carries its depth in the per-call
+    // parameters and is rasterised at the near plane (RasterVS); the depth
+    // this fragment clips, compares and writes with is the primitive's.
+    const float fragDepth = (zSourcePrim && (otherMode.cycleType() != G_CYC_COPY)) ? instanceRDPParams[instanceIndex].primDepth.x : vertexPosition.z;
     int2 pixelPosSeed = floor(vertexPosition.xy);
     uint randomSeed = initRand(FrParams.frameCount, instanceIndex * pixelPosSeed.y * pixelPosSeed.x, 16); // TODO: Review seed.
 
@@ -80,13 +84,13 @@ LIBRARY_EXPORT bool RasterPS(const RenderParams rp, float4 vertexPosition, float
     // Handle no-nearclipping by clamping the minimum depth and manually clipping above the maximum.
     if (depthClampNear) {
         // Since depth clip is disabled on the PSO so near clip can be ignored, we manually clip any values above the allowed depth.
-        if (vertexPosition.z > MaxDepth) {
+        if (fragDepth > MaxDepth) {
             return false;
         }
     }
     // Do depth clipping manually on the fragment shader if pipeline's depth bounds are not being used due to lack of hardware support.
     else if (!pipelineDepthBounds) {
-        if ((vertexPosition.z < 0.0f) || (vertexPosition.z > MaxDepth)) {
+        if ((fragDepth < 0.0f) || (fragDepth > MaxDepth)) {
             return false;
         }
     }
@@ -96,7 +100,7 @@ LIBRARY_EXPORT bool RasterPS(const RenderParams rp, float4 vertexPosition, float
     // clips before it encodes, and after interpolation, which is the only point at which the
     // hardware quantises at all. Snapping per vertex instead flattens the depth gradient across
     // large polygons and loses the geometry entirely.
-    resultDepth = QuantizeDepthN64(vertexPosition.z);
+    resultDepth = QuantizeDepthN64(fragDepth);
 
     if (depthDecal) {
         // Sample the depth buffer for this pixel to compare for the decal check.
@@ -115,7 +119,7 @@ LIBRARY_EXPORT bool RasterPS(const RenderParams rp, float4 vertexPosition, float
 
         // Perform the decal depth tolerance check.
         const float DepthTolerance = max(CoplanarDepthTolerance(surfaceDepth), dz);
-        const float pixelDepth = select(depthClampNear, max(vertexPosition.z, 0.0f), vertexPosition.z);
+        const float pixelDepth = select(depthClampNear, max(fragDepth, 0.0f), fragDepth);
         if (abs(pixelDepth - surfaceDepth) > DepthTolerance) {
             return false;
         }

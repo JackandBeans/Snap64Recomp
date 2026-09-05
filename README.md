@@ -391,10 +391,14 @@ the defaults below are that file's.
 Environment variables the executable reads: `SNAP_WINDOW` (window size),
 `SNAP_STATS` (statistics and the diagnostic keys), `SNAP_MUTE`, `SNAP_RECORD`
 and `SNAP_REPLAY` (input recording and replay), the `SNAP_PCAP_*` family
-(presented-frame capture), and `SNAP_PHOTO_AUTOEXPORT` (with `SNAP_STATS`:
-every photo the game renders is saved to `photos/` without a key press, so a
-replay can prove the export). They are development switches; the source is
-their documentation.
+(presented-frame capture; `SNAP_PCAP_ATFRAME` keys captures to game frames,
+which do not drift between runs the way input readings do),
+`SNAP_PHOTO_AUTOEXPORT` (with `SNAP_STATS`: every photo the game renders is
+saved to `photos/` without a key press, so a replay can prove the export),
+`SNAP_ZDUMP_EVERY` and `SNAP_ZDUMP_START` (with `SNAP_STATS`: the game's
+z-buffer dumped from memory on a reading schedule) and `SNAP_FX_TAGS=0` (the
+effect system's rectangles left unnamed). They are development switches;
+the source is their documentation.
 
 ## Known limitations
 

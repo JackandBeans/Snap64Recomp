@@ -362,6 +362,31 @@ void export_photo(uint8_t* rdram) {
 void photo_export_on_reading(uint8_t* rdram) {
     const uint32_t reading = s_readings.fetch_add(1, std::memory_order_acq_rel) + 1;
 
+    // Diagnostic (SNAP_STATS): dump the z-buffer on a reading schedule.
+    if (snapdiag::statsEnabled()) {
+        static const uint32_t zEvery = [] { const char* e = std::getenv("SNAP_ZDUMP_EVERY"); return e ? uint32_t(strtoul(e, nullptr, 10)) : 0u; }();
+        static const uint32_t zStart = [] { const char* e = std::getenv("SNAP_ZDUMP_START"); return e ? uint32_t(strtoul(e, nullptr, 10)) : 0u; }();
+        static uint32_t zFiles = 0;
+        if ((zEvery > 0) && (reading >= zStart) && (((reading - zStart) % zEvery) == 0) && (zFiles < 60)) {
+            const uint32_t zbuf = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)0x8004A950));
+            if ((zbuf & 0x80000000u) != 0u) {
+                char name[96];
+                snprintf(name, sizeof(name), "zdump_f%06u_r%06u.bin", snapdiag::gameFrameCounter().load(std::memory_order_relaxed), reading);
+                FILE* f = fopen(name, "wb");
+                if (f != nullptr) {
+                    std::vector<uint16_t> px(320u * 240u);
+                    for (uint32_t i = 0; i < px.size(); i++) {
+                        px[i] = static_cast<uint16_t>(MEM_HU(0, (gpr)(int32_t)(zbuf + i * 2u)));
+                    }
+                    fwrite(px.data(), 2, px.size(), f);
+                    fclose(f);
+                    zFiles++;
+                    printf("[SNAP-ZDUMP] %s from %08X\n", name, zbuf);
+                }
+            }
+        }
+    }
+
     // Presence turns it on, as with SNAP_STATS; "0" is the one value that
     // does not, so a shell that exports it once can switch it off again.
     static const bool autoExport = [] {
