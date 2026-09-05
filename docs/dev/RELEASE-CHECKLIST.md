@@ -5,16 +5,17 @@ automated suite's results on the rc2 build (18/18, station 5/5). Internal:
 this file, like OVERNIGHT-REPORT-2026-09-03.md, is a working note kept under
 `docs/dev/` (item 2.14), with `docs/dev/README.md` saying what it is.
 
-**Status on 2026-09-05, before the push: verified.** The executable in the
-archive (`Snap64Recomp.exe`, SHA-256 beginning ccf4cb28; the archive's
-begins 4cffe0a9) went through the suite as the exact bytes that ship,
-without SNAP_STATS in the environment and on a cold shader cache: 22 of 22
-in 785 s (subsystem, stdio, attract, stats, score, settings, menu, package),
-then `--only station` 5 of 5 in 489 s (the print relaunch at 400 s, 16 of
-16 slots, the sheet, the final boot). The same code, one comment apart,
-had passed identically the same day (22 of 22 in 782 s, station 5 of 5 in
-489 s). The commits after this run touch `docs/dev/` only, which the
-archive does not carry, so the archive and its checksum stand.
+**Status on 2026-09-05, before the push.** The suite ran on the executable
+built from commit "The suite's result on the archived bytes recorded"
+(SHA-256 beginning ccf4cb28), without SNAP_STATS in the environment and on a
+cold shader cache: 22 of 22 in 785 s (subsystem, stdio, attract, stats,
+score, settings, menu, package), then `--only station` 5 of 5 in 489 s (the
+print relaunch at 400 s, 16 of 16 slots, the sheet, the final boot). The
+executable now in the archive (SHA-256 beginning 54b1832e; the archive's
+begins 01499061) is a rebuild of the same code after the author's name in
+the file properties changed to JackandBeans; no code changed, and the
+package check passed on the new archive (5 of 5). The suite is to be re-run
+on these bytes before the push, and this paragraph replaced by its result.
 
 Legend: **decide** = only the author can settle it; **do** = mechanical, can
 be done on request; **verify** = needs a person or another machine.
