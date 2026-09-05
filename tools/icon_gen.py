@@ -1,19 +1,29 @@
 # The executable's icon, src/snap64.ico, composed from the port's logo,
-# docs/logo.png (the author's own art, nothing of the game's). The logo sits
-# on a rounded tile of the blue-violet that the logo itself uses as the
-# outline behind "Snap64" (its median, sampled from the logo: 90, 73, 136),
-# shaded a little lighter at the top and darker at the bottom, with a thin
-# darker rim, so the icon is a solid shape with some depth on any desktop
-# and its colours are the logo's own. The logo is set wider than the tile,
-# so the burst's tips leave through the tile's edges and the wordmark fills
-# the width; the tile's rounded mask clips the overflow. The tile carries
-# the whole logo (burst, Snap64, the Recomp filmstrip) at 256, 128, 64, 48
-# and 32 px, and the logo's film canister at 24 and 16 px, where a wordmark
-# would be a smear. Every entry is reduced from the full-resolution logo
-# with a Lanczos filter, so no entry is an upscaled or blurred copy of
-# another. Run from anywhere; needs Pillow. The .ico is tracked, so this
-# only needs running when the logo changes.
+# docs/logo.png (the author's own art, nothing of the game's).
+#
+# 256, 128, 64, 48 and 32 px: the whole logo (burst, Snap64, the Recomp
+# filmstrip) on a rounded tile of the blue-violet the logo itself uses as
+# the outline behind "Snap64" (its median, sampled from the logo: 90, 73,
+# 136), shaded a little lighter at the top and darker at the bottom, with a
+# thin darker rim. The logo is set wider than the tile, so the burst's tips
+# leave through the tile's edges and the wordmark fills the width; the
+# tile's rounded mask clips the overflow.
+#
+# 24 and 16 px (a window's title bar, the taskbar's small mode), where a
+# wordmark would be a smear: the logo's film canister alone, on nothing,
+# filling the full height. The canister is lifted out of the logo by a
+# flood fill from the crop's edges over the burst's yellow and the clear
+# ground, so the filmstrip and the burst behind it are left out and nothing
+# of the canister is cut.
+#
+# Every entry is reduced from the full-resolution logo with a Lanczos
+# filter, so no entry is an upscaled or blurred copy of another. Run from
+# anywhere; needs Pillow and NumPy. The .ico is tracked, so this only needs
+# running when the logo changes.
 import os
+from collections import deque
+
+import numpy as np
 from PIL import Image, ImageDraw
 
 HERE = os.path.dirname(os.path.abspath(__file__))
@@ -21,11 +31,10 @@ ROOT = os.path.dirname(HERE)
 LOGO = os.path.join(ROOT, 'docs', 'logo.png')
 OUT = os.path.join(ROOT, 'src', 'snap64.ico')
 
-TILE = (90, 73, 136)            # the logo's outline blue-violet, the tile's middle
-TILE_TOP = (104, 86, 156)       # a little lighter at the top
-TILE_BOTTOM = (76, 61, 118)     # a little darker at the bottom
-RIM = (58, 45, 96, 255)         # the thin edge
-CANISTER = (1000, 560, 1095, 700)   # the film canister's box in docs/logo.png
+TILE_TOP = (104, 86, 156)       # a little lighter than the logo's outline blue
+TILE_BOTTOM = (76, 61, 118)     # a little darker
+RIM = (58, 45, 96)              # the thin edge
+CANISTER_BOX = (1006, 560, 1084, 694)   # generous box around the canister in docs/logo.png
 SS = 8                          # supersampling for the tile's edges
 
 
@@ -47,30 +56,27 @@ def tile(s):
     S = s * SS
     rad = int(S * 0.2)
     rim = max(1, round(s * 0.03)) * SS
-    grad = Image.new('RGBA', (S, S))
-    px = grad.load()
-    for y in range(S):
-        t = y / (S - 1)
-        c = tuple(round(TILE_TOP[i] * (1 - t) + TILE_BOTTOM[i] * t) for i in range(3)) + (255,)
-        for x in range(S):
-            px[x, y] = c
+    t = np.linspace(0.0, 1.0, S)[:, None]
+    top = np.array(TILE_TOP, dtype=float)[None, :]
+    bottom = np.array(TILE_BOTTOM, dtype=float)[None, :]
+    rows = np.rint(top * (1 - t) + bottom * t).astype(np.uint8)
+    grad = np.repeat(rows[:, None, :], S, axis=1)
+    grad = Image.fromarray(np.dstack([grad, np.full((S, S), 255, np.uint8)]), 'RGBA')
     base = Image.new('RGBA', (S, S), (0, 0, 0, 0))
-    base.paste((*RIM[:3], 255), (0, 0, S, S), rounded_mask(S, rad))
+    base.paste((*RIM, 255), (0, 0, S, S), rounded_mask(S, rad))
     face = rounded_mask(S, rad, rim)
     base.paste(grad, (0, 0), face)
     return base, face
 
 
-def compose(art, s, width, pad_y=0.04):
+def on_tile(art, s, width, pad_y=0.04):
     """art on the s-by-s tile: scaled so its width is `width` times the
     tile's (over 1 lets the burst's tips leave through the edges), centred,
-    clipped to the tile's face, and never taller than the face's height less
-    the vertical pad."""
+    clipped to the tile's face, and never taller than the face less pad_y."""
     art = art.crop(alpha_bbox(art))
     S = s * SS
     w, h = art.size
-    k = (S * width) / w
-    k = min(k, (S * (1 - 2 * pad_y)) / h)
+    k = min((S * width) / w, (S * (1 - 2 * pad_y)) / h)
     art = art.resize((max(1, round(w * k)), max(1, round(h * k))), Image.LANCZOS)
     base, face = tile(s)
     layer = Image.new('RGBA', (S, S), (0, 0, 0, 0))
@@ -81,14 +87,66 @@ def compose(art, s, width, pad_y=0.04):
     return base.resize((s, s), Image.LANCZOS)
 
 
+def cut_canister(logo):
+    """The film canister alone: everything in its box that a flood fill from
+    the box's edges can reach over clear or burst-yellow pixels is ground and
+    goes; the enclosed rest is the canister, outline and all."""
+    reg = np.asarray(logo.crop(CANISTER_BOX)).astype(int)
+    r, g, b, a = reg[..., 0], reg[..., 1], reg[..., 2], reg[..., 3]
+    yellow = (r > 190) & (g > 150) & (b < 130) & ((r - b) > 90)
+    pale = (r > 225) & (g > 210) & (b > 150) & (a < 250)   # the burst's soft edge
+    ground = (a < 8) | yellow | pale
+    H, W = ground.shape
+    reached = np.zeros_like(ground, dtype=bool)
+    q = deque()
+    for x in range(W):
+        for y in (0, H - 1):
+            if ground[y, x] and not reached[y, x]:
+                reached[y, x] = True; q.append((y, x))
+    for y in range(H):
+        for x in (0, W - 1):
+            if ground[y, x] and not reached[y, x]:
+                reached[y, x] = True; q.append((y, x))
+    while q:
+        y, x = q.popleft()
+        for dy, dx in ((1, 0), (-1, 0), (0, 1), (0, -1)):
+            ny, nx = y + dy, x + dx
+            if 0 <= ny < H and 0 <= nx < W and ground[ny, nx] and not reached[ny, nx]:
+                reached[ny, nx] = True; q.append((ny, nx))
+    keep = ~reached
+    # The filmstrip's end lies against the canister's left side and is as
+    # dark as the outline, so the fill cannot tell them apart. Its remnant
+    # is a two-row spur past the body's rounded corner: smooth the left
+    # edge with a five-row median and drop whatever sits left of it.
+    lefts = np.array([np.argmax(row) if row.any() else W for row in keep])
+    smooth = np.array([int(np.median(lefts[max(0, i - 2): i + 3])) for i in range(H)])
+    for i in range(H):
+        keep[i, :smooth[i]] = False
+    out = reg.copy()
+    out[..., 3] = np.where(keep, a, 0)
+    im = Image.fromarray(out.astype(np.uint8), 'RGBA')
+    return im.crop(alpha_bbox(im))
+
+
+def alone(art, s):
+    """art on a clear ground, filling the full height (or width if wider)."""
+    w, h = art.size
+    k = min(s / h, s / w)
+    art = art.resize((max(1, round(w * k)), max(1, round(h * k))), Image.LANCZOS)
+    out = Image.new('RGBA', (s, s), (0, 0, 0, 0))
+    out.paste(art, ((s - art.width) // 2, (s - art.height) // 2), art)
+    return out
+
+
 def main():
     logo = Image.open(LOGO).convert('RGBA')
-    canister = logo.crop(CANISTER)
-    frames = [compose(logo, s, 1.16) for s in (256, 128, 64, 48, 32)]
-    frames += [compose(canister, s, 0.62, pad_y=0.1) for s in (24, 16)]
+    canister = cut_canister(logo)
+    frames = [on_tile(logo, s, 1.16) for s in (256, 128, 64, 48, 32)]
+    frames += [alone(canister, s) for s in (24, 16)]
     frames[0].save(OUT, format='ICO', sizes=[f.size for f in frames],
                    append_images=frames[1:])
-    print('wrote', OUT, [f.size for f in frames])
+    print('wrote', OUT, [f.size for f in frames], 'canister', canister.size)
+    return canister
 
 
 if __name__ == '__main__':
