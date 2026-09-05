@@ -75,7 +75,7 @@ The tree must be **unmodified** (`git status` clean apart from the
 in this port -- the `manual_funcs` in `pokemonsnap.us.toml`, the overlay table,
 the two symbol files, the patches -- assumes the ROM's own layout. Growing
 `.main` by even 0x50 bytes shifts every section after it; see
-`patches/render-matrix-tagging.patch` for the record of exactly that mistake.
+`patches/README.md`, "The earlier route, and why it was abandoned", for the record of exactly that mistake.
 
 ### 2. Relink with relocations
 
@@ -208,7 +208,7 @@ Windows build: CMake builds RSPRecomp from the vendored
 `build-win/rsp/aspMain.us.toml` with absolute paths, and runs it to write
 `build-win/rsp/aspMain.cpp`, which is compiled into the executable. The
 translation is derived from the ROM and is never committed (`.gitignore`
-refuses `rsp/aspMain.cpp`); `NOTICE.md` says so under its last heading.
+refuses `rsp/aspMain.cpp`); `NOTICE.md` says so under "Material derived from the game, and where it comes from".
 
 The ROM is named by the `SNAP_ROM` cache variable. Left empty, configure
 fills it from the first of `pokemonsnap.z64` in the port root (where step 3
@@ -313,8 +313,10 @@ writes `Snap64Recomp-1.0.0-win64.zip` and a `.sha256` beside it in
 drift from what was built (`concurrentqueue.txt` is cut from that header's
 leading comment at configure time). No ROM, no saves, no settings, no cache.
 
-Two licence texts come from the repository's `licenses/` instead, because the
-vendored copies carry none:
+Four licence texts come from the repository's `licenses/` instead, because the
+vendored copies carry none (`DirectXShaderCompiler-dxil.txt`, Microsoft's terms
+for `dxil.dll`, and `roboto.txt`, the Apache 2.0 text for the printer's lettering,
+are the other two; `NOTICE.md` describes both):
 
 * `licenses/nlohmann-json.txt` -- tracked: the MIT text with the copyright
   line from `json.hpp`'s SPDX header.
@@ -413,7 +415,7 @@ through `dxcompiler.dll` was signed by the new `dxil.dll`: it presented in
 step with the display throughout, wrote a 1.5 MB shader cache, and logged no
 compiler, linker or pipeline error.
 
-The proof was then repeated with the committed script (commit `8d1c027`), at
+The proof was then repeated with the committed script (commit `aaa74a4`), at
 23:00 the same day: a plain `git clone` (1 s; the three plume files came with
 it), `python tools/fetch_deps.py` fetched all 23 trees in 174 s, replaced
 `dxil.dll` with the v1.7.2308 file and restored the three plume files from
@@ -436,7 +438,7 @@ Camera Check and Oak's evaluation of five photos), and `station.inputs` was
 synthesised from those two on 2026-09-03 for the Snap Station: the evaluation
 replay, a second Beach ride, an Album Mark in the Camera Check, Oak's check,
 the lab's Save, the title menu's Gallery entry, four rows down and Print. The
-suite's default run takes about eleven minutes; `--only station` adds the ten
-minute print and puts the save and settings back afterwards. All of them need
+suite's default run takes about thirteen minutes; `--only station` adds the
+eight-minute print and puts the save and settings back afterwards. All of them need
 the ROM beside the executable, and they open the game window; a hidden window
 starves the pacing numbers, so leave it on top.

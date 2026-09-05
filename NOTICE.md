@@ -10,11 +10,12 @@ executable (see `mupen64plus-core` and `xxHash/cli` below).
 
 The release ZIP (`BUILDING.md`, step 13) carries these texts as
 `licenses/<name>.txt`, copied out of the vendored trees when the package is
-made. Three come from the repository's `licenses/` instead, because the vendored
+made. Four come from the repository's `licenses/` instead, because the vendored
 copies carry no licence file: `nlohmann-json.txt` (the MIT text with
 `json.hpp`'s copyright line), `DirectXShaderCompiler.txt` (upstream's
 `LICENSE.TXT`, the LLVM Release License, copied on 2026-09-02; the `dxc` row
-below) and `roboto.txt` (the Apache License 2.0 with Roboto's notice; the
+below), `DirectXShaderCompiler-dxil.txt` (Microsoft's `LICENSE-MS.txt` of
+release v1.7.2308, the terms `dxil.dll` ships under; the same row) and `roboto.txt` (the Apache License 2.0 with Roboto's notice; the
 "Assets" section below).
 
 What follows is every component in the working tree as read on 2026-09-02,
@@ -40,10 +41,10 @@ but not in git (`VENDORING.md` explains).
 
 | Component | License (as found) | Origin | In this tree |
 | --- | --- | --- | --- |
-| **RT64** | MIT, "Copyright (c) 2024 RT64 Contributors" (`lib/rt64/LICENSE`) | <https://github.com/rt64/rt64>, forked from commit `a012a23` (2026-07-22; established by content, `VENDORING.md`) | `lib/rt64/src` and `include` tracked (300 files); **modified** by this port in 65 of them: forty marked `Pokemon Snap port` (thirty-nine under `src`, one under `include`; object identity and transform pairing, frame pacing and presentation, framebuffer readback, diagnostics, configuration) and twenty-five without the marker (list in `VENDORING.md`). Statically linked. |
+| **RT64** | MIT, "Copyright (c) 2024 RT64 Contributors" (`lib/rt64/LICENSE`) | <https://github.com/rt64/rt64>, forked from commit `a012a23` (2026-07-22; established by content, `VENDORING.md`) | `lib/rt64` outside `contrib` tracked (301 files); **modified** by this port in 69 of them: forty-six marked `Pokemon Snap port` (forty-five under `src`, one under `include`; object identity and transform pairing, frame pacing and presentation, framebuffer readback, diagnostics, configuration) and twenty-three without the marker (list in `VENDORING.md`). Statically linked. |
 
 RT64's own third-party trees live in `lib/rt64/src/contrib`, which is ignored
-by git (except `plume/plume_d3d12.cpp`); `tools/fetch_deps.py` fetches them at
+by git (except the three plume files named in the `plume` row below); `tools/fetch_deps.py` fetches them at
 the upstream commits recorded in `VENDORING.md`. Each entry, with what its
 files say:
 

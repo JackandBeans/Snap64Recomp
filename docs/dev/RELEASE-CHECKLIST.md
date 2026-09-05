@@ -13,11 +13,10 @@ SNAP_STATS in the environment and on a cold shader cache: 22 of 22 in
 then `--only station` 5 of 5 in 489 s (the print relaunch at 400 s, 16 of
 16 slots, the sheet, the final boot). The same code had passed identically
 twice before that day, on builds differing only in the credits string, the
-file properties and the icon. The archive was repacked once after the run,
-because the README inside it gained this run's numbers; the executable's
-bytes are unchanged and the package check passed again (5 of 5). The
-commits after this run touch `docs/dev/` only, which the archive does not
-carry.
+file properties and the icon. The archive was repacked after the run, because the
+README and NOTICE inside it changed (this run's numbers, then a proofreading
+pass); the executable's bytes are unchanged and the package check passed
+again (5 of 5) each time.
 
 Legend: **decide** = only the author can settle it; **do** = mechanical, can
 be done on request; **verify** = needs a person or another machine.
@@ -46,7 +45,7 @@ default and is disclosed as the third non-console default, since raw
 nearest pixels look wrong at every non-integer window size; 2.12 the
 commit trailers stay (the author set that rule; the README's Status does
 not dwell on it) and the author's email is theirs to change, not the
-port's: PUBLISHING.md explains GitHub's private address; 2.15 the unnamed
+port's: PUBLISHING.md records the project address; 2.15 the unnamed
 2D content is a documented known limitation, not touched days before
 release because pairing identity is where the earlier tearing bugs lived;
 3.5 and 3.6 stay as documented gaps.
@@ -80,9 +79,8 @@ commit; the tree at the tip did not change. The suite's three replays
 are now tracked under `tools/replays/`, so the suite can be run from a
 checkout.
 
-Yours: 1.7 the clean-machine run, 2.11 screenshots, the push and the
-release page (docs/dev/PUBLISHING.md walks through them), and the
-decision on the email before the first push.
+Yours: 1.7 the clean-machine run, the push and the
+release page (docs/dev/PUBLISHING.md walks through them).
 
 ## 1. Things that would embarrass the release (must)
 

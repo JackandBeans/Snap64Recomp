@@ -77,7 +77,7 @@ recovered from content:
   were compared with `git ls-tree -r` of every commit of rt64/rt64 (all
   branches and pull-request heads, 999 commits). 235 of the 260 files that
   carry no port marker match `a012a23`, the maximum anywhere in the history;
-  the remaining 65 files (below) match no upstream blob at any commit, and a
+  the remaining 69 files (below) match no upstream blob at any commit, and a
   line diff of each against every upstream version of it shows they are the
   `a012a23` versions plus the port's edits. Three files independently rule out
   any later base: `.github/workflows/validate.yml` is `a012a23`'s and not the
@@ -166,18 +166,19 @@ marks most changed sites (grep for it), but not all of them.
 
 ### RT64
 
-Against rt64/rt64 `a012a23`, 65 of the 300 tracked files differ (blob hash
-comparison of 2026-09-02, repeatable with `git hash-object` against
-`git ls-tree -r a012a23`).
+Against rt64/rt64 `a012a23`, 69 of the 301 tracked files differ (blob hash
+comparison of 2026-09-05 against the index's blob ids and
+`git ls-tree -r a012a23`, repeatable that way).
 
-**Forty files carry the marker**: thirty-nine under `lib/rt64/src` and
-`lib/rt64/include/rt64_extended_gbi.h`. Thirty-six are modified upstream
-files and four are new (`hle/rt64_snap_diag.h`, `hle/rt64_snap_photo_detail.h`,
-`render/rt64_shader_blob_cache.h`, `render/rt64_snap_recolor.h`). By area:
+**Forty-six files carry the marker**: forty-five under `lib/rt64/src` and
+`lib/rt64/include/rt64_extended_gbi.h`. Forty-one are modified upstream
+files and five are new (`hle/rt64_snap_diag.h`, `hle/rt64_snap_overlay.h`,
+`hle/rt64_snap_photo_detail.h`, `render/rt64_shader_blob_cache.h`,
+`render/rt64_snap_recolor.h`). By area:
 object identity and transform-group pairing (`hle/rt64_state.cpp/.h`,
 `rt64_rigid_body.cpp/.h`, `rt64_transform_group.h`, `rt64_draw_call.h`,
 `rt64_projection.h`, `rt64_rdp.cpp/.h`, `rt64_rsp.cpp`,
-`gbi/rt64_gbi_extended.cpp`, `gbi/rt64_gbi_rdp.cpp`,
+`gbi/rt64_gbi.cpp`, `gbi/rt64_gbi_extended.cpp`, `gbi/rt64_gbi_rdp.cpp`,
 `include/rt64_extended_gbi.h`), frame pacing and presentation
 (`hle/rt64_present_queue.cpp/.h`, `rt64_workload_queue.cpp/.h`,
 `rt64_workload.h`, `rt64_game_frame.cpp/.h`, `rt64_vi.cpp/.h`,
@@ -188,21 +189,25 @@ framebuffer readback and photo detail (`hle/rt64_framebuffer.h`,
 `shaders/TextureCopyPS.hlsl`, `shared/rt64_texture_copy.h`), the shader
 seen-list warmer (`render/rt64_raster_shader_cache.cpp`,
 `render/rt64_shader_blob_cache.h`), the Jynx recolour
-(`render/rt64_snap_recolor.h`), the port's diagnostics header
+(`render/rt64_snap_recolor.h`), the depth of primitive-depth sprites and the
+per-call parameters the pixel stage reads (`shaders/RasterPS.hlsl`,
+`shaders/RasterVS.hlsl`, `shared/rt64_rdp_params.h`,
+`shared/rt64_framebuffer_params.h`), the Snap Station's overlay
+(`hle/rt64_snap_overlay.h`), the port's diagnostics header
 (`hle/rt64_snap_diag.h`), and configuration fields
 (`common/rt64_user_configuration.h`, `rt64_enhancement_configuration.h`).
 
-**Twenty-five more files differ without the marker**; a grep for the marker
-does not find them. Twenty-four are modified upstream files: `CMakeLists.txt`
+**Twenty-three more files differ without the marker**; a grep for the marker
+does not find them. Twenty-two are modified upstream files: `CMakeLists.txt`
 (one added line), `src/common/rt64_enhancement_configuration.cpp`,
 `rt64_replacement_database.h`, `rt64_user_configuration.cpp`,
-`rt64_user_paths.cpp/.h`, `src/gbi/rt64_gbi.cpp`,
+`rt64_user_paths.cpp/.h`,
 `src/hle/rt64_application.h`, `rt64_application_window.cpp`,
 `rt64_framebuffer_pair.cpp`, `rt64_projection.cpp`, `rt64_rsp.h`,
 `rt64_workload.cpp`, `src/render/rt64_raster_shader.cpp/.h`,
 `rt64_raster_shader_cache.h`, `rt64_render_target.cpp`,
 `rt64_transform_processor.cpp`, `src/shaders/Depth.hlsli`, `Formats.hlsli`,
-`RasterPS.hlsl` (29 lines of depth quantisation), `TextureSampler.hlsli`
+`TextureSampler.hlsli`
 (a mip level clamp; the previous version of this file called it suspect, and
 it is modified), `src/shared/rt64_other_mode.h` and
 `src/tools/texture_hasher/texture_hasher.cpp`; and

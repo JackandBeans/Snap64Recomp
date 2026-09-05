@@ -58,8 +58,8 @@ installed. Then:
    read out into one file) next to `Snap64Recomp.exe`, named
    `pokemonsnap.z64`. You do not have to check the file yourself: a missing
    or wrong one is reported in a dialog before the window opens, with the
-   expected and the actual checksum ("What you need" below has the expected
-   one).
+      expected and the actual checksum (a 64-bit hash of the file, not the SHA-1
+   under "What you need").
 3. Start `Snap64Recomp.exe`. Because the executable is not signed, Windows
    may first show a "Windows protected your PC" box (SmartScreen): click
    "More info", then "Run anyway", and it will not ask again. The first start
@@ -118,7 +118,8 @@ sheet, the Camera Check), are in [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md).
   fixed, though, so rename such a dump to `pokemonsnap.z64`. A file that is
   missing, cannot be read or is another revision of the game produces a
   dialog before the window opens; a wrong dump shows both the expected and
-  the actual checksum, so you need not compute it yourself. The ROM is never
+  the actual hash (a 64-bit hash of the whole file, not the SHA-1 above), so
+  you need not compute anything yourself. The ROM is never
   included with this project.
 * Beside `Snap64Recomp.exe`: `SDL2.dll`, `dxcompiler.dll` and `dxil.dll`,
   and optionally `menu_text/recomp_logo.png` for the "Recomp" badge under the
@@ -509,7 +510,7 @@ documentation.
   component. No file in the tree carries the game's bytes: the menu font is
   cut from the game's own sprites in memory at run time, and the audio
   microcode is recompiled from the builder's ROM at build time (`NOTICE.md`,
-  last section).
+  "Material derived from the game").
 
 ## What has been verified, and what has not
 
@@ -524,8 +525,9 @@ documentation.
   frames that are real pictures, the diagnostic replay produces its usual
   pacing and coherence numbers with no crash report, the recorded run to
   Oak's evaluation scores every photo with the scorer's healthy signature and
-  exports the photos it shows, the settings file is valid, and the archive
-  carries everything it must; `--only station` puts the Snap Station print
+  exports the photos it shows, the Options screen's Graphics and Sound rows
+  stage from the harvested font with no character missing, the settings file
+  is valid, and the archive carries everything it must; `--only station` puts the Snap Station print
   through both relaunches and checks the sheets. On the 1.0.0 executable,
   run without diagnostics in the environment and on a cold shader cache,
   the suite passed 22 of 22 checks in 781 seconds, and the station's 5 of 5

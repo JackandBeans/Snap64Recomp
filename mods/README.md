@@ -3,7 +3,8 @@
 Nothing ships here. The runtime this port is built on (N64ModernRuntime's
 librecomp) scans this folder at start-up for `.nrm` mod containers, the same
 format the other N64 recompilation projects use, and loads the ones enabled in
-`mod_config/mods.json` next to it. A mod must target the game id
+`mods.json` beside it, in the executable's folder (`mod_config/` holds each
+mod's own settings file). A mod must target the game id
 `pokemonsnap`.
 
 There is no in-game mod manager in this release: what is enabled is decided by

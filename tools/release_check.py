@@ -24,7 +24,7 @@ that a release build can be put through all of them in one go:
   settings    snapsettings.json is valid JSON and carries the port's fields
   package     (with --zip) the release archive carries the executable, the
               three DLLs, the licences and the documents
-  station     (only with --only station: it takes ten minutes and rewrites the
+    station     (only with --only station: it takes eight minutes and rewrites the
               save) the Snap Station print: the station replay plays a
               course, marks an album photo, saves, opens the Gallery's Print
               row and presses it; the port relaunches twice; the sixteen
@@ -502,7 +502,7 @@ def main():
         if args.only and name not in args.only:
             continue
         if name == 'station' and not args.only:
-            continue   # ten minutes and a save rewrite: asked for by name only
+                        continue   # eight minutes and a save rewrite: asked for by name only
         if name in ('attract', 'stats', 'stdio') and not ensure_replay(exe_dir, 'beach.inputs'):
             c.add(name, False, 'beach.inputs is not beside the executable')
             continue

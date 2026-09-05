@@ -67,8 +67,9 @@ and Sound opens the port's Sound page.
 
 **Graphics.** The port's page, set in the game's font and layout: Render
 Scale, Super Sampling, Anti-Aliasing, Widescreen, Frame Rate, 2D Detail and
-the rest, each with the game's style of help line. Everything here defaults
-to the console's behaviour.
+the rest, each with the game's style of help line. Every enhancement here is
+off by default; Render Scale, 2D Detail and Filter start one setting from the
+console's (README, "The rule the port follows").
 
 <a href="screenshots/10-sound.png"><img src="screenshots/10-sound.png" width="640" alt="The Sound page"></a>
 
