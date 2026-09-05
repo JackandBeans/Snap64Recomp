@@ -528,7 +528,7 @@ documentation.
   carries everything it must; `--only station` puts the Snap Station print
   through both relaunches and checks the sheets. On the 1.0.0 executable,
   run without diagnostics in the environment and on a cold shader cache,
-  the suite passed 22 of 22 checks in 782 seconds, and the station's 5 of 5
+  the suite passed 22 of 22 checks in 781 seconds, and the station's 5 of 5
   in 489. The suite opens the game window for each run and takes about
   thirteen minutes, plus eight for the station. There is no CI run, and no
   build on any other machine is recorded in this repository. Anything not
