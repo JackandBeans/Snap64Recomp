@@ -39,7 +39,7 @@ The people and projects this port stands on are thanked under [Thanks](#thanks).
 [the Snap Station](#the-snap-station),
 [mods and texture packs](#mods-and-texture-packs),
 [settings file](#settings-file)) ·
-[Known limitations](#known-limitations) · [Status](#status) ·
+[Known limitations](#known-limitations) · [What's next](#whats-next) · [Status](#status) ·
 [What has been verified](#what-has-been-verified-and-what-has-not) ·
 [Building](#building) · [The game, and its history](#the-game-and-its-history) ·
 [How it was made](#how-it-was-made) · [Thanks](#thanks) · [License](#license)
@@ -495,6 +495,26 @@ documentation.
   lab's translucent panel. The console drew the same pixels (verified
   against the picture as the game holds it in memory); Overscan Crop (F2)
   is the television's view.
+
+## What's next
+
+In the order it will be worked on; nothing here is a promise until it runs.
+
+1. **Reports from machines other than mine.** The port was built and played
+   on one PC; what other GPUs, drivers and Windows 10 do with it is what
+   1.0.1 will be made of. The issue form is the way to send them.
+2. **Widescreen's missing objects.** A game-side patch that widens the
+   game's own visibility test by the aspect ratio when Widescreen is on
+   ("Known limitations" above).
+3. **Steam Deck.** Every piece of the port has a Linux path (the runtime,
+   SDL2, RT64 through Vulkan); nothing has been built or tried for it yet.
+   The Windows build under Proton is the first experiment, and a report
+   from anyone with a Deck is welcome.
+4. **VR.** An idea under investigation, not a plan: stereo rendering and
+   head tracking would have to be built into the renderer.
+
+The same list, with a place to reply, is pinned under
+[Discussions](https://github.com/JackandBeans/Snap64Recomp/discussions/1).
 
 ## Status
 
