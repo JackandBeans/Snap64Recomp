@@ -16,7 +16,10 @@ is yours to press.
    A second pass the same day scrubbed the author's Windows username
    from every historical file version that carried it and dropped two
    unused dumps from the first commit; `git grep -i <username>
-   $(git rev-list --all)` is the check, and it finds nothing.
+   $(git rev-list --all)` is the check, and it finds nothing. A third pass
+   on 2026-09-05 set every commit's and the tag's time zone offset to
+   +0000, so the history says nothing about where the author lives;
+   commit with `TZ=UTC git commit ...` from now on to keep it that way.
    The GitHub account is `JackandBeans`, made with that address; the README
    names it in "Reporting a bug".
 
