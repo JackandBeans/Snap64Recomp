@@ -20,7 +20,7 @@ belongs. Python 3.11 with Pillow, NumPy and SciPy covers all of them.
 | --- | --- |
 | `harvest_menu_font.py`, `extract_menu_sprite.py`, `extract_menu_dot.py`, `probe_font_order.py` | The Options page's sprite font and furniture: harvested from the game's own sprites at run time, these scripts were used to find and check the layout (`src/menu_harvest.cpp` does the run-time work). |
 | `osd_font_gen.py` | Rasterises the capitals the Snap Station printer's on-screen lettering uses into `src/snap_station_osd_font.h` (Roboto, Apache 2.0; `licenses/roboto.txt`). |
-| `icon_gen.py` | Composes the executable's icon, `src/snap64.ico`, from the logo, `docs/logo.png`: the whole logo on a rounded tile of the logo's own outline blue at 32 px and above; the film canister alone, cut out of the logo, at 24 and 16 (Pillow, NumPy). |
+| `icon_gen.py` | Composes the executable's icon, `src/snap64.ico`, from the logo, `docs/logo.png`: the whole logo on a square tile of the logo's own outline blue at 32 px and above; the film canister alone, cut out of the logo, at 24 and 16 (Pillow, NumPy). |
 | `jynx_vc_preview.py` | Offline check and preview of the opt-in Jynx recolour against a Virtual Console capture. |
 
 ## Checking and debugging

@@ -2,19 +2,20 @@
 # docs/logo.png (the author's own art, nothing of the game's).
 #
 # 256, 128, 64, 48 and 32 px: the whole logo (burst, Snap64, the Recomp
-# filmstrip) on a rounded tile of the blue-violet the logo itself uses as
-# the outline behind "Snap64" (its median, sampled from the logo: 90, 73,
-# 136), shaded a little lighter at the top and darker at the bottom, with a
-# thin darker rim. The logo is set wider than the tile, so the burst's tips
-# leave through the tile's edges and the wordmark fills the width; the
-# tile's rounded mask clips the overflow.
+# filmstrip) on a square tile filling the whole icon, of the blue-violet the
+# logo itself uses as the outline behind "Snap64" (its median, sampled from
+# the logo: 90, 73, 136), shaded a little lighter at the top and darker at
+# the bottom, with a thin darker rim. The logo is set wider than the tile,
+# so the burst's tips leave through the tile's edges and the wordmark fills
+# the width; the tile's face clips the overflow.
 #
 # 24 and 16 px (a window's title bar, the taskbar's small mode), where a
 # wordmark would be a smear: the logo's film canister alone, on nothing,
 # filling the full height. The canister is lifted out of the logo by a
 # flood fill from the crop's edges over the burst's yellow and the clear
 # ground, so the filmstrip and the burst behind it are left out and nothing
-# of the canister is cut.
+# of the canister is cut; its left side, where the filmstrip lay against it
+# in the logo, is the clean right side mirrored, so the two sides match.
 #
 # Every entry is reduced from the full-resolution logo with a Lanczos
 # filter, so no entry is an upscaled or blurred copy of another. Run from
@@ -43,19 +44,18 @@ def alpha_bbox(im):
     return im.getchannel('A').point(lambda a: 255 if a > 8 else 0).getbbox()
 
 
-def rounded_mask(S, rad, inset=0):
+def square_mask(S, inset=0):
     m = Image.new('L', (S, S), 0)
-    ImageDraw.Draw(m).rounded_rectangle((inset, inset, S - 1 - inset, S - 1 - inset), max(1, rad - inset), fill=255)
+    ImageDraw.Draw(m).rectangle((inset, inset, S - 1 - inset, S - 1 - inset), fill=255)
     return m
 
 
 def tile(s):
-    """A rounded square of the logo's blue with a vertical shade and a rim,
-    drawn oversize and reduced so the corners are smooth at every size.
-    Returns the tile and the mask of its face (inside the rim)."""
+    """A square of the logo's blue filling the icon, with a vertical shade
+    and a thin rim, drawn oversize and reduced. Returns the tile and the
+    mask of its face (inside the rim)."""
     S = s * SS
-    rad = int(S * 0.2)
-    rim = max(1, round(s * 0.03)) * SS
+    rim = max(1, round(s * 0.025)) * SS
     t = np.linspace(0.0, 1.0, S)[:, None]
     top = np.array(TILE_TOP, dtype=float)[None, :]
     bottom = np.array(TILE_BOTTOM, dtype=float)[None, :]
@@ -63,8 +63,8 @@ def tile(s):
     grad = np.repeat(rows[:, None, :], S, axis=1)
     grad = Image.fromarray(np.dstack([grad, np.full((S, S), 255, np.uint8)]), 'RGBA')
     base = Image.new('RGBA', (S, S), (0, 0, 0, 0))
-    base.paste((*RIM, 255), (0, 0, S, S), rounded_mask(S, rad))
-    face = rounded_mask(S, rad, rim)
+    base.paste((*RIM, 255), (0, 0, S, S), square_mask(S))
+    face = square_mask(S, rim)
     base.paste(grad, (0, 0), face)
     return base, face
 
@@ -125,7 +125,18 @@ def cut_canister(logo):
     out = reg.copy()
     out[..., 3] = np.where(keep, a, 0)
     im = Image.fromarray(out.astype(np.uint8), 'RGBA')
-    return im.crop(alpha_bbox(im))
+    im = im.crop(alpha_bbox(im))
+    # The right side is the clean one; make the left its mirror: the whole
+    # silhouette, and the outer band of pixels (outline, the bands' ends),
+    # while the label's own art in the middle stays as drawn.
+    px = np.asarray(im).copy()
+    w = px.shape[1]
+    mirrored = px[:, ::-1, :]
+    half = w // 2
+    band = max(4, w // 5)
+    px[:, :half, 3] = mirrored[:, :half, 3]
+    px[:, :band, :3] = mirrored[:, :band, :3]
+    return Image.fromarray(px, 'RGBA')
 
 
 def alone(art, s):
