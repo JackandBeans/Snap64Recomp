@@ -81,6 +81,12 @@ void station_init();
 // Follows the setting (settings.cpp on load, the Graphics page on an edit).
 void station_set_enabled(bool enabled);
 
+// True once, when the job marker said the run that relaunched this process
+// was fullscreen: main.cpp restores that through the live fullscreen path
+// once the window has been up for a moment (a window is never created
+// fullscreen, settings.cpp).
+bool station_take_fullscreen_restore();
+
 // The title screen's Snap Station item was chosen (menu_assets.cpp relays the
 // patch's mailbox byte): port 4 carries the station from now until this
 // process ends, whatever the setting says. Nothing is written to the settings.

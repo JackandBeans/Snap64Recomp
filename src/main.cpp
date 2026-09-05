@@ -158,6 +158,34 @@ static void update_gfx(void* /*gfx_data*/) {
     // samples every tick, so music advances faster than wall-clock and the
     // queue overruns (sped-up, choppy audio).
     snap_publish_ai_len(snap::g_rdram);
+
+    // The Snap Station's relaunches come back at the window state the run
+    // had. A boot is always windowed (settings.cpp), so the return to
+    // fullscreen goes through the live path the maximize button uses,
+    // once the window has been up for a moment.
+    {
+        static bool restoreChecked = false;
+        static bool restorePending = false;
+        static std::chrono::steady_clock::time_point restoreAt;
+        const auto now = std::chrono::steady_clock::now();
+        if (!restoreChecked) {
+            restoreChecked = true;
+            restorePending = snap::station_take_fullscreen_restore();
+            restoreAt = now + std::chrono::milliseconds(1200);
+        }
+        if (restorePending && (sdl_window != nullptr) && (now >= restoreAt)) {
+            restorePending = false;
+            {
+                std::lock_guard<std::mutex> lock(snap::settings_mutex());
+                snap::settings().fullscreen = true;
+            }
+            snap::apply_graphics_settings();
+            snap_update_window_title();
+            printf("[SNAP] fullscreen restored after the Snap Station's relaunch\n");
+            fflush(stdout);
+        }
+    }
+
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         switch (event.type) {

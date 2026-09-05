@@ -99,6 +99,9 @@ struct Station {
     std::atomic<bool> enabled{false};
     std::atomic<bool> jobPending{false};
     std::atomic<bool> everPresent{false};
+    // The marker said the run that relaunched was fullscreen; main.cpp
+    // takes this once and restores it through the live path.
+    std::atomic<bool> restoreFullscreen{false};
     std::chrono::steady_clock::time_point start = std::chrono::steady_clock::now();
 
     std::mutex mutex;
@@ -314,8 +317,12 @@ bool read_vi_frame(uint8_t* rdram, Frame& f) {
 // ---------------------------------------------------------------------------
 // The resets: a relaunch of this executable
 // ---------------------------------------------------------------------------
-// mode, pid, time, and an optional fourth line: the sheet folder a "restart"
-// carries so the normal boot can open it.
+// mode, pid, time, an optional fourth line (the sheet folder a "restart"
+// carries so the normal boot can open it), and a fifth: "fullscreen" or
+// "windowed", the window state of the run that is ending, so the relaunch
+// comes back the way the player had it (every boot starts windowed by
+// design, settings.cpp; the relaunched process restores this through the
+// live path, main.cpp).
 void write_marker(const char* mode, const std::string& extra) {
     std::ofstream out(marker_path(), std::ios::trunc);
     if (!out) {
@@ -327,7 +334,13 @@ void write_marker(const char* mode, const std::string& extra) {
 #else
     const unsigned long pid = 0;
 #endif
-    out << mode << "\n" << pid << "\n" << std::time(nullptr) << "\n" << extra << "\n";
+    bool fullscreen = false;
+    {
+        std::lock_guard<std::mutex> lock(snap::settings_mutex());
+        fullscreen = snap::settings().fullscreen;
+    }
+    out << mode << "\n" << pid << "\n" << std::time(nullptr) << "\n" << extra << "\n"
+        << (fullscreen ? "fullscreen" : "windowed") << "\n";
 }
 
 void remove_marker() {
@@ -1089,11 +1102,17 @@ void station_init() {
     std::string extra;
     std::getline(in, extra);   // the rest of the time line
     std::getline(in, extra);   // the sheet folder, when a print just ended
+    std::string window;
+    std::getline(in, window);  // "fullscreen" or "windowed": the run that relaunched
     in.close();
 #if defined(_WIN32)
     wait_for_process(pid);
 #endif
     const long long age = static_cast<long long>(std::time(nullptr)) - when;
+    if ((window == "fullscreen") && (age >= 0) && (age < 600)) {
+        s.restoreFullscreen.store(true);
+        say("the run that relaunched was fullscreen; this one returns to it once its window is up");
+    }
     if (mode == "print" && age >= 0 && age < 600) {
         // The job is honoured whatever the setting says: the run that wrote
         // it had the station present, by the setting or by the title screen's
@@ -1110,6 +1129,10 @@ void station_init() {
         }
 #endif
     }
+}
+
+bool station_take_fullscreen_restore() {
+    return st().restoreFullscreen.exchange(false);
 }
 
 void station_request_from_title() {

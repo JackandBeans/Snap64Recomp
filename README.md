@@ -309,7 +309,8 @@ taken from having no clock. Then the port relaunches itself once more into a
 normal boot, as the kiosk reset the console a second time. That boot opens
 the sheet's folder for you, the way the kiosk handed over the stickers; the
 station is not attached to it, so the title is the ordinary one until you
-choose Snap Station again. The lettering on that screen is set from bitmaps of Roboto Regular
+choose Snap Station again. Both relaunches come back fullscreen if the
+print was started fullscreen. The lettering on that screen is set from bitmaps of Roboto Regular
 (Apache License 2.0), a freely licensed grotesque of the same construction
 as the printer's own, which cannot be read off a photographed screen;
 `tools/osd_font_gen.py` regenerates them.
@@ -359,7 +360,7 @@ the defaults below are that file's.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `fullscreen` | `false` | not persisted across runs: every boot starts windowed |
+| `fullscreen` | `false` | not persisted across runs: every boot starts windowed, except that the Snap Station's own relaunches return in the state the print started in |
 | `widescreen` | `false` | RT64 Expand: a true 16:9 field of view, not a stretch |
 | `msaa` | `0` | 0, 2, 4 or 8 |
 | `fps_mode` | `0` | 0 Original, 1 Display refresh, 2 Manual (`fps_manual_target`) |
@@ -451,6 +452,48 @@ N64Recomp for the game and the patches, CMake and MSVC on Windows, and a list
 of things git does not carry. `cpack -C Release` in the build directory then
 writes `Snap64Recomp-1.0.0-win64.zip` (step 13).
 
+## The game, and its history
+
+Pokémon Snap was made at HAL Laboratory with Pax Softnica and published by
+Nintendo: Japan on 21 March 1999, North America that summer, Europe on 15
+September 2000. It did not begin as a Pokémon game. It began as a
+photography game called *Jack and the Beanstalk*, planned for the 64DD disk
+drive, and the HAL team that made it was called **Jack and Beans**; Satoru
+Iwata, then at HAL and later Nintendo's president, recalled that it
+"wasn't a Pokémon game, but rather a normal game in which you took
+photos". The 64DD version was dropped in January 1999 and the game shipped
+on a cartridge, which still carries the team's unused "JACK AND BEANS"
+prototype logo in the title screen's data. That is the name the port's
+author took, and why. Yoichi Yamamoto directed, with Koji Inokuchi and
+Akira Takeshima; Iwata and Shigeru Miyamoto produced. It sold more than
+1.5 million copies by the end of 1999.
+
+Two things about the original release shaped this port. In 1999 Nintendo
+put Pokémon Snap Station kiosks into Blockbuster Video stores in the United
+States and Lawson convenience stores in Japan: a Nintendo 64 with the
+retail cartridge and a sticker printer on controller port 4, so a player
+could bring a save in and leave with a sheet of sixteen stickers of their
+own photos. The cartridge's code for that printer was recovered without a
+station by James Chambers in 2021 and matches the decompilation, and the
+port emulates the device ("The Snap Station" above). And when Nintendo
+re-released the game on the Wii's Virtual Console in December 2007 (Wii U
+in 2016 and 2017, Nintendo Switch Online in June 2022), it replaced the
+kiosk with posting photos to the Wii Message Board, and recoloured Jynx
+from black to purple as it had in the other early Pokémon games; the
+port's photo export and Jynx Recolor options are those two changes,
+reproduced and off by default.
+
+The port could not exist without the
+[decompilation](https://github.com/ethteck/pokemonsnap), the community's
+years of work turning the cartridge back into readable C, which is where
+every statement about the game's own behaviour in this README was checked.
+
+Sources: [Wikipedia](https://en.wikipedia.org/wiki/Pok%C3%A9mon_Snap),
+[Nintendo World Report, "Know Your Nintendo Developers: Pokémon
+Snap"](http://www.nintendoworldreport.com/feature/43893/know-your-nintendo-developers-pokemon-snap),
+[Serebii, Virtual Console changes](https://www.serebii.net/snap/virtualconsole.shtml),
+[jamchamb, "Pokémon Snap Station" (2021)](https://jamchamb.net/2021/08/17/snap-station.html).
+
 ## How it was made
 
 Two answers, because the question has two parts.
@@ -470,28 +513,51 @@ is a copy of its decompiled source under `patches/src`, compiled with the
 decompilation's own IDO toolchain and loaded over the original. The whole
 chain, with the tools and inputs at each step, is `BUILDING.md`.
 
-**Who wrote it.** Every line of the port's own code, its tools and its
-documentation, this README included, was written by Anthropic's Claude
-models running in Claude Code, directed by Jack & Beans, who set the rule
-the port follows (console behaviour by default), chose what it would and
-would not do, tested every build on screen and supplied the reference
-material the work needed: the kiosk footage the printer's display was
-measured from, the Virtual Console capture behind Jynx Recolor, the renders
-the logo was composed from. "The developer" elsewhere in this README is
-Jack & Beans; no model played the game. The commit trailers name the model
-that wrote each commit (`git log --format=%(trailers:key=Co-Authored-By)`):
-up to 1.0.0 that is Claude Opus 5, Claude Fable 5 and Claude Fable 5.1 in
-roughly equal shares, two commits by Claude Opus 4.8, and the earliest
-forty-odd commits (17 to 24 August 2026), which carry no trailer because
-the rule came after them. The working method was the same throughout: read
-the decompilation, the runtime and RT64's source; make the change; build;
-run the headless suite, which drives the real executable through recorded
-controller inputs and reads its log and captured frames; then Jack &
-Beans's look at the result on screen. The commit messages record the
-findings, the measurements and the dead ends, including the changes that
-were tried and reverted, and the notes under `docs/dev/` are the model's
-reports to the author, kept as written. Read the code before you trust it;
-all of it is here.
+**Who wrote it.** One person, not a team. Jack & Beans is an individual
+with no studio, no collaborators and no funding behind this, who directed
+the work from the first commit on 17 August 2026 to this release: set the
+rule the port follows (console behaviour by default), chose what it would
+and would not do, tested every build on screen, and supplied the reference
+material the work needed, from the kiosk footage the printer's display was
+measured against to the Virtual Console capture behind Jynx Recolor and the
+renders the logo was composed from. "The developer" elsewhere in this
+README is that person; no model played the game.
+
+Every line of the port's own code, its tools and its documentation, this
+README included, was written by Anthropic's Claude models running in Claude
+Code under that direction. The models were Claude Fable 5.1 and Claude
+Fable 5, with Claude Opus 5 for a large share of the commits, Claude Sonnet
+5 in some sessions, and two commits by Claude Opus 4.8. The trailer on each
+commit names the model that wrote it
+(`git log --format=%(trailers:key=Co-Authored-By)`); the earliest
+forty-six commits (17 to 24 August 2026) predate the trailer rule. Fable
+5.1, the newest of them, carried the release work: the Snap Station from
+the decompiled protocol to the printer's display, the renderer's
+frame-pacing and identity work, and the audit and packaging of this
+release.
+
+What that meant in practice, which is the honest measure of what these
+models can do when someone directs and checks them: holding the
+decompilation, the runtime and RT64's source in view at once and changing
+one without breaking the others; finding the game's own behaviour in its
+code before deciding whether a difference was the port's (the intro's
+off-by-one frame, the lab picture's pale edge, the station's boot-time
+printer test); measuring instead of eyeballing (frames compared pixel by
+pixel against the picture in the game's memory, the kiosk's lettering
+measured from photographs of a real screen); building their own
+verification (the headless suite that replays controller recordings
+through the real executable and reads back its log and captured frames);
+and writing down every finding, measurement, dead end and revert in the
+commit messages, which are the project's real notebook. What they cannot
+do is see the screen or hold a controller: every judgement of how a thing
+looks or feels was the author's, made on one machine, and the port has not
+yet run on any other.
+
+None of this asks to be taken on trust. The code is here, the commit
+history is here with its reasoning, the notes under `docs/dev/` are the
+models' reports to the author kept as written, and the suite's replays
+are tracked so its checks can be re-run. `git log --stat` and an afternoon
+of reading is the way to judge the job Claude did.
 
 ## Thanks
 
