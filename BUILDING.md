@@ -32,6 +32,12 @@ non-MSVC branches; no build on another platform is recorded in this repository.
   (`tools/README.md`).
 * Git for Windows on `PATH`, and access to github.com for
   `tools/fetch_deps.py` (step 10).
+* A short path for the checkout, such as `C:\src\Snap64Recomp`. The tree's
+  longest tracked path is 140 characters (under the vendored rabbitizer),
+  the build directory adds more, and Windows refuses paths past 260 unless
+  long paths are enabled: a clone into a deep folder fails with "Filename
+  too long" before anything is built. `git config --global core.longpaths
+  true` together with Windows' long-path setting is the other way round it.
 
 ### WSL
 
