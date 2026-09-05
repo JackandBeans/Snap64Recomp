@@ -7,7 +7,7 @@ this file, like OVERNIGHT-REPORT-2026-09-03.md, is a working note kept under
 
 **Status on 2026-09-05, before the push: verified.** The executable in the
 archive (`Snap64Recomp.exe`, SHA-256 beginning b5cdc20d; the archive's
-begins 42eb9fd9) went through the suite as the exact bytes that ship, without
+begins eec75b6c) went through the suite as the exact bytes that ship, without
 SNAP_STATS in the environment and on a cold shader cache: 22 of 22 in
 781 s (subsystem, stdio, attract, stats, score, settings, menu, package),
 then `--only station` 5 of 5 in 489 s (the print relaunch at 400 s, 16 of
