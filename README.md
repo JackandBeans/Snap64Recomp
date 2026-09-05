@@ -584,22 +584,23 @@ first 151 Pokémon appear, across seven courses: Beach, Tunnel, Volcano, River,
 Cave, Valley and Rainbow Cloud. The game sold more than 1.5 million copies by
 the end of 1999, was the best-selling Nintendo 64 game in the United States
 that year, and took the Interactive Achievement Award for console children's
-and family title of the year.  Two things about the original release shaped
-this port. The first was the kiosk. In 1999 Nintendo put Pokémon Snap Station
-kiosks into Blockbuster Video stores in the United States (the deal was
-announced in May 1999) and Lawson convenience stores in Japan: a Nintendo 64
-in a blue cabinet with a slot for the player's own cartridge, a sticker
-printer on controller port 4, and a card reader. A player bought print credit
-on one of five Pokémon smart cards (Bulbasaur, Charmander, Squirtle, Pikachu
-and Jigglypuff), brought a save in, and left with a sheet of sixteen
-postage-stamp stickers of their own photos, for three dollars or 300 yen;
-Blockbuster ran a "Take Your Best Shot" contest around them. About 4,500 units
-were built, by the Arcade Museum's count; most were later converted into demo
-units for other games or recalled, and a working one is a rarity. The
-cartridge's code for the printer was recovered without a station by James
-Chambers in 2021, from the ROM, a debugger and a controller-bus tool of his
-own, and it matches the decompilation; the port emulates the device ("The Snap
-Station" above).
+and family title of the year.
+
+Two things about the original release shaped this port. The first was the
+kiosk. In 1999 Nintendo put Pokémon Snap Station kiosks into Blockbuster Video
+stores in the United States (the deal was announced in May 1999) and Lawson
+convenience stores in Japan: a Nintendo 64 in a blue cabinet with a slot for
+the player's own cartridge, a sticker printer on controller port 4, and a card
+reader. A player bought print credit on one of five Pokémon smart cards
+(Bulbasaur, Charmander, Squirtle, Pikachu and Jigglypuff), brought a save in,
+and left with a sheet of sixteen postage-stamp stickers of their own photos,
+for three dollars or 300 yen; Blockbuster ran a "Take Your Best Shot" contest
+around them. About 4,500 units were built, by the Arcade Museum's count; most
+were later converted into demo units for other games or recalled, and a
+working one is a rarity. The cartridge's code for the printer was recovered
+without a station by James Chambers in 2021, from the ROM, a debugger and a
+controller-bus tool of his own, and it matches the decompilation; the port
+emulates the device ("The Snap Station" above).
 
 The second was the re-release. When Nintendo brought the game to the Wii's
 Virtual Console in December 2007 (Wii U in 2016 and 2017, Nintendo Switch
