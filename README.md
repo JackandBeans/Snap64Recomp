@@ -8,7 +8,7 @@
 
 # Snap64 Recomp
 
-By Jack & Beans. A native Windows port of the Nintendo 64 game *Pokémon Snap*
+By JackandBeans. A native Windows port of the Nintendo 64 game *Pokémon Snap*
 (US release), made by static recompilation.
 [N64Recomp](https://github.com/N64Recomp/N64Recomp)
 translates the game's MIPS code into C, [N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime)
@@ -606,7 +606,7 @@ is a copy of its decompiled source under `patches/src`, compiled with the
 decompilation's own IDO toolchain and loaded over the original. The whole
 chain, with the tools and inputs at each step, is `BUILDING.md`.
 
-**Who wrote it.** One person, not a team. Jack & Beans is an individual
+**Who wrote it.** One person, not a team. JackandBeans is an individual
 with no studio, no collaborators and no funding behind this, who directed
 the work from the first commit on 17 August 2026 to this release: set the
 rule the port follows (console behaviour by default), chose what it would
@@ -695,6 +695,6 @@ None of this would exist without:
 
 ## License
 
-Copyright (C) 2026 Jack & Beans. GPLv3: see `LICENSE` and `NOTICE.md`. The port's own code is the author's
+Copyright (C) 2026 JackandBeans. GPLv3: see `LICENSE` and `NOTICE.md`. The port's own code is the author's
 and GPLv3; the game is Nintendo's, Creatures', GAME FREAK's and HAL's, and
 nothing of it is here.

@@ -61,7 +61,7 @@ sentence. The suite on that build: 21/21 in 782 s, station 5/5 in 492 s,
 the icon check passing in a separate `--only subsystem` run because the
 full run had started before it was added.
 
-Identity settled on 2026-09-04: author Jack & Beans <snap64recomp@gmail.com>,
+Identity settled on 2026-09-04: author JackandBeans <snap64recomp@gmail.com>,
 history rewritten with filter-repo before any push; README carries a byline,
 a Thanks section and a copyright line; the logo is docs/logo.png.
 
@@ -201,7 +201,7 @@ named (src/rect_tags.cpp); otherwise list it under known limitations.
 comments with a double-encoded dash.
 3.2 A `## Credits` section gathering what is scattered: the decompilation
 project, James Chambers (jamchamb) for the 2021 Snap Station research, the
-RT64 and N64Recomp authors, SDL, Roboto, Jack & Beans.
+RT64 and N64Recomp authors, SDL, Roboto, JackandBeans.
 3.3 State a Windows floor (Windows 10 64-bit; the DPI call needs 1703).
 3.4 One sentence telling players to copy `saves/` before updating or
 printing; the `.bak` is one generation deep.
