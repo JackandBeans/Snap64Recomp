@@ -663,11 +663,12 @@ collaborators and no funding behind this, who directed the work from the
 first commit on 17 August 2026 to this release. That direction was setting
 the rule the port follows (console behaviour by default), choosing what it
 would and would not do, testing every build on screen, and finding the
-reference material the work needed. That material was Leonhart's recording
-of a working kiosk, which the printer's display was measured against; a
-published Virtual Console screenshot, found through an image search, that
-the Jynx colour was matched from; and the renders the logo was composed
-from. "The developer" elsewhere in this README is that person; no model
+reference material the work needed. That material was the references for
+the Snap Station, chief among them Leonhart's recording of a working kiosk,
+the main video of the station in use and the one the printer's display was
+measured against; a published Virtual Console screenshot, found through an
+image search, that the Jynx colour was matched from; and the renders the
+logo was composed from. "The developer" elsewhere in this README is that person; no model
 played the game.
 
 Every line of the port's own code, its tools and its documentation, this
@@ -729,9 +730,10 @@ None of this would exist without:
   decompilation.
 * Leonhart, whose recording of a working Snap Station kiosk, ["Using
   Pokemon Snap Station For First Time In 20
-  Years!"](https://youtu.be/lCnvpIEVpqo), is the only picture this port had
-  of the printer's own display: its sticker grid, its marks and stars, and
-  the pace of its three passes were all measured from those frames.
+  Years!"](https://youtu.be/lCnvpIEVpqo), was the main video reference for
+  how the station behaved in use, and the one the printer's display was
+  measured from: its sticker grid, its marks and stars, and the pace of its
+  three passes all come from those frames.
 * [ido-static-recomp](https://github.com/decompals/ido-static-recomp)
   by the decompals, which lets the decompilation's compiler, and so the
   port's patches, build on a modern machine.
