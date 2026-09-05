@@ -5,18 +5,17 @@ automated suite's results on the rc2 build (18/18, station 5/5). Internal:
 this file, like OVERNIGHT-REPORT-2026-09-03.md, is a working note kept under
 `docs/dev/` (item 2.14), with `docs/dev/README.md` saying what it is.
 
-**Status on 2026-09-05, before the push.** The executable in the archive
-(`Snap64Recomp.exe`, SHA-256 beginning fdc01060) was built from the review
-commit, whose code differs from the last tested
-build by the credits string and comments only. The suite on that exact
-executable, run without SNAP_STATS in the environment and on a cold shader
+**Status on 2026-09-05, before the push.** The suite ran on the executable
+built from the review commit (`Snap64Recomp.exe`, SHA-256 beginning
+fdc01060), without SNAP_STATS in the environment and on a cold shader
 cache: 22 of 22 in 782 s (subsystem, stdio, attract, stats, score, settings,
 menu, package), then `--only station` 5 of 5 in 489 s (the print relaunch
-at 400 s, 16 of 16 slots, the sheet, the final boot). The docs-only commit
-that followed (this paragraph, the reference sources named, the GitHub
-username) leaves the executable's bytes unchanged; the archive was repacked
-around it (its README changed, so its own checksum did) and the package
-check re-run: 5 of 5.
+at 400 s, 16 of 16 slots, the sheet, the final boot). The executable now in
+the archive (SHA-256 beginning ccf4cb28) is a rebuild of the same code after
+one comment in `src/version.h.in` was corrected; no code changed, and the
+package check passed on the new archive (5 of 5). The suite has not been
+re-run on the rebuilt bytes; that re-run is the last step before the push,
+and this paragraph is replaced by its result.
 
 Legend: **decide** = only the author can settle it; **do** = mechanical, can
 be done on request; **verify** = needs a person or another machine.
