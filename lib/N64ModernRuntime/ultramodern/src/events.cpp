@@ -68,6 +68,8 @@ static struct {
         void update_vi() {
             ViState* next_state = get_next_state();
             const OSViMode* next_mode = next_state->mode;
+            // The host VI thread may tick before the game selects its first mode.
+            if (next_mode == nullptr) return;
             const OSViCommonRegs* common_regs = &next_mode->comRegs;
             const OSViFieldRegs* field_regs = &next_mode->fldRegs[field];
             PTR(void) framebuffer = osVirtualToPhysical(next_state->framebuffer);

@@ -29,6 +29,7 @@
 #include "rsp_microcode.h"
 #include "audio.h"
 #include "input.h"
+#include "controller_support.h"
 #include "settings.h"
 #include "version.h"
 #include "paths.h"
@@ -74,7 +75,7 @@ static constexpr const char* SNAP_INTERNAL_NAME  = "POKEMON SNAP";
 // SDL2 window / gfx callbacks
 // ---------------------------------------------------------------------------
 #include <SDL2/SDL.h>
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__APPLE__)
 #include <SDL2/SDL_syswm.h>
 #endif
 
@@ -82,6 +83,11 @@ static SDL_Window* sdl_window = nullptr;
 static void snap_update_window_title();
 
 static void* create_gfx() {
+#if defined(__APPLE__)
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS5, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_HIDAPI_PS5_RUMBLE, "1");
+    SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
+#endif
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) {
         // Nothing downstream can work without SDL, and the failures it would
         // produce (no window, no native handle, no renderer) all read as
@@ -110,7 +116,11 @@ static ultramodern::renderer::WindowHandle create_window(void* /*gfx_data*/) {
         SNAP_PORT_NAME,
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         windowW, windowH,
+#if defined(__APPLE__)
+        SDL_WINDOW_METAL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI
+#else
         SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI
+#endif
     );
     if (!sdl_window) {
         fprintf(stderr, "[SNAP] SDL_CreateWindow failed: %s\n", SDL_GetError());
@@ -129,6 +139,13 @@ static ultramodern::renderer::WindowHandle create_window(void* /*gfx_data*/) {
 
     snap_update_window_title();
     wh.window = wmInfo.info.win.window; wh.thread_id = GetCurrentThreadId(); return wh;
+#elif defined(__APPLE__)
+    SDL_SysWMinfo wmInfo{};
+    SDL_VERSION(&wmInfo.version);
+    if (!sdl_window || !SDL_GetWindowWMInfo(sdl_window, &wmInfo)) std::exit(1);
+    snap_update_window_title();
+    snap_settings_install(snap_controller_status, snap_controller_save, snap_controller_test_rumble, snap_controller_settings_active);
+    return {wmInfo.info.cocoa.window, SDL_Metal_GetLayer(SDL_Metal_CreateView(sdl_window))};
 #else
     return sdl_window;
 #endif
@@ -542,6 +559,21 @@ static void snap_bind_stdio() {
 int main(int argc, char* argv[]) {
     (void)argc;
     (void)argv;
+#if defined(__APPLE__)
+    const auto logPath = snap::base_path("snap64.log");
+    std::error_code logError;
+    std::filesystem::rename(logPath, snap::base_path("snap64.prev.log"), logError);
+    freopen(logPath.c_str(), "w", stdout);
+    freopen(logPath.c_str(), "a", stderr);
+    setvbuf(stdout, nullptr, _IONBF, 0);
+    setvbuf(stderr, nullptr, _IONBF, 0);
+    if (char* resources = SDL_GetBasePath()) {
+        const auto source = std::filesystem::path(resources) / "menu_text";
+        std::filesystem::copy(source, snap::base_path("menu_text"),
+            std::filesystem::copy_options::recursive | std::filesystem::copy_options::overwrite_existing, logError);
+        SDL_free(resources);
+    }
+#endif
 
 #if defined(_WIN32)
     // One copy at a time. A second launch from the same folder would race

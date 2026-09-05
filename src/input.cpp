@@ -29,6 +29,8 @@
  */
 
 #include "input.h"
+#include "controller_support.h"
+#include "settings.h"
 
 #include <atomic>
 #include "hle/rt64_snap_diag.h"
@@ -76,7 +78,7 @@ extern uint8_t* g_rdram;
 // Internal state
 // ---------------------------------------------------------------------------
 
-static SDL_GameController* game_controller = nullptr;
+SDL_GameController* game_controller = nullptr;
 static bool controller_initialized = false;
 
 // The Back button's press, taken from SDL's event stream rather than from
@@ -91,10 +93,26 @@ static bool controller_initialized = false;
 // this callback IS main-thread code, without a poll or a queue of its own.
 // The return value of a watch is ignored by SDL.
 static int SDLCALL photo_button_watch(void* /*userdata*/, SDL_Event* event) {
+    if (controller_settings_active.load()) return 1;
+    if (event->type == SDL_CONTROLLERBUTTONDOWN) {
+        std::lock_guard lock(controller_mutex);
+        if (!game_controller || event->cbutton.which != SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(game_controller))) return 1;
+    }
     if ((event->type == SDL_CONTROLLERBUTTONDOWN) &&
         (event->cbutton.button == SDL_CONTROLLER_BUTTON_BACK)) {
         export_photo(g_rdram);
     }
+#if defined(__APPLE__)
+    if (event->type == SDL_CONTROLLERBUTTONDOWN && event->cbutton.button == SDL_CONTROLLER_BUTTON_TOUCHPAD)
+        snap_settings_show();
+    if (event->type == SDL_CONTROLLERBUTTONDOWN && event->cbutton.button == SDL_CONTROLLER_BUTTON_MISC1) {
+        static int previousVolume=100;
+        {std::lock_guard lock(settings_mutex());
+         if(settings().master_volume) {previousVolume=settings().master_volume;settings().master_volume=0;}
+         else settings().master_volume=previousVolume;}
+        settings_mark_dirty();
+    }
+#endif
     return 1;
 }
 
@@ -134,6 +152,7 @@ static void try_open_controller() {
 // ---------------------------------------------------------------------------
 
 void input_poll() {
+    std::lock_guard lock(controller_mutex);
     if (!controller_initialized) {
         // SDL_Init should have been called by the gfx create callback.
         // Try to open a game controller if we haven't yet.
@@ -298,6 +317,7 @@ static void snap_input_tap(uint16_t* buttons, float* x, float* y) {
 }
 
 bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
+    std::lock_guard lock(controller_mutex);
     // Port 4 is the Snap Station when it is present: a controller nobody
     // holds, so its pad reads succeed with nothing pressed (snap_station.h).
     if (controller_num == 3 && snap::station_port4_present()) {
@@ -343,6 +363,17 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
         if (keys[SDL_SCANCODE_D]) ax += 1.0f;
     }
 
+#if defined(__APPLE__)
+    // DualSense layout; SDL normalizes wired and Bluetooth reports alike.
+    if (game_controller && SDL_GameControllerGetAttached(game_controller)) {
+        const auto mapped = map_controller(controller_sample(), controller_options());
+        btn |= mapped.buttons;
+        if(mapped.x || mapped.y) {ax=mapped.x;ay=mapped.y;}
+    }
+    // Test inputs in Settings must never reach the game behind the window.
+    if(controller_settings_active.load()) {btn=0;ax=0;ay=0;}
+
+#else
     // -----------------------------------------------------------------------
     // Game controller input (overrides keyboard if connected)
     // -----------------------------------------------------------------------
@@ -416,6 +447,8 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
         }
     }
 
+#endif
+
     // Clamp analog values.
     ax = std::fmax(-1.0f, std::fmin(1.0f, ax));
     ay = std::fmax(-1.0f, std::fmin(1.0f, ay));
@@ -457,6 +490,8 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
 }
 
 void input_set_rumble(int controller_num, bool rumble) {
+    std::lock_guard lock(controller_mutex);
+    if(!controller_options().rumble) rumble=false;
     if (controller_num != 0 || !game_controller) return;
 
 #if SDL_VERSION_ATLEAST(2, 0, 9)
@@ -471,6 +506,7 @@ void input_set_rumble(int controller_num, bool rumble) {
 }
 
 ultramodern::input::connected_device_info_t input_get_connected_device_info(int controller_num) {
+    std::lock_guard lock(controller_mutex);
     // Port 4: the Snap Station, a controller with a pak-class device in it.
     // The game probes any port that reports a pak (contInitialize,
     // contDetectDevices) and recognises the station by what the probe echoes

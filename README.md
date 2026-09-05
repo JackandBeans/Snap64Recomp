@@ -1,14 +1,16 @@
+<p align="center"><img src="macos/assets/AppIcon.png" width="180" alt="Pokémon Snap macOS app icon"></p>
+
 <p align="center"><img src="docs/logo.png" width="640" alt="Snap64 Recomp"></p>
 
 <p align="center">
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License: GPLv3"></a>
 <a href="https://github.com/JackandBeans/Snap64Recomp/releases/latest"><img src="https://img.shields.io/github/v/release/JackandBeans/Snap64Recomp?label=release" alt="Latest release"></a>
-<img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-lightgrey" alt="Platform: Windows 10 or 11, x64">
+<img src="https://img.shields.io/badge/platform-Windows%20x64%20%7C%20macOS%20arm64-lightgrey" alt="Platform: Windows x64 and macOS Apple Silicon">
 </p>
 
 # Snap64 Recomp
 
-By JackandBeans. A native Windows port of the Nintendo 64 game *Pokémon Snap*
+By JackandBeans, with an Apple Silicon macOS contribution in this fork. A native Windows and macOS port of the Nintendo 64 game *Pokémon Snap*
 (US release), made by static recompilation.
 [N64Recomp](https://github.com/N64Recomp/N64Recomp)
 translates the game's MIPS code into C, [N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime)
@@ -16,6 +18,18 @@ translates the game's MIPS code into C, [N64ModernRuntime](https://github.com/N6
 [RT64](https://github.com/rt64/rt64) renders, and SDL2 provides the window,
 input and audio. The game's own code runs; the port changes how it is hosted,
 and every change to how it *looks* is off unless you turn it on.
+
+## macOS / Apple Silicon
+
+This fork adds a native ARM64 app with **Metal rendering**, a custom app icon, and **native DualSense settings** for USB/Bluetooth controllers. [macOS build instructions, controls, and validation](docs/macos/README.md).
+
+<p align="center">
+<img src="docs/macos/screenshots/title.png" width="48%" alt="Pokémon Snap title screen running on macOS">
+<img src="docs/macos/screenshots/gameplay.png" width="48%" alt="Live Pokémon Snap rendering in the native macOS app">
+</p>
+<p align="center"><img src="docs/macos/screenshots/controller-settings.png" width="620" alt="Native macOS DualSense controller settings"></p>
+
+Actual captures of the running macOS app. Supply your own USA cartridge dump; no ROM or game assets are distributed as source. macOS builds are currently local and ad-hoc signed. The release links and Windows instructions below belong to the original project.
 
 This project is not affiliated with, endorsed by or connected to Nintendo,
 Creatures Inc., GAME FREAK inc., HAL Laboratory or The Pokémon Company;

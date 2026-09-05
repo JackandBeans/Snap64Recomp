@@ -16,8 +16,8 @@ Two machines are involved:
   a Windows directory (`C:\Users\<you>\PokemonSnapRecomp`), reached from WSL as
   `/mnt/c/Users/<you>/PokemonSnapRecomp`.
 
-Nothing below has been exercised on Linux or macOS. `CMakeLists.txt` has
-non-MSVC branches; no build on another platform is recorded in this repository.
+For the native Apple Silicon port, see [the macOS build guide](docs/macos/README.md).
+The pipeline below describes the original Windows/WSL build; Linux remains unverified.
 
 ## Prerequisites
 

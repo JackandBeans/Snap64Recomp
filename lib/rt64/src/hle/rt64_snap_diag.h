@@ -29,7 +29,11 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#if defined(_WIN32)
 #include <direct.h>
+#else
+#include <sys/stat.h>
+#endif
 
 namespace snapdiag {
 
@@ -648,7 +652,11 @@ inline uint32_t runToken() {
 inline bool ensureDumpDir() {
     static int state = 0;
     if (state == 0) {
+        #if defined(_WIN32)
         const int result = _mkdir("snap_frame_dumps");
+#else
+        const int result = mkdir("snap_frame_dumps", 0755);
+#endif
         state = ((result == 0) || (errno == EEXIST)) ? 1 : -1;
     }
     return state == 1;
