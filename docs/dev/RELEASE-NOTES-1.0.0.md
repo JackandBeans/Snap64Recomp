@@ -12,7 +12,7 @@ US release) made by static recompilation. The game's own code runs on your
 PC; the port changes how it is hosted, and everything about how it *looks*
 is off unless you turn it on.
 
-**You need your own cartridge dump.** Nothing of the game is included.
+**You need your own cartridge dump.** No game data is included.
 Put your `pokemonsnap.z64` (US, SHA-1 `edc7c49cc568c045fe48be0d18011c30f393cbaf`)
 next to `Snap64Recomp.exe` and start it. Windows 10 or 11, 64-bit, with a
 GPU driver that provides Direct3D 12. Nothing else has to be installed.

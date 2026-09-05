@@ -23,6 +23,12 @@ the subsystem, stdio and attract checks, on a cold shader cache: 8 of 8 in
 the README describes. That is the nearest this machine can come to a
 stranger's first start; item 1.7 (another machine) stays open.
 
+**Published 2026-09-05.** The repository JackandBeans/Snap64Recomp was created
+public, `main` and `v1.0.0` pushed, and the release created on the tag with
+the notes, three screenshots, the archive and its `.sha256`, marked latest.
+The archive downloaded back from GitHub has the checksum above; the badge,
+the README and the screenshots resolve from outside.
+
 Legend: **decide** = only the author can settle it; **do** = mechanical, can
 be done on request; **verify** = needs a person or another machine.
 
