@@ -3,6 +3,11 @@
 # and listed in NOTICE.md), and the printer's font header is generated.
 lib/**                          linguist-vendored
 src/snap_station_osd_font.h     linguist-generated
+# The patch build's symbol files are written by tools/gen_reference_syms.py
+# from the decompilation (BUILDING.md, step 7); 600 KB of them would
+# otherwise show as "Linker Script" beside the code.
+patches/game_syms.ld            linguist-generated
+patches/pokemonsnap.syms.toml   linguist-generated
 # Binary assets, never diffed or line-ending converted.
 *.ico  binary
 *.png  binary
