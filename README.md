@@ -11,8 +11,8 @@ translates the game's MIPS code into C, [N64ModernRuntime](https://github.com/N6
 input and audio. The game's own code runs; the port changes how it is hosted,
 and every change to how it *looks* is off unless you turn it on.
 
-The title screen's credits line reads `Jack & Beans (Snap64 Recomp) · v1.0.0`:
-"Jack & Beans" is the name the port's author goes by, an homage to the team
+The title screen's credits line reads `JackandBeans (Snap64 Recomp) · v1.0.0`:
+"JackandBeans" is the name the port's author goes by, an homage to the team
 behind the original game (`src/version.h.in` explains why), "Snap64 Recomp"
 is the port's name, and `1.0.0` is its version. This project is not affiliated with, endorsed by or connected to
 Nintendo, Creatures Inc., GAME FREAK inc., HAL Laboratory or The Pokémon

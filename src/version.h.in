@@ -6,7 +6,8 @@
  * "Version" in CMakeLists.txt): the numbers come from project(VERSION) and
  * SNAP_VERSION_PRERELEASE there, and nowhere else.
  *
- * "Jack & Beans" is the project the game itself began as at HAL -- the
+ * "JackandBeans" is the port's name for itself on the title screen, after
+ * "Jack & Beans", the project the game itself began as at HAL -- the
  * unused JACK and BEANS prototype logo still ships inside the title
  * screen's own data -- which makes it the one name tied to this game
  * that is ours to use. It is the codename on the title screen's credits
@@ -22,7 +23,7 @@
 // credits line and appears nowhere else; the product name above is what the
 // window, the dialogs and the package carry, so the trademark is never the
 // product's name.
-#define SNAP_PORT_CODENAME  "Jack & Beans"
+#define SNAP_PORT_CODENAME  "JackandBeans"
 
 #define SNAP_VERSION_MAJOR  @PROJECT_VERSION_MAJOR@
 #define SNAP_VERSION_MINOR  @PROJECT_VERSION_MINOR@
