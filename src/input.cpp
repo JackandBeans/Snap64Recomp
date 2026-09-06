@@ -428,7 +428,13 @@ void input_handle_sdl_event(const SDL_Event& event) {
 }
 
 void input_update_mouse_capture() {
-    const bool wanted = settings().mouse_aim &&
+    // A replayed run takes no input from the mouse (input_get), so it must
+    // not take the cursor either: the release suite plays courses while
+    // the author is elsewhere on the same desktop, and a captured cursor
+    // locked them out of it.
+    static const bool replaying = (getenv("SNAP_REPLAY") != nullptr);
+    const bool wanted = !replaying &&
+                        settings().mouse_aim &&
                         g_focused.load(std::memory_order_relaxed) &&
                         g_app_level_resident.load(std::memory_order_relaxed);
     const bool current = g_captured.load(std::memory_order_relaxed);
