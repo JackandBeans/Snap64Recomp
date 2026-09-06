@@ -514,6 +514,26 @@ mode, "Mods and texture packs") and `SNAP_MENU_FONT_DUMP` (the harvested
 menu font written out). They are development switches; the source is their
 documentation.
 
+## Linux and Steam Deck
+
+The port is Windows on the release page. Two other ways exist, one tried by
+a player and one built but not yet run:
+
+* **Proton.** On the day of the release a player reported the Windows
+  build running well through Proton (Steam's compatibility layer). Add
+  `Snap64Recomp.exe` to Steam as a non-Steam game, set a current Proton in
+  the shortcut's Compatibility properties, and keep `pokemonsnap.z64`
+  beside the executable as on Windows; saves, settings and photos stay in
+  that folder. That is one report, not a test of mine.
+* **A native Linux build.** The same source builds on Linux with GCC,
+  rendering through Vulkan, and packs as
+  `Snap64Recomp-<version>-linux-x86_64.tar.gz`
+  ([BUILDING, step 14](BUILDING.md#14-linux-build-experimental)). As of
+  2026-09-06 it has been built and started against a software Vulkan device
+  under WSL, and has not been run on a Linux desktop or a Steam Deck. It
+  will be on the release page once it has, with the Deck's own
+  instructions; a report from anyone who builds it before then is welcome.
+
 ## Known limitations
 
 * **Widescreen is untested beyond the Beach, and has a known fault there.**
@@ -554,10 +574,11 @@ In the order it will be worked on; nothing here is a promise until it runs.
 2. **Widescreen's missing objects.** A game-side patch that widens the
    game's own visibility test by the aspect ratio when Widescreen is on
    ("Known limitations" above).
-3. **Steam Deck.** Every piece of the port has a Linux path (the runtime,
-   SDL2, RT64 through Vulkan); nothing has been built or tried for it yet.
-   The Windows build under Proton is the first experiment, and a report
-   from anyone with a Deck is welcome.
+3. **Steam Deck.** The native Linux build now compiles, packs and starts
+   ("Linux and Steam Deck" above); running it on a Linux desktop and on a
+   Deck, and the Deck's defaults (fullscreen at its panel, its controls),
+   are what remain. The Windows build under Proton already has one good
+   report.
 4. **VR.** An idea under investigation, not a plan: stereo rendering and
    head tracking would have to be built into the renderer.
 

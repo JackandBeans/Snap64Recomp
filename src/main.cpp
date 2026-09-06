@@ -18,6 +18,13 @@
 #include <cstdlib>
 #include <mutex>
 #include <stdexcept>
+#if defined(__linux__)
+#include <cerrno>
+#include <fcntl.h>
+#include <sys/file.h>
+#include <sys/stat.h>
+#include <unistd.h>
+#endif
 
 #include "librecomp/game.hpp"
 #include "librecomp/overlays.hpp"
@@ -363,6 +370,11 @@ static void error_message_box(const char* msg) {
         MultiByteToWideChar(CP_UTF8, 0, msg, -1, wide.data(), wide_len);
         MessageBoxW(nullptr, wide.c_str(), SNAP_PORT_NAME_W L" - Error", MB_OK | MB_ICONERROR);
     }
+#else
+    // SDL shows a parentless box on Linux through the desktop's own dialog
+    // (or zenity/kdialog); with no display at all it fails and the line
+    // above on stderr is what remains.
+    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, SNAP_PORT_NAME " - Error", msg, nullptr);
 #endif
 }
 
@@ -605,9 +617,69 @@ static void snap_bind_stdio() {
 }
 #endif
 
+#if defined(__linux__)
+// Where the log goes, decided once before the first line is printed, on the
+// Windows rule (above): a terminal or anything a parent gave this process
+// to write into (a pipe, a file, a socket) is kept, so `> out.log` and a
+// capture read exactly as before; a launch with nowhere to print (Steam, a
+// desktop entry: stdout is /dev/null or closed) writes snap64.log in the
+// data directory, keeping the previous run as snap64.prev.log so a crash
+// log survives one relaunch.
+static void snap_bind_stdio() {
+    struct stat st{};
+    if (fstat(STDOUT_FILENO, &st) == 0) {
+        if (isatty(STDOUT_FILENO) || S_ISFIFO(st.st_mode) || S_ISREG(st.st_mode) || S_ISSOCK(st.st_mode)) {
+            return;
+        }
+    }
+    const std::filesystem::path log = snap::base_path("snap64.log");
+    const std::filesystem::path prev = snap::base_path("snap64.prev.log");
+    std::error_code ec;
+    std::filesystem::remove(prev, ec);
+    std::filesystem::rename(log, prev, ec);
+    if (freopen(log.c_str(), "a", stdout) == nullptr) {
+        return;
+    }
+    freopen(log.c_str(), "a", stderr);
+    setvbuf(stdout, nullptr, _IONBF, 0);
+    setvbuf(stderr, nullptr, _IONBF, 0);
+}
+
+// One copy at a time, on the Windows rule: a lock file in the data
+// directory, held for the life of the process (the descriptor is kept on
+// purpose; the kernel drops the lock when the process ends, however it
+// ends). A newcomer waits for the holder, as the Snap Station's relaunch
+// starts the next copy while this one is still quitting; a holder still up
+// after the wait is a real second copy.
+static bool snap_take_instance_lock() {
+    const std::filesystem::path lock = snap::base_path("snap64.lock");
+    const int fd = open(lock.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+    if (fd < 0) {
+        return true;   // nowhere to lock (a read-only directory): run anyway
+    }
+    const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(25);
+    while (flock(fd, LOCK_EX | LOCK_NB) != 0) {
+        if (errno != EWOULDBLOCK || std::chrono::steady_clock::now() >= deadline) {
+            close(fd);
+            return false;
+        }
+        std::this_thread::sleep_for(std::chrono::milliseconds(100));
+    }
+    return true;
+}
+#endif
+
 int main(int argc, char* argv[]) {
     (void)argc;
     (void)argv;
+
+#if defined(__linux__)
+    if (!snap_take_instance_lock()) {
+        error_message_box("Snap64 Recomp is already running. Close the other window first.");
+        return 0;
+    }
+    snap_bind_stdio();
+#endif
 
 #if defined(_WIN32)
     // One copy at a time. A second launch from the same folder would race

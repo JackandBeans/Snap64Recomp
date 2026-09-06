@@ -15,6 +15,12 @@
 // Pipelines the driver reused versus built (contrib/plume/plume_d3d12.cpp).
 extern "C" std::atomic<uint32_t> snap_pipeline_reused;
 extern "C" std::atomic<uint32_t> snap_pipeline_built;
+#if !defined(_WIN32)
+// Only the Direct3D 12 backend counts; the Vulkan and Metal backends leave
+// both at zero, and the log line below reports them as such.
+extern "C" std::atomic<uint32_t> snap_pipeline_reused{0};
+extern "C" std::atomic<uint32_t> snap_pipeline_built{0};
+#endif
 
 #include "common/rt64_dynamic_libraries.h"
 #include "common/rt64_elapsed_timer.h"

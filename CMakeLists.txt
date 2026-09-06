@@ -193,10 +193,23 @@ add_custom_command(
 # recomp_funcs and the game's own versions are never pulled in.
 set(SNAP_PATCH_SOURCES)
 if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/RecompiledPatches/patches.c")
-    set(SNAP_PATCH_SOURCES "${CMAKE_CURRENT_SOURCE_DIR}/RecompiledPatches/patches.c")
+    # Compiled from a copy in the build tree in which the two libultra names
+    # glibc reserves, __sinf and __cosf, are the game's own __sinf_recomp and
+    # __cosf_recomp (tools/portable_patches.cmake says why). The copy is
+    # remade whenever the recompiler's output changes.
+    set(SNAP_PATCH_DIR "${CMAKE_CURRENT_BINARY_DIR}/generated/patches")
+    set(SNAP_PATCH_C "${SNAP_PATCH_DIR}/patches.c")
+    add_custom_command(
+        OUTPUT "${SNAP_PATCH_C}"
+        COMMAND ${CMAKE_COMMAND} "-DINPUT_DIR=${CMAKE_CURRENT_SOURCE_DIR}/RecompiledPatches" "-DOUTPUT_DIR=${SNAP_PATCH_DIR}" -P "${CMAKE_CURRENT_SOURCE_DIR}/tools/portable_patches.cmake"
+        DEPENDS "${CMAKE_CURRENT_SOURCE_DIR}/RecompiledPatches/patches.c"
+                "${CMAKE_CURRENT_SOURCE_DIR}/RecompiledPatches/funcs.h"
+                "${CMAKE_CURRENT_SOURCE_DIR}/tools/portable_patches.cmake"
+        COMMENT "Copying RecompiledPatches with glibc's reserved names renamed")
+    set(SNAP_PATCH_SOURCES "${SNAP_PATCH_C}")
     message(STATUS "Game patches: RecompiledPatches/patches.c")
     # Same treatment the recompiled game gets: it is generated MIPS-derived C.
-    set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/RecompiledPatches/patches.c"
+    set_source_files_properties("${SNAP_PATCH_C}"
         # /Oi-: the game has functions named sinf and cosf, which MSVC would
         # otherwise replace with its math intrinsics and then reject for
         # taking the recompiler's two arguments.
@@ -245,7 +258,6 @@ set(SNAP_SOURCES
     src/sfx_volume_probe.cpp
     src/score_probe.cpp
     src/intro_probe.cpp
-    src/patch_shims.cpp
     src/settings.cpp
     src/photo_export.cpp
     src/snap_station.cpp
@@ -383,6 +395,17 @@ if (WIN32)
             "$<TARGET_FILE_DIR:Snap64Recomp>/menu_text/recomp_logo.png"
         COMMENT "Placing the runtime DLLs and menu_text/ next to Snap64Recomp.exe"
         VERBATIM)
+else()
+    # Linux: no runtime libraries of the port's own (SDL2 is the system's and
+    # RT64 specialises its Vulkan shaders with re-spirv, needing no compiler
+    # at run time); only the badge.
+    add_custom_command(TARGET Snap64Recomp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:Snap64Recomp>/menu_text"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/menu_text/recomp_logo.png"
+            "$<TARGET_FILE_DIR:Snap64Recomp>/menu_text/recomp_logo.png"
+        COMMENT "Placing menu_text/ next to Snap64Recomp"
+        VERBATIM)
 endif()
 
 # =============================================================================
@@ -487,10 +510,17 @@ install(FILES
 
 # cpack -C Release (from the build directory) -> Snap64Recomp-<version>-win64.zip
 # with a top-level folder of the same name, and a .sha256 beside it.
-set(CPACK_GENERATOR "ZIP")
 set(CPACK_PACKAGE_NAME "Snap64Recomp")
 set(CPACK_PACKAGE_VERSION "${SNAP_VERSION_FULL}")
-set(CPACK_PACKAGE_FILE_NAME "Snap64Recomp-${SNAP_VERSION_FULL}-win64")
+if (WIN32)
+    set(CPACK_GENERATOR "ZIP")
+    set(CPACK_PACKAGE_FILE_NAME "Snap64Recomp-${SNAP_VERSION_FULL}-win64")
+else()
+    # The same flat folder as a tarball (permissions kept, so the binary is
+    # executable when unpacked); the Linux name says which machine it runs on.
+    set(CPACK_GENERATOR "TGZ")
+    set(CPACK_PACKAGE_FILE_NAME "Snap64Recomp-${SNAP_VERSION_FULL}-linux-x86_64")
+endif()
 set(CPACK_PACKAGE_CHECKSUM SHA256)
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY ON)
 set(CPACK_SOURCE_GENERATOR "")

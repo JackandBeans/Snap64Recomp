@@ -16,8 +16,11 @@ Two machines are involved:
   a Windows directory (`C:\Users\<you>\PokemonSnapRecomp`), reached from WSL as
   `/mnt/c/Users/<you>/PokemonSnapRecomp`.
 
-Nothing below has been exercised on Linux or macOS. `CMakeLists.txt` has
-non-MSVC branches; no build on another platform is recorded in this repository.
+Steps 1 to 9 are the same on every platform. Steps 10 to 13 are the Windows
+build; [step 14](#14-linux-build-experimental) is the Linux one, which has
+been built and started under WSL and not yet run on real Linux hardware.
+macOS is not built here (a community pull request carries an Apple Silicon
+port).
 
 ## Prerequisites
 
@@ -348,6 +351,60 @@ and has no hyphen and no `2`, `3` or `7` (`src/version.h.in`); a version
 that needs one of those is reported at the first main-menu load
 (`[SNAP-MENU] no glyph ...`) and the port's menu strings are withheld until
 the string is changed.
+
+### 14. Linux build (experimental)
+
+The same tree builds on Linux with GCC, from the same generated inputs
+(steps 1 to 9: `RecompiledFuncs/`, `RecompiledPatches/`,
+`patches/build/patches.bin`, the vendored trees from `tools/fetch_deps.py`).
+Recorded on 2026-09-06 under WSL, Ubuntu 24.04, GCC 13.3, CMake 3.28, in a
+copy of the port root on the Linux filesystem (`rsync` it there; compiling
+32 MB of generated C through `/mnt/c` is slow):
+
+    sudo apt install build-essential cmake ninja-build libsdl2-dev libgtk-3-dev libvulkan-dev
+    cmake -S . -B build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release -DSNAP_ROM=/path/to/pokemonsnap.z64
+    cmake --build build-linux --target Snap64Recomp -j"$(nproc)"
+    cd build-linux && cpack -G TGZ
+
+`libgtk-3-dev` is for RT64's file-dialog library, which the port never calls
+but RT64 links; `libvulkan-dev` for plume's Vulkan backend. The package is
+`Snap64Recomp-<version>-linux-x86_64.tar.gz` with a `.sha256` beside it: the
+same flat folder as the Windows ZIP, without the DLLs and the linker map. At
+run time the binary needs the system's `libSDL2-2.0.so.0`, GTK 3 and a
+Vulkan driver (SDL loads the loader); it ships no shader compiler, because
+off Windows RT64 specialises its SPIR-V shaders with re-spirv instead of
+DXC.
+
+What differs from the Windows build, all in `#if` branches of the same
+files:
+
+* Rendering is Vulkan only; `graphics_api` in the settings file is ignored
+  (`src/rt64_render_context.cpp`).
+* `RecompiledPatches/patches.c` is compiled from a copy in the build tree
+  in which the two libultra names glibc's `math.h` reserves, `__sinf` and
+  `__cosf`, are the game's own `__sinf_recomp` and `__cosf_recomp`
+  (`tools/portable_patches.cmake`; the copy is made on Windows too, and the
+  shim that used to bridge the names is gone).
+* `snap64.log` is written only when there is nowhere to print (stdout is
+  `/dev/null` or closed, as from Steam or a desktop entry); a terminal or a
+  redirection is kept. One copy at a time is a `flock` on `snap64.lock` in
+  the data directory. The Snap Station's relaunch runs `/proc/self/exe`
+  again through a double fork, and the sheet's folder opens with
+  `xdg-open` (`src/main.cpp`, `src/snap_station.cpp`).
+* `lib/rt64/src/hle/rt64_snap_diag.h` and `rt64_application.cpp` carry the
+  two portability guards a contributor's macOS build found first: `mkdir`
+  in place of `_mkdir`, and the pipeline counters defined where no D3D12
+  backend defines them.
+
+A start-up check without a window:
+
+    cd build-linux && SDL_VIDEODRIVER=dummy ./Snap64Recomp
+
+prints the ROM check, `[SNAP] graphics API: Vulkan` and the device RT64
+found (`llvmpipe` where there is no GPU), then fails to create the window,
+which is the dummy driver's doing. That is as far as the Linux build has
+been taken; running the game on a Linux desktop or a Steam Deck is
+[unverified](README.md#linux-and-steam-deck).
 
 ## What a clean checkout is missing
 

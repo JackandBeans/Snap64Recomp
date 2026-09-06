@@ -25,6 +25,11 @@
   and B cancels, as on the other two pages.
 * The README says Widescreen is untested beyond the Beach and that the
   game culls by its 4:3 view, so objects at the edges vanish.
+* A native Linux build, experimental: the same source compiles with GCC,
+  renders through Vulkan and packs as a tarball (BUILDING, step 14). Built
+  and started under WSL; not yet run on a Linux desktop or a Steam Deck,
+  so it is not on the release page. Two portability fixes came from a
+  contributor's macOS build.
 
 ## 1.0.0 -- 2026-09-05
 
