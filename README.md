@@ -69,8 +69,10 @@ installed. Then:
 
 The window's maximize button switches to fullscreen and F11 switches it
 back, in a course or anywhere else. **Esc is the pause menu** in a course
-(Continue, Retry, Quit course) and Start elsewhere; **holding Esc for a
-second quits the program**. Keyboard and controller mappings are under
+(Continue, Retry, Quit course) and Start elsewhere. To quit the program,
+**hold Esc for a second and let go**: a box asks, and Enter or Esc keeps
+you playing, so a hand resting on the key cannot end a run. Keyboard and
+controller mappings are under
 [Controls](#controls); the Graphics and Sound pages are on the game's own
 Options screen, reached from the title menu ([In-game
 pages](#in-game-pages)); saves live in `saves/` next to the executable, so
@@ -138,8 +140,10 @@ directory (`src/paths.cpp`). It opens a 1280x960 window titled
 an exact size instead (at least 320x240). The window's maximize button is the
 fullscreen switch; the in-game Graphics page and F11 do the same, and F11
 is the way out of fullscreen from anywhere. **A tap of Esc is Start** (the
-game's own pause menu in a course, Start on any other screen); **holding
-Esc for a second quits**, as does the window's close button or Alt+F4.
+game's own pause menu in a course, Start on any other screen). **Holding
+Esc for a second and letting go asks whether to quit**; Keep playing is
+the answer to Enter and to Esc, and Quit takes a click or Tab and Enter.
+The window's close button and Alt+F4 quit at once, as any window's do.
 
 Saves go to `saves/` and settings to `snapsettings.json`, both next to the
 executable. No console opens: the log is `snap64.log` next to the
@@ -329,7 +333,7 @@ investigating the renderer and are not features.
 | End | *diagnostic* Effect-sprite naming on/off |
 | [ / ] | Mouse Speed down / up, through the Controls page's steps |
 | P | Save the photo on screen as a PNG in `photos/` (see "Photos") |
-| Esc | Tap: Start (the pause menu in a course). Held for a second: quit |
+| Esc | Tap: Start (the pause menu in a course). Held a second and released: the quit question |
 
 ### Photos
 

@@ -388,6 +388,14 @@ void input_tap_start() {
     g_esc_start_until.store(now_us() + PressHoldUs, std::memory_order_relaxed);
 }
 
+void input_release_mouse() {
+    if (g_captured.load(std::memory_order_relaxed)) {
+        SDL_SetRelativeMouseMode(SDL_FALSE);
+        g_captured.store(false, std::memory_order_relaxed);
+        clear_mouse();
+    }
+}
+
 void input_handle_sdl_event(const SDL_Event& event) {
     const bool captured = g_captured.load(std::memory_order_relaxed);
     const bool buttons_live = g_focused.load(std::memory_order_relaxed) &&

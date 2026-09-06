@@ -151,6 +151,38 @@ static void snap_update_window_title() {
     SDL_SetWindowTitle(sdl_window, title);
 }
 
+// The quit question, on the main thread, over the game (the window is
+// borderless fullscreen or a window, never exclusive). Keep playing is
+// the answer to Enter and to Esc, so an accidental hold ends in a box
+// dismissed by the key that was already down; Quit takes a click, or Tab
+// and Enter. The cursor is let go first so the box can be clicked.
+static void snap_confirm_quit() {
+    snap::input_release_mouse();
+    const SDL_MessageBoxButtonData buttons[] = {
+        { SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT | SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Keep playing" },
+        { 0, 1, "Quit" },
+    };
+    const SDL_MessageBoxData box = {
+        SDL_MESSAGEBOX_WARNING, sdl_window, SNAP_PORT_NAME,
+        "Quit " SNAP_PORT_NAME "?\n\nA course in progress is lost, and so is anything not saved at the lab.",
+        SDL_arraysize(buttons), buttons, nullptr,
+    };
+    int choice = 0;
+    if (SDL_ShowMessageBox(&box, &choice) != 0) {
+        printf("[SNAP] the quit box could not be shown: %s\n", SDL_GetError());
+        fflush(stdout);
+        return;
+    }
+    if (choice == 1) {
+        printf("[SNAP] quit: Escape held, then Quit chosen\n");
+        fflush(stdout);
+        ultramodern::quit();
+    } else {
+        printf("[SNAP] quit declined: Keep playing\n");
+        fflush(stdout);
+    }
+}
+
 static void update_gfx(void* /*gfx_data*/) {
     // Publish SDL's real audio backlog where the game's patched AI_LEN read
     // (auThreadMain, vram 0x800219D8) now looks for it. Without this the game
@@ -191,6 +223,7 @@ static void update_gfx(void* /*gfx_data*/) {
     snap::input_update_mouse_capture();
 
     static bool escHeld = false;
+    static bool escArmed = false;
     static std::chrono::steady_clock::time_point escDownAt;
 
     SDL_Event event;
@@ -215,17 +248,24 @@ static void update_gfx(void* /*gfx_data*/) {
                 if ((event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) && !event.key.repeat) {
                     // A tap is Start: the pause menu in a course, with its
                     // Continue, Retry and Quit, and Start on every other
-                    // screen. Holding Esc for a second quits the program;
-                    // an instant quit on the key every PC game uses for
-                    // "menu" threw a course away with no way back.
+                    // screen. Holding Esc for a second and letting go asks
+                    // whether to quit (below); an instant quit on the key
+                    // every PC game uses for "menu" threw a course away
+                    // with no way back, and a silent hold-to-quit would
+                    // have done the same to a hand resting on the key.
                     snap::input_tap_start();
                     escDownAt = std::chrono::steady_clock::now();
                     escHeld = true;
+                    escArmed = false;
                 }
                 break;
             case SDL_KEYUP:
                 if (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
                     escHeld = false;
+                    if (escArmed) {
+                        escArmed = false;
+                        snap_confirm_quit();
+                    }
                 }
                 break;
             case SDL_WINDOWEVENT:
@@ -259,11 +299,11 @@ static void update_gfx(void* /*gfx_data*/) {
         }
     }
 
-    if (escHeld && (std::chrono::steady_clock::now() - escDownAt >= std::chrono::milliseconds(1000))) {
-        escHeld = false;
-        printf("[SNAP] quit: Escape held for a second\n");
-        fflush(stdout);
-        ultramodern::quit();
+    // The question is asked on the release, not the hold: while the key is
+    // down its repeats would answer a box the moment it opened.
+    if (escHeld && !escArmed &&
+        (std::chrono::steady_clock::now() - escDownAt >= std::chrono::milliseconds(1000))) {
+        escArmed = true;
     }
 
     // The GRAPHICS and SOUND pages and the hotkeys only mark the settings

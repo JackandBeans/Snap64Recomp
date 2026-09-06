@@ -13,9 +13,10 @@
   a click advances Oak's text. Every keyboard and mouse binding is
   remappable through the settings file's `keys` table; the shipped layout
   is unchanged.
-* Esc is the pause menu in a course and Start elsewhere; holding Esc for
-  a second quits. It used to quit at once, on the key every PC game uses
-  for "menu", with a course lost. F11 leaves fullscreen from anywhere. The
+* Esc is the pause menu in a course and Start elsewhere. Holding Esc for
+  a second and letting go asks whether to quit, with Keep playing as the
+  answer to Enter and Esc. It used to quit at once, on the key every PC
+  game uses for "menu", with a course lost. F11 leaves fullscreen from anywhere. The
   [ and ] keys step the Mouse Speed mid-course.
 * A Controls page on the game's Options screen, beside Graphics and Sound,
   in the game's own face: Z Button and Control Stick (the game's two

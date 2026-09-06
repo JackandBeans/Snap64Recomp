@@ -74,6 +74,11 @@ void input_update_mouse_capture();
 // everywhere else, for every settings file ever written. Main thread.
 void input_tap_start();
 
+// Lets the cursor go at once (a dialog is about to take the screen); the
+// next input_update_mouse_capture takes it back if a course still runs.
+// Main thread.
+void input_release_mouse();
+
 // The binding table: an N64 input's name ("a", "b", "z", "start", "l", "r",
 // "c_up", "c_down", "c_left", "c_right", "d_up", "d_down", "d_left",
 // "d_right", "stick_up", "stick_down", "stick_left", "stick_right") to the
