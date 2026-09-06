@@ -688,15 +688,24 @@ In the order it will be worked on; nothing here is a promise until it runs.
 1. **Reports from machines other than mine.** The port was built and played
    on one PC; what other GPUs, drivers and Windows 10 do with it is what
    1.0.1 will be made of. The issue form is the way to send them.
-2. **Widescreen beyond the Beach.** The missing Pokémon are fixed; the
+2. **Gamepad remapping.** The keyboard's bindings are a table in the
+   settings file; a pad's are still fixed in the port's own code, with Z on
+   the left shoulder and L and R on the triggers. The pad gets a table of
+   the same shape, so any button or trigger can stand for any N64 button,
+   and a page to change them in the game comes after that. Asked for in
+   [Discussions](https://github.com/JackandBeans/Snap64Recomp/discussions/3).
+3. **Widescreen beyond the Beach.** The missing Pokémon are fixed; the
    other courses have not been played with the option on, and effect
    sprites still pop at the 4:3 edge.
-3. **Steam Deck.** The native Linux build now compiles, packs and starts
-   ("Linux and Steam Deck" above); running it on a Linux desktop and on a
-   Deck, and the Deck's defaults (fullscreen at its panel, its controls),
-   are what remain. The Windows build under Proton already has one good
-   report.
-4. **VR.** An idea under investigation, not a plan: stereo rendering and
+4. **Steam Deck.** The native Linux build compiles, packs, and has started
+   and drawn the game on a Deck in desktop mode, where it takes the Deck's
+   defaults (fullscreen at the panel, Steam's keyboard kept down). What
+   remains is gaming mode, where Steam offers only its own virtual pad, and
+   confirming gyro aim on the hardware: the Deck's motion sensor is switched
+   off by Steam's own layout and the port switches it back on, which has
+   been seen to work but not yet seen to hold. The Windows build under
+   Proton already has one good report.
+5. **VR.** An idea under investigation, not a plan: stereo rendering and
    head tracking would have to be built into the renderer.
 
 The same list, with a place to reply, is pinned under
