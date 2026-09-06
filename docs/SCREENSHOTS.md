@@ -31,8 +31,9 @@ Oak's introduction to the one chosen.
 
 <a href="screenshots/04-beach.png"><img src="screenshots/04-beach.png" width="640" alt="The Beach"></a>
 
-**The Beach.** Pikachu on the sand at the start of the first course, with
-the film counter top right and the item buttons bottom right.
+**The Beach.** Surfing Pikachu riding its board along the shore at the
+start of the first course, with the film counter top right and the item
+buttons bottom right.
 
 <a href="screenshots/05-tunnel.png"><img src="screenshots/05-tunnel.png" width="640" alt="The Tunnel"></a>
 
