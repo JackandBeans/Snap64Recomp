@@ -2,10 +2,12 @@
 #include "hle/rt64_snap_diag.h"
 
 #include <algorithm>
+#include <cmath>
 #include <atomic>
 #include <chrono>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>
 #include <filesystem>
 #include <fstream>
 #include <mutex>
@@ -390,8 +392,31 @@ static bool toggle_locked(bool Settings::*flag) {
     return s_settings.*flag;
 }
 
+// Steps mouse_sensitivity through kMouseSpeedSteps: the nearest step,
+// then one over in `dir`. Returns the new percentage.
+static int step_mouse_speed(int dir) {
+    std::lock_guard<std::mutex> lock(s_settings_mutex);
+    const int pct = int(std::lround(s_settings.mouse_sensitivity * 100.0f));
+    int best = 3;
+    for (int i = 0; i < 11; i++) {
+        if (std::abs(kMouseSpeedSteps[i] - pct) < std::abs(kMouseSpeedSteps[best] - pct)) best = i;
+    }
+    best = std::clamp(best + dir, 0, 10);
+    s_settings.mouse_sensitivity = kMouseSpeedSteps[best] / 100.0f;
+    return kMouseSpeedSteps[best];
+}
+
 bool handle_settings_hotkey(int scancode) {
     switch (scancode) {
+        case SDL_SCANCODE_LEFTBRACKET:
+        case SDL_SCANCODE_RIGHTBRACKET: {
+            // The one setting a mouse player tunes mid-course; the same
+            // steps as the Controls page's Mouse Speed row.
+            const int pct = step_mouse_speed((scancode == SDL_SCANCODE_RIGHTBRACKET) ? 1 : -1);
+            settings_mark_dirty();
+            printf("[SNAP-CFG] mouse speed: %d\n", pct);
+            return true;
+        }
         case SDL_SCANCODE_F11:
             toggle_locked(&Settings::fullscreen);
             apply_graphics_settings();

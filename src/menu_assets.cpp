@@ -883,7 +883,8 @@ void animate_credits() {
 
 // The CONTROLS page's speed steps, as percentages of the shipped speed, and
 // the zoom share's four; the page shows these numbers and stores an index.
-static const int kCtlSpeeds[11] = { 25, 50, 75, 100, 125, 150, 175, 200, 250, 300, 400 };
+// The speeds are settings.h's kMouseSpeedSteps, shared with the hotkeys.
+static const int* const kCtlSpeeds = kMouseSpeedSteps;
 static const int kCtlZoomShares[4] = { 25, 50, 75, 100 };
 static uint32_t g_last_applied_ctl_seq = 0;
 

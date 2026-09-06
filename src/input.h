@@ -68,6 +68,12 @@ void input_handle_sdl_event(const SDL_Event& event);
 // a press.
 void input_update_mouse_capture();
 
+// A Start press from the keyboard's Esc, held for a little over one game
+// frame like a mouse click, so a tap is exactly one press whatever the
+// binding table says: Esc is the pause menu in a course and Start
+// everywhere else, for every settings file ever written. Main thread.
+void input_tap_start();
+
 // The binding table: an N64 input's name ("a", "b", "z", "start", "l", "r",
 // "c_up", "c_down", "c_left", "c_right", "d_up", "d_down", "d_left",
 // "d_right", "stick_up", "stick_down", "stick_left", "stick_right") to the

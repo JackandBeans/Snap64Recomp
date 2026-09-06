@@ -190,6 +190,9 @@ static void update_gfx(void* /*gfx_data*/) {
     // course is running; decided here, on the thread that pumps events.
     snap::input_update_mouse_capture();
 
+    static bool escHeld = false;
+    static std::chrono::steady_clock::time_point escDownAt;
+
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
         // Mouse motion, buttons and wheel, and the window's focus, for the
@@ -209,11 +212,20 @@ static void update_gfx(void* /*gfx_data*/) {
                     snap_update_window_title();
                     break;
                 }
+                if ((event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) && !event.key.repeat) {
+                    // A tap is Start: the pause menu in a course, with its
+                    // Continue, Retry and Quit, and Start on every other
+                    // screen. Holding Esc for a second quits the program;
+                    // an instant quit on the key every PC game uses for
+                    // "menu" threw a course away with no way back.
+                    snap::input_tap_start();
+                    escDownAt = std::chrono::steady_clock::now();
+                    escHeld = true;
+                }
+                break;
+            case SDL_KEYUP:
                 if (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
-                    printf("[SNAP] quit: Escape (repeat=%d timestamp=%u)\n",
-                           event.key.repeat, event.key.timestamp);
-                    fflush(stdout);
-                    ultramodern::quit();
+                    escHeld = false;
                 }
                 break;
             case SDL_WINDOWEVENT:
@@ -245,6 +257,13 @@ static void update_gfx(void* /*gfx_data*/) {
             default:
                 break;
         }
+    }
+
+    if (escHeld && (std::chrono::steady_clock::now() - escDownAt >= std::chrono::milliseconds(1000))) {
+        escHeld = false;
+        printf("[SNAP] quit: Escape held for a second\n");
+        fflush(stdout);
+        ultramodern::quit();
     }
 
     // The GRAPHICS and SOUND pages and the hotkeys only mark the settings

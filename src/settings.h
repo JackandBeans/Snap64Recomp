@@ -230,6 +230,11 @@ struct Settings {
     bool  ubershaders_only  = false;
 };
 
+// The Controls page's Mouse Speed steps, as percentages of the shipped
+// speed; the [ and ] hotkeys and the page's row step through the same list
+// (menu_assets.cpp seeds and applies it, settings.cpp steps it).
+constexpr int kMouseSpeedSteps[11] = { 25, 50, 75, 100, 125, 150, 175, 200, 250, 300, 400 };
+
 // Threading. Three threads touch the struct. The main thread -- recomp::start's
 // loop, which pumps SDL events through update_gfx in src/main.cpp -- runs
 // the hotkeys, the window's maximize handler, load_settings at boot and every

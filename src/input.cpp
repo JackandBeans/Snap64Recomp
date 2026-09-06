@@ -206,6 +206,7 @@ std::atomic<uint32_t> g_mouse_held{0};                 // bit (1 << button index
 std::atomic<int64_t> g_mouse_press_until[8] = {};       // latched presses, microseconds
 std::atomic<int64_t> g_wheel_up_until{0};
 std::atomic<int64_t> g_wheel_down_until{0};
+std::atomic<int64_t> g_esc_start_until{0};
 
 // A press is reported for at least this long. The game samples its pad
 // once per frame (33 ms), so a click shorter than a frame could fall
@@ -381,6 +382,10 @@ Bindings input_bindings() {
         return defaults();
     }
     return g_bindings_in_force;
+}
+
+void input_tap_start() {
+    g_esc_start_until.store(now_us() + PressHoldUs, std::memory_order_relaxed);
 }
 
 void input_handle_sdl_event(const SDL_Event& event) {
@@ -709,6 +714,9 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
         }
         const int64_t t = now_us();
         const uint32_t held = g_mouse_held.load(std::memory_order_relaxed);
+        if (t < g_esc_start_until.load(std::memory_order_relaxed)) {
+            btn |= N64_BTN_START;
+        }
         for (int i = 0; i < IN_COUNT; i++) {
             bool down = false;
             for (const Source& src : table->sources[i]) {

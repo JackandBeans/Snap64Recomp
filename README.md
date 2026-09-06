@@ -67,8 +67,10 @@ installed. Then:
    shader programs your GPU needs; they are kept in `cache/`, so the next
    start is quick.
 
-The window's maximize button switches to fullscreen (F11 does the same)
-and **Esc quits**. Keyboard and controller mappings are under
+The window's maximize button switches to fullscreen and F11 switches it
+back, in a course or anywhere else. **Esc is the pause menu** in a course
+(Continue, Retry, Quit course) and Start elsewhere; **holding Esc for a
+second quits the program**. Keyboard and controller mappings are under
 [Controls](#controls); the Graphics and Sound pages are on the game's own
 Options screen, reached from the title menu ([In-game
 pages](#in-game-pages)); saves live in `saves/` next to the executable, so
@@ -134,8 +136,10 @@ reads and writes the folder the executable is in, whatever the working
 directory (`src/paths.cpp`). It opens a 1280x960 window titled
 `Snap64 Recomp 1.0.0`; `SNAP_WINDOW=WxH` in the environment opens it at
 an exact size instead (at least 320x240). The window's maximize button is the
-fullscreen switch; the in-game Graphics page and F11 do the same. **Esc
-quits.**
+fullscreen switch; the in-game Graphics page and F11 do the same, and F11
+is the way out of fullscreen from anywhere. **A tap of Esc is Start** (the
+game's own pause menu in a course, Start on any other screen); **holding
+Esc for a second quits**, as does the window's close button or Alt+F4.
 
 Saves go to `saves/` and settings to `snapsettings.json`, both next to the
 executable. No console opens: the log is `snap64.log` next to the
@@ -207,7 +211,7 @@ Keyboard and mouse (`src/input.cpp`), as the port ships them:
 | C-Down | K | wheel down | the Poké Flute |
 | C-Up | I | wheel up | turn to face behind |
 | C-Left / C-Right | J / L | side buttons (back / forward) | turn left / right |
-| Start | Enter | | pause |
+| Start | Enter, or a tap of Esc | | pause |
 | D-pad | Arrow keys | | |
 
 The mouse's buttons work whenever the window has focus: a click is A, so
@@ -303,7 +307,7 @@ applies as it is made; B puts the page back as it was opened.
 ### Hotkeys
 
 The hotkeys are handled in `handle_settings_hotkey` in `src/settings.cpp`
-(Esc is handled in `src/main.cpp`). A hotkey that changes a setting also
+(Esc in `src/main.cpp`). A hotkey that changes a setting also
 marks `snapsettings.json` for writing. Keys marked *diagnostic* exist for
 investigating the renderer and are not features.
 
@@ -323,8 +327,9 @@ investigating the renderer and are not features.
 | F12 | *diagnostic* Mark the moment in the statistics log (needs `SNAP_STATS=1`) |
 | Home | *diagnostic* 2D rectangle interpolation on/off |
 | End | *diagnostic* Effect-sprite naming on/off |
+| [ / ] | Mouse Speed down / up, through the Controls page's steps |
 | P | Save the photo on screen as a PNG in `photos/` (see "Photos") |
-| Esc | Quit |
+| Esc | Tap: Start (the pause menu in a course). Held for a second: quit |
 
 ### Photos
 
