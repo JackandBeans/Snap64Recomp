@@ -2,9 +2,11 @@
 
 ## 1.0.1 -- unreleased
 
-* Keyboard and mouse support. In a course the mouse aims the camera (the
-  cursor is captured while the course runs and the window has focus, and
-  free everywhere else); wherever the window has focus the left button is
+* Keyboard and mouse support. In a course the mouse turns the view
+  directly, each pixel an angle added to the game's own yaw and pitch, so
+  it moves as far and as fast as your hand and no stick speed limits it
+  (the cursor is captured while the course runs and the window has focus,
+  and free everywhere else); wherever the window has focus the left button is
   A, the right button Z, the middle button B, the wheel C-Down and C-Up,
   and the side buttons C-Left and C-Right, so the game's own scheme carries
   over: click to shoot, right-click to zoom, wheel down for the flute, and

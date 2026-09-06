@@ -148,14 +148,16 @@ struct Settings {
     // attaches it for one run without this.
     bool  snap_station      = false;
     // The mouse (src/input.cpp). While a course runs and the window has
-    // focus the cursor is captured and its motion is the stick; the mouse's
-    // buttons and wheel follow the binding table in the settings file
-    // ("keys"). Off, the mouse is never captured and never read. The table
-    // itself lives in input.cpp, not here: it is strings, and this struct's
-    // lock-free readers need word-sized fields (below).
+    // focus the cursor is captured and its motion turns the view, added to
+    // the game's own yaw and pitch in memory; the mouse's buttons and wheel
+    // follow the binding table in the settings file ("keys") whenever the
+    // window has focus. Off, the mouse is never captured and its motion is
+    // never read. The table itself lives in input.cpp, not here: it is
+    // strings, and this struct's lock-free readers need word-sized fields
+    // (below).
     bool  mouse_aim         = true;
-    // Multiplies the motion: 1 is a brisk flick to full deflection, 2 is
-    // twice as quick, 0.5 half. Bounded to 0.1 .. 10 where it is read.
+    // Multiplies the angle per pixel: 1 is a full turn in about 2500
+    // pixels, 2 twice as quick, 0.5 half. Bounded to 0.1 .. 10 where read.
     float mouse_sensitivity = 1.0f;
     // Mouse forward tilts the view down instead of up.
     bool  mouse_invert_y    = false;

@@ -28,10 +28,13 @@
  * click advances Oak's text and confirms a menu the way A does. Its motion
  * feeds the game only while it is captured: mouse aim on in the settings,
  * the window focused, and a course running (.app_level resident,
- * src/overlay_hook.cpp). Then the cursor is hidden and its motion becomes
- * stick deflection, read as a rate: the motion of the last third of a
- * game frame, scaled so a brisk flick reaches full deflection. Outside a
- * course the cursor is free and the motion does nothing. The click that
+ * src/overlay_hook.cpp). Then the cursor is hidden and its motion turns
+ * the view directly, the way a mouse does in any first-person game: each
+ * pixel is an angle, added to the game's own view yaw and pitch in memory
+ * (apply_mouse_look below), not a stick deflection. The stick is a rate in
+ * this game, at most about forty degrees a second, and no mapping of
+ * motion onto it can feel like a mouse. Outside a course the cursor is
+ * free and the motion does nothing. The click that
  * gives the window focus is not a press: buttons are ignored for a quarter
  * second after focus arrives. A click is latched for a little over one
  * game frame so a tap between two of the game's reads is never lost, and
@@ -47,7 +50,6 @@
 
 #include <atomic>
 #include <chrono>
-#include <deque>
 #include <memory>
 #include <mutex>
 #include "hle/rt64_snap_diag.h"
@@ -210,18 +212,46 @@ std::atomic<int64_t> g_wheel_down_until{0};
 // between two reads; held this long it is seen by one frame or two, and
 // the game's own edge detection makes it one press either way.
 constexpr int64_t PressHoldUs = 45000;
-// The motion that becomes the stick: everything the mouse did over the
-// last third of a game frame, so the reading tracks the hand at any read
-// rate and settles to centre within a frame of the hand stopping.
-constexpr int64_t MotionWindowUs = 11000;
-constexpr int64_t MotionKeepUs = 100000;
-// Pixels of motion inside the window that reach full deflection at
-// sensitivity 1: about 2200 px/s, a brisk flick.
-constexpr float MotionFullDeflectionPx = 24.0f;
+// Radians of view per pixel of mouse at sensitivity 1: a full turn in
+// about 2500 pixels. Zoomed in, the view is narrower, so the same motion
+// turns half as far.
+constexpr float RadiansPerPixel = 0.0025f;
+constexpr float ZoomedInFactor = 0.5f;
 
-struct Motion { int64_t t; float dx; float dy; };
+// The game's view, in its memory (patches/game_syms.ld). The .app_level
+// overlay, which owns them, is resident whenever the mouse is captured.
+constexpr uint32_t ADDR_PlayerViewYaw           = 0x80382CC8;  // f32, radians
+constexpr uint32_t ADDR_ViewPitch               = 0x80382C0C;  // f32, radians, up positive
+constexpr uint32_t ADDR_MinPitch                = 0x80382CEC;  // f32
+constexpr uint32_t ADDR_MaxPitch                = 0x80382CF0;  // f32
+constexpr uint32_t ADDR_gDirectionIndex         = 0x80382BFC;  // s32: 0..3 facing, -1 zoomed in, -2 changing
+constexpr uint32_t ADDR_TargetDirectionZoomedIn = 0x80382C4C;  // s32: nonzero while a C button turns the view
+constexpr uint32_t ADDR_ZoomedInCameraHeld      = 0x80382D08;  // s32 (D_80382D08_523118): nonzero holds the zoomed camera
+constexpr uint32_t ADDR_IsInputDisabled         = 0x80382D0C;  // s32
+constexpr uint32_t ADDR_IsPaused                = 0x80382D20;  // u8
+
+// The recompiled memory keeps each 32-bit word in host order, so a word is
+// read in place; bytes sit at their address XOR 3 (recomp.h's MEM_W and
+// MEM_B).
+uint32_t* word_at(uint8_t* rdram, uint32_t addr) {
+    return reinterpret_cast<uint32_t*>(rdram + (addr - 0x80000000u));
+}
+float read_f32(uint8_t* rdram, uint32_t addr) {
+    float f; std::memcpy(&f, word_at(rdram, addr), sizeof f); return f;
+}
+void write_f32(uint8_t* rdram, uint32_t addr, float f) {
+    std::memcpy(word_at(rdram, addr), &f, sizeof f);
+}
+int32_t read_s32(uint8_t* rdram, uint32_t addr) {
+    return static_cast<int32_t>(*word_at(rdram, addr));
+}
+uint8_t read_u8(uint8_t* rdram, uint32_t addr) {
+    return rdram[(addr - 0x80000000u) ^ 3u];
+}
+
 std::mutex g_motion_mutex;
-std::deque<Motion> g_motion;
+float g_motion_dx = 0.0f;   // pixels since the last apply
+float g_motion_dy = 0.0f;
 
 void clear_mouse() {
     g_mouse_held.store(0, std::memory_order_relaxed);
@@ -229,7 +259,52 @@ void clear_mouse() {
     g_wheel_up_until.store(0, std::memory_order_relaxed);
     g_wheel_down_until.store(0, std::memory_order_relaxed);
     std::lock_guard<std::mutex> lock(g_motion_mutex);
-    g_motion.clear();
+    g_motion_dx = 0.0f;
+    g_motion_dy = 0.0f;
+}
+
+// Adds the mouse's motion since the last call to the game's view. Runs on
+// the game's thread, from input_get, at the moment the game reads its pad:
+// the game's own camera code runs after that in the same frame, on the
+// same thread, so there is no race with its writes to the same words. The
+// game's states are honoured: nothing moves while paused, while input is
+// disabled (cutscenes, the end of a course), while the view is changing
+// direction (-2) or a C button is turning it, or while the zoomed camera
+// is held for a photo. Zoomed out, the game folds a yaw past 0.3 pi into
+// the next facing direction itself; zoomed in it wraps at a full turn; the
+// pitch is clamped to the game's own limits here, as the stick path does.
+void apply_mouse_look(uint8_t* rdram) {
+    float dx, dy;
+    {
+        std::lock_guard<std::mutex> lock(g_motion_mutex);
+        dx = g_motion_dx; dy = g_motion_dy;
+        g_motion_dx = 0.0f; g_motion_dy = 0.0f;
+    }
+    if ((dx == 0.0f && dy == 0.0f) || rdram == nullptr) return;
+    if (!g_app_level_resident.load(std::memory_order_relaxed)) return;
+    if (read_u8(rdram, ADDR_IsPaused) != 0) return;
+    if (read_s32(rdram, ADDR_IsInputDisabled) != 0) return;
+    const int32_t direction = read_s32(rdram, ADDR_gDirectionIndex);
+    if (direction < -1) return;
+    const bool zoomedIn = (direction == -1);
+    if (zoomedIn && (read_s32(rdram, ADDR_TargetDirectionZoomedIn) != 0)) return;
+    if (zoomedIn && (read_s32(rdram, ADDR_ZoomedInCameraHeld) != 0)) return;
+
+    const Settings& s = settings();
+    const float sens = std::fmax(0.1f, std::fmin(10.0f, s.mouse_sensitivity));
+    const float k = RadiansPerPixel * sens * (zoomedIn ? ZoomedInFactor : 1.0f);
+
+    float yaw = read_f32(rdram, ADDR_PlayerViewYaw) + dx * k;
+    write_f32(rdram, ADDR_PlayerViewYaw, yaw);
+
+    // SDL's y grows downwards; the game's pitch grows upwards.
+    const float dpitch = (s.mouse_invert_y ? dy : -dy) * k;
+    float pitch = read_f32(rdram, ADDR_ViewPitch) + dpitch;
+    const float lo = read_f32(rdram, ADDR_MinPitch);
+    const float hi = read_f32(rdram, ADDR_MaxPitch);
+    if (pitch < lo) pitch = lo;
+    if (pitch > hi) pitch = hi;
+    write_f32(rdram, ADDR_ViewPitch, pitch);
 }
 
 bool source_down(const Source& src, const uint8_t* keys, uint32_t held, int64_t t) {
@@ -325,8 +400,8 @@ void input_handle_sdl_event(const SDL_Event& event) {
         case SDL_MOUSEMOTION:
             if (captured) {
                 std::lock_guard<std::mutex> lock(g_motion_mutex);
-                g_motion.push_back({now_us(), float(event.motion.xrel), float(event.motion.yrel)});
-                while (g_motion.size() > 256) g_motion.pop_front();
+                g_motion_dx += float(event.motion.xrel);
+                g_motion_dy += float(event.motion.yrel);
             }
             break;
         case SDL_MOUSEBUTTONDOWN:
@@ -649,30 +724,15 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
     }
 
     // -----------------------------------------------------------------------
-    // Mouse motion as the stick, while captured (a course, focused)
+    // Mouse look, while captured (a course, focused): the view itself moves,
+    // in the game's memory; the stick is untouched. Under SNAP_REPLAY the
+    // mouse is left out, so a replay is the recording and nothing else.
     // -----------------------------------------------------------------------
     if (g_captured.load(std::memory_order_relaxed)) {
-        const int64_t t = now_us();
-        float dx = 0.0f;
-        float dy = 0.0f;
-        {
-            std::lock_guard<std::mutex> lock(g_motion_mutex);
-            while (!g_motion.empty() && (g_motion.front().t < t - MotionKeepUs)) {
-                g_motion.pop_front();
-            }
-            for (const Motion& m : g_motion) {
-                if (m.t >= t - MotionWindowUs) {
-                    dx += m.dx;
-                    dy += m.dy;
-                }
-            }
+        static const bool replaying = (getenv("SNAP_REPLAY") != nullptr);
+        if (!replaying) {
+            apply_mouse_look(g_rdram);
         }
-        const Settings& s = settings();
-        const float sens = std::fmax(0.1f, std::fmin(10.0f, s.mouse_sensitivity));
-        const float full = MotionFullDeflectionPx / sens;
-        // SDL's y grows downwards; the stick's grows upwards.
-        ax += dx / full;
-        ay += (s.mouse_invert_y ? dy : -dy) / full;
     }
 
     // -----------------------------------------------------------------------
