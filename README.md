@@ -219,10 +219,10 @@ game, each pixel an angle added to the game's own view; everywhere else
 (the title, the lab, Oak's check, the menus) the cursor is free and moving
 it does nothing. Zoomed in, the same motion turns half as far, since the
 view is narrower. The view moves no faster than you move the mouse and
-stops when your hand does; the stick's own turning speed does not apply. `mouse_sensitivity` in the settings file scales
-it (1 as shipped, a full turn in about 2500 pixels; 2 twice as quick),
-`mouse_invert_y` flips the vertical, and `mouse_aim` off leaves the
-mouse's motion alone entirely.
+stops when your hand does; the stick's own turning speed does not apply. The Controls page on the
+game's Options screen holds the dials: Mouse Aim, Mouse Speed, Zoom Speed
+and Mouse Tilt (they are `mouse_aim`, `mouse_sensitivity`,
+`mouse_zoom_speed` and `mouse_invert_y` in the settings file).
 
 Every keyboard and mouse binding can be changed. The settings file's
 `keys` table names each input (`a`, `b`, `z`, `start`, `l`, `r`, `c_up`,
@@ -292,6 +292,13 @@ leaves it alone.
 
 Options > **Sound**: Master Volume, Music Volume, Sound Effects, Shutter
 Volume, Speaker Output (Stereo/Mono), Background Mute.
+
+Options > **Controls**: Z Button (Hold/Switch) and Control Stick
+(Normal/Reverse), the game's own two settings, moved here from the Options
+list so the list keeps its five rows; then Mouse Aim, Mouse Speed (25 to
+400 percent of the shipped speed), Zoom Speed (the share of that speed
+used while zoomed in) and Mouse Tilt (Normal/Reverse). Every change
+applies as it is made; B puts the page back as it was opened.
 
 ### Hotkeys
 
@@ -469,7 +476,8 @@ the defaults below are that file's.
 | `snap_station` | `false` | keep the Snap Station on port 4 from the title menu on, every start (see "The Snap Station") |
 | `mouse_aim` | `true` | the mouse aims while a course runs and the window has focus ("Controls"); its buttons work whenever the window has focus, through `keys` |
 | `mouse_sensitivity` | `1.0` | angle per pixel of mouse: 1 is a full turn in about 2500 pixels, 2 twice as quick, 0.5 half; 0.1 to 10 |
-| `mouse_invert_y` | `false` | mouse forward tilts the view down |
+| `mouse_invert_y` | `false` | mouse forward tilts the view down (Mouse Tilt: Reverse) |
+| `mouse_zoom_speed` | `0.5` | the mouse's speed while zoomed in, as a share of `mouse_sensitivity`; 0.25 to 1 (Zoom Speed) |
 | `keys` | the table under "Controls" | what presses each input: SDL key names and the mouse names, one or a list |
 | `graphics_api` | `0` | 0 Direct3D 12 (every run so far), 1 Vulkan (RT64's other backend, untried here; an escape hatch if D3D12 fails); restart |
 | `downsample` | `1` | Super Sampling factor |

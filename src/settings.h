@@ -161,6 +161,9 @@ struct Settings {
     float mouse_sensitivity = 1.0f;
     // Mouse forward tilts the view down instead of up.
     bool  mouse_invert_y    = false;
+    // The mouse's speed while zoomed in, as a share of mouse_sensitivity:
+    // the view is narrower, so the same motion should turn less. 0.25 to 1.
+    float mouse_zoom_speed  = 0.5f;
     // Interpolate the view and projection as well as object transforms.
     //
     // On, and it has to be: this game's camera lives in the projection stack,

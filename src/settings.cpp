@@ -132,6 +132,7 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         s.mouse_aim          = j.value("mouse_aim", s.mouse_aim);
         s.mouse_sensitivity  = std::clamp(j.value("mouse_sensitivity", s.mouse_sensitivity), 0.1f, 10.0f);
         s.mouse_invert_y     = j.value("mouse_invert_y", s.mouse_invert_y);
+        s.mouse_zoom_speed   = std::clamp(j.value("mouse_zoom_speed", s.mouse_zoom_speed), 0.25f, 1.0f);
         // The binding table: "keys" maps an input's name to a key or mouse
         // name, or to a list of them. Handed to input.cpp whole; it reports
         // and skips what it cannot resolve (input.h).
@@ -295,6 +296,7 @@ bool save_settings() {
         {"mouse_aim",             copy.mouse_aim},
         {"mouse_sensitivity",     copy.mouse_sensitivity},
         {"mouse_invert_y",        copy.mouse_invert_y},
+        {"mouse_zoom_speed",      copy.mouse_zoom_speed},
         {"keys",                  keys},
     };
     // dump() throws only for a string that is not valid UTF-8; the key

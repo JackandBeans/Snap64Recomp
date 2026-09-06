@@ -29,6 +29,7 @@
  * texture the game loaded.
  */
 #include <cmath>
+#include <cstdlib>
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
@@ -880,6 +881,30 @@ void animate_credits() {
     animate_rainbow(g_arrows[1], tick);
 }
 
+// The CONTROLS page's speed steps, as percentages of the shipped speed, and
+// the zoom share's four; the page shows these numbers and stores an index.
+static const int kCtlSpeeds[11] = { 25, 50, 75, 100, 125, 150, 175, 200, 250, 300, 400 };
+static const int kCtlZoomShares[4] = { 25, 50, 75, 100 };
+static uint32_t g_last_applied_ctl_seq = 0;
+
+static int ctl_speed_index(float sensitivity) {
+    const int pct = int(std::lround(sensitivity * 100.0f));
+    int best = 3;
+    for (int i = 0; i < 11; i++) {
+        if (std::abs(kCtlSpeeds[i] - pct) < std::abs(kCtlSpeeds[best] - pct)) best = i;
+    }
+    return best;
+}
+
+static int ctl_zoom_index(float share) {
+    const int pct = int(std::lround(share * 100.0f));
+    int best = 1;
+    for (int i = 0; i < 4; i++) {
+        if (std::abs(kCtlZoomShares[i] - pct) < std::abs(kCtlZoomShares[best] - pct)) best = i;
+    }
+    return best;
+}
+
 void seed_mailbox() {
     const Settings &s = settings();
     write_u8(MailboxAddr + 0x8, uint8_t(s.resolution_scale));
@@ -918,9 +943,19 @@ void seed_mailbox() {
     write_u8(MailboxAddr + 0x2C, s.stereo ? 1 : 0);
     write_u8(MailboxAddr + 0x2D, s.mute_unfocused ? 1 : 0);
     write_u32(MailboxAddr + 0x20, 0);
+    // The CONTROLS bank: its sequence word at +0x60 and four value bytes
+    // from +0x64: mouse aim, the mouse speed's index into the page's
+    // eleven steps, the zoom speed's index into its four, the tilt. The
+    // page edits them; the host applies on each bump (poll_menu_mailbox).
+    write_u8(MailboxAddr + 0x64, s.mouse_aim ? 1 : 0);
+    write_u8(MailboxAddr + 0x65, uint8_t(ctl_speed_index(s.mouse_sensitivity)));
+    write_u8(MailboxAddr + 0x66, uint8_t(ctl_zoom_index(s.mouse_zoom_speed)));
+    write_u8(MailboxAddr + 0x67, s.mouse_invert_y ? 1 : 0);
+    write_u32(MailboxAddr + 0x60, 0);
     write_u32(MailboxAddr + 0x0, MailboxMagic);
     g_last_applied_seq = 0;
     g_last_applied_snd_seq = 0;
+    g_last_applied_ctl_seq = 0;
 }
 
 } // namespace
@@ -1056,7 +1091,39 @@ void stage_menu_strings(uint8_t* rdram) {
     // Crop, Cutscene Fix, Photo Detail, Jynx Recolor -- a label and a
     // description apiece. Id BaseCount+60: the title screen's "Snap Station"
     // item, in the title's own face (zero width when that face is missing).
-    constexpr uint32_t StringCount = BaseCount + 61;
+    // Ids BaseCount+61..+90: the CONTROLS page. +61 its heading (header
+    // face), +62 the Option item's label (with the dot), +63 the item's help
+    // line (help face), +64..+69 its six row labels, +70..+73 the values
+    // Hold, Switch, Normal, Reverse, +74..+84 the eleven mouse speeds,
+    // +85..+90 its six descriptions.
+    static const char* const ctlStrings[21] = {
+        "Z Button",                            // +64
+        "Control Stick",                       // +65
+        "Mouse Aim",                           // +66
+        "Mouse Speed",                         // +67
+        "Zoom Speed",                          // +68
+        "Mouse Tilt",                          // +69
+        "< Hold >",                            // +70
+        "< Switch >",                          // +71
+        "< Normal >",                          // +72
+        "< Reverse >",                         // +73
+        "< 25 >", "< 50 >", "< 75 >", "< 100 >", "< 125 >", "< 150 >",   // +74..+79
+        "< 175 >", "< 200 >", "< 250 >", "< 300 >", "< 400 >",           // +80..+84
+    };
+    // The help face has no E, F, G, I, K, Q, U, V, X or Y, no digits but
+    // 2, 3, 4 and 6, and no hyphen or apostrophe; every line below is set
+    // within that.
+    // Each line at most 41 characters, the widest the stock help box
+    // shows without crowding its frame.
+    static const char* const ctlDescs[6][2] = {
+        { "Hold zooms while Z is held down.",           "Switch zooms on a press, off on the next." },
+        { "Normal tilts the camera up with the stick",  "pushed up. Reverse tilts it down instead." },
+        { "Move the mouse to look around a course.",    "Off leaves the camera to the stick." },
+        { "How far the mouse turns the camera.",        "Lower is slower, higher is faster." },
+        { "Mouse speed while zoomed in, as a share",    "of the normal speed. Lower is steadier." },
+        { "Normal tilts up as the mouse goes forward.", "Reverse tilts down instead." },
+    };
+    constexpr uint32_t StringCount = BaseCount + 91;
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -1230,6 +1297,33 @@ void stage_menu_strings(uint8_t* rdram) {
             strip = compose_title("Snap Station");
             w = strip.width;
             h = (w > 0) ? strip.height : 0;
+        }
+        else if (id == BaseCount + 61) {
+            // The CONTROLS page's heading; its C and l are the port's own
+            // header glyphs (menu_harvest.cpp kHeaderSynth).
+            strip = compose_hdr("Controls");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 62) {
+            strip = add_item_dot(compose("Controls"));
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 63) {
+            strip = compose_help("Mouse and controller settings.");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id >= BaseCount + 85) {
+            strip = compose_lines(ctlDescs[id - BaseCount - 85][0], ctlDescs[id - BaseCount - 85][1]);
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id >= BaseCount + 64) {
+            strip = compose(ctlStrings[id - BaseCount - 64]);
+            w = strip.width;
+            h = strip.height;
         }
         else if (id >= BaseCount + 46) {
             // The SOUND page's setting descriptions.
@@ -1428,6 +1522,23 @@ void poll_menu_mailbox(uint8_t* rdram) {
         set_master_volume(master);
         set_mute_unfocused(mute);
         apply_game_settings(rdram);
+        settings_mark_dirty();
+    }
+
+    // The CONTROLS bank: four mouse fields, consumed by input.cpp through
+    // the settings on its next reading; the page's two game rows (Z Button,
+    // Control Stick) are the game's own variables and never come here.
+    const uint32_t ctlSeq = read_u32_mail(MailboxAddr + 0x60);
+    if (ctlSeq != g_last_applied_ctl_seq) {
+        g_last_applied_ctl_seq = ctlSeq;
+        {
+            std::lock_guard<std::mutex> lock(settings_mutex());
+            Settings &c = settings();
+            c.mouse_aim = read_u8_mail(MailboxAddr + 0x64) != 0;
+            c.mouse_sensitivity = kCtlSpeeds[std::min<int>(read_u8_mail(MailboxAddr + 0x65), 10)] / 100.0f;
+            c.mouse_zoom_speed = kCtlZoomShares[std::min<int>(read_u8_mail(MailboxAddr + 0x66), 3)] / 100.0f;
+            c.mouse_invert_y = read_u8_mail(MailboxAddr + 0x67) != 0;
+        }
         settings_mark_dirty();
     }
 

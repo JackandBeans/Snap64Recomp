@@ -214,9 +214,8 @@ std::atomic<int64_t> g_wheel_down_until{0};
 constexpr int64_t PressHoldUs = 45000;
 // Radians of view per pixel of mouse at sensitivity 1: a full turn in
 // about 2500 pixels. Zoomed in, the view is narrower, so the same motion
-// turns half as far.
+// turns less: mouse_zoom_speed, half by default.
 constexpr float RadiansPerPixel = 0.0025f;
-constexpr float ZoomedInFactor = 0.5f;
 
 // The game's view, in its memory (patches/game_syms.ld). The .app_level
 // overlay, which owns them, is resident whenever the mouse is captured.
@@ -292,7 +291,8 @@ void apply_mouse_look(uint8_t* rdram) {
 
     const Settings& s = settings();
     const float sens = std::fmax(0.1f, std::fmin(10.0f, s.mouse_sensitivity));
-    const float k = RadiansPerPixel * sens * (zoomedIn ? ZoomedInFactor : 1.0f);
+    const float zoom = std::fmax(0.25f, std::fmin(1.0f, s.mouse_zoom_speed));
+    const float k = RadiansPerPixel * sens * (zoomedIn ? zoom : 1.0f);
 
     float yaw = read_f32(rdram, ADDR_PlayerViewYaw) + dx * k;
     write_f32(rdram, ADDR_PlayerViewYaw, yaw);

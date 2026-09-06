@@ -108,6 +108,11 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *               the host reads it, clears it, attaches the station
  *   +0x50  u32  SCRATCH_TITLE_GOBJ, the patch's own: the title's Snap
  *               Station label, between its creation and its deletion
+ *   +0x54  u32  SCRATCH_CONTROLS_GOBJ, the patch's own: the CONTROLS item
+ *   +0x58  u32  SCRATCH_HELP_CONTROLS, the patch's own: its help line
+ *   +0x60  u32  CONTROLS sequence word
+ *   +0x64  u8   CONTROLS fields 0..3, through +0x67: mouse aim, the mouse
+ *               speed's step, the zoom speed's step, the tilt
  *   +0x100      SCRATCH_ARRAYS, the page's pointer and snapshot arrays
  *
  * The host never touches anything the map calls the patch's own. */
@@ -188,6 +193,18 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  * (the title section at the end of this file). Width 0 when the port could
  * not compose it, and then there is no fifth item. */
 #define STR_TITLE_STATION 90
+/* The CONTROLS page (menu_assets.cpp ids BaseCount+61..+90). */
+#define STR_CTL_HDR       91   /* "Controls" in the header face */
+#define STR_CTL_ITEM      92   /* the Option item's label, with the dot */
+#define STR_CTL_ITEM_HELP 93   /* its help line */
+#define STR_CTL_LABEL     94   /* ..99: Z Button, Control Stick, Mouse Aim,
+                                * Mouse Speed, Zoom Speed, Mouse Tilt */
+#define STR_HOLD          100
+#define STR_SWITCH        101
+#define STR_NORMAL        102
+#define STR_REVERSE       103
+#define STR_CTL_SPEED     104  /* ..114: 25 50 75 100 125 150 175 200 250 300 400 */
+#define STR_CTL_DESC      115  /* ..120: the six descriptions */
 
 /* The SOUND bank of the mailbox: its own sequence word and value bytes
  * (percent volumes; stereo and background-mute booleans). The patched
@@ -196,9 +213,14 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define SND_SEQ      (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x20))
 #define SND_FIELD(i) (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x28 + (i)))
 
-#define OPT_ITEMS      6    /* Screen, Graphics, Sound, Z, Stick, Return */
+/* The Option list: Screen, Graphics, Sound, Controls, Return. The stock Z
+ * Button and Control Stick rows live on the CONTROLS page now, with the
+ * mouse's settings, so the list is the stock five rows long and keeps the
+ * stock rhythm; six rows was the most the help box left room for. */
+#define OPT_ITEMS      5
 #define OPT_GRAPHICS   1
 #define OPT_SOUND      2
+#define OPT_CONTROLS   3
 #define PAGE_ITEMS     16
 /* The stock Options list's own rhythm: first row at 73, sixteen rows of
  * pitch, six rows on screen -- the Graphics page reads as the same menu.
@@ -364,6 +386,15 @@ static void snap_tint(GObj* gobj, u8 r, u8 g, u8 b) {
  * Z Button, Control Stick, Return. */
 #define SCRATCH_GRAPHICS_GOBJ (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x18))
 #define SCRATCH_HELP_ITEM     (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x1C))
+/* The CONTROLS item's label and help line, in the hole above SCRATCH_ARRAYS
+ * (+0x50 is the title's, +0x60 the CONTROLS bank's sequence word). */
+#define SCRATCH_CONTROLS_GOBJ (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x54))
+#define SCRATCH_HELP_CONTROLS (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x58))
+/* The CONTROLS bank of the mailbox: its sequence word and four value bytes
+ * (mouse aim, the speed index, the zoom index, the tilt), seeded and read
+ * by the host (src/menu_assets.cpp). */
+#define CTL_SEQ      (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x60))
+#define CTL_FIELD(i) (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x64 + (i)))
 /* +0x20 belongs to SND_SEQ; a scratch slot briefly defined here collided
  * with it and was never used -- any write would have faked a sound-bank
  * sequence bump every tick and spammed apply+save. Left retired. */
@@ -568,31 +599,35 @@ static void snap_page_layout(s32 top) {
     }
 }
 
-/* Fills LIST_LABEL() with the six item labels in display order. */
+/* Fills LIST_LABEL() with the five item labels in display order: Screen,
+ * Graphics, Sound, Controls, Return. The stock chain holds Screen, Sound,
+ * Z Button, Control Stick and Return; the middle two are hidden (they are
+ * rows of the CONTROLS page now) and the two staged strips take their
+ * places. */
 static s32 snap_option_labels(void) {
     SObj* sobj = D_800E8340_A0F8D0->data.sobj;
+    SObj* stock[5];
     s32 n = 0;
-    s32 i, o;
-    GObj* mine = (GObj*) SCRATCH_GRAPHICS_GOBJ;
+    GObj* graphics = (GObj*) SCRATCH_GRAPHICS_GOBJ;
+    GObj* controls = (GObj*) SCRATCH_CONTROLS_GOBJ;
 
-    o = 1;   /* slot 0 is filled below; stock labels go after Screen */
     while ((sobj != NULL) && (n < 5)) {
-        if (n == 0) {
-            LIST_LABEL(0) = (u32) sobj;
-        }
-        else {
-            LIST_LABEL(o + n - 1) = (u32) sobj;
-        }
+        stock[n] = sobj;
         n++;
         sobj = sobj->next;
     }
-    /* Display order: Screen, Graphics, Sound, Z Button, Stick, Return. */
-    for (i = n - 1; i >= 1; i--) {
-        LIST_LABEL(i + 1) = LIST_LABEL(i);
+    while (n < 5) {
+        stock[n] = stock[0];
+        n++;
     }
+    LIST_LABEL(0) = (u32) stock[0];
     LIST_LABEL(OPT_GRAPHICS) =
-        ((mine != NULL) && (mine->data.sobj != NULL)) ? (u32) mine->data.sobj : LIST_LABEL(0);
-    return n + 1;
+        ((graphics != NULL) && (graphics->data.sobj != NULL)) ? (u32) graphics->data.sobj : (u32) stock[0];
+    LIST_LABEL(OPT_SOUND) = (u32) stock[1];
+    LIST_LABEL(OPT_CONTROLS) =
+        ((controls != NULL) && (controls->data.sobj != NULL)) ? (u32) controls->data.sobj : (u32) stock[0];
+    LIST_LABEL(OPT_ITEMS - 1) = (u32) stock[4];
+    return OPT_ITEMS;
 }
 
 /* The GRAPHICS page: the Option screen's own dress -- island background,
@@ -921,6 +956,7 @@ s8 func_800E7700_A0EC90(void) {
     s32 pressedB;
     SObj* sobj;
     GObj* helpItemObj;
+    GObj* helpControlsObj;
     s32 helpCount;
     s32 i;
     s8 sel;
@@ -941,6 +977,10 @@ s8 func_800E7700_A0EC90(void) {
     helpItemObj = (GObj*) SCRATCH_HELP_ITEM;
     if ((helpItemObj != NULL) && (helpItemObj->data.sobj != NULL)) {
         helpItemObj->data.sobj->sprite.attr |= SP_HIDDEN;
+    }
+    helpControlsObj = (GObj*) SCRATCH_HELP_CONTROLS;
+    if ((helpControlsObj != NULL) && (helpControlsObj->data.sobj != NULL)) {
+        helpControlsObj->data.sobj->sprite.attr |= SP_HIDDEN;
     }
 
     pulseState = 0;
@@ -978,8 +1018,10 @@ s8 func_800E7700_A0EC90(void) {
                 pulseState = 0;
             }
 
-            /* The help line follows the selection: the staged strip for
-             * Graphics, the stock sprite for everything else. */
+            /* The help line follows the selection: the staged strips for
+             * Graphics and Controls, the stock sprites for the rest. The
+             * stock help sprites run Screen, Sound, Z Button, Control
+             * Stick, Return. */
             sel = MBOX_SEL;
             if (sel != shownHelp) {
                 for (i = 0; i < helpCount; i++) {
@@ -988,13 +1030,21 @@ s8 func_800E7700_A0EC90(void) {
                 if ((helpItemObj != NULL) && (helpItemObj->data.sobj != NULL)) {
                     helpItemObj->data.sobj->sprite.attr |= SP_HIDDEN;
                 }
+                if ((helpControlsObj != NULL) && (helpControlsObj->data.sobj != NULL)) {
+                    helpControlsObj->data.sobj->sprite.attr |= SP_HIDDEN;
+                }
                 if (sel == OPT_GRAPHICS) {
                     if ((helpItemObj != NULL) && (helpItemObj->data.sobj != NULL)) {
                         helpItemObj->data.sobj->sprite.attr &= ~SP_HIDDEN;
                     }
                 }
+                else if (sel == OPT_CONTROLS) {
+                    if ((helpControlsObj != NULL) && (helpControlsObj->data.sobj != NULL)) {
+                        helpControlsObj->data.sobj->sprite.attr &= ~SP_HIDDEN;
+                    }
+                }
                 else {
-                    i = (sel < OPT_GRAPHICS) ? sel : (sel - 1);
+                    i = (sel == 0) ? 0 : (sel == OPT_SOUND) ? 1 : 4;
                     if (i < helpCount) {
                         ((SObj*) LIST_HELP(i))->sprite.attr &= ~SP_HIDDEN;
                     }
@@ -1043,6 +1093,9 @@ s8 func_800E7700_A0EC90(void) {
     }
     if ((helpItemObj != NULL) && (helpItemObj->data.sobj != NULL)) {
         helpItemObj->data.sobj->sprite.attr |= SP_HIDDEN;
+    }
+    if ((helpControlsObj != NULL) && (helpControlsObj->data.sobj != NULL)) {
+        helpControlsObj->data.sobj->sprite.attr |= SP_HIDDEN;
     }
     func_800E6C00_A0E190((SObj*) LIST_LABEL(MBOX_SEL), 0xFF);
     ohWait(1);
@@ -1454,22 +1507,282 @@ static void snap_sound_page(void) {
     ohWait(1);
 }
 
-/* Replaces the Option screen loop: makes room for the sixth item, creates
- * its label and help line, and dispatches -- translating the three stock
- * toggles back to the indices their code was compiled against. */
+/* The CONTROLS page: six rows in the SOUND page's dress. The first two
+ * are the game's own Z Button and Control Stick settings, edited in the
+ * screen's own variables exactly as the stock rows edited them (the
+ * screen's exit writes them to the player flags); the other four are the
+ * mouse's, in the mailbox's CONTROLS bank, applied live by the host. */
+#define CTL_ROWS 6
+
+static s32 snap_ctl_value_count(s32 row) {
+    switch (row) {
+        case 3:  return 11;   /* Mouse Speed */
+        case 4:  return 4;    /* Zoom Speed */
+        default: return 2;
+    }
+}
+
+static s32 snap_ctl_value_str(s32 row, s32 v) {
+    switch (row) {
+        case 0:  return v ? STR_SWITCH : STR_HOLD;
+        case 1:  return v ? STR_REVERSE : STR_NORMAL;
+        case 2:  return v ? STR_ON : STR_OFF;
+        case 3:  return STR_CTL_SPEED + v;
+        case 4:  return STR_CTL_SPEED + v;   /* 25, 50, 75, 100: the first four steps */
+        default: return v ? STR_REVERSE : STR_NORMAL;
+    }
+}
+
+static s32 snap_ctl_get(s32 row) {
+    switch (row) {
+        case 0:  return D_800E8395_A0F925 ? 1 : 0;
+        case 1:  return D_800E8396_A0F926 ? 1 : 0;
+        default: return CTL_FIELD(row - 2);
+    }
+}
+
+static void snap_ctl_set(s32 row, s32 v) {
+    switch (row) {
+        case 0:  D_800E8395_A0F925 = (s8) v; break;
+        case 1:  D_800E8396_A0F926 = (s8) v; break;
+        default: CTL_FIELD(row - 2) = (u8) v; break;
+    }
+}
+
+static void snap_controls_page(void) {
+    UnkStruct800BEDF8* input;
+    GObj* hdrStrip;
+    GObj* descStrip;
+    s32 sel, i, moved, hiddenCount;
+    s32 v;
+    u8 pulseState, pulseCounter;
+    u8 entry[CTL_ROWS];
+
+    if (DIR_MAGIC != 0x53474130) {
+        return;
+    }
+
+    for (i = 0; i < CTL_ROWS; i++) {
+        v = snap_ctl_get(i);
+        if ((v < 0) || (v >= snap_ctl_value_count(i))) {
+            v = 0;
+            snap_ctl_set(i, 0);
+        }
+        entry[i] = (u8) v;
+    }
+
+    hiddenCount = 0;
+    for (i = 0; i < 12; i++) {
+        GObj* chain = snap_chain(i);
+        SObj* sobj = (chain != NULL) ? chain->data.sobj : NULL;
+        while (sobj != NULL) {
+            const s32 y = sobj->sprite.y;
+            if ((y >= 56) && (y < 164) && !(sobj->sprite.attr & SP_HIDDEN) &&
+                (hiddenCount < 64)) {
+                sobj->sprite.attr |= SP_HIDDEN;
+                PAGE_HIDDEN(hiddenCount) = (u32) sobj;
+                hiddenCount++;
+            }
+            sobj = sobj->next;
+        }
+    }
+    {
+        GObj* mine = (GObj*) SCRATCH_GRAPHICS_GOBJ;
+        if ((mine != NULL) && (mine->data.sobj != NULL) &&
+            !(mine->data.sobj->sprite.attr & SP_HIDDEN) && (hiddenCount < 64)) {
+            mine->data.sobj->sprite.attr |= SP_HIDDEN;
+            PAGE_HIDDEN(hiddenCount) = (u32) mine->data.sobj;
+            hiddenCount++;
+        }
+        mine = (GObj*) SCRATCH_CONTROLS_GOBJ;
+        if ((mine != NULL) && (mine->data.sobj != NULL) &&
+            !(mine->data.sobj->sprite.attr & SP_HIDDEN) && (hiddenCount < 64)) {
+            mine->data.sobj->sprite.attr |= SP_HIDDEN;
+            PAGE_HIDDEN(hiddenCount) = (u32) mine->data.sobj;
+            hiddenCount++;
+        }
+    }
+    {
+        GObj* chain = snap_chain(2);
+        SObj* sobj = (chain != NULL) ? chain->data.sobj : NULL;
+        while (sobj != NULL) {
+            if ((sobj->sprite.y == 40) && !(sobj->sprite.attr & SP_HIDDEN) &&
+                (hiddenCount < 64)) {
+                sobj->sprite.attr |= SP_HIDDEN;
+                PAGE_HIDDEN(hiddenCount) = (u32) sobj;
+                hiddenCount++;
+            }
+            sobj = sobj->next;
+        }
+    }
+    hdrStrip = snap_make_strip(STR_CTL_HDR, 45, 41);
+    {
+        GObj* itemHelp = (GObj*) SCRATCH_HELP_ITEM;
+        if ((itemHelp != NULL) && (itemHelp->data.sobj != NULL)) {
+            itemHelp->data.sobj->sprite.attr |= SP_HIDDEN;
+        }
+        itemHelp = (GObj*) SCRATCH_HELP_CONTROLS;
+        if ((itemHelp != NULL) && (itemHelp->data.sobj != NULL)) {
+            itemHelp->data.sobj->sprite.attr |= SP_HIDDEN;
+        }
+    }
+    descStrip = snap_make_strip(STR_CTL_DESC + 0, 49, 171);
+
+    for (i = 0; i < CTL_ROWS; i++) {
+        PAGE_LABEL(i) = (u32) snap_make_strip(STR_CTL_LABEL + i, 50, PAGE_TOP_Y + i * PAGE_PITCH);
+        PAGE_VALUE(i) = (u32) snap_make_strip(snap_ctl_value_str(i, entry[i]), 163, PAGE_TOP_Y + i * PAGE_PITCH);
+        snap_tint((GObj*) PAGE_VALUE(i), SEL_R, SEL_G, SEL_B);
+    }
+
+    sel = 0;
+    pulseState = 0;
+    pulseCounter = 0;
+
+    ohWait(2);
+
+    while (1) {
+        input = func_800AA38C(0);
+        moved = 0;
+
+        if (gContInputPressedButtons & B_BUTTON) {
+            /* Cancel: every row back to what it was at entry, the mouse
+             * rows re-published so the host applies the old values. */
+            auPlaySoundWithParams(0x43, 0x7FFF, 0x40, 1.0f, 0);
+            for (i = 0; i < CTL_ROWS; i++) {
+                if (snap_ctl_get(i) != entry[i]) {
+                    snap_ctl_set(i, entry[i]);
+                    if (i >= 2) {
+                        moved = 1;
+                    }
+                }
+            }
+            if (moved) {
+                CTL_SEQ = CTL_SEQ + 1;
+            }
+            break;
+        }
+
+        if (gContInputPressedButtons & A_BUTTON) {
+            auPlaySoundWithParams(0x42, 0x7FFF, 0x40, 1.0f, 0);
+            break;
+        }
+
+        if (input->pressedButtons & STICK_SLOW_UP) {
+            snap_tint((GObj*) PAGE_LABEL(sel), 0xFF, 0xFF, 0xFF);
+            sel = (sel == 0) ? (CTL_ROWS - 1) : (sel - 1);
+            pulseState = 0;
+            snap_swap_strip(descStrip, STR_CTL_DESC + sel);
+            auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
+        }
+        else if (input->pressedButtons & STICK_SLOW_DOWN) {
+            snap_tint((GObj*) PAGE_LABEL(sel), 0xFF, 0xFF, 0xFF);
+            sel = (sel + 1) % CTL_ROWS;
+            pulseState = 0;
+            snap_swap_strip(descStrip, STR_CTL_DESC + sel);
+            auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
+        }
+        else if (input->pressedButtons & STICK_SLOW_RIGHT) {
+            v = snap_ctl_get(sel) + 1;
+            if (v >= snap_ctl_value_count(sel)) {
+                v = 0;
+            }
+            snap_ctl_set(sel, v);
+            moved = 1;
+        }
+        else if (input->pressedButtons & STICK_SLOW_LEFT) {
+            v = snap_ctl_get(sel) - 1;
+            if (v < 0) {
+                v = snap_ctl_value_count(sel) - 1;
+            }
+            snap_ctl_set(sel, v);
+            moved = 1;
+        }
+
+        if (moved) {
+            auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
+            snap_swap_strip((GObj*) PAGE_VALUE(sel), snap_ctl_value_str(sel, snap_ctl_get(sel)));
+            if (sel >= 2) {
+                CTL_SEQ = CTL_SEQ + 1;
+            }
+        }
+
+        if (PAGE_LABEL(sel) != 0) {
+            SObj* sobj = ((GObj*) PAGE_LABEL(sel))->data.sobj;
+            switch (pulseState) {
+                case 0:
+                    if (sobj->sprite.red >= 0x84) {
+                        sobj->sprite.red -= 4;
+                        func_800E6C00_A0E190(sobj, sobj->sprite.red);
+                    } else {
+                        func_800E6C00_A0E190(sobj, 0x80);
+                        pulseState = 1;
+                    }
+                    break;
+                case 1:
+                    if (sobj->sprite.red < 0xE2) {
+                        sobj->sprite.red += 0x1E;
+                        func_800E6C00_A0E190(sobj, sobj->sprite.red);
+                    } else {
+                        pulseCounter = 0;
+                        func_800E6C00_A0E190(sobj, 0xFF);
+                        pulseState = 2;
+                    }
+                    break;
+                case 2:
+                    if (pulseCounter++ > 30) {
+                        pulseState = 0;
+                    }
+                    break;
+            }
+        }
+        ohWait(1);
+    }
+
+    for (i = 0; i < CTL_ROWS; i++) {
+        if (PAGE_LABEL(i) != 0) {
+            omDeleteGObj((GObj*) PAGE_LABEL(i));
+            PAGE_LABEL(i) = 0;
+        }
+        if (PAGE_VALUE(i) != 0) {
+            omDeleteGObj((GObj*) PAGE_VALUE(i));
+            PAGE_VALUE(i) = 0;
+        }
+    }
+    if (hdrStrip != NULL) {
+        omDeleteGObj(hdrStrip);
+    }
+    if (descStrip != NULL) {
+        omDeleteGObj(descStrip);
+    }
+    for (i = 0; i < hiddenCount; i++) {
+        SObj* sobj = (SObj*) PAGE_HIDDEN(i);
+        sobj->sprite.attr &= ~SP_HIDDEN;
+    }
+    ohWait(1);
+}
+
+/* Replaces the Option screen loop: makes room for the port's two items,
+ * creates their labels and help lines, retires the stock Z Button and
+ * Control Stick rows to the CONTROLS page, and dispatches. */
 void func_800E7F98_A0F528(void) {
     s32 cond;
     u32 sel;
     s32 i;
     GObj* graphicsLabel;
     GObj* itemHelp;
+    GObj* controlsLabel;
+    GObj* controlsHelp;
 
     func_800E71DC_A0E76C();
 
     graphicsLabel = NULL;
     itemHelp = NULL;
+    controlsLabel = NULL;
+    controlsHelp = NULL;
     SCRATCH_GRAPHICS_GOBJ = 0;
     SCRATCH_HELP_ITEM = 0;
+    SCRATCH_CONTROLS_GOBJ = 0;
+    SCRATCH_HELP_CONTROLS = 0;
     MBOX_SEL = 0;
 
     if (DIR_MAGIC == 0x53474130) {
@@ -1527,6 +1840,56 @@ void func_800E7F98_A0F528(void) {
         }
         SCRATCH_GRAPHICS_GOBJ = (u32) graphicsLabel;
         SCRATCH_HELP_ITEM = (u32) itemHelp;
+
+        /* The stock Z Button and Control Stick rows move to the CONTROLS
+         * page: after the shift above they sit at y=121 and y=137 (labels
+         * and their dots), their colons at (158,123) and (158,139), and
+         * their value pairs are whole chains. All hidden, never deleted:
+         * the screen's teardown owns them. Return, at y=153 after the
+         * shift, comes up to the fourth slot's rhythm at 137, and the
+         * CONTROLS item takes the third at 121. */
+        for (i = 0; i < 12; i++) {
+            GObj* chain = snap_chain(i);
+            SObj* sobj = (chain != NULL) ? chain->data.sobj : NULL;
+            while (sobj != NULL) {
+                if ((sobj->sprite.y == 121) || (sobj->sprite.y == 137) ||
+                    ((sobj->sprite.x == 158) && ((sobj->sprite.y == 123) || (sobj->sprite.y == 139)))) {
+                    sobj->sprite.attr |= SP_HIDDEN;
+                }
+                sobj = sobj->next;
+            }
+        }
+        if ((D_800E835C_A0F8EC != NULL) && (D_800E835C_A0F8EC->data.sobj != NULL)) {
+            SObj* pair = D_800E835C_A0F8EC->data.sobj;
+            while (pair != NULL) {
+                pair->sprite.attr |= SP_HIDDEN;
+                pair = pair->next;
+            }
+        }
+        if ((D_800E8360_A0F8F0 != NULL) && (D_800E8360_A0F8F0->data.sobj != NULL)) {
+            SObj* pair = D_800E8360_A0F8F0->data.sobj;
+            while (pair != NULL) {
+                pair->sprite.attr |= SP_HIDDEN;
+                pair = pair->next;
+            }
+        }
+        for (i = 0; i < 12; i++) {
+            GObj* chain = snap_chain(i);
+            SObj* sobj = (chain != NULL) ? chain->data.sobj : NULL;
+            while (sobj != NULL) {
+                if (sobj->sprite.y == 153) {
+                    sobj->sprite.y = 137;
+                }
+                sobj = sobj->next;
+            }
+        }
+        controlsLabel = snap_make_strip(STR_CTL_ITEM, 43, 121);
+        controlsHelp = snap_make_strip(STR_CTL_ITEM_HELP, 49, 171);
+        if (controlsHelp != NULL) {
+            controlsHelp->data.sobj->sprite.attr |= SP_HIDDEN;
+        }
+        SCRATCH_CONTROLS_GOBJ = (u32) controlsLabel;
+        SCRATCH_HELP_CONTROLS = (u32) controlsHelp;
     }
 
     func_800E7408_A0E998();
@@ -1564,13 +1927,8 @@ void func_800E7F98_A0F528(void) {
                 case OPT_SOUND:
                     snap_sound_page();
                     break;
-                case 3:
-                case 4:
-                    /* The stock cycling code indexes its sprites by the
-                     * five-item numbering it was compiled with. */
-                    D_800E8374_A0F904 = sel - 1;
-                    func_800E7C40_A0F1D0();
-                    D_800E8374_A0F904 = MBOX_SEL;
+                case OPT_CONTROLS:
+                    snap_controls_page();
                     break;
                 default:
                     func_800BFB90_5CA30(viEdgeOffsetLeft, viEdgeOffsetTop);
@@ -1595,8 +1953,16 @@ void func_800E7F98_A0F528(void) {
     if (itemHelp != NULL) {
         omDeleteGObj(itemHelp);
     }
+    if (controlsLabel != NULL) {
+        omDeleteGObj(controlsLabel);
+    }
+    if (controlsHelp != NULL) {
+        omDeleteGObj(controlsHelp);
+    }
     SCRATCH_GRAPHICS_GOBJ = 0;
     SCRATCH_HELP_ITEM = 0;
+    SCRATCH_CONTROLS_GOBJ = 0;
+    SCRATCH_HELP_CONTROLS = 0;
 }
 
 /* Replaces the title screen's background creation: everything the original
