@@ -111,6 +111,10 @@ if (MSVC)
     target_compile_options(recomp_funcs PRIVATE /w /bigobj /O2)
 else()
 target_compile_options(recomp_funcs PRIVATE
+    # Emulated RAM is read through several widths at once; under strict
+    # aliasing an optimiser may reorder those, and a contributor's Clang
+    # build crashed in the audio start-up on exactly that.
+    -fno-strict-aliasing
     -g
     -Wno-unused-variable
     -Wno-unused-parameter
@@ -213,7 +217,7 @@ if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/RecompiledPatches/patches.c")
         # /Oi-: the game has functions named sinf and cosf, which MSVC would
         # otherwise replace with its math intrinsics and then reject for
         # taking the recompiler's two arguments.
-        PROPERTIES COMPILE_OPTIONS "$<IF:$<BOOL:${MSVC}>,/w;/O2;/Oi-,-w>")
+        PROPERTIES COMPILE_OPTIONS "$<IF:$<BOOL:${MSVC}>,/w;/O2;/Oi-,-w;-fno-strict-aliasing>")
 
     # The patch ELF's loadable bytes: code the recompiler already turned into
     # C, and the .data section holding every patch's constants (IDO keeps
@@ -239,6 +243,7 @@ set(SNAP_SOURCES
     ${SNAP_PATCH_SOURCES}
     src/main.cpp
     src/paths.cpp
+    src/steam_deck.cpp
     src/rt64_render_context.cpp
     src/rsp_microcode.cpp
     src/audio.cpp
@@ -368,7 +373,14 @@ endif()
 
 # Compiler warnings for game code
 if (NOT MSVC)
-    target_compile_options(Snap64Recomp PRIVATE -Wall -Wextra -Wno-unused-parameter)
+    target_compile_options(Snap64Recomp PRIVATE -fno-strict-aliasing -Wall -Wextra -Wno-unused-parameter)
+endif()
+if (UNIX AND NOT APPLE)
+    # The C++ runtime inside the binary, as the other N64 recompilations
+    # ship it: the tarball then runs on a SteamOS whose libstdc++ is older
+    # or newer than the build machine's. glibc stays the system's; the
+    # build machine's version is the floor (BUILDING.md, step 14).
+    target_link_options(Snap64Recomp PRIVATE -static-libstdc++ -static-libgcc)
 endif()
 
 # =============================================================================

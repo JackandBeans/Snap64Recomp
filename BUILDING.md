@@ -370,10 +370,16 @@ copy of the port root on the Linux filesystem (`rsync` it there; compiling
 but RT64 links; `libvulkan-dev` for plume's Vulkan backend. The package is
 `Snap64Recomp-<version>-linux-x86_64.tar.gz` with a `.sha256` beside it: the
 same flat folder as the Windows ZIP, without the DLLs and the linker map. At
-run time the binary needs the system's `libSDL2-2.0.so.0`, GTK 3 and a
-Vulkan driver (SDL loads the loader); it ships no shader compiler, because
-off Windows RT64 specialises its SPIR-V shaders with re-spirv instead of
-DXC.
+run time the binary needs the system's `libSDL2-2.0.so.0` (2.26 or newer;
+SteamOS 3.8 provides it through sdl2-compat), GTK 3 and a Vulkan driver
+(SDL loads the loader); it ships no shader compiler, because off Windows
+RT64 specialises its SPIR-V shaders with re-spirv instead of DXC. The C++
+runtime is linked in (`-static-libstdc++ -static-libgcc`, as the other N64
+recompilations do); glibc is not, so the build machine's glibc is the
+floor (2.39 here; SteamOS 3.8 ships 2.41). The recompiled game, the
+patches and the port are compiled with `-fno-strict-aliasing`: emulated
+RAM is read through several widths at once, and a contributor's Clang
+build crashed in the audio start-up without it.
 
 What differs from the Windows build, all in `#if` branches of the same
 files:
@@ -388,9 +394,21 @@ files:
 * `snap64.log` is written only when there is nowhere to print (stdout is
   `/dev/null` or closed, as from Steam or a desktop entry); a terminal or a
   redirection is kept. One copy at a time is a `flock` on `snap64.lock` in
-  the data directory. The Snap Station's relaunch runs `/proc/self/exe`
-  again through a double fork, and the sheet's folder opens with
-  `xdg-open` (`src/main.cpp`, `src/snap_station.cpp`).
+  the data directory. The Snap Station's relaunch `execv`s
+  `/proc/self/exe` in place, keeping the pid so Steam keeps the game as
+  running, and the sheet's folder opens with `xdg-open` (`src/main.cpp`,
+  `src/snap_station.cpp`).
+* The data directory is the executable's when it can be written, else
+  `$XDG_CONFIG_HOME/Snap64Recomp` (`~/.config/Snap64Recomp`), and
+  `SNAP_DATA_DIR` names one outright (`src/paths.cpp`).
+* `src/steam_deck.cpp`: `SteamDeck=1` in the environment (Steam sets it
+  for a game it launches on a Deck, through Proton too) or a board vendor
+  of `Valve` under `/sys` means a Steam Deck, which boots fullscreen
+  through the same live path the Snap Station's restore uses. SDL's screen
+  keyboard is turned off before init and text input stopped after the
+  window exists, so Steam's on-screen keyboard does not open over the game.
+* On Windows under Wine (Proton), `SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD`
+  is set before SDL initialises, so Steam's virtual controller is seen.
 * `lib/rt64/src/hle/rt64_snap_diag.h` and `rt64_application.cpp` carry the
   two portability guards a contributor's macOS build found first: `mkdir`
   in place of `_mkdir`, and the pipeline counters defined where no D3D12

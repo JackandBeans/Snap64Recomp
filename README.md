@@ -516,23 +516,101 @@ documentation.
 
 ## Linux and Steam Deck
 
-The port is Windows on the release page. Two other ways exist, one tried by
-a player and one built but not yet run:
+The release page is Windows. Two other ways exist: the Windows build
+through Proton, which players ran on the day of the release, and a native
+Linux build, which compiles and packs but has not yet been run on a Linux
+desktop or a Steam Deck by me. Both are described here as they stand on
+2026-09-06; the Deck instructions follow what the other N64
+recompilations' players do, and every "untested" below means exactly that.
 
-* **Proton.** On the day of the release a player reported the Windows
-  build running well through Proton (Steam's compatibility layer). Add
-  `Snap64Recomp.exe` to Steam as a non-Steam game, set a current Proton in
-  the shortcut's Compatibility properties, and keep `pokemonsnap.z64`
-  beside the executable as on Windows; saves, settings and photos stay in
-  that folder. That is one report, not a test of mine.
-* **A native Linux build.** The same source builds on Linux with GCC,
-  rendering through Vulkan, and packs as
-  `Snap64Recomp-<version>-linux-x86_64.tar.gz`
-  ([BUILDING, step 14](BUILDING.md#14-linux-build-experimental)). As of
-  2026-09-06 it has been built and started against a software Vulkan device
-  under WSL, and has not been run on a Linux desktop or a Steam Deck. It
-  will be on the release page once it has, with the Deck's own
-  instructions; a report from anyone who builds it before then is welcome.
+### The Windows build through Proton
+
+Proton is Steam's compatibility layer for Windows programs, and the one
+route with a report ("works great", one player, the day of the release).
+On a Steam Deck:
+
+1. In Desktop Mode, unpack the Windows ZIP somewhere under your home
+   folder and put `pokemonsnap.z64` beside `Snap64Recomp.exe`, as on
+   Windows. Saves, settings, photos and the log stay in that folder; they
+   do not go into Proton's prefix.
+2. Right-click `Snap64Recomp.exe` and choose **Add to Steam**. In Steam,
+   open the shortcut's **Properties**: under **Compatibility** tick
+   *Force the use of a specific Steam Play compatibility tool* and pick the
+   newest Proton; check that *Start in* is the folder holding the
+   executable.
+3. Back in Gaming Mode, launch it. The first start compiles shaders twice
+   over (the port's own and Proton's translation of them) and takes
+   longer; a `vkd3d-proton.cache` file appears in the folder, which is
+   Proton's shader cache and can stay.
+
+Under Proton the port sees Steam's controller layer as one Xbox-style
+pad, which is how the Deck's controls arrive; 1.0.1 lets that pad through
+(the SDL the port ships would otherwise ignore it unless Steam's own
+launch said so, and that permission does not always cross into Wine), and
+the log says `host: Wine (Proton)` when it applies. Untested on a Deck by
+me. Every RT64-based recompilation on SteamOS, through Proton or native,
+is reported to hitch at exactly half the panel's refresh now and then;
+whether this port does is unmeasured.
+
+### The native Linux build
+
+The same source builds on Linux with GCC, rendering through Vulkan, and
+packs as `Snap64Recomp-<version>-linux-x86_64.tar.gz`
+([BUILDING, step 14](BUILDING.md#14-linux-build-experimental)). It has
+been built and started under WSL against a software Vulkan device and has
+not drawn a frame on real Linux hardware; it will be on the release page
+once it has. Until then, anyone who builds it uses it like this:
+
+1. Unpack the tarball under your home folder and put `pokemonsnap.z64`
+   beside `Snap64Recomp`. That folder is where everything lives, as on
+   Windows. If the folder cannot be written (a read-only mount, a system
+   directory), the files go to `~/.config/Snap64Recomp` (or
+   `$XDG_CONFIG_HOME/Snap64Recomp`) and the ROM is looked for there; the
+   log's first line names the folder in use, and `SNAP_DATA_DIR` in the
+   environment names one outright.
+2. On a Deck, in Desktop Mode, right-click `Snap64Recomp` and choose
+   **Add to Steam**, then launch it from Gaming Mode. The port boots
+   fullscreen on a Deck (F11 or the maximize button leaves it); on any
+   other Linux machine it boots windowed, as on Windows.
+
+It needs the system's SDL2 (2.26 or newer), GTK 3 and a Vulkan driver,
+and a glibc no older than the one it was built against (2.39; SteamOS 3.8
+ships 2.41). The C++ runtime is inside the binary. Rendering is Vulkan
+only, whatever `graphics_api` in the settings file says. If a Linux
+desktop shows no controller under Steam Input, that is a known problem of
+the whole family of ports outside the Deck; the Deck itself is reported
+fine.
+
+### On a Deck, either way
+
+* **Controls.** The Deck's controls arrive as an Xbox-style pad: A is A,
+  B or X is B, the left bumper is Z, Start is Start, the triggers are L
+  and R, the right stick is the C buttons, the D-pad is the D-pad, and the
+  View button saves the photo on screen ("Controls" above). Back paddles,
+  trackpads and gyro reach the game only as whatever Steam's controller
+  layout maps them to.
+* **Gyro aiming.** The Deck's gyro cannot be read by the game itself. In
+  the shortcut's controller settings set *Gyro Behavior* to **As Mouse**
+  and *Gyro Activation Buttons* to **None Selected (Gyro Always On)**: the
+  port's mouse look then turns the camera with the Deck, and Mouse Speed
+  on the Controls page sets how far. The right trackpad as mouse works the
+  same way.
+* **Quitting.** A pad has no quit; use the Steam menu's **Exit Game** (or
+  hold Esc on a keyboard). The quit question and any start-up error appear
+  as their own small windows in Gaming Mode; the right trackpad moves a
+  pointer over them and clicks, and Keep playing is the highlighted
+  default.
+* **Screen.** The panel is 1280x800; leave the shortcut's Game Resolution
+  alone. The Deck's own refresh and frame-limit setting should match the
+  panel (60, or 90 on the OLED); the port's Frame Rate: Display then
+  follows it. 16:10 is where the Widescreen option's missing objects
+  ("Known limitations") show at the edges; 4:3 sits in black bars.
+* **Silent?** Desktop Mode's audio mixer sometimes has an app muted on
+  its own; check it before anything else. Waking the Deck from sleep or
+  switching to Bluetooth audio while the game runs is untested here; the
+  other ports report noise after it.
+* **A shortcut missing from Gaming Mode** after Desktop Mode added it is a
+  Steam quirk: restart Steam or add it again.
 
 ## Known limitations
 

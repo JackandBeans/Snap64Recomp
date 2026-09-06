@@ -413,34 +413,23 @@ void relaunch_self(const char* why) {
         unsetenv(name);
     }
     const std::string cwd = base_dir().string();
+    say("relaunching in place for %s", why);
     fflush(stdout);
     fflush(stderr);
-    const pid_t child = fork();
-    if (child < 0) {
-        say("fork failed with errno %d; not relaunching (%s)", errno, why);
+    // The new boot replaces this process image and keeps its pid, so Steam
+    // (which watches the process it started) keeps the game as running, the
+    // overlay and the controller layout stay, and the marker's pid is this
+    // one, which the new boot does not wait on. The kernel closes the lock
+    // file with the image (O_CLOEXEC) and the new boot takes the lock
+    // again; the log stays open across exec, so the new boot's first line
+    // follows this one's last in the same snap64.log.
+    if (chdir(cwd.c_str()) != 0) {
+        say("could not enter %s; not relaunching (%s)", cwd.c_str(), why);
         return;
     }
-    if (child == 0) {
-        // A grandchild, so the new run is not this process's child: nothing
-        // waits on it and it outlives this process cleanly.
-        if (fork() == 0) {
-            if (chdir(cwd.c_str()) != 0) {
-                _exit(126);
-            }
-            char* const argv[] = { exe, nullptr };
-            execv(exe, argv);
-            _exit(127);
-        }
-        _exit(0);
-    }
-    int status = 0;
-    waitpid(child, &status, 0);
-    say("relaunched for %s; this instance is quitting", why);
-    // The new run renames snap64.log to snap64.prev.log and opens its own;
-    // on Linux a renamed file stays open here, so this run's last lines land
-    // in the previous log where they belong. Nothing more is written after
-    // this point on purpose.
-    ultramodern::quit();
+    char* const argv[] = { exe, nullptr };
+    execv(exe, argv);
+    say("execv failed with errno %d; not relaunching (%s)", errno, why);
 #else
     (void)why;
 #endif

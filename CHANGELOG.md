@@ -30,6 +30,13 @@
   and started under WSL; not yet run on a Linux desktop or a Steam Deck,
   so it is not on the release page. Two portability fixes came from a
   contributor's macOS build.
+* Steam Deck: the port knows a Deck (Steam's `SteamDeck=1`, or the board
+  vendor under `/sys`) and boots fullscreen there; SDL's screen keyboard
+  is kept off so Steam's does not open over the game; the Snap Station's
+  relaunch on Linux replaces the process in place so Steam keeps the game
+  as running. The Windows build under Proton now lets Steam's virtual
+  controller through. The README has the Deck instructions for both
+  routes and what is untested.
 
 ## 1.0.0 -- 2026-09-05
 

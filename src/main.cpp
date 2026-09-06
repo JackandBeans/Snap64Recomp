@@ -40,6 +40,7 @@
 #include "version.h"
 #include "paths.h"
 #include "snap_station.h"
+#include "steam_deck.h"
 namespace snap { extern uint8_t* g_rdram; }
 extern "C" void snap_publish_ai_len(uint8_t* rdram);
 
@@ -89,6 +90,26 @@ static SDL_Window* sdl_window = nullptr;
 static void snap_update_window_title();
 
 static void* create_gfx() {
+#if defined(__linux__)
+    // The port has no text field. SDL starts text input for every program,
+    // and on a Deck that is what raises Steam's on-screen keyboard over the
+    // game at launch (the other recompilations' open bug of August 2026).
+    SDL_SetHint(SDL_HINT_ENABLE_SCREEN_KEYBOARD, "0");
+#endif
+#if defined(_WIN32)
+    // Under Proton, Steam's controller layer presents the Deck's controls
+    // as one virtual pad, which this SDL ignores unless Steam's own launch
+    // said to allow it; the variable Steam sets does not always reach a
+    // Windows program through Wine. Wine names itself in ntdll, so the
+    // permission is given here when it is the host, and only then.
+    {
+        HMODULE ntdll = GetModuleHandleW(L"ntdll.dll");
+        if ((ntdll != nullptr) && (GetProcAddress(ntdll, "wine_get_version") != nullptr)) {
+            SDL_SetHint("SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD", "1");
+            printf("[SNAP] host: Wine (Proton); Steam's virtual controller allowed" "\n");
+        }
+    }
+#endif
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) {
         // Nothing downstream can work without SDL, and the failures it would
         // produce (no window, no native handle, no renderer) all read as
@@ -119,6 +140,11 @@ static ultramodern::renderer::WindowHandle create_window(void* /*gfx_data*/) {
         windowW, windowH,
         SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI
     );
+#if defined(__linux__)
+    if (sdl_window != nullptr) {
+        SDL_StopTextInput();
+    }
+#endif
     if (!sdl_window) {
         fprintf(stderr, "[SNAP] SDL_CreateWindow failed: %s\n", SDL_GetError());
     }
@@ -201,15 +227,24 @@ static void update_gfx(void* /*gfx_data*/) {
     // The Snap Station's relaunches come back at the window state the run
     // had. A boot is always windowed (settings.cpp), so the return to
     // fullscreen goes through the live path the maximize button uses,
-    // once the window has been up for a moment.
+    // once the window has been up for a moment. A Steam Deck boots into
+    // fullscreen the same way: its panel is the whole screen, and the
+    // other recompilations' players filed a windowed boot as a bug.
     {
         static bool restoreChecked = false;
         static bool restorePending = false;
+        static const char* restoreWhy = "";
         static std::chrono::steady_clock::time_point restoreAt;
         const auto now = std::chrono::steady_clock::now();
         if (!restoreChecked) {
             restoreChecked = true;
-            restorePending = snap::station_take_fullscreen_restore();
+            if (snap::station_take_fullscreen_restore()) {
+                restorePending = true;
+                restoreWhy = "restored after the Snap Station's relaunch";
+            } else if (snap::is_steam_deck()) {
+                restorePending = true;
+                restoreWhy = "the Steam Deck's default (F11 or the maximize button leaves it)";
+            }
             restoreAt = now + std::chrono::milliseconds(1200);
         }
         if (restorePending && (sdl_window != nullptr) && (now >= restoreAt)) {
@@ -220,7 +255,7 @@ static void update_gfx(void* /*gfx_data*/) {
             }
             snap::apply_graphics_settings();
             snap_update_window_title();
-            printf("[SNAP] fullscreen restored after the Snap Station's relaunch\n");
+            printf("[SNAP] fullscreen: %s\n", restoreWhy);
             fflush(stdout);
         }
     }
@@ -722,6 +757,9 @@ int main(int argc, char* argv[]) {
     // The first thing a support log needs: where this run reads and writes.
     printf("[SNAP] data directory: %s\n",
            reinterpret_cast<const char*>(snap::base_dir().u8string().c_str()));
+    if (snap::is_steam_deck()) {
+        printf("[SNAP] machine: Steam Deck%s\n", snap::in_gamescope() ? " (gaming mode)" : "");
+    }
 
     snap::load_settings();
     // Before anything else opens the save or the caches: a relaunch after a
