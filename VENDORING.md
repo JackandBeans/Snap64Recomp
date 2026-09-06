@@ -217,8 +217,8 @@ above (#259, #262).
 
 ### plume (inside the ignored contrib tree)
 
-Three files differ from plume `51b1ad4`, none of their contents exists
-anywhere in plume's history, and all three are **force-tracked** in this
+Four files differ from plume `51b1ad4`, none of their contents exists
+anywhere in plume's history, and all four are **force-tracked** in this
 repository (`git add -f`; the directory around them stays ignored):
 
 * `plume_d3d12.cpp` (tracked since commit `7d704d4`, which was `35bcba0`
@@ -236,6 +236,12 @@ repository (`git add -f`; the directory around them stays ignored):
 * `plume_render_interface.h` (tracked since 2026-09-02): six added lines, the
   virtual `setPipelineCacheData` / `getPipelineCacheData` on `RenderDevice`
   with default bodies that report no support.
+* `plume_vulkan.cpp` (tracked since 2026-09-06): one added branch in
+  `VulkanCommandList::copyTextureRegion`, the texture-to-buffer copy
+  (`vkCmdCopyImageToBuffer`) upstream lacks; without it a buffer
+  destination fell through to the image-to-image path and dereferenced a
+  null texture, which took the port's presented-frame capture and the Snap
+  Station's sheet capture down on Linux.
 
 The `.cpp` does not compile against pristine plume headers, which is why the
 headers are tracked too (until 2026-09-02 they were not, and the only copy of

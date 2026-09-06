@@ -42,6 +42,33 @@ static std::vector<int16_t> swap_buffer;
 // (samples dropped, zero backlog reported).
 static uint32_t failed_open_frequency = 0;
 
+// A device that has stopped draining (a sink that accepts and never plays,
+// a Bluetooth switch mid-stream, the machine back from sleep) leaves the
+// queue growing without bound, and the game reads that queue as its DAC's
+// backlog: past what its frame arithmetic allows, the synthesizer overran
+// its command list and the game crashed (found on WSL, whose audio sink
+// does exactly that). Above a second of audio the queue is dropped and a
+// full buffer is reported, as when there is no device at all; a draining
+// device never holds more than a few frames and never gets here.
+static uint32_t stall_cap_bytes() {
+    return current_frequency * 2 * sizeof(int16_t);   // one second, stereo
+}
+
+static uint32_t queued_bytes_bounded() {
+    const uint32_t queued = SDL_GetQueuedAudioSize(audio_device);
+    if (queued <= stall_cap_bytes()) {
+        return queued;
+    }
+    SDL_ClearQueuedAudio(audio_device);
+    static bool reported = false;
+    if (!reported) {
+        reported = true;
+        fprintf(stderr, "[SNAP-Audio] the device is not draining (%u bytes queued); the queue is dropped and a full buffer reported" "\n", queued);
+        fflush(stderr);
+    }
+    return 1024 * 2 * sizeof(int16_t);
+}
+
 // The SOUND page's host-side knobs, written by the settings side and read
 // by the audio thread each buffer: master gain in Q8 (256 = unity) and the
 // focus-follows mute.
@@ -186,7 +213,7 @@ size_t audio_get_frames_remaining() {
     // by 2 * sizeof(int16_t) to recover bytes, so it must be FRAMES (stereo
     // pairs) -- 4 bytes each. Returning int16 count here reported double the
     // real backlog.
-    uint32_t queued_bytes = SDL_GetQueuedAudioSize(audio_device);
+    const uint32_t queued_bytes = queued_bytes_bounded();
     return static_cast<size_t>(queued_bytes / (2 * sizeof(int16_t)));
 }
 
@@ -198,7 +225,20 @@ size_t audio_queued_bytes() {
     }
     // Stereo signed-16 => 4 bytes per frame, which is exactly the unit the N64's
     // AI_LEN register reports. The game shifts this right by 2 to get frames.
-    return static_cast<size_t>(SDL_GetQueuedAudioSize(audio_device));
+    return static_cast<size_t>(queued_bytes_bounded());
+}
+
+void audio_device_lost() {
+    std::lock_guard<std::mutex> lock(audio_mutex);
+    if (audio_device != 0) {
+        SDL_CloseAudioDevice(audio_device);
+        audio_device = 0;
+    }
+    // Let the next buffer try the default device again, whatever rate
+    // failed before: the endpoint that failed is the one that went away.
+    failed_open_frequency = 0;
+    fprintf(stderr, "[SNAP-Audio] the audio device went away; reopening on the next buffer" "\n");
+    fflush(stderr);
 }
 
 void audio_set_frequency(uint32_t freq) {

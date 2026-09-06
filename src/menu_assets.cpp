@@ -31,6 +31,7 @@
 #include <cmath>
 #include <cstdlib>
 #include <algorithm>
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -40,6 +41,7 @@
 #include <vector>
 
 #include "audio.h"
+#include "hle/rt64_snap_diag.h"
 #include "paths.h"
 #include "settings.h"
 #include "snap_station.h"
@@ -933,6 +935,10 @@ void seed_mailbox() {
     write_u8(MailboxAddr + 0x17, s.jynx_vc ? 1 : 0);
     write_u8(MailboxAddr + 0x38, 0);   // no title request pending
     write_u8(MailboxAddr + 0x3C, 0);   // the title menu has not been built yet
+    // Host-owned: the renderer's horizontal widening for the culling patch
+    // (settings.h, set_view_wide_q8); refreshed every tick below.
+    write_u32(MailboxAddr + 0x44, view_wide_q8());
+    write_u32(MailboxAddr + 0x48, 0);
     write_u32(MailboxAddr + 0x4, 0);
     // The SOUND bank: its own sequence word and six value bytes, read live
     // by the patched audio functions (volumes as straight percentages) and
@@ -1488,6 +1494,25 @@ void poll_menu_mailbox(uint8_t* rdram) {
     g_menu_rdram = rdram;
     if (read_u32_mail(MailboxAddr) != MailboxMagic) {
         return;
+    }
+    // The renderer's horizontal widening, for the culling patch: a host-owned
+    // word the page never writes, so it is simply rewritten every tick and
+    // follows the page, the F10 hotkey and a window resize within a tick or
+    // two of the renderer.
+    write_u32(MailboxAddr + 0x44, view_wide_q8());
+    // The culling patch's count of verdicts its wider bound changed, for a
+    // replay to measure the patch by; printed as it grows, at most once
+    // every five seconds of ticks, only under SNAP_STATS.
+    if (snapdiag::statsEnabled()) {
+        static uint32_t lastSaved = 0;
+        static uint32_t ticksSince = 0;
+        const uint32_t saved = read_u32_mail(MailboxAddr + 0x48);
+        if ((saved != lastSaved) && (++ticksSince >= 300)) {
+            ticksSince = 0;
+            lastSaved = saved;
+            printf("[SNAP-CULL] widened verdicts so far: %u" "\n", saved);
+            fflush(stdout);
+        }
     }
     // The title screen's Snap Station item: the patch sets the byte when it
     // is chosen, and port 4 carries the station for the rest of this run.

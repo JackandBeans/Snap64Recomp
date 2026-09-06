@@ -45,6 +45,11 @@ void set_mute_unfocused(bool mute);
  */
 void audio_set_frequency(uint32_t freq);
 
+// The device went away (SDL_AUDIODEVICEREMOVED: headphones unplugged, a
+// Bluetooth switch, a machine waking from sleep). Closes it; the next
+// buffer reopens the default device at the game's rate. Main thread.
+void audio_device_lost();
+
 } // namespace snap
 
 #endif // SNAP_AUDIO_H

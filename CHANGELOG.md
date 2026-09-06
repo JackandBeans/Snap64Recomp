@@ -23,13 +23,30 @@
   settings, moved there from the Options list, which keeps its five rows),
   Mouse Aim, Mouse Speed, Zoom Speed and Mouse Tilt. Changes apply live
   and B cancels, as on the other two pages.
-* The README says Widescreen is untested beyond the Beach and that the
-  game culls by its 4:3 view, so objects at the edges vanish.
-* A native Linux build, experimental: the same source compiles with GCC,
-  renders through Vulkan and packs as a tarball (BUILDING, step 14). Built
-  and started under WSL; not yet run on a Linux desktop or a Steam Deck,
-  so it is not on the release page. Two portability fixes came from a
-  contributor's macOS build.
+* Widescreen no longer loses Pokémon at the edges. The game decides
+  whether a Pokémon is on screen by projecting its position at a fixed
+  4:3 focal length and rejecting it outside fixed pixel bounds, so a
+  wider picture kept culling at the old edge; a game-side patch now widens
+  the horizontal bound by exactly the factor the renderer applies (a
+  mailbox word the port publishes each tick), and leaves the vertical
+  bound and every 4:3 run untouched. Effect sprites (sparkles, splashes)
+  have a test of their own and still pop at the 4:3 edge. Widescreen is
+  still untested beyond the Beach.
+* A stalled audio device cannot crash the game any more. When the device
+  stops draining (a sink that never plays, a Bluetooth switch mid-stream,
+  a machine back from sleep), the queue the game reads as its DAC backlog
+  grew without bound, its frame arithmetic wrapped, and the synthesizer
+  overran its command list. Above a second of queued audio the queue is
+  dropped and a full buffer reported; a device that goes away is reopened
+  on the next buffer.
+* A native Linux build, experimental: the same source compiles with Clang
+  or GCC, renders through Vulkan and packs as a tarball (BUILDING, step
+  14). It has played the Beach replay and drawn correct frames on a
+  software Vulkan device under WSL; it has not yet run on a Linux desktop
+  or a Steam Deck, so it is not on the release page. Two portability fixes
+  came from a contributor's macOS build; the presented-frame capture and
+  the Snap Station's sheet capture needed a texture-to-buffer copy the
+  Vulkan backend lacked.
 * Steam Deck: the port knows a Deck (Steam's `SteamDeck=1`, or the board
   vendor under `/sys`) and boots fullscreen there; SDL's screen keyboard
   is kept off so Steam's does not open over the game; the Snap Station's

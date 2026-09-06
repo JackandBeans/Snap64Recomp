@@ -124,9 +124,9 @@ GIT_PINS = [
          describe='2026-01-28 "Force residency sets to off.", branch metal-release-pool-refactor-plus-sets-off',
          confidence='high',
          why=('863 of 866 files match this commit; the other three are the port\'s own '
-              '(plume_d3d12.cpp, plume_d3d12.h, plume_render_interface.h) and are put back below. '
+              '(plume_d3d12.cpp, plume_d3d12.h, plume_render_interface.h, plume_vulkan.cpp) and are put back below. '
               'The commit is not on plume\'s main branch.'),
-         port_files=['plume_d3d12.cpp', 'plume_d3d12.h', 'plume_render_interface.h']),
+         port_files=['plume_d3d12.cpp', 'plume_d3d12.h', 'plume_render_interface.h', 'plume_vulkan.cpp']),
     # plume's own submodules, at the gitlinks recorded by the plume commit above.
     dict(name='plume/D3D12MemoryAllocator', path=CONTRIB + '/plume/contrib/D3D12MemoryAllocator',
          url='https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator',

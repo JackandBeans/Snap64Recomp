@@ -468,7 +468,7 @@ the defaults below are that file's.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `fullscreen` | `false` | not persisted across runs: every boot starts windowed, except that the Snap Station's own relaunches return in the state the print started in |
-| `widescreen` | `false` | RT64 Expand: a true 16:9 field of view, not a stretch; the game still culls by its 4:3 view, so objects at the edges vanish ("Known limitations") |
+| `widescreen` | `false` | RT64 Expand: a true 16:9 field of view, not a stretch; Pokémon at the edges are kept by the culling patch, effect sprites are not ("Known limitations") |
 | `msaa` | `0` | 0, 2, 4 or 8 |
 | `fps_mode` | `0` | 0 Original, 1 Display refresh, 2 Manual (`fps_manual_target`) |
 | `fps_manual_target` | `120` | |
@@ -557,9 +557,10 @@ whether this port does is unmeasured.
 The same source builds on Linux with GCC, rendering through Vulkan, and
 packs as `Snap64Recomp-<version>-linux-x86_64.tar.gz`
 ([BUILDING, step 14](BUILDING.md#14-linux-build-experimental)). It has
-been built and started under WSL against a software Vulkan device and has
-not drawn a frame on real Linux hardware; it will be on the release page
-once it has. Until then, anyone who builds it uses it like this:
+played the Beach replay and drawn correct frames on a software Vulkan
+device under WSL, and has not run on real Linux hardware; it will be on
+the release page once it has. Until then, anyone who builds it uses it
+like this:
 
 1. Unpack the tarball under your home folder and put `pokemonsnap.z64`
    beside `Snap64Recomp`. That folder is where everything lives, as on
@@ -603,8 +604,8 @@ fine.
 * **Screen.** The panel is 1280x800; leave the shortcut's Game Resolution
   alone. The Deck's own refresh and frame-limit setting should match the
   panel (60, or 90 on the OLED); the port's Frame Rate: Display then
-  follows it. 16:10 is where the Widescreen option's missing objects
-  ("Known limitations") show at the edges; 4:3 sits in black bars.
+  follows it. 16:10 with Widescreen fills the panel; 4:3 sits in black
+  bars.
 * **Silent?** Desktop Mode's audio mixer sometimes has an app muted on
   its own; check it before anything else. Waking the Deck from sleep or
   switching to Bluetooth audio while the game runs is untested here; the
@@ -614,14 +615,14 @@ fine.
 
 ## Known limitations
 
-* **Widescreen is untested beyond the Beach, and has a known fault there.**
-  The game decides what to draw from its own 4:3 view, so with the wider
-  field of view Pokémon and objects that sit outside the original frame's
-  edges are not drawn: they vanish at the sides of the picture and pop in
-  when the 4:3 frame reaches them. Widening the game's own culling needs a
-  game-side patch and is on the list for 1.0.1. Until then Widescreen is
-  what it says on the page, opt-in, and the console's 4:3 view is the one
-  every course was played and verified in.
+* **Widescreen is untested beyond the Beach.** The fault it had there,
+  Pokémon vanishing at the edges of the wider picture, is fixed in 1.0.1:
+  the game's own on-screen test projected each Pokémon at a fixed 4:3
+  focal length against fixed pixel bounds, and a patch now widens the
+  horizontal bound by the factor the renderer applies. Effect sprites
+  (sparkles, splashes, smoke) have a test of their own and still pop at
+  the 4:3 edge. The rest of the game under Widescreen has not been
+  played through with the option on.
 * Some 2D content is drawn without a name the interpolation can pair
   (the photo panels, Oak's thumbnails and full-screen backgrounds while they
   slide during a transition) and steps at the game's rate when it moves;
@@ -649,9 +650,9 @@ In the order it will be worked on; nothing here is a promise until it runs.
 1. **Reports from machines other than mine.** The port was built and played
    on one PC; what other GPUs, drivers and Windows 10 do with it is what
    1.0.1 will be made of. The issue form is the way to send them.
-2. **Widescreen's missing objects.** A game-side patch that widens the
-   game's own visibility test by the aspect ratio when Widescreen is on
-   ("Known limitations" above).
+2. **Widescreen beyond the Beach.** The missing Pokémon are fixed; the
+   other courses have not been played with the option on, and effect
+   sprites still pop at the 4:3 edge.
 3. **Steam Deck.** The native Linux build now compiles, packs and starts
    ("Linux and Steam Deck" above); running it on a Linux desktop and on a
    Deck, and the Deck's defaults (fullscreen at its panel, its controls),

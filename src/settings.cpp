@@ -406,6 +406,21 @@ static int step_mouse_speed(int dir) {
     return kMouseSpeedSteps[best];
 }
 
+// See settings.h. 256 until the renderer has drawn a list.
+static std::atomic<uint32_t> s_view_wide_q8{256};
+
+void set_view_wide_q8(uint32_t q8) {
+    const uint32_t before = s_view_wide_q8.exchange(q8, std::memory_order_relaxed);
+    if (before != q8) {
+        printf("[SNAP-CFG] view widening q8=%u (%s)\n", q8, (q8 > 256) ? "the culling patch widens by it" : "none");
+        fflush(stdout);
+    }
+}
+
+uint32_t view_wide_q8() {
+    return s_view_wide_q8.load(std::memory_order_relaxed);
+}
+
 bool handle_settings_hotkey(int scancode) {
     switch (scancode) {
         case SDL_SCANCODE_LEFTBRACKET:

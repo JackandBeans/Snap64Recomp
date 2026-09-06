@@ -310,6 +310,14 @@ static void update_gfx(void* /*gfx_data*/) {
                     }
                 }
                 break;
+            case SDL_AUDIODEVICEREMOVED:
+                // Headphones unplugged, a Bluetooth switch, a wake from
+                // sleep: the output device is reopened rather than left
+                // to fill a queue nothing drains (audio.cpp).
+                if (!event.adevice.iscapture) {
+                    snap::audio_device_lost();
+                }
+                break;
             case SDL_WINDOWEVENT:
                 // The maximize button is the fullscreen switch: undo the
                 // maximize so the windowed state underneath stays normal,

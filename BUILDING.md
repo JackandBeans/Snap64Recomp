@@ -357,12 +357,14 @@ the string is changed.
 The same tree builds on Linux with GCC, from the same generated inputs
 (steps 1 to 9: `RecompiledFuncs/`, `RecompiledPatches/`,
 `patches/build/patches.bin`, the vendored trees from `tools/fetch_deps.py`).
-Recorded on 2026-09-06 under WSL, Ubuntu 24.04, GCC 13.3, CMake 3.28, in a
-copy of the port root on the Linux filesystem (`rsync` it there; compiling
-32 MB of generated C through `/mnt/c` is slow):
+Recorded on 2026-09-06 under WSL, Ubuntu 24.04, Clang 18.1 (GCC 13.3
+builds it too; the other N64 recompilations all build with Clang, and the
+one that drew frames here is the Clang build), CMake 3.28, in a copy of the
+port root on the Linux filesystem (`rsync` it there; compiling 32 MB of
+generated C through `/mnt/c` is slow):
 
-    sudo apt install build-essential cmake ninja-build libsdl2-dev libgtk-3-dev libvulkan-dev
-    cmake -S . -B build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release -DSNAP_ROM=/path/to/pokemonsnap.z64
+    sudo apt install build-essential clang lld cmake ninja-build libsdl2-dev libgtk-3-dev libvulkan-dev
+    cmake -S . -B build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ -DSNAP_ROM=/path/to/pokemonsnap.z64
     cmake --build build-linux --target Snap64Recomp -j"$(nproc)"
     cd build-linux && cpack -G TGZ
 
@@ -388,9 +390,15 @@ files:
   (`src/rt64_render_context.cpp`).
 * `RecompiledPatches/patches.c` is compiled from a copy in the build tree
   in which the two libultra names glibc's `math.h` reserves, `__sinf` and
-  `__cosf`, are the game's own `__sinf_recomp` and `__cosf_recomp`
+  `__cosf`, are the game's own `__sinf_recomp` and `__cosf_recomp`, and
+  every game function the patches call has a prototype (the recompiler
+  leaves them implicit, which Clang 16 and later reject)
   (`tools/portable_patches.cmake`; the copy is made on Windows too, and the
   shim that used to bridge the names is gone).
+* `lib/rt64/src/contrib/plume/plume_vulkan.cpp` is the port's fourth
+  force-tracked plume file (VENDORING.md): upstream's Vulkan backend has
+  no texture-to-buffer copy, which the presented-frame capture and the
+  Snap Station's sheet capture use, and dereferenced a null texture.
 * `snap64.log` is written only when there is nowhere to print (stdout is
   `/dev/null` or closed, as from Steam or a desktop entry); a terminal or a
   redirection is kept. One copy at a time is a `flock` on `snap64.lock` in
@@ -420,9 +428,17 @@ A start-up check without a window:
 
 prints the ROM check, `[SNAP] graphics API: Vulkan` and the device RT64
 found (`llvmpipe` where there is no GPU), then fails to create the window,
-which is the dummy driver's doing. That is as far as the Linux build has
-been taken; running the game on a Linux desktop or a Steam Deck is
-[unverified](README.md#linux-and-steam-deck).
+which is the dummy driver's doing. With a display (WSLg will do) the Beach
+replay runs and the presented-frame capture writes real pictures:
+
+    SNAP_REPLAY=beach.inputs SNAP_MUTE=1 SNAP_WINDOW=640x480 SNAP_PCAP_ATFRAME=600,1200,1800 SNAP_PCAP_AT=9999999 timeout 90 ./Snap64Recomp
+
+(the replay beside the binary, from `tools/replays/`). On 2026-09-06 that
+drew Oak's lab correctly on `llvmpipe`. WSL's audio sink accepts samples
+and never plays them; the port drops the queue and says so
+(`[SNAP-Audio] the device is not draining`), which is the guard that also
+covers a Deck's sleep or a Bluetooth switch. Running the game on a Linux
+desktop or a Steam Deck is [unverified](README.md#linux-and-steam-deck).
 
 ## What a clean checkout is missing
 

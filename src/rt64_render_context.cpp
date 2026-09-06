@@ -65,6 +65,7 @@ extern "C" std::atomic<uint32_t> snap_thread_create_count;
 // (ultramodern threads.cpp). Take resets the table.
 extern "C" uint32_t snap_run_table_take(uint32_t* entries, int64_t* nanos, uint32_t* wakes, uint32_t cap);
 #include <chrono>
+#include <cmath>
 
 #if defined(_WIN32)
 #include <unknwn.h>
@@ -468,6 +469,26 @@ public:
         app_->state->setRenderToRAM(snap::settings().render_to_ram ? 1 : 0);
         app_->workloadQueue->snapInterpolateCamera.store(snap::settings().interpolate_camera, std::memory_order_relaxed);
         app_->workloadQueue->ubershadersOnly = snap::settings().ubershaders_only;
+
+        // What the game's culling patch needs to know: how much wider than
+        // 4:3 the renderer is drawing. RT64's Expand rule, from the window
+        // it draws into (rt64_workload_queue.cpp: target = max(swap chain
+        // w/h, source), source = the VI's 4:3); Original widens nothing.
+        // The pair of sizes can tear for one list during a resize; the
+        // next list corrects it and the patch clamps what it reads.
+        {
+            uint32_t q8 = 256;
+            if (snap::settings().widescreen && app_->presentQueue) {
+                const auto* shared = app_->presentQueue->ext.sharedResources;
+                const uint32_t w = shared->swapChainWidth;
+                const uint32_t h = shared->swapChainHeight;
+                if ((w > 0) && (h > 0)) {
+                    const float scale = std::max(float(w) / float(h), 4.0f / 3.0f) / (4.0f / 3.0f);
+                    q8 = uint32_t(std::lround(scale * 256.0f));
+                }
+            }
+            snap::set_view_wide_q8(q8);
+        }
 
         // The crop follows edits to the settings file like the toggles above
         // do, instead of waiting for an unrelated graphics-config change to

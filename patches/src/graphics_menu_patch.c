@@ -102,6 +102,12 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *   +0x40  u32  the audio backlog word the patched AI_LEN read consumes
  *               (src/overlay_hook.cpp); moved here from 0x80700004 because
  *               the Snap Station boot's memory test sweeps 0x80400000-0x807FFFF0
+ *   +0x44  u32  SNAP_VIEW_WIDE_Q8, host-owned: the renderer's horizontal
+ *               widening under Widescreen in Q8 (256 = none), rewritten
+ *               every tick; read by widescreen_cull_patch.c
+ *   +0x48  u32  SNAP_VIEW_WIDE_SAVED, host-owned and zeroed at the seed:
+ *               verdicts the widened bound turned from culled to drawn,
+ *               counted by widescreen_cull_patch.c, printed under SNAP_STATS
  *   +0x34  u8   MBOX_SEL, the patch's own: the current selection,
  *               readable from every coroutine
  *   +0x38  u8   MBOX_TITLE_REQ: the title's Snap Station item was chosen;
