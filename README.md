@@ -251,8 +251,11 @@ turns it off whenever the active controller layout has Gyro set to None
 (the desktop layout does) and the controller stays that way, while SDL's
 Deck driver never turns it back on, so a pad that says "gyro: yes" reads
 zero forever. The port sends the sensor's on-setting when Gyro Aim is
-turned on and again whenever the readings stay at zero for two seconds
-(`[SNAP-Input] gyro: the Deck's IMU-on setting ...`).
+turned on and again whenever the readings stay at zero for half a second
+(`[SNAP-Input] gyro: the Deck's IMU-on setting ...`); on a Deck the
+readings came alive within a dozen of the setting, and when something
+switched the sensor off again a minute later (Steam's client, when it is
+running) the port switched it back.
 
 Every keyboard and mouse binding can be changed. The settings file's
 `keys` table names each input (`a`, `b`, `z`, `start`, `l`, `r`, `c_up`,
@@ -628,8 +631,9 @@ fine.
   Gyro Aim on the Controls page, at natural scale. On the first Deck run
   (2026-09-06, Desktop Mode) the gyro was found and stayed silent, which is
   what Steam's switched-off sensor looks like ("Controls" above); the port
-  now sends the switch itself, not yet confirmed on a Deck. Which of the
-  two you are in shows in the log's controller line.
+  now sends the switch itself, and the second run's readings came alive
+  within a dozen of it. Which of the two you are in shows in the log's
+  controller line.
 * **Quitting.** A pad has no quit; use the Steam menu's **Exit Game** (or
   hold Esc on a keyboard). The quit question and any start-up error appear
   as their own small windows in Gaming Mode; the right trackpad moves a

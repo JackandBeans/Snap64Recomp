@@ -600,10 +600,11 @@ static void try_open_controller() {
 // gyro | raw accel, 0x0018), the way SteamDeckGyroDSU does, through SDL's own
 // HID API on a second handle to the controller's interface: once when the
 // gyro is turned on, and again whenever the readings stay at exactly zero,
-// which is Steam putting its layout back. Two forms alternate: the one
-// setting alone, and SteamDeckGyroDSU's five (its trackpad and mouse
-// settings are the ones SDL's driver already sends). A feature report is how
-// SDL's driver talks to the Deck; an output report is the fallback.
+// which is Steam putting its layout back. On a Deck (2026-09-06) the setting
+// alone woke the sensor within a dozen readings; the sensor was switched off
+// again about a minute later, and this is why the watch below keeps
+// sending. A feature report is how SDL's driver talks to the Deck; an output
+// report is the fallback.
 // ---------------------------------------------------------------------------
 constexpr uint16_t ValveVendorId = 0x28DE;
 constexpr uint16_t SteamDeckProductId = 0x1205;
@@ -615,23 +616,22 @@ static bool is_steam_deck_pad(SDL_GameController* gc) {
 }
 
 // ID_SET_SETTINGS_VALUES (0x87), a length, then three bytes per setting: its
-// number and its value, little-endian.
-static const unsigned char kDeckImuOnly[] = {
+// number and its value, little-endian. (SteamDeckGyroDSU sends four more
+// settings with it, the trackpad and mouse ones SDL's driver already sends;
+// the one setting proved enough.)
+static const unsigned char kDeckImuOn[] = {
     0x87, 0x03,
     0x30, 0x18, 0x00,   // SETTING_IMU_MODE = SEND_RAW_ACCEL | SEND_RAW_GYRO
 };
-static const unsigned char kDeckImuFull[] = {
-    0x87, 0x0F,
-    0x30, 0x18, 0x00,   // SETTING_IMU_MODE = SEND_RAW_ACCEL | SEND_RAW_GYRO
-    0x07, 0x07, 0x00,   // SETTING_LEFT_TRACKPAD_MODE = TRACKPAD_NONE
-    0x08, 0x07, 0x00,   // SETTING_RIGHT_TRACKPAD_MODE = TRACKPAD_NONE
-    0x31, 0x02, 0x00,   // SETTING_WIRELESS_PACKET_VERSION = 2
-    0x18, 0x00, 0x00,   // SETTING_SMOOTH_ABSOLUTE_MOUSE = off
-};
 
-// Sends one settings report to the Deck's controller. Returns what was done,
-// for the log, or nullptr when nothing could be sent.
-static const char* deck_send_imu_on(const unsigned char* payload, size_t len) {
+// The handle to the Deck's controller, opened once and kept. A re-send then
+// costs one write instead of a walk of every HID device on the system, which
+// matters because this runs on the game's thread, once a second for as long
+// as the readings stay dead.
+static SDL_hid_device* g_deckHid = nullptr;
+
+static SDL_hid_device* deck_hid_open() {
+    if (g_deckHid != nullptr) return g_deckHid;
     static bool hidReady = false;
     if (!hidReady) {
         if (SDL_hid_init() != 0) return nullptr;
@@ -653,91 +653,113 @@ static const char* deck_send_imu_on(const unsigned char* payload, size_t len) {
             best = d->path;
         }
     }
-    const char* how = nullptr;
-    if (best != nullptr) {
-        SDL_hid_device* dev = SDL_hid_open_path(best, 0);
-        if (dev != nullptr) {
-            unsigned char buf[65];
-            memset(buf, 0, sizeof(buf));
-            memcpy(buf + 1, payload, len);
-            if (SDL_hid_send_feature_report(dev, buf, sizeof(buf)) > 0) {
-                how = "feature report";
-            } else if (SDL_hid_write(dev, buf, sizeof(buf)) > 0) {
-                how = "output report";
-            }
-            if (how != nullptr) {
-                // A lingering report may come back after a settings change;
-                // SDL's driver discards it the same way.
-                unsigned char back[65];
-                memset(back, 0, sizeof(back));
-                SDL_hid_get_feature_report(dev, back, sizeof(back));
-            }
-            SDL_hid_close(dev);
-        }
-    }
+    if (best != nullptr) g_deckHid = SDL_hid_open_path(best, 0);
     SDL_hid_free_enumeration(list);
+    return g_deckHid;
+}
+
+static void deck_hid_close() {
+    if (g_deckHid != nullptr) {
+        SDL_hid_close(g_deckHid);
+        g_deckHid = nullptr;
+    }
+}
+
+// Sends the settings report to the Deck's controller. Returns what was done,
+// for the log, or nullptr when nothing could be sent; a handle that no longer
+// takes a write is dropped, so the next send finds the pad again.
+static const char* deck_send_imu_on() {
+    SDL_hid_device* dev = deck_hid_open();
+    if (dev == nullptr) return nullptr;
+    unsigned char buf[65];
+    memset(buf, 0, sizeof(buf));
+    memcpy(buf + 1, kDeckImuOn, sizeof(kDeckImuOn));
+    const char* how = nullptr;
+    if (SDL_hid_send_feature_report(dev, buf, sizeof(buf)) > 0) {
+        how = "feature report";
+    } else if (SDL_hid_write(dev, buf, sizeof(buf)) > 0) {
+        how = "output report";
+    }
+    if (how != nullptr) {
+        // A lingering report may come back after a settings change; SDL's
+        // driver discards it the same way.
+        unsigned char back[65];
+        memset(back, 0, sizeof(back));
+        SDL_hid_get_feature_report(dev, back, sizeof(back));
+    } else {
+        deck_hid_close();
+    }
     return how;
 }
 
-// While the gyro is on: says once when the readings carry turning, and when
-// they stay at exactly zero for two seconds says so once, and on a Deck
-// sends the IMU switch again, no oftener than every two seconds, the two
-// forms in turn. Runs on the game's thread, once per poll.
+// While the gyro is on: says once when the readings carry turning; when
+// they stay at exactly zero for half a second (a pad lying still reads
+// noise, never a run of exact zeros) says so, and on a Deck sends the IMU
+// switch again, a second apart, until they carry turning again, which is
+// logged too. Runs on the game's thread, once per poll.
 static void gyro_watch(bool justEnabled) {
     static int64_t onAt = 0;
     static int64_t lastSend = 0;
-    static int sends = 0;
+    static int64_t deadSince = 0;
+    static int deadLogs = 0;
     static bool liveLogged = false;
     static bool deadLogged = false;
     const int64_t t = now_us();
     if (justEnabled) {
         onAt = t;
         lastSend = 0;
-        sends = 0;
+        deadSince = 0;
+        deadLogs = 0;
         liveLogged = false;
         deadLogged = false;
         g_gyro_readings.store(0, std::memory_order_relaxed);
         g_gyro_live_us.store(0, std::memory_order_relaxed);
         if (is_steam_deck_pad(game_controller)) {
-            const char* how = deck_send_imu_on(kDeckImuOnly, sizeof(kDeckImuOnly));
+            const char* how = deck_send_imu_on();
             printf("[SNAP-Input] gyro: the Deck's IMU-on setting %s\n",
                    how ? how : "could not be sent (no HID access to the controller)");
             fflush(stdout);
             lastSend = t;
-            sends = 1;
         }
         return;
     }
     if (!g_gyro_enabled.load(std::memory_order_relaxed)) return;
-    constexpr int64_t Dead = 2000000;
+    constexpr int64_t Dead = 500000;
+    constexpr int64_t Resend = 1000000;
     const int64_t live = g_gyro_live_us.load(std::memory_order_relaxed);
     const uint32_t readings = g_gyro_readings.load(std::memory_order_relaxed);
-    if (live != 0) {
-        if (!liveLogged) {
+    const int64_t since = (live != 0) ? live : onAt;
+    if (t - since < Dead) {
+        if ((live != 0) && !liveLogged) {
             printf("[SNAP-Input] gyro readings carry turning (%u readings since it was turned on)\n", readings);
             fflush(stdout);
             liveLogged = true;
         }
-        if (t - live < Dead) return;
-    } else if (t - onAt < Dead) {
+        if ((live != 0) && (deadSince != 0)) {
+            if (deadLogs <= 5) {
+                printf("[SNAP-Input] gyro readings carry turning again, after %.1f s at zero\n",
+                       double(live - deadSince) * 1e-6);
+                fflush(stdout);
+            }
+            deadSince = 0;
+        }
         return;
     }
-    // Dead: no reading with any turning for two seconds.
+    // Dead: no reading with any turning for half a second.
+    if (deadSince == 0) deadSince = since;
     if (is_steam_deck_pad(game_controller)) {
-        if (t - lastSend < Dead) return;
-        const bool full = (sends % 2) == 1;
-        const char* how = full ? deck_send_imu_on(kDeckImuFull, sizeof(kDeckImuFull))
-                               : deck_send_imu_on(kDeckImuOnly, sizeof(kDeckImuOnly));
+        if (t - lastSend < Resend) return;
+        const char* how = deck_send_imu_on();
         lastSend = t;
-        sends++;
-        if (sends <= 4) {
-            printf("[SNAP-Input] gyro: %u readings, all zero for 2 s; the Deck's IMU-on setting (%s) %s\n",
-                   readings, full ? "five settings" : "IMU mode alone",
-                   how ? how : "could not be sent");
+        deadLogs++;
+        if (deadLogs <= 5) {
+            printf("[SNAP-Input] gyro: %u readings, all zero for half a second; the Deck's IMU-on setting %s\n",
+                   readings, how ? how : "could not be sent");
             fflush(stdout);
         }
     } else if (!deadLogged) {
-        printf("[SNAP-Input] gyro: %u readings, all zero for 2 s; this pad's sensor reports no turning\n", readings);
+        printf("[SNAP-Input] gyro: %u readings, all zero for half a second; this pad's sensor reports no turning\n",
+               readings);
         fflush(stdout);
         deadLogged = true;
     }
@@ -762,6 +784,7 @@ static void sync_gyro() {
     enabledFor = want;
     if (!has) {
         g_gyro_enabled.store(false, std::memory_order_relaxed);
+        deck_hid_close();
         return;
     }
     if (SDL_GameControllerSetSensorEnabled(game_controller, SDL_SENSOR_GYRO, want ? SDL_TRUE : SDL_FALSE) != 0) {
@@ -780,6 +803,8 @@ static void sync_gyro() {
     fflush(stdout);
     if (want) {
         gyro_watch(true);
+    } else {
+        deck_hid_close();
     }
 }
 

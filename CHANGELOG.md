@@ -33,7 +33,9 @@
   motion sensor on itself: Steam's client turns it off whenever its
   layout has Gyro set to None and SDL's Deck driver never turns it back
   on, so the readings arrive as zeros; the setting is sent when Gyro Aim
-  is turned on and again whenever the readings stay at zero.
+  is turned on and again whenever the readings stay at zero for half a
+  second (on a Deck, 2026-09-06, the readings came alive within a dozen of
+  the setting).
 * Widescreen no longer loses Pokémon at the edges. The game decides
   whether a Pokémon is on screen by projecting its position at a fixed
   4:3 focal length and rejecting it outside fixed pixel bounds, so a
