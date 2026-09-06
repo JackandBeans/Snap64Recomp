@@ -61,10 +61,10 @@ is in the game's own backdrop picture; the console drew the same pixels.
 
 <a href="screenshots/08-options.png"><img src="screenshots/08-options.png" width="640" alt="The Options screen"></a>
 
-**Options.** The game's own Options screen as 1.0.0 shipped it; Graphics
-is the port's entry, and Sound opens the port's Sound page. Since then a
-Controls entry has joined them and taken the Z Button and Control Stick
-rows into its own page.
+**Options.** The game's own Options screen, its five rows at the
+cartridge's own lines: Graphics and Controls are the port's entries, and
+Sound opens the port's Sound page. The Z Button and Control Stick rows the
+cartridge kept here live on the Controls page now.
 
 <a href="screenshots/09-graphics.png"><img src="screenshots/09-graphics.png" width="640" alt="The Graphics page"></a>
 
@@ -78,6 +78,13 @@ console's (README, "The rule the port follows").
 
 **Sound.** Master, music, effects and shutter volumes, speaker output, and
 Background Mute for when the window loses focus.
+
+<a href="screenshots/10b-controls.png"><img src="screenshots/10b-controls.png" width="640" alt="The Controls page"></a>
+
+**Controls.** Z Button and Control Stick, the game's own two settings,
+then Mouse Aim, Mouse Speed, Zoom Speed, Camera Tilt, and below the edge
+arrow, Gyro Aim and Gyro Speed: eight rows the page scrolls through six
+at a time, the arrows swaying as the Graphics page's do.
 
 ## The Snap Station
 

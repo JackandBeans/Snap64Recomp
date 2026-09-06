@@ -1628,7 +1628,8 @@ static void snap_controls_page(void) {
     s32 sel, i, moved, hiddenCount;
     s32 v;
     s32 top;
-    u8 pulseState, pulseCounter;
+    u8 pulseState, pulseCounter, bobTick;
+    u8 nudgeUp, nudgeDn;
     u8 entry[CTL_ROWS];
 
     if (DIR_MAGIC != 0x53474130) {
@@ -1714,6 +1715,9 @@ static void snap_controls_page(void) {
     snap_ctl_layout(top);
     pulseState = 0;
     pulseCounter = 0;
+    bobTick = 0;
+    nudgeUp = 0;
+    nudgeDn = 0;
 
     ohWait(2);
 
@@ -1751,9 +1755,11 @@ static void snap_controls_page(void) {
             if (sel < top) {
                 top = sel;
                 snap_ctl_layout(top);
+                nudgeUp = 12;
             } else if (sel >= top + CTL_VISIBLE) {
                 top = sel - (CTL_VISIBLE - 1);
                 snap_ctl_layout(top);
+                nudgeUp = 12;
             }
             snap_swap_strip(descStrip, snap_ctl_desc_str(sel));
             auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
@@ -1765,9 +1771,11 @@ static void snap_controls_page(void) {
             if (sel < top) {
                 top = sel;
                 snap_ctl_layout(top);
+                nudgeDn = 12;
             } else if (sel >= top + CTL_VISIBLE) {
                 top = sel - (CTL_VISIBLE - 1);
                 snap_ctl_layout(top);
+                nudgeDn = 12;
             }
             snap_swap_strip(descStrip, snap_ctl_desc_str(sel));
             auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
@@ -1824,6 +1832,33 @@ static void snap_controls_page(void) {
                         pulseState = 0;
                     }
                     break;
+            }
+        }
+
+        /* The arrows breathe and hop exactly as the Graphics page's do
+         * (the block above snap_graphics_page's wait): the eased four-phase
+         * sway, and the two-pixel-further hop when the list scrolls. */
+        bobTick++;
+        if (nudgeUp > 0) {
+            nudgeUp--;
+        }
+        if (nudgeDn > 0) {
+            nudgeDn--;
+        }
+        {
+            const s32 phase = (bobTick >> 3) & 3;
+            const s16 sway = (s16) ((phase == 3) ? 1 : phase);
+            const s16 hopUp = (s16) ((nudgeUp >= 7) ? 4 : ((nudgeUp >= 3) ? 2 : 1));
+            const s16 hopDn = (s16) ((nudgeDn >= 7) ? 4 : ((nudgeDn >= 3) ? 2 : 1));
+            const s16 offUp = (nudgeUp > 0) ? hopUp : sway;
+            const s16 offDn = (nudgeDn > 0) ? hopDn : sway;
+            GObj* upArrow = (GObj*) PAGE_ARROW_UP;
+            GObj* dnArrow = (GObj*) PAGE_ARROW_DN;
+            if ((upArrow != NULL) && (upArrow->data.sobj != NULL)) {
+                upArrow->data.sobj->sprite.y = ARROW_UP_Y - offUp;
+            }
+            if ((dnArrow != NULL) && (dnArrow->data.sobj != NULL)) {
+                dnArrow->data.sobj->sprite.y = ARROW_DN_Y + offDn;
             }
         }
         ohWait(1);
