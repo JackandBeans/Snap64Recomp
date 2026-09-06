@@ -29,7 +29,11 @@
   layer) turns the view as it is turned, at natural scale, whatever the
   zoom; on always, or only while zoomed in; off as shipped. In the Deck's
   gaming mode Steam keeps the gyro and its "As Mouse" setting feeds the
-  port's mouse look instead.
+  port's mouse look instead. Outside it the port switches the Deck's
+  motion sensor on itself: Steam's client turns it off whenever its
+  layout has Gyro set to None and SDL's Deck driver never turns it back
+  on, so the readings arrive as zeros; the setting is sent when Gyro Aim
+  is turned on and again whenever the readings stay at zero.
 * Widescreen no longer loses Pokémon at the edges. The game decides
   whether a Pokémon is on screen by projecting its position at a fixed
   4:3 focal length and rejecting it outside fixed pixel bounds, so a

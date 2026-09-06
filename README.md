@@ -244,7 +244,15 @@ reads it from: DualSense, DualShock 4, Switch Pro and Joy-Cons, over USB
 or Bluetooth, and the Steam Deck's own controls when Steam's controller
 layer is not in between (see "Linux and Steam Deck"); an Xbox pad has no
 gyro. The log says at start-up whether the pad it opened has one
-(`[SNAP-Input] Opened game controller: ... (gyro: yes)`).
+(`[SNAP-Input] Opened game controller: ... (gyro: yes)`), and once the gyro
+is on, whether its readings carry any turning. On a Steam Deck the port
+also switches the controller's motion sensor on itself: Steam's client
+turns it off whenever the active controller layout has Gyro set to None
+(the desktop layout does) and the controller stays that way, while SDL's
+Deck driver never turns it back on, so a pad that says "gyro: yes" reads
+zero forever. The port sends the sensor's on-setting when Gyro Aim is
+turned on and again whenever the readings stay at zero for two seconds
+(`[SNAP-Input] gyro: the Deck's IMU-on setting ...`).
 
 Every keyboard and mouse binding can be changed. The settings file's
 `keys` table names each input (`a`, `b`, `z`, `start`, `l`, `r`, `c_up`,
@@ -617,8 +625,11 @@ fine.
   The right trackpad as mouse works the same way. Launched outside Steam's
   layer (Desktop Mode from a terminal or a file manager, or with Steam
   Input disabled for the shortcut) the port reads the Deck's gyro itself:
-  Gyro Aim on the Controls page, at natural scale. Untested on a Deck by
-  me; which of the two you are in shows in the log's controller line.
+  Gyro Aim on the Controls page, at natural scale. On the first Deck run
+  (2026-09-06, Desktop Mode) the gyro was found and stayed silent, which is
+  what Steam's switched-off sensor looks like ("Controls" above); the port
+  now sends the switch itself, not yet confirmed on a Deck. Which of the
+  two you are in shows in the log's controller line.
 * **Quitting.** A pad has no quit; use the Steam menu's **Exit Game** (or
   hold Esc on a keyboard). The quit question and any start-up error appear
   as their own small windows in Gaming Mode; the right trackpad moves a
