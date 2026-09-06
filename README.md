@@ -229,8 +229,22 @@ it does nothing. Zoomed in, the same motion turns half as far, since the
 view is narrower. The view moves no faster than you move the mouse and
 stops when your hand does; the stick's own turning speed does not apply. The Controls page on the
 game's Options screen holds the dials: Mouse Aim, Mouse Speed, Zoom Speed
-and Mouse Tilt (they are `mouse_aim`, `mouse_sensitivity`,
+and Camera Tilt (they are `mouse_aim`, `mouse_sensitivity`,
 `mouse_zoom_speed` and `mouse_invert_y` in the settings file).
+
+A pad with a gyro can aim the same way: turn the pad and the view turns
+with it, at natural scale, so a ten-degree turn of the pad is a
+ten-degree turn of the view, whatever the zoom, the way a real camera
+follows your hands. **Gyro Aim** on the Controls page turns it on (On:
+whenever a course runs; Zoomed: only while zoomed in, the way a
+photographer raises the camera to aim), **Gyro Speed** scales it, and
+Camera Tilt flips the vertical for the gyro as it does for the mouse. It
+is off as shipped. The pads whose gyro reaches the port are the ones SDL
+reads it from: DualSense, DualShock 4, Switch Pro and Joy-Cons, over USB
+or Bluetooth, and the Steam Deck's own controls when Steam's controller
+layer is not in between (see "Linux and Steam Deck"); an Xbox pad has no
+gyro. The log says at start-up whether the pad it opened has one
+(`[SNAP-Input] Opened game controller: ... (gyro: yes)`).
 
 Every keyboard and mouse binding can be changed. The settings file's
 `keys` table names each input (`a`, `b`, `z`, `start`, `l`, `r`, `c_up`,
@@ -305,7 +319,10 @@ Options > **Controls**: Z Button (Hold/Switch) and Control Stick
 (Normal/Reverse), the game's own two settings, moved here from the Options
 list so the list keeps its five rows; then Mouse Aim, Mouse Speed (25 to
 400 percent of the shipped speed), Zoom Speed (the share of that speed
-used while zoomed in) and Mouse Tilt (Normal/Reverse). Every change
+used while zoomed in), Camera Tilt (Normal/Reverse, for the mouse and the
+gyro alike), Gyro Aim (Off, On, or Zoomed for only while zoomed in) and
+Gyro Speed (25 to 400 percent of natural). Eight rows, six on screen; the
+page scrolls for the last two, as the Graphics page does. Every change
 applies as it is made; B puts the page back as it was opened.
 
 ### Hotkeys
@@ -485,8 +502,10 @@ the defaults below are that file's.
 | `snap_station` | `false` | keep the Snap Station on port 4 from the title menu on, every start (see "The Snap Station") |
 | `mouse_aim` | `true` | the mouse aims while a course runs and the window has focus ("Controls"); its buttons work whenever the window has focus, through `keys` |
 | `mouse_sensitivity` | `1.0` | angle per pixel of mouse: 1 is a full turn in about 2500 pixels, 2 twice as quick, 0.5 half; 0.1 to 10 |
-| `mouse_invert_y` | `false` | mouse forward tilts the view down (Mouse Tilt: Reverse) |
+| `mouse_invert_y` | `false` | mouse forward, or the pad's front rising, tilts the view down (Camera Tilt: Reverse) |
 | `mouse_zoom_speed` | `0.5` | the mouse's speed while zoomed in, as a share of `mouse_sensitivity`; 0.25 to 1 (Zoom Speed) |
+| `gyro_aim` | `0` | the pad's gyro aims the camera: 0 off, 1 in a course, 2 only while zoomed in (Gyro Aim) |
+| `gyro_sensitivity` | `1.0` | multiplies the gyro's natural scale; 0.25 to 4 (Gyro Speed) |
 | `keys` | the table under "Controls" | what presses each input: SDL key names and the mouse names, one or a list |
 | `graphics_api` | `0` | 0 Direct3D 12 (every run so far), 1 Vulkan (RT64's other backend, untried here; an escape hatch if D3D12 fails); restart |
 | `downsample` | `1` | Super Sampling factor |
@@ -590,12 +609,16 @@ fine.
   View button saves the photo on screen ("Controls" above). Back paddles,
   trackpads and gyro reach the game only as whatever Steam's controller
   layout maps them to.
-* **Gyro aiming.** The Deck's gyro cannot be read by the game itself. In
-  the shortcut's controller settings set *Gyro Behavior* to **As Mouse**
-  and *Gyro Activation Buttons* to **None Selected (Gyro Always On)**: the
-  port's mouse look then turns the camera with the Deck, and Mouse Speed
-  on the Controls page sets how far. The right trackpad as mouse works the
-  same way.
+* **Gyro aiming.** In Gaming Mode the game cannot read the Deck's gyro:
+  Steam's controller layer keeps it. In the shortcut's controller settings
+  set *Gyro Behavior* to **As Mouse** and *Gyro Activation Buttons* to
+  **None Selected (Gyro Always On)**: the port's mouse look then turns the
+  camera with the Deck, and Mouse Speed on the Controls page sets how far.
+  The right trackpad as mouse works the same way. Launched outside Steam's
+  layer (Desktop Mode from a terminal or a file manager, or with Steam
+  Input disabled for the shortcut) the port reads the Deck's gyro itself:
+  Gyro Aim on the Controls page, at natural scale. Untested on a Deck by
+  me; which of the two you are in shows in the log's controller line.
 * **Quitting.** A pad has no quit; use the Steam menu's **Exit Game** (or
   hold Esc on a keyboard). The quit question and any start-up error appear
   as their own small windows in Gaming Mode; the right trackpad moves a

@@ -252,6 +252,16 @@ uint8_t read_u8(uint8_t* rdram, uint32_t addr) {
 std::mutex g_motion_mutex;
 float g_motion_dx = 0.0f;   // pixels since the last apply
 float g_motion_dy = 0.0f;
+// The gyro's turning since the last apply, in radians and in the game's
+// senses (yaw positive to the right, pitch positive upward). SDL reports
+// rates by the right-hand rule about its axes, so its positive yaw is a
+// turn to the left and its positive pitch is the pad's front rising.
+float g_gyro_yaw = 0.0f;
+float g_gyro_pitch = 0.0f;
+std::atomic<bool> g_gyro_enabled{false};       // the sensor is on and its events are wanted
+std::atomic<int32_t> g_gyro_instance{-1};      // the joystick the readings must come from
+uint64_t g_gyro_last_us = 0;                   // the sensor's own clock, when it has one
+float g_gyro_rate_hz = 0.0f;                   // else its nominal rate spaces the readings
 
 void clear_mouse() {
     g_mouse_held.store(0, std::memory_order_relaxed);
@@ -261,6 +271,8 @@ void clear_mouse() {
     std::lock_guard<std::mutex> lock(g_motion_mutex);
     g_motion_dx = 0.0f;
     g_motion_dy = 0.0f;
+    g_gyro_yaw = 0.0f;
+    g_gyro_pitch = 0.0f;
 }
 
 // Adds the mouse's motion since the last call to the game's view. Runs on
@@ -274,13 +286,15 @@ void clear_mouse() {
 // the next facing direction itself; zoomed in it wraps at a full turn; the
 // pitch is clamped to the game's own limits here, as the stick path does.
 void apply_mouse_look(uint8_t* rdram) {
-    float dx, dy;
+    float dx, dy, gyaw, gpitch;
     {
         std::lock_guard<std::mutex> lock(g_motion_mutex);
         dx = g_motion_dx; dy = g_motion_dy;
+        gyaw = g_gyro_yaw; gpitch = g_gyro_pitch;
         g_motion_dx = 0.0f; g_motion_dy = 0.0f;
+        g_gyro_yaw = 0.0f; g_gyro_pitch = 0.0f;
     }
-    if ((dx == 0.0f && dy == 0.0f) || rdram == nullptr) return;
+    if ((dx == 0.0f && dy == 0.0f && gyaw == 0.0f && gpitch == 0.0f) || rdram == nullptr) return;
     if (!g_app_level_resident.load(std::memory_order_relaxed)) return;
     if (read_u8(rdram, ADDR_IsPaused) != 0) return;
     if (read_s32(rdram, ADDR_IsInputDisabled) != 0) return;
@@ -294,12 +308,18 @@ void apply_mouse_look(uint8_t* rdram) {
     const float sens = std::fmax(0.1f, std::fmin(10.0f, s.mouse_sensitivity));
     const float zoom = std::fmax(0.25f, std::fmin(1.0f, s.mouse_zoom_speed));
     const float k = RadiansPerPixel * sens * (zoomedIn ? zoom : 1.0f);
+    // The gyro at natural scale, a turn of the pad turning the view as far,
+    // whatever the zoom: that is what makes a pad feel like a camera. Mode 2
+    // listens only zoomed in, the way a photographer raises the camera.
+    const bool gyroOn = (s.gyro_aim == 1) || ((s.gyro_aim == 2) && zoomedIn);
+    const float gs = gyroOn ? std::fmax(0.25f, std::fmin(4.0f, s.gyro_sensitivity)) : 0.0f;
 
-    float yaw = read_f32(rdram, ADDR_PlayerViewYaw) + dx * k;
+    float yaw = read_f32(rdram, ADDR_PlayerViewYaw) + dx * k + gyaw * gs;
     write_f32(rdram, ADDR_PlayerViewYaw, yaw);
 
-    // SDL's y grows downwards; the game's pitch grows upwards.
-    const float dpitch = (s.mouse_invert_y ? dy : -dy) * k;
+    // SDL's y grows downwards; the game's pitch grows upwards. The gyro's
+    // pitch already grows upwards; the same tilt setting flips both.
+    const float dpitch = (s.mouse_invert_y ? dy : -dy) * k + (s.mouse_invert_y ? -gpitch : gpitch) * gs;
     float pitch = read_f32(rdram, ADDR_ViewPitch) + dpitch;
     const float lo = read_f32(rdram, ADDR_MinPitch);
     const float hi = read_f32(rdram, ADDR_MaxPitch);
@@ -435,6 +455,39 @@ void input_handle_sdl_event(const SDL_Event& event) {
                 if (y < 0) g_wheel_down_until.store(now_us() + PressHoldUs, std::memory_order_relaxed);
             }
             break;
+        case SDL_CONTROLLERSENSORUPDATE:
+            // Each reading is a rate; integrated here over the sensor's own
+            // clock (its timestamp, when the driver gives one) or its
+            // nominal rate, into an angle the game thread adds to the view.
+            if ((event.csensor.sensor == SDL_SENSOR_GYRO) &&
+                g_gyro_enabled.load(std::memory_order_relaxed) &&
+                (event.csensor.which == g_gyro_instance.load(std::memory_order_relaxed))) {
+                const uint64_t ts = event.csensor.timestamp_us;
+                float dt;
+                if ((ts != 0) && (g_gyro_last_us != 0) && (ts > g_gyro_last_us)) {
+                    dt = float(ts - g_gyro_last_us) * 1e-6f;
+                } else {
+                    dt = (g_gyro_rate_hz > 0.0f) ? (1.0f / g_gyro_rate_hz) : 0.004f;
+                }
+                if (ts != 0) g_gyro_last_us = ts;
+                if (dt > 0.05f) dt = 0.05f;   // a gap (focus, a stall) is not a turn
+                float rx = event.csensor.data[0];   // about the pad's right axis: pitch
+                float ry = event.csensor.data[1];   // about the pad's up axis: yaw
+                // Tightening: under a degree per second the rate is scaled
+                // toward zero, so a pad at rest does not creep, without the
+                // dead band a cutoff would put on slow, deliberate aiming.
+                constexpr float Tight = 0.01745f;
+                const float mag = std::sqrt(rx * rx + ry * ry);
+                if (mag < Tight) {
+                    const float f = mag / Tight;
+                    rx *= f;
+                    ry *= f;
+                }
+                std::lock_guard<std::mutex> lock(g_motion_mutex);
+                g_gyro_yaw += -ry * dt;
+                g_gyro_pitch += rx * dt;
+            }
+            break;
         default:
             break;
     }
@@ -508,8 +561,9 @@ static void try_open_controller() {
         if (SDL_IsGameController(i)) {
             game_controller = SDL_GameControllerOpen(i);
             if (game_controller) {
-                printf("[SNAP-Input] Opened game controller: %s\n",
-                       SDL_GameControllerName(game_controller));
+                const bool gyro = SDL_GameControllerHasSensor(game_controller, SDL_SENSOR_GYRO) == SDL_TRUE;
+                printf("[SNAP-Input] Opened game controller: %s (gyro: %s)\n",
+                       SDL_GameControllerName(game_controller), gyro ? "yes" : "none");
                 break;
             }
         }
@@ -522,6 +576,42 @@ static void try_open_controller() {
                    i, name ? name : "unnamed");
         }
     }
+}
+
+// Turns the pad's gyro on when the setting asks and the pad has one, off
+// otherwise; decided on every poll so the Controls page's row and a
+// replugged pad both take effect at once. A pad without a gyro (every
+// Xbox pad, Steam's virtual pad in the Deck's gaming mode) has nothing to
+// enable, and the setting then does nothing.
+static void sync_gyro() {
+    static bool enabledFor = false;
+    static SDL_GameController* pad = nullptr;
+    const bool has = (game_controller != nullptr) &&
+                     (SDL_GameControllerHasSensor(game_controller, SDL_SENSOR_GYRO) == SDL_TRUE);
+    const bool want = has && (settings().gyro_aim != 0);
+    if ((pad == game_controller) && (enabledFor == want)) {
+        return;
+    }
+    pad = game_controller;
+    enabledFor = want;
+    if (!has) {
+        g_gyro_enabled.store(false, std::memory_order_relaxed);
+        return;
+    }
+    if (SDL_GameControllerSetSensorEnabled(game_controller, SDL_SENSOR_GYRO, want ? SDL_TRUE : SDL_FALSE) != 0) {
+        printf("[SNAP-Input] gyro %s failed: %s\n", want ? "on" : "off", SDL_GetError());
+        fflush(stdout);
+        g_gyro_enabled.store(false, std::memory_order_relaxed);
+        return;
+    }
+    g_gyro_rate_hz = SDL_GameControllerGetSensorDataRate(game_controller, SDL_SENSOR_GYRO);
+    g_gyro_last_us = 0;
+    g_gyro_instance.store(SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(game_controller)), std::memory_order_relaxed);
+    g_gyro_enabled.store(want, std::memory_order_relaxed);
+    printf("[SNAP-Input] gyro %s (%s, %.0f Hz)\n",
+           want ? "on: the pad's turning aims the camera" : "off",
+           SDL_GameControllerName(game_controller), g_gyro_rate_hz);
+    fflush(stdout);
 }
 
 // ---------------------------------------------------------------------------
@@ -542,6 +632,7 @@ void input_poll() {
 
     // Pick up newly connected controllers, and replace detached ones.
     try_open_controller();
+    sync_gyro();
 }
 
 
@@ -750,7 +841,7 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
     // in the game's memory; the stick is untouched. Under SNAP_REPLAY the
     // mouse is left out, so a replay is the recording and nothing else.
     // -----------------------------------------------------------------------
-    if (g_captured.load(std::memory_order_relaxed)) {
+    if (g_captured.load(std::memory_order_relaxed) || g_gyro_enabled.load(std::memory_order_relaxed)) {
         static const bool replaying = (getenv("SNAP_REPLAY") != nullptr);
         if (!replaying) {
             apply_mouse_look(g_rdram);

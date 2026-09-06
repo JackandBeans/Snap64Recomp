@@ -21,8 +21,15 @@
 * A Controls page on the game's Options screen, beside Graphics and Sound,
   in the game's own face: Z Button and Control Stick (the game's two
   settings, moved there from the Options list, which keeps its five rows),
-  Mouse Aim, Mouse Speed, Zoom Speed and Mouse Tilt. Changes apply live
-  and B cancels, as on the other two pages.
+  Mouse Aim, Mouse Speed, Zoom Speed, Camera Tilt, Gyro Aim and Gyro
+  Speed, eight rows the page scrolls through six at a time. Changes apply
+  live and B cancels, as on the other two pages.
+* Gyro aim. A pad with a gyro (DualSense, DualShock 4, Switch Pro and
+  Joy-Cons; the Steam Deck's own controls outside Steam's controller
+  layer) turns the view as it is turned, at natural scale, whatever the
+  zoom; on always, or only while zoomed in; off as shipped. In the Deck's
+  gaming mode Steam keeps the gyro and its "As Mouse" setting feeds the
+  port's mouse look instead.
 * Widescreen no longer loses Pokémon at the edges. The game decides
   whether a Pokémon is on screen by projecting its position at a fixed
   4:3 focal length and rejecting it outside fixed pixel bounds, so a

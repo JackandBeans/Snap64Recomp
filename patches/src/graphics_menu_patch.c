@@ -117,8 +117,9 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *   +0x54  u32  SCRATCH_CONTROLS_GOBJ, the patch's own: the CONTROLS item
  *   +0x58  u32  SCRATCH_HELP_CONTROLS, the patch's own: its help line
  *   +0x60  u32  CONTROLS sequence word
- *   +0x64  u8   CONTROLS fields 0..3, through +0x67: mouse aim, the mouse
- *               speed's step, the zoom speed's step, the tilt
+ *   +0x64  u8   CONTROLS fields 0..5, through +0x69: mouse aim, the mouse
+ *               speed's step, the zoom speed's step, the tilt, the gyro
+ *               mode (off, on, zoomed), the gyro speed's step
  *   +0x100      SCRATCH_ARRAYS, the page's pointer and snapshot arrays
  *
  * The host never touches anything the map calls the patch's own. */
@@ -211,6 +212,10 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_REVERSE       103
 #define STR_CTL_SPEED     104  /* ..114: 25 50 75 100 125 150 175 200 250 300 400 */
 #define STR_CTL_DESC      115  /* ..120: the six descriptions */
+/* The page's two gyro rows (menu_assets.cpp ids BaseCount+91..+95). */
+#define STR_GYRO_LABEL    121  /* ..122: Gyro Aim, Gyro Speed */
+#define STR_ZOOMED        123
+#define STR_GYRO_DESC     124  /* ..125: their descriptions */
 
 /* The SOUND bank of the mailbox: its own sequence word and value bytes
  * (percent volumes; stereo and background-mute booleans). The patched
@@ -1518,13 +1523,72 @@ static void snap_sound_page(void) {
  * screen's own variables exactly as the stock rows edited them (the
  * screen's exit writes them to the player flags); the other four are the
  * mouse's, in the mailbox's CONTROLS bank, applied live by the host. */
-#define CTL_ROWS 6
+/* Eight rows, six on screen at a time: the page scrolls for the last two
+ * the way the Graphics page scrolls, with the same edge arrows. */
+#define CTL_ROWS 8
+#define CTL_VISIBLE 6
 
 static s32 snap_ctl_value_count(s32 row) {
     switch (row) {
         case 3:  return 11;   /* Mouse Speed */
         case 4:  return 4;    /* Zoom Speed */
+        case 6:  return 3;    /* Gyro Aim: off, on, zoomed */
+        case 7:  return 11;   /* Gyro Speed */
         default: return 2;
+    }
+}
+
+static s32 snap_ctl_label_str(s32 row) {
+    return (row < 6) ? (STR_CTL_LABEL + row) : (STR_GYRO_LABEL + (row - 6));
+}
+
+static s32 snap_ctl_desc_str(s32 row) {
+    return (row < 6) ? (STR_CTL_DESC + row) : (STR_GYRO_DESC + (row - 6));
+}
+
+/* Rows [top, top+CTL_VISIBLE) sit at the fixed slots, the rest hide; the
+ * edge arrows say which way the hidden rows lie. */
+static void snap_ctl_layout(s32 top) {
+    s32 i;
+    for (i = 0; i < CTL_ROWS; i++) {
+        GObj* label = (GObj*) PAGE_LABEL(i);
+        GObj* value = (GObj*) PAGE_VALUE(i);
+        const s32 shown = (i >= top) && (i < top + CTL_VISIBLE);
+        const s16 y = PAGE_TOP_Y + (i - top) * PAGE_PITCH;
+        if ((label != NULL) && (label->data.sobj != NULL)) {
+            label->data.sobj->sprite.y = y;
+            if (shown) {
+                label->data.sobj->sprite.attr &= ~SP_HIDDEN;
+            } else {
+                label->data.sobj->sprite.attr |= SP_HIDDEN;
+            }
+        }
+        if ((value != NULL) && (value->data.sobj != NULL)) {
+            value->data.sobj->sprite.y = y;
+            if (shown) {
+                value->data.sobj->sprite.attr &= ~SP_HIDDEN;
+            } else {
+                value->data.sobj->sprite.attr |= SP_HIDDEN;
+            }
+        }
+    }
+    {
+        GObj* upArrow = (GObj*) PAGE_ARROW_UP;
+        GObj* dnArrow = (GObj*) PAGE_ARROW_DN;
+        if ((upArrow != NULL) && (upArrow->data.sobj != NULL)) {
+            if (top > 0) {
+                upArrow->data.sobj->sprite.attr &= ~SP_HIDDEN;
+            } else {
+                upArrow->data.sobj->sprite.attr |= SP_HIDDEN;
+            }
+        }
+        if ((dnArrow != NULL) && (dnArrow->data.sobj != NULL)) {
+            if (top + CTL_VISIBLE < CTL_ROWS) {
+                dnArrow->data.sobj->sprite.attr &= ~SP_HIDDEN;
+            } else {
+                dnArrow->data.sobj->sprite.attr |= SP_HIDDEN;
+            }
+        }
     }
 }
 
@@ -1535,6 +1599,8 @@ static s32 snap_ctl_value_str(s32 row, s32 v) {
         case 2:  return v ? STR_ON : STR_OFF;
         case 3:  return STR_CTL_SPEED + v;
         case 4:  return STR_CTL_SPEED + v;   /* 25, 50, 75, 100: the first four steps */
+        case 6:  return (v == 0) ? STR_OFF : ((v == 1) ? STR_ON : STR_ZOOMED);
+        case 7:  return STR_CTL_SPEED + v;
         default: return v ? STR_REVERSE : STR_NORMAL;
     }
 }
@@ -1561,6 +1627,7 @@ static void snap_controls_page(void) {
     GObj* descStrip;
     s32 sel, i, moved, hiddenCount;
     s32 v;
+    s32 top;
     u8 pulseState, pulseCounter;
     u8 entry[CTL_ROWS];
 
@@ -1632,15 +1699,19 @@ static void snap_controls_page(void) {
             itemHelp->data.sobj->sprite.attr |= SP_HIDDEN;
         }
     }
-    descStrip = snap_make_strip(STR_CTL_DESC + 0, 49, 171);
+    descStrip = snap_make_strip(snap_ctl_desc_str(0), 49, 171);
 
     for (i = 0; i < CTL_ROWS; i++) {
-        PAGE_LABEL(i) = (u32) snap_make_strip(STR_CTL_LABEL + i, 50, PAGE_TOP_Y + i * PAGE_PITCH);
+        PAGE_LABEL(i) = (u32) snap_make_strip(snap_ctl_label_str(i), 50, PAGE_TOP_Y + i * PAGE_PITCH);
         PAGE_VALUE(i) = (u32) snap_make_strip(snap_ctl_value_str(i, entry[i]), 163, PAGE_TOP_Y + i * PAGE_PITCH);
         snap_tint((GObj*) PAGE_VALUE(i), SEL_R, SEL_G, SEL_B);
     }
+    PAGE_ARROW_UP = (u32) snap_make_strip_fmt(STR_SCROLL_UP, ARROW_X, ARROW_UP_Y, G_IM_FMT_RGBA);
+    PAGE_ARROW_DN = (u32) snap_make_strip_fmt(STR_SCROLL_DN, ARROW_X, ARROW_DN_Y, G_IM_FMT_RGBA);
 
     sel = 0;
+    top = 0;
+    snap_ctl_layout(top);
     pulseState = 0;
     pulseCounter = 0;
 
@@ -1677,14 +1748,28 @@ static void snap_controls_page(void) {
             snap_tint((GObj*) PAGE_LABEL(sel), 0xFF, 0xFF, 0xFF);
             sel = (sel == 0) ? (CTL_ROWS - 1) : (sel - 1);
             pulseState = 0;
-            snap_swap_strip(descStrip, STR_CTL_DESC + sel);
+            if (sel < top) {
+                top = sel;
+                snap_ctl_layout(top);
+            } else if (sel >= top + CTL_VISIBLE) {
+                top = sel - (CTL_VISIBLE - 1);
+                snap_ctl_layout(top);
+            }
+            snap_swap_strip(descStrip, snap_ctl_desc_str(sel));
             auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
         }
         else if (input->pressedButtons & STICK_SLOW_DOWN) {
             snap_tint((GObj*) PAGE_LABEL(sel), 0xFF, 0xFF, 0xFF);
             sel = (sel + 1) % CTL_ROWS;
             pulseState = 0;
-            snap_swap_strip(descStrip, STR_CTL_DESC + sel);
+            if (sel < top) {
+                top = sel;
+                snap_ctl_layout(top);
+            } else if (sel >= top + CTL_VISIBLE) {
+                top = sel - (CTL_VISIBLE - 1);
+                snap_ctl_layout(top);
+            }
+            snap_swap_strip(descStrip, snap_ctl_desc_str(sel));
             auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
         }
         else if (input->pressedButtons & STICK_SLOW_RIGHT) {
@@ -1753,6 +1838,14 @@ static void snap_controls_page(void) {
             omDeleteGObj((GObj*) PAGE_VALUE(i));
             PAGE_VALUE(i) = 0;
         }
+    }
+    if (PAGE_ARROW_UP != 0) {
+        omDeleteGObj((GObj*) PAGE_ARROW_UP);
+        PAGE_ARROW_UP = 0;
+    }
+    if (PAGE_ARROW_DN != 0) {
+        omDeleteGObj((GObj*) PAGE_ARROW_DN);
+        PAGE_ARROW_DN = 0;
     }
     if (hdrStrip != NULL) {
         omDeleteGObj(hdrStrip);

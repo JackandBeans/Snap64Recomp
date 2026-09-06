@@ -164,6 +164,15 @@ struct Settings {
     // The mouse's speed while zoomed in, as a share of mouse_sensitivity:
     // the view is narrower, so the same motion should turn less. 0.25 to 1.
     float mouse_zoom_speed  = 0.5f;
+    // The controller's gyroscope (src/input.cpp), on pads that have one
+    // (DualSense, DualShock 4, Switch Pro and Joy-Cons; the Steam Deck's
+    // own outside Steam's controller layer): its turning is added to the
+    // view like the mouse's, at natural scale, a ten-degree turn of the pad
+    // turning the view ten degrees at 1. 0 off, 1 always in a course, 2
+    // only while zoomed in. The tilt sense follows mouse_invert_y.
+    int   gyro_aim          = 0;
+    // Multiplies the natural scale. Bounded to 0.25 .. 4 where read.
+    float gyro_sensitivity  = 1.0f;
     // Interpolate the view and projection as well as object transforms.
     //
     // On, and it has to be: this game's camera lives in the projection stack,

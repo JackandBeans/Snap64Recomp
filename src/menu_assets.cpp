@@ -958,6 +958,8 @@ void seed_mailbox() {
     write_u8(MailboxAddr + 0x65, uint8_t(ctl_speed_index(s.mouse_sensitivity)));
     write_u8(MailboxAddr + 0x66, uint8_t(ctl_zoom_index(s.mouse_zoom_speed)));
     write_u8(MailboxAddr + 0x67, s.mouse_invert_y ? 1 : 0);
+    write_u8(MailboxAddr + 0x68, uint8_t(std::clamp(s.gyro_aim, 0, 2)));
+    write_u8(MailboxAddr + 0x69, uint8_t(ctl_speed_index(s.gyro_sensitivity)));
     write_u32(MailboxAddr + 0x60, 0);
     write_u32(MailboxAddr + 0x0, MailboxMagic);
     g_last_applied_seq = 0;
@@ -1109,7 +1111,7 @@ void stage_menu_strings(uint8_t* rdram) {
         "Mouse Aim",                           // +66
         "Mouse Speed",                         // +67
         "Zoom Speed",                          // +68
-        "Mouse Tilt",                          // +69
+        "Camera Tilt",                         // +69
         "< Hold >",                            // +70
         "< Switch >",                          // +71
         "< Normal >",                          // +72
@@ -1128,9 +1130,21 @@ void stage_menu_strings(uint8_t* rdram) {
         { "Move the mouse to look around a course.",    "Off leaves the camera to the stick." },
         { "How far the mouse turns the camera.",        "Lower is slower, higher is faster." },
         { "Mouse speed while zoomed in, as a share",    "of the normal speed. Lower is steadier." },
-        { "Normal tilts up as the mouse goes forward.", "Reverse tilts down instead." },
+        { "Normal tilts up as the mouse or pad goes",  "forward. Reverse tilts down instead." },
     };
-    constexpr uint32_t StringCount = BaseCount + 91;
+    // Ids BaseCount+91..+95: the CONTROLS page's two gyro rows, added
+    // after the six above (the page scrolls for them): +91..+92 the labels,
+    // +93 the value Zoomed, +94..+95 the descriptions.
+    static const char* const gyroStrings[3] = {
+        "Gyro Aim",                            // +91
+        "Gyro Speed",                          // +92
+        "< Zoomed >",                          // +93
+    };
+    static const char* const gyroDescs[2][2] = {
+        { "Turn the pad to look around a course, on",  "pads with a gyro. Zoomed aims zoomed in." },
+        { "How far turning the pad turns the camera.", "Lower is slower, higher is faster." },
+    };
+    constexpr uint32_t StringCount = BaseCount + 96;
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -1319,6 +1333,16 @@ void stage_menu_strings(uint8_t* rdram) {
         }
         else if (id == BaseCount + 63) {
             strip = compose_help("Mouse and controller settings.");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id >= BaseCount + 94) {
+            strip = compose_lines(gyroDescs[id - BaseCount - 94][0], gyroDescs[id - BaseCount - 94][1]);
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id >= BaseCount + 91) {
+            strip = compose(gyroStrings[id - BaseCount - 91]);
             w = strip.width;
             h = strip.height;
         }
@@ -1564,6 +1588,8 @@ void poll_menu_mailbox(uint8_t* rdram) {
             c.mouse_sensitivity = kCtlSpeeds[std::min<int>(read_u8_mail(MailboxAddr + 0x65), 10)] / 100.0f;
             c.mouse_zoom_speed = kCtlZoomShares[std::min<int>(read_u8_mail(MailboxAddr + 0x66), 3)] / 100.0f;
             c.mouse_invert_y = read_u8_mail(MailboxAddr + 0x67) != 0;
+            c.gyro_aim = std::min<int>(read_u8_mail(MailboxAddr + 0x68), 2);
+            c.gyro_sensitivity = kCtlSpeeds[std::min<int>(read_u8_mail(MailboxAddr + 0x69), 10)] / 100.0f;
         }
         settings_mark_dirty();
     }

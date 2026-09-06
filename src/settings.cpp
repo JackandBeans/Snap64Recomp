@@ -64,6 +64,9 @@ Settings& settings() { return s_settings; }
 
 std::mutex& settings_mutex() { return s_settings_mutex; }
 
+// The last file read lacked a field this version writes (read_settings_file).
+static bool s_fields_missing = false;
+
 void settings_mark_dirty() {
     // The timestamp goes first and the generation is released after it, so a
     // flush that sees the new generation also sees when it was marked.
@@ -135,6 +138,8 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         s.mouse_sensitivity  = std::clamp(j.value("mouse_sensitivity", s.mouse_sensitivity), 0.1f, 10.0f);
         s.mouse_invert_y     = j.value("mouse_invert_y", s.mouse_invert_y);
         s.mouse_zoom_speed   = std::clamp(j.value("mouse_zoom_speed", s.mouse_zoom_speed), 0.25f, 1.0f);
+        s.gyro_aim           = std::clamp(j.value("gyro_aim", s.gyro_aim), 0, 2);
+        s.gyro_sensitivity   = std::clamp(j.value("gyro_sensitivity", s.gyro_sensitivity), 0.25f, 4.0f);
         // The binding table: "keys" maps an input's name to a key or mouse
         // name, or to a list of them. Handed to input.cpp whole; it reports
         // and skips what it cannot resolve (input.h).
@@ -153,6 +158,9 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
             }
             keys_present = true;
         }
+        // A file from before a field existed is complete once rewritten;
+        // the next write puts the new names in it to edit.
+        s_fields_missing = !j.contains("gyro_aim");
         out = s;
         return SettingsRead::Ok;
     } catch (const std::exception& e) {
@@ -213,7 +221,7 @@ void load_settings() {
     // The binding table goes to input.cpp whole; absent from the file, the
     // defaults apply and the next write puts every name in the file to edit.
     input_set_bindings(keys_present ? keys : input_default_bindings());
-    if (!keys_present) {
+    if (!keys_present || s_fields_missing) {
         settings_mark_dirty();
     }
     if (carried_render_to_ram) {
@@ -299,6 +307,8 @@ bool save_settings() {
         {"mouse_sensitivity",     copy.mouse_sensitivity},
         {"mouse_invert_y",        copy.mouse_invert_y},
         {"mouse_zoom_speed",      copy.mouse_zoom_speed},
+        {"gyro_aim",              copy.gyro_aim},
+        {"gyro_sensitivity",      copy.gyro_sensitivity},
         {"keys",                  keys},
     };
     // dump() throws only for a string that is not valid UTF-8; the key
