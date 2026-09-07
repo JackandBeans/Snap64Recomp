@@ -12,6 +12,8 @@ import re
 import sys
 
 HOOKED = [
+    # Widescreen draw eligibility, independent of the native photo collector.
+    'Pokemon_GetFlag100',
     # Overlay residency tracking and the RSP memory probes.
     'dmaLoadOverlay',
     # The VPK0 segment loads. The main menu's segment carries the sprite font

@@ -230,6 +230,7 @@ set(SNAP_SOURCES
     src/rsp_microcode.cpp
     src/audio.cpp
     src/input.cpp
+    src/widescreen.cpp
     src/os_stubs.cpp
     src/overlay_hook.cpp
     src/matrix_tags.cpp
@@ -270,6 +271,13 @@ if (MSVC)
 endif()
 
 add_executable(Snap64Recomp ${SNAP_SOURCES})
+
+add_executable(SnapVisibilityTest EXCLUDE_FROM_ALL tests/visibility_test.cpp src/widescreen.cpp)
+target_include_directories(SnapVisibilityTest PRIVATE
+    "$<TARGET_PROPERTY:rt64,INCLUDE_DIRECTORIES>"
+    "$<TARGET_PROPERTY:Snap64Recomp,INCLUDE_DIRECTORIES>")
+target_compile_definitions(SnapVisibilityTest PRIVATE "$<TARGET_PROPERTY:rt64,COMPILE_DEFINITIONS>")
+target_link_libraries(SnapVisibilityTest PRIVATE rt64)
 
 target_include_directories(Snap64Recomp PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"

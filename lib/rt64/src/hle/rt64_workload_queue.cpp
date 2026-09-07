@@ -564,11 +564,12 @@ namespace RT64 {
                 const auto &colorImg = fbPair.colorImage;
                 const auto &depthImg = fbPair.depthImage;
                 fixedResScale = workloadConfig.resolutionScale;
-                if (!fbPair.drawColorRect.isEmpty()) {
+                const FixedRect displayRect = fbPair.displayColorRect(workloadConfig.aspectRatioScale > 1.0f);
+                if (!displayRect.isEmpty()) {
                     colorFb = nullptr;
                     depthFb = nullptr;
                     nativeColorWidth = colorImg.width;
-                    nativeColorHeight = fbPair.drawColorRect.bottom(true);
+                    nativeColorHeight = displayRect.bottom(true);
 
                     // The height cannot be allowed to shrink to the geometry, because
                     // that height ends up clipping the geometry.
@@ -1170,7 +1171,7 @@ namespace RT64 {
                     for (int32_t f = workload.fbPairCount - 1; f >= 0; f--) {
                         const FramebufferPair &fbPair = workload.fbPairs[f];
                         bool interpolationCandidate = fbPair.earlyPresentCandidate();
-                        if (fbPair.drawColorRect.isEmpty()) {
+                        if (fbPair.displayColorRect(workloadConfig.aspectRatioScale > 1.0f).isEmpty()) {
                             continue;
                         }
 

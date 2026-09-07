@@ -29,6 +29,7 @@
 #include "rsp_microcode.h"
 #include "audio.h"
 #include "input.h"
+#include "widescreen.h"
 #include "settings.h"
 #include "version.h"
 #include "paths.h"
@@ -187,6 +188,11 @@ static void update_gfx(void* /*gfx_data*/) {
     }
 
     SDL_Event event;
+    if (sdl_window) {
+        int width, height;
+        SDL_GetWindowSize(sdl_window, &width, &height);
+        snap::update_visibility_viewport(width, height);
+    }
     while (SDL_PollEvent(&event)) {
         switch (event.type) {
             case SDL_QUIT:

@@ -80,6 +80,23 @@ namespace RT64 {
     bool FramebufferPair::isEmpty() const {
         return (gameCallCount == 0) && startFbOperations.empty() && endFbOperations.empty();
     }
+
+    FixedRect FramebufferPair::displayColorRect(bool expandedView) const {
+        // Native dirty bounds are computed before aspect adjustment. A Pokemon
+        // can occupy a whole pass outside those bounds and still be visible in
+        // the expanded projection. Keep that pass for display; GPU clipping
+        // decides which pixels survive. Do not enlarge drawColorRect itself:
+        // it also controls native RDRAM writeback and photo-scoring work.
+        FixedRect bounds = drawColorRect;
+        if (expandedView && bounds.isEmpty()) {
+            for (uint32_t i = 0; i < projectionCount; ++i) {
+                const Projection &proj = projections[i];
+                if (proj.type == Projection::Type::Perspective && proj.gameCallCount > 0)
+                    bounds.merge(proj.scissorRect);
+            }
+        }
+        return bounds;
+    }
     
     bool FramebufferPair::earlyPresentCandidate() const {
         // Some games might use screen framebuffers as temporary output for some operations that are clearly
