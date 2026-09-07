@@ -46,6 +46,13 @@ The people and projects this port stands on are thanked under [Thanks](#thanks).
 
 ## Get it running
 
+> **In a hurry?** The archive holds a `START HERE.txt` with the same thing in
+> ten lines. The one part people miss: this port has no launcher and no
+> overlay, so everything it adds lives inside the game's own **Options**
+> screen. Options > Graphics is where widescreen, the frame rate and the rest
+> of the enhancements are, and they all start off, set to what the console
+> did.
+
 You need a 64-bit Windows 10 or 11 PC whose graphics driver provides
 Direct3D 12, and your own dump of the US cartridge; nothing has to be
 installed. Then:
@@ -257,13 +264,20 @@ readings came alive within a dozen of the setting, and when something
 switched the sensor off again a minute later (Steam's client, when it is
 running) the port switched it back.
 
-Every keyboard and mouse binding can be changed. The settings file's
-`keys` table names each input (`a`, `b`, `z`, `start`, `l`, `r`, `c_up`,
+Every keyboard, mouse and controller binding can be changed. The settings
+file's `keys` table names each input (`a`, `b`, `z`, `start`, `l`, `r`, `c_up`,
 `c_down`, `c_left`, `c_right`, `d_up`, `d_down`, `d_left`, `d_right`,
 `stick_up`, `stick_down`, `stick_left`, `stick_right`) and lists what
 presses it: SDL key names such as `"X"`, `"Left Shift"`, `"Return"`,
 `"Space"`, or the mouse names `"Mouse Left"`, `"Mouse Right"`,
-`"Mouse Middle"`, `"Mouse X1"`, `"Mouse X2"`, `"Wheel Up"`, `"Wheel Down"`.
+`"Mouse Middle"`, `"Mouse X1"`, `"Mouse X2"`, `"Wheel Up"`, `"Wheel Down"`,
+or a controller's, written as `"Pad "` and SDL's own name for the button or
+axis: `"Pad A"`, `"Pad B"`, `"Pad X"`, `"Pad Y"`, `"Pad Start"`, `"Pad Back"`,
+`"Pad LeftShoulder"`, `"Pad RightShoulder"`, `"Pad LeftStick"`,
+`"Pad RightStick"`, `"Pad DPUp"`, `"Pad DPDown"`, `"Pad DPLeft"`,
+`"Pad DPRight"`, `"Pad LeftTrigger"`, `"Pad RightTrigger"`. So a player who
+wants Z on the left trigger rather than the left shoulder writes
+`"z": ["Left Shift", "Mouse Right", "Pad LeftTrigger"]`.
 The file is written with the whole table in it after the first start, so
 editing is a matter of changing a name; a name the port cannot resolve is
 reported in the log and skipped, and an input left with nothing usable
@@ -275,9 +289,27 @@ the control stick, A is A, B or X is B, the left shoulder button is Z, Start
 is Start, the D-pad is the D-pad, the triggers are L and R, and the right stick
 is the C buttons. The Back button (Select, View or Share on most pads) is not
 an N64 button: it saves the photo on screen, as P does on the keyboard (see
-"Photos"). The first pad SDL recognises is the one used; a pad SDL has no
-mapping for is logged as such at start-up (`[SNAP-Input]`) and can be given
-one through SDL's `SDL_GAMECONTROLLERCONFIG` environment variable.
+"Photos"). Every one of those is a row in the settings file's `keys` table and
+can be moved.
+
+**Which controllers work.** Anything SDL2 has a mapping for, which is most of
+what is sold: Xbox pads (360, One, Series) over USB or Bluetooth, PlayStation
+(DualShock 3 and 4, DualSense), Switch Pro and Joy-Con, the Steam Deck's own
+controls, the Steam Controller, and a long tail of third-party pads. Rumble
+works where the pad has it, and the game is told a Rumble Pak is present while
+a pad is attached. Gyro aim needs a pad with a motion sensor: DualShock 4,
+DualSense, Switch Pro, and the Steam Deck.
+
+The first pad SDL recognises is the one used. A pad SDL has *no* mapping for
+is named in the log at start-up (`[SNAP-Input] joystick ... has no game
+controller mapping`) and does nothing until it is taught. Two ways to teach
+it, easiest first:
+
+* Put [`gamecontrollerdb.txt`](https://github.com/mdqinc/SDL_GameControllerDB)
+  next to `Snap64Recomp.exe`. It is the community's list of pad mappings; the
+  port reads it at start-up and says how many it added. Nothing else to do.
+* Or set SDL's `SDL_GAMECONTROLLERCONFIG` environment variable to a single
+  mapping string, which is what SDL itself documents.
 
 ### The rule the port follows
 
@@ -511,13 +543,14 @@ the defaults below are that file's.
 | `jynx_vc` | `false` | Jynx Recolor, Jynx's face and hands: Off: the cartridge's black; On: the purple of the re-releases, matched to a published Virtual Console screenshot |
 | `interpolate_camera` | `true` | interpolate the view as well as objects (F4; no row on the Graphics page) |
 | `snap_station` | `false` | keep the Snap Station on port 4 from the title menu on, every start (see "The Snap Station") |
+| `rumble_strength` | `100` | the Rumble Pak's strength, 0 to 100; `0` switches rumble off |
 | `mouse_aim` | `true` | the mouse aims while a course runs and the window has focus ("Controls"); its buttons work whenever the window has focus, through `keys` |
 | `mouse_sensitivity` | `1.0` | angle per pixel of mouse: 1 is a full turn in about 2500 pixels, 2 twice as quick, 0.5 half; 0.1 to 10 |
 | `mouse_invert_y` | `false` | mouse forward, or the pad's front rising, tilts the view down (Camera Tilt: Reverse) |
 | `mouse_zoom_speed` | `0.5` | the mouse's speed while zoomed in, as a share of `mouse_sensitivity`; 0.25 to 1 (Zoom Speed) |
 | `gyro_aim` | `0` | the pad's gyro aims the camera: 0 off, 1 in a course, 2 only while zoomed in (Gyro Aim) |
 | `gyro_sensitivity` | `1.0` | multiplies the gyro's natural scale; 0.25 to 4 (Gyro Speed) |
-| `keys` | the table under "Controls" | what presses each input: SDL key names and the mouse names, one or a list |
+| `keys` | the table under "Controls" | what presses each input: SDL key names, the mouse names, and `"Pad "` plus SDL's controller button or axis name; one or a list |
 | `graphics_api` | `0` | 0 Direct3D 12 (every run so far), 1 Vulkan (RT64's other backend, untried here; an escape hatch if D3D12 fails); restart |
 | `downsample` | `1` | Super Sampling factor |
 | `resolution_scale` | `0` | 0 follows the window; 1-8 caps the render scale in multiples of 320x240 |

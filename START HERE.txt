@@ -1,0 +1,86 @@
+SNAP64 RECOMP
+Pokemon Snap, running natively. Read this once and you are set.
+
+
+1. PUT YOUR ROM HERE
+-------------------
+Copy your own Pokemon Snap (USA) cartridge dump into this folder, next to
+Snap64Recomp, named exactly:
+
+    pokemonsnap.z64
+
+.z64, .v64 and .n64 dumps are all accepted under that name. No ROM is
+included and none ever will be. If the file is missing or is the wrong dump,
+the game says so at start-up and names the exact path it looked at.
+
+
+2. START IT
+-----------
+Run Snap64Recomp. The game boots to its own title screen, as the cartridge
+did.
+
+
+3. THE EXTRAS ARE IN THE GAME'S OWN OPTIONS SCREEN
+--------------------------------------------------
+This is the part people miss. The port has no launcher and no overlay: every
+addition lives inside the game's own Options screen, drawn in the game's own
+font. From the title screen, choose OPTIONS.
+
+    Screen     the cartridge's own screen position and size
+    Graphics   the port's additions (see below)
+    Sound      volumes, stereo or mono, mute when not focused
+    Controls   mouse, gyro and camera settings
+
+GRAPHICS holds: Render Scale, Super Sampling, Anti-Aliasing, Widescreen,
+Frame Rate, 2D Detail, Texture Filter, Overscan Crop, Dither, Colour Depth,
+Cutscene Fix, Photo Detail and a Jynx Recolor.
+
+Everything there is OFF or set to the console's behaviour by default, on
+purpose: out of the box this plays like the cartridge, and every change is
+yours to make. Widescreen and a higher frame rate are the two most people
+want first.
+
+
+4. KEYS
+-------
+    Esc            pause menu; hold it for a second to quit
+    F11            fullscreen
+    F10            widescreen
+    F8             frame interpolation
+    P              save the photo on screen to photos/
+    Arrow keys     the control stick, or use a gamepad
+
+A gamepad works as soon as it is plugged in: Xbox, PlayStation, Switch Pro,
+the Steam Deck's own controls, and most third-party pads. Rumble works where
+the pad has it, and "rumble_strength" in snapsettings.json turns it down or
+off. If yours does nothing, snap64.log will name it, and dropping
+the community's gamecontrollerdb.txt next to Snap64Recomp will teach the port
+about it (README, "Which controllers work").
+
+On a Steam Deck the port takes the Deck's own defaults and can aim the camera
+by tilting the console (Options > Controls > Gyro Aim). Gyro needs a pad with
+a motion sensor: a Deck, a DualShock 4, a DualSense or a Switch Pro.
+
+
+5. WHERE THINGS GO
+------------------
+    photos/            photos you save, as PNG
+    saves/             your save file, and its backup
+    snapsettings.json  your settings, in plain text
+    snap64.log         the log of the last run
+
+To change what any key, mouse button or controller button does, edit the
+"keys" section of snapsettings.json: every input is listed there after the
+first run, so it is a matter of changing a name. A controller's buttons are
+written as "Pad A", "Pad LeftTrigger" and so on. An in-game page for this is
+coming in the next release.
+
+
+SOMETHING WRONG?
+----------------
+Open an issue at github.com/JackandBeans/Snap64Recomp and attach snap64.log.
+It is written next to this file after every run and it is the single most
+useful thing you can send.
+
+README.md has the full documentation: every setting, the Snap Station, HD
+texture packs, mods, known limitations, and how the port was built.

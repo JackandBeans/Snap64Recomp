@@ -450,7 +450,13 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/menu_text/recomp_logo.png" DESTINATIO
 # that nothing ships in it.
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/mods/README.md" DESTINATION mods)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/texture_packs/README.txt" DESTINATION texture_packs)
+# "START HERE.txt" sorts to the top of the unpacked folder on every platform,
+# which is the point: README.md is the reference and nobody reads a reference
+# first. It says where the ROM goes and that the port's additions live inside
+# the game's own Options screen, which is the one thing a launcher would have
+# made obvious and this design does not.
 install(FILES
+    "${CMAKE_CURRENT_SOURCE_DIR}/START HERE.txt"
     "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
     "${CMAKE_CURRENT_SOURCE_DIR}/NOTICE.md"
     "${CMAKE_CURRENT_SOURCE_DIR}/README.md"

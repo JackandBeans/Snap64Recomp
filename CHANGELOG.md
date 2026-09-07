@@ -2,6 +2,27 @@
 
 ## 1.0.1 -- unreleased
 
+* Rumble lasted a tenth of a second. The Rumble Pak is on or off -- the game
+  runs the motor with `osMotorStart` and stops it with `osMotorStop`, and
+  nothing re-triggers in between -- but the port asked SDL for a hundred
+  millisecond buzz, so every rumble the game meant to hold was cut short. It
+  now runs until the game stops it, as the pak did.
+* `rumble_strength` in the settings file sets the Rumble Pak's strength from
+  0 to 100, and `0` switches rumble off. The cartridge had no such control,
+  so the default is full strength.
+* A pad SDL does not recognise can be taught with `gamecontrollerdb.txt`,
+  the community's own mapping list, dropped beside the executable; the port
+  reads it at start-up and reports how many mappings it added. The log line
+  for an unrecognised pad now says so. What used to be offered instead was
+  SDL's `SDL_GAMECONTROLLERCONFIG` environment variable, which is a
+  developer's tool rather than a player's.
+* The controller can be rebound. Its buttons and triggers were fixed in the
+  port's own code; they are entries in the settings file's `keys` table now,
+  beside the keyboard's and the mouse's, written as `"Pad A"`,
+  `"Pad LeftTrigger"` and the rest of SDL's own names. The defaults are
+  exactly the mapping that was hardcoded, so a player who never opens the
+  file feels no difference, and one who wants Z on the left trigger changes
+  one line. Asked for in Discussions; an in-game page for it comes next.
 * Keyboard and mouse support. In a course the mouse turns the view
   directly, each pixel an angle added to the game's own yaw and pitch, so
   it moves as far and as fast as your hand and no stick speed limits it
@@ -36,6 +57,37 @@
   is turned on and again whenever the readings stay at zero for half a
   second (on a Deck, 2026-09-06, the readings came alive within a dozen of
   the setting).
+* Visiting the Options screen enough times froze the game. Every strip the
+  port's pages draw -- a label, a value, a help line, an arrow -- was taken
+  from the scene's general heap, which is a bump allocator with no free of
+  any kind, and the Option screen is a state inside the main-menu scene
+  rather than a scene of its own, so nothing between two visits ever moved
+  that cursor back. A Graphics visit cost about 5.8 KB of the 1,887,328 the
+  scene has, and a few hundred visits walked it off the end, where the
+  game's allocator branches to itself for ever: the last picture stayed on
+  screen, the sound stopped, and nothing answered the controller. The strips
+  come from a table of the port's own now, sized by what can be on screen at
+  once and reclaimed by what is still reachable, so a visit costs nothing it
+  does not give back; a table that ran dry would leave a row blank and say
+  so in the log rather than stop the game. The cartridge drew its Options
+  screen from static templates and never allocated per visit, so this was
+  the port's fault and not the game's.
+* Three ways a save could be lost, all in the runtime's own save path. The
+  game rewrites its record a sector at a time -- an erase and 128 page
+  writes for each of the eight sectors it spans, over a thousand writes for
+  a whole save -- and the port published the file after 128 of them, or
+  after ten milliseconds of quiet, which is part of the way through by
+  construction. What reached the disk carried a fresh checksum over
+  partly-old bytes, so the game rejected it on the next boot. The same
+  publish rotated the previous file into the backup, so both copies could be
+  spoiled at once, and a torn file is exactly the right length and reads
+  cleanly, so the backup was never reached for either. Writes still in
+  flight when the player quit were dropped. And a save that existed but
+  could not be read was replaced by zeros, which the next write committed
+  over it. The file is published only once the game's writes have stopped
+  now, the exit waits for one still in flight rather than dropping it, the
+  Snap Station's relaunch brings the save to disk before it replaces its own
+  process, and a save that cannot be read is never written over.
 * Widescreen no longer loses Pokémon at the edges. The game decides
   whether a Pokémon is on screen by projecting its position at a fixed
   4:3 focal length and rejecting it outside fixed pixel bounds, so a
