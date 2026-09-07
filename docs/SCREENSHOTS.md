@@ -1,6 +1,6 @@
 # Screenshots
 
-All twenty-one, in the order a session meets them. Every one was taken from
+All twenty-two, in the order a session meets them. Every one was taken from
 the 1.0.0 build, or the 1.0.1 build where it says so, at 1440p with Render
 Scale and Anti-Aliasing both at 8x on the game's Graphics page, then cropped
 to the game's picture. They are frames of
@@ -97,6 +97,12 @@ Background Mute for when the window loses focus.
 then Mouse Aim, Mouse Speed, Zoom Speed, Camera Tilt, and below the edge
 arrow, Gyro Aim and Gyro Speed: eight rows the page scrolls through six
 at a time, the arrows swaying as the Graphics page's do.
+
+<a href="screenshots/10c-controls-gyro.png"><img src="screenshots/10c-controls-gyro.png" width="640" alt="The Controls page, the gyro rows"></a>
+
+**The Controls page, the gyro rows.** The same page scrolled to its lower
+half: Mouse Aim and Mouse Speed, Zoom Speed, Camera Tilt, and Gyro Aim with
+Gyro Speed, the help box explaining the row under the cursor.
 
 ## The Snap Station
 

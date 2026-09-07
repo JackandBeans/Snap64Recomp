@@ -109,7 +109,7 @@ and what to attach to a bug report.
 Taken from the 1.0.0 build, and the Options screen, the Controls page, the
 title and the widescreen Beach from 1.0.1, at 1440p with Render Scale and
 Anti-Aliasing both at 8x on the Graphics page, cropped to the game's picture
-(the widescreen one is the whole 16:9 frame). All twenty-one, with a caption
+(the widescreen one is the whole 16:9 frame). All twenty-two, with a caption
 each (the title menu, the Tunnel, the lab, the Options and Sound pages, the
 printer's marks, Oak's check from the photo choice to the score sheet, the
 Camera Check), are in [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md).
