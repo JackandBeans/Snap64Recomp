@@ -12,6 +12,9 @@
 #include <cstdint>
 #include "ultramodern/input.hpp"
 
+union SDL_Event;
+struct SDL_Window;
+
 namespace snap {
 
 /**
@@ -19,6 +22,12 @@ namespace snap {
  * Called once per input poll cycle by the runtime.
  */
 void input_poll();
+
+// SDL window/event operations stay on the main thread. Guest state is sampled
+// on the game thread and published atomically, never read by the SDL thread.
+void input_update_game_state(uint8_t* rdram);
+void input_update_window(SDL_Window* window);
+void input_handle_event(const SDL_Event& event);
 
 /**
  * Get the current input state for a controller.

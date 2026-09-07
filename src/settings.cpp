@@ -4,6 +4,7 @@
 #include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdint>
 #include <cstdio>
 #include <filesystem>
@@ -90,6 +91,11 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         f >> j;
         Settings s = out;
         s.widescreen         = j.value("widescreen", s.widescreen);
+        s.mouse_enabled      = j.value("mouse_enabled", s.mouse_enabled);
+        s.mouse_sensitivity  = j.value("mouse_sensitivity", s.mouse_sensitivity);
+        if (!std::isfinite(s.mouse_sensitivity)) s.mouse_sensitivity = 0.06f;
+        s.mouse_sensitivity  = std::clamp(s.mouse_sensitivity, 0.001f, 1.0f);
+        s.invert_y           = j.value("invert_y", s.invert_y);
         s.msaa               = j.value("msaa", s.msaa);
         s.fps_mode           = j.value("fps_mode", s.fps_mode);
         s.fps_manual_target  = j.value("fps_manual_target", s.fps_manual_target);
@@ -228,6 +234,9 @@ bool save_settings() {
     const nlohmann::json j{
         {"fullscreen",            copy.fullscreen},
         {"widescreen",            copy.widescreen},
+        {"mouse_enabled",        copy.mouse_enabled},
+        {"mouse_sensitivity",    copy.mouse_sensitivity},
+        {"invert_y",             copy.invert_y},
         {"msaa",                  copy.msaa},
         {"fps_mode",              copy.fps_mode},
         {"fps_manual_target",     copy.fps_manual_target},
@@ -351,6 +360,31 @@ static bool toggle_locked(bool Settings::*flag) {
 
 bool handle_settings_hotkey(int scancode) {
     switch (scancode) {
+        case SDL_SCANCODE_M: {
+            const bool on = toggle_locked(&Settings::mouse_enabled);
+            settings_mark_dirty();
+            printf("[SNAP-INPUT] mouse aiming: %s (M)\n", on ? "on" : "off");
+            return true;
+        }
+        case SDL_SCANCODE_Y: {
+            const bool on = toggle_locked(&Settings::invert_y);
+            settings_mark_dirty();
+            printf("[SNAP-INPUT] invert aim Y: %s (Y)\n", on ? "on" : "off");
+            return true;
+        }
+        case SDL_SCANCODE_KP_MINUS:
+        case SDL_SCANCODE_KP_PLUS: {
+            float sensitivity;
+            {
+                std::lock_guard<std::mutex> lock(s_settings_mutex);
+                const float factor = scancode == SDL_SCANCODE_KP_PLUS ? 1.25f : 0.8f;
+                sensitivity = s_settings.mouse_sensitivity =
+                    std::clamp(s_settings.mouse_sensitivity * factor, 0.001f, 1.0f);
+            }
+            settings_mark_dirty();
+            printf("[SNAP-INPUT] mouse sensitivity: %.3f (numpad - / +)\n", sensitivity);
+            return true;
+        }
         case SDL_SCANCODE_F11:
             toggle_locked(&Settings::fullscreen);
             apply_graphics_settings();

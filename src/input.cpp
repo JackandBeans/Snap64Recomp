@@ -41,6 +41,10 @@
 
 #include "photo_export.h"
 #include "snap_station.h"
+#include "settings.h"
+#include "control_math.h"
+#include "recomp.h"
+#include <mutex>
 
 // Pokemon Snap port: how many more presented images to photograph. Lives in
 // RT64's present queue, where the pictures actually leave for the screen;
@@ -78,6 +82,54 @@ extern uint8_t* g_rdram;
 
 static SDL_GameController* game_controller = nullptr;
 static bool controller_initialized = false;
+
+extern std::atomic<bool> g_app_level_resident;
+static std::atomic<bool> aim_active{false};
+static std::mutex mouse_mutex;
+static MouseAccumulator mouse;
+
+void input_update_game_state(uint8_t* rdram) {
+    // IsPaused belongs to app_level; it is not a valid variable in other scenes.
+    const bool playing = g_app_level_resident.load(std::memory_order_relaxed) &&
+        rdram != nullptr && MEM_BU(0, (gpr)(int32_t)0x80382D20) == 0;
+    aim_active.store(playing, std::memory_order_relaxed);
+}
+
+void input_update_window(SDL_Window* window) {
+    if (!window) return;
+    bool enabled;
+    {
+        std::lock_guard<std::mutex> lock(settings_mutex());
+        enabled = settings().mouse_enabled;
+    }
+    // Replays already contain the final mapped input and must not capture a
+    // player's pointer or incorporate live motion. Focus/menus clear all state.
+    static const bool replaying = std::getenv("SNAP_REPLAY") != nullptr;
+    const bool want = enabled && !replaying && aim_active.load(std::memory_order_relaxed) &&
+        g_app_level_resident.load(std::memory_order_relaxed) &&
+        (SDL_GetWindowFlags(window) & SDL_WINDOW_INPUT_FOCUS);
+    if (bool(SDL_GetRelativeMouseMode()) != want) {
+        if (SDL_SetRelativeMouseMode(want ? SDL_TRUE : SDL_FALSE) != 0) {
+            fprintf(stderr, "[SNAP-INPUT] mouse capture failed: %s\n", SDL_GetError());
+        }
+    }
+    std::lock_guard<std::mutex> lock(mouse_mutex);
+    mouse.set_active(want && SDL_GetRelativeMouseMode() == SDL_TRUE);
+}
+
+void input_handle_event(const SDL_Event& event) {
+    std::lock_guard<std::mutex> lock(mouse_mutex);
+    if (event.type == SDL_WINDOWEVENT && event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
+        mouse.set_active(false);
+        SDL_SetRelativeMouseMode(SDL_FALSE);
+    } else if (event.type == SDL_MOUSEMOTION) {
+        mouse.motion(float(event.motion.xrel), float(event.motion.yrel));
+    } else if (event.type == SDL_MOUSEBUTTONDOWN || event.type == SDL_MOUSEBUTTONUP) {
+        const uint16_t mask = event.button.button == SDL_BUTTON_LEFT ? N64_BTN_A :
+                              event.button.button == SDL_BUTTON_RIGHT ? N64_BTN_Z : 0;
+        mouse.button(mask, event.type == SDL_MOUSEBUTTONDOWN);
+    }
+}
 
 // The Back button's press, taken from SDL's event stream rather than from
 // the state polled below. The game reads button STATE (input_get, on the
@@ -414,6 +466,30 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
             ax = gc_x * rescale;
             ay = gc_y * rescale;
         }
+    }
+
+    // Apply mouse motion once per controller reading. SDL only collects the
+    // deltas; the render/present rate does not decide how often they are used.
+    const bool aiming = aim_active.load(std::memory_order_relaxed) &&
+        g_app_level_resident.load(std::memory_order_relaxed);
+    float sensitivity;
+    bool inverted, mouse_enabled;
+    {
+        std::lock_guard<std::mutex> lock(settings_mutex());
+        sensitivity = settings().mouse_sensitivity;
+        inverted = settings().invert_y;
+        mouse_enabled = settings().mouse_enabled;
+    }
+    MouseSample sample;
+    {
+        std::lock_guard<std::mutex> lock(mouse_mutex);
+        if (!aiming || !mouse_enabled) mouse.set_active(false);
+        sample = mouse.take();
+    }
+    if (aiming) {
+        apply_mouse_aim(ax, ay, sample, sensitivity);
+        btn |= sample.buttons;
+        if (inverted) ay = -ay;
     }
 
     // Clamp analog values.

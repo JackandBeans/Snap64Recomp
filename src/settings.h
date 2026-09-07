@@ -19,6 +19,9 @@ namespace snap {
 struct Settings {
     bool  fullscreen        = false;
     bool  widescreen        = false;  // RT64 Expand: true 16:9 FOV, not a stretch
+    bool  mouse_enabled     = true;   // default on; saved preference, M toggles live
+    float mouse_sensitivity = 0.06f;  // stick deflection per relative mouse pixel
+    bool  invert_y          = false;  // saved preference; Y toggles live
     int   msaa              = 0;      // 0, 2, 4, 8
     // 0 = Original (native rate), 1 = Display refresh, 2 = Manual.
     //

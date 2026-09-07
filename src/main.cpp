@@ -143,11 +143,18 @@ static void snap_update_window_title() {
         return;
     }
 
-    char title[160];
-    snprintf(title, sizeof(title), "%s %s%s%s%s", SNAP_PORT_NAME, SNAP_PORT_VERSION,
+    char title[256];
+    snap::Settings controls;
+    {
+        std::lock_guard<std::mutex> lock(snap::settings_mutex());
+        controls = snap::settings();
+    }
+    snprintf(title, sizeof(title), "%s %s%s%s%s | Mouse %s (M) | Y %s (Y) | Sens %.3f (Num -/+)", SNAP_PORT_NAME, SNAP_PORT_VERSION,
              (snap::settings().fps_mode == 0) ? "" : " - interpolation ON (F8)",
              snap::settings().render_to_ram ? "" : " - render-to-RAM OFF (F6)",
-             snap::settings().interpolate_camera ? "" : " - camera lerp OFF (F4)");
+             snap::settings().interpolate_camera ? "" : " - camera lerp OFF (F4)",
+             controls.mouse_enabled ? "on" : "off", controls.invert_y ? "inverted" : "normal",
+             controls.mouse_sensitivity);
     SDL_SetWindowTitle(sdl_window, title);
 }
 
@@ -187,7 +194,9 @@ static void update_gfx(void* /*gfx_data*/) {
     }
 
     SDL_Event event;
+    snap::input_update_window(sdl_window);
     while (SDL_PollEvent(&event)) {
+        snap::input_handle_event(event);
         switch (event.type) {
             case SDL_QUIT:
                 // Named in the log because an unattended session was seen
@@ -198,6 +207,7 @@ static void update_gfx(void* /*gfx_data*/) {
                 ultramodern::quit();
                 break;
             case SDL_KEYDOWN:
+                if (event.key.repeat) break;
                 if (snap::handle_settings_hotkey(event.key.keysym.scancode)) {
                     snap_update_window_title();
                     break;
@@ -239,6 +249,8 @@ static void update_gfx(void* /*gfx_data*/) {
                 break;
         }
     }
+
+    snap::input_update_window(sdl_window);
 
     // The GRAPHICS and SOUND pages and the hotkeys only mark the settings
     // dirty; the file is written here, on the main thread, once the edits

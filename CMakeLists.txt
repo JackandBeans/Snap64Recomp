@@ -271,6 +271,16 @@ endif()
 
 add_executable(Snap64Recomp ${SNAP_SOURCES})
 
+# Focused production input regression harness; opt in by target.
+if (WIN32)
+    add_executable(SnapControlsTest EXCLUDE_FROM_ALL
+        tests/controls_test.cpp src/input.cpp)
+    target_include_directories(SnapControlsTest PRIVATE
+        "$<TARGET_PROPERTY:Snap64Recomp,INCLUDE_DIRECTORIES>")
+    target_compile_definitions(SnapControlsTest PRIVATE SDL_MAIN_HANDLED NOMINMAX)
+    target_link_libraries(SnapControlsTest PRIVATE SDL2::SDL2)
+endif()
+
 target_include_directories(Snap64Recomp PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
     "${CMAKE_CURRENT_BINARY_DIR}/generated"

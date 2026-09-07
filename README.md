@@ -194,6 +194,25 @@ deleted. The first start after the change rebuilds the cache once.
 
 ### Controls
 
+Mouse aiming defaults to enabled during a course. Hold **right mouse** for the
+viewfinder (N64 Z), then click **left mouse** to take a photo (N64 A). Mouse
+movement adds to the keyboard/controller stick, within the normal stick limit.
+The stage intro still temporarily restricts camera movement.
+
+| Control | Default binding | Saved preference |
+| --- | --- | --- |
+| Enable/release mouse aiming | M | `mouse_enabled`: `true` |
+| Toggle vertical aim inversion | Y | `invert_y`: `false` |
+| Lower/raise mouse sensitivity | Numpad − / + | `mouse_sensitivity`: `0.06` |
+
+These preferences save automatically in `snapsettings.json` beside the
+executable and restore on the next launch. Each sensitivity step multiplies
+by 0.8 or 1.25, bounded to `0.001`–`1.0`. The window title shows current values.
+Inversion affects combined mouse/keyboard/controller aim during a course;
+menus keep their usual directions. Capture hides the pointer while playing
+in the focused window, and releases it on pause, in menus, on focus loss, or
+when disabled with M. Replays use recorded input and never capture the mouse.
+
 Keyboard (`src/input.cpp`):
 
 | N64 | Key |

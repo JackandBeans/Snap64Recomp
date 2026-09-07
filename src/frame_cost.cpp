@@ -48,6 +48,7 @@
 
 #include "hle/rt64_snap_diag.h"
 #include "settings.h"
+#include "input.h"
 #include "recomp.h"
 
 extern "C" {
@@ -135,6 +136,7 @@ extern "C" void gtlUpdate(uint8_t* rdram, recomp_context* ctx) {
     // Anything the in-game GRAPHICS page published since the last tick is
     // applied here, on the thread the page runs on. One word read when idle.
     snap::poll_menu_mailbox(rdram);
+    snap::input_update_game_state(rdram);
 
     const bool on = snapdiag::statsEnabled();
     if (!on) {
