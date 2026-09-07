@@ -693,11 +693,17 @@ fine.
   View button saves the photo on screen ("Controls" above). Back paddles,
   trackpads and gyro reach the game only as whatever Steam's controller
   layout maps them to.
-* **The icon.** A Linux binary carries none, so the port's icon ships
-  beside it as `Snap64Recomp.png`: the window takes it at start-up, and a
-  Steam shortcut shows it once you pick that file in the shortcut's
-  Properties (the artwork Steam shows in Gaming Mode is a separate choice
-  there, and yours to make).
+* **The icon.** A Linux binary cannot carry one, where the Windows
+  executable carries two: the whole logo on a tile, and the film canister
+  alone for the title bar. So both ship beside the binary. The window
+  takes `Snap64Recomp-window.png`, the canister, at start-up. A Steam
+  shortcut shows `Snap64Recomp.png`, the tile, once you pick that file in
+  the shortcut's Properties (the artwork Steam shows in Gaming Mode is a
+  separate choice there, and yours to make). And the port writes a
+  `Snap64Recomp.desktop` launcher beside itself on the first start, with
+  the tile as its icon and the folder as its working directory: that is
+  what a file manager or an application menu can show a logo for -- run
+  it as it is, or copy it to `~/.local/share/applications`.
 * **Desktop Mode with Steam running.** Launched from a terminal or a file
   manager, Steam's desktop layout also sends Enter for A and Escape for B,
   which are the port's Start and pause keys: a shot opened the pause menu
@@ -840,7 +846,7 @@ The same list, with a place to reply, is pinned under
   stage from the harvested font with no character missing, the settings file
   is valid, and the archive carries everything it must; `--only station` puts the Snap Station print
   through both relaunches and checks the sheets. On the 1.0.1 executable
-  (SHA-256 beginning `84ab5bb4`), run without diagnostics in the
+  (SHA-256 beginning `74ca2197`), run without diagnostics in the
   environment, the suite passed 22 of 22 checks in 781 seconds, and the
   station's 5 of 5 in 491; the 1.0.0 executable had passed the same 22 and
   5, in 781 and 489, on a cold shader cache. The suite opens the game window

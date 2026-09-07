@@ -72,17 +72,19 @@ static stbi_uc* load_png(const std::filesystem::path& path, int* w, int* h, int*
 
 namespace snap {
 
-// The window's icon, from Snap64Recomp.png beside the executable: the same
-// tile the Windows executable carries as its resource, which SDL shows for
-// the window there without being asked. A Linux binary has no icon of its
-// own, so the Deck's window and taskbar showed nothing until this. False
-// when the file is absent, which is the Windows archive, where the
-// resource already serves.
+// The window's icon, from Snap64Recomp-window.png beside the executable:
+// the film canister alone, which is what the Windows title bar shows from
+// the .ico's small entries (SDL takes the executable's resource there
+// without being asked). A Linux window has one image for every size, and
+// the whole logo on its tile is a purple square at 16 px, so the canister
+// it is. A Linux binary has no icon of its own, so the Deck's window and
+// taskbar showed nothing until this. False when the file is absent, which
+// is the Windows archive, where the resource already serves.
 bool set_window_icon(void* sdlWindow) {
     int w = 0;
     int h = 0;
     int comp = 0;
-    stbi_uc* data = load_png(base_path("Snap64Recomp.png"), &w, &h, &comp);
+    stbi_uc* data = load_png(base_path("Snap64Recomp-window.png"), &w, &h, &comp);
     if (data == nullptr) {
         return false;
     }
@@ -93,6 +95,41 @@ bool set_window_icon(void* sdlWindow) {
     }
     stbi_image_free(data);
     return icon != nullptr;
+}
+
+// A launcher beside the executable, written once on Linux if none is there.
+// A Linux binary cannot carry an icon the way a Windows one does; what a
+// file manager or an application menu shows is a .desktop entry, and this
+// is one, with the absolute paths such an entry needs: run it, or copy it
+// to ~/.local/share/applications for the menu. Nothing is written when a
+// file of that name exists, so an edited one stays as edited.
+void write_desktop_entry() {
+    const std::filesystem::path entry = base_path("Snap64Recomp.desktop");
+    std::error_code ec;
+    if (std::filesystem::exists(entry, ec)) {
+        return;
+    }
+    const std::filesystem::path dir = base_path("");
+    const std::filesystem::path exe = base_path("Snap64Recomp");
+    const std::filesystem::path icon = base_path("Snap64Recomp.png");
+    FILE* f = fopen(entry.string().c_str(), "wb");
+    if (f == nullptr) {
+        return;
+    }
+    fprintf(f,
+        "[Desktop Entry]\n"
+        "Type=Application\n"
+        "Name=Snap64 Recomp\n"
+        "Comment=Pokemon Snap, running natively\n"
+        "Exec=\"%s\"\n"
+        "Path=%s\n"
+        "Icon=%s\n"
+        "Terminal=false\n"
+        "Categories=Game;\n",
+        exe.string().c_str(), dir.string().c_str(), icon.string().c_str());
+    fclose(f);
+    printf("[SNAP] wrote %s (a launcher with the port's icon; copy it to ~/.local/share/applications for the menu)" "\n",
+           entry.string().c_str());
 }
 
 }

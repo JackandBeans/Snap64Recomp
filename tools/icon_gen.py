@@ -36,6 +36,10 @@ OUT = os.path.join(ROOT, 'src', 'snap64.ico')
 # it at start-up (src/menu_assets.cpp, set_window_icon) and a Steam
 # shortcut can be pointed at it.
 PNG_OUT = os.path.join(ROOT, 'src', 'snap64.png')
+# The canister alone at 128 px, for the Linux window: a title bar there
+# takes one image for every size, and the tile is a purple square at 16 px
+# where Windows shows the canister from the .ico's small entries.
+CANISTER_OUT = os.path.join(ROOT, 'src', 'snap64-window.png')
 
 TILE_TOP = (104, 86, 156)       # a little lighter than the logo's outline blue
 TILE_BOTTOM = (76, 61, 118)     # a little darker
@@ -162,7 +166,8 @@ def main():
     frames[0].save(OUT, format='ICO', sizes=[f.size for f in frames],
                    append_images=frames[1:])
     frames[0].save(PNG_OUT, format='PNG')
-    print('wrote', OUT, [f.size for f in frames], 'canister', canister.size, 'and', PNG_OUT)
+    alone(canister, 128).save(CANISTER_OUT, format='PNG')
+    print('wrote', OUT, [f.size for f in frames], 'canister', canister.size, 'and', PNG_OUT, CANISTER_OUT)
     return canister
 
 

@@ -182,8 +182,11 @@
   presented-frame capture and the Snap Station's sheet capture needed a
   texture-to-buffer copy the Vulkan backend lacked. The port's icon, which
   the Windows executable carries as a resource, ships beside the Linux
-  binary as `Snap64Recomp.png`; the window takes it at start-up and a
-  Steam shortcut can be pointed at it.
+  binary: the window takes the film canister (`Snap64Recomp-window.png`)
+  as the Windows title bar shows it, a Steam shortcut can be pointed at
+  the tile (`Snap64Recomp.png`), and a `.desktop` launcher with the tile
+  is written beside the binary on the first start, the one way a Linux
+  binary shows a logo in a file manager or a menu.
 * Steam Deck: the port knows a Deck (Steam's `SteamDeck=1`, or the board
   vendor under `/sys`) and boots fullscreen there; SDL's screen keyboard
   is kept off so Steam's does not open over the game; the Snap Station's

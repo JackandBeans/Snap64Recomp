@@ -150,8 +150,9 @@ static ultramodern::renderer::WindowHandle create_window(void* /*gfx_data*/) {
     // The icon a Windows executable carries as a resource; a Linux binary
     // has none, so it comes from the file beside it.
     if ((sdl_window != nullptr) && !snap::set_window_icon(sdl_window)) {
-        printf("[SNAP] window icon: Snap64Recomp.png not found beside the executable" "\n");
+        printf("[SNAP] window icon: Snap64Recomp-window.png not found beside the executable" "\n");
     }
+    snap::write_desktop_entry();
 #endif
     if (!sdl_window) {
         fprintf(stderr, "[SNAP] SDL_CreateWindow failed: %s\n", SDL_GetError());

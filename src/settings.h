@@ -319,9 +319,12 @@ void stage_menu_assets(uint8_t* rdram);
 void stage_menu_strings(uint8_t* rdram);
 void poll_menu_mailbox(uint8_t* rdram);
 
-// The window's icon from Snap64Recomp.png beside the executable (Linux; on
-// Windows the executable's own resource serves). False without the file.
+// The window's icon from Snap64Recomp-window.png beside the executable
+// (Linux; on Windows the executable's own resource serves). False without
+// the file. write_desktop_entry writes the launcher beside the executable
+// once, with absolute paths (Linux).
 bool set_window_icon(void* sdlWindow);
+void write_desktop_entry();
 
 // The horizontal widening the renderer is applying to the game's
 // projection under Widescreen, in Q8 (256 = none): max(window w/h, 4/3)
