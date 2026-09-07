@@ -1979,7 +1979,23 @@ namespace RT64 {
                             (callRect.ulx == proj.scissorRect.ulx) && (callRect.uly == proj.scissorRect.uly) &&
                             (callRect.lrx == proj.scissorRect.lrx) && (callRect.lry == proj.scissorRect.lry);
                         const FixedRect &callScissor = callUsesProjScissor ? proj.snapBlendedScissor : callRect;
-                        triangles.scissor = convertFixedRect(callScissor, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, int32_t(horizontalMisalignment), call.callDesc.scissorLeftOrigin, call.callDesc.scissorRightOrigin);
+
+                        // Pokemon Snap port: a rectangle keeps its place in
+                        // the 4:3 picture, but its scissor need not keep the
+                        // 4:3 width. When the game's scissor spans its whole
+                        // picture, the picture it means is the widened one:
+                        // converted with the rectangle's own factor it landed
+                        // on the 4:3 area and cut every rectangle at that
+                        // edge, so the effect drawer's particles -- whose own
+                        // test is widened for the margins -- vanished there
+                        // whatever the game drew. A scissor narrower than
+                        // the picture is a crop and stays where the game put it.
+                        float scissorInvRatioScale = invRatioScale;
+                        if ((proj.type == Projection::Type::Rectangle) && (callScissor.ulx <= 0) && (callScissor.lrx >= int32_t(p.fbWidth) * 4)) {
+                            scissorInvRatioScale = 1.0f;
+                        }
+
+                        triangles.scissor = convertFixedRect(callScissor, p.resolutionScale, p.fbWidth, scissorInvRatioScale, extOriginPercentage, int32_t(horizontalMisalignment), call.callDesc.scissorLeftOrigin, call.callDesc.scissorRightOrigin);
 
                         // Narrowed to the part of an uncovering rectangle that
                         // has been revealed so far. The picture is drawn at the

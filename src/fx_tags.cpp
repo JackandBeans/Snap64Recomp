@@ -50,10 +50,12 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <unordered_map>
 
 #include "recomp.h"
 #include "hle/rt64_snap_diag.h"
+#include "settings.h"
 
 extern "C" {
 #include "funcs.h"
@@ -95,6 +97,24 @@ constexpr uint32_t EnableWord1 = Param(HookOpEnable, 4, 28) | Param(ExtendedOpco
 constexpr uint32_t RectGroupWord0 = Param(ExtendedOpcode, 8, 24) | Param(RectGroupV1, 24, 0);
 
 constexpr uint32_t TagBytes = 16;
+
+// Widescreen for the effects. fx_draw rejects a particle whose projected x
+// lies outside the console's picture and draws the rest as scissored
+// rectangles clamped at the picture's left edge (tools/hook_funcs.py,
+// INSTRUCTION_PATCHES, rewrites both). While the picture is widened the
+// viewport's x translate is moved right by this much, in the rectangle's
+// quarter-pixel units, and a rectangle alignment written around the pass
+// moves every rectangle back by the same amount: the clamp then lands 128
+// pixels past the picture's edge, outside any width the port draws (the
+// 21:9 margin is 80), and a particle in the left margin keeps its place.
+// The game's rectangle coordinates carry 12 bits, so the shift leaves room
+// to 1023 pixels on the right.
+constexpr int32_t FxShiftQ2 = 512;
+constexpr uint32_t RectAlignV1 = 0x000006;
+constexpr uint32_t OriginNone = 0x800;
+constexpr uint32_t RectAlignWord0 = Param(ExtendedOpcode, 8, 24) | Param(RectAlignV1, 24, 0);
+constexpr uint32_t RectAlignWord1 = Param(OriginNone, 12, 0) | Param(OriginNone, 12, 12);
+constexpr uint32_t AlignBytes = 24;
 
 // KSEG0 only: the MEM_ macros subtract 0x80000000 without masking, so a KSEG1
 // pointer that passes a masked range test is read far outside what is mapped.
@@ -183,6 +203,56 @@ static bool snap_fx_tag_fits(uint8_t* rdram, uint32_t cursor) {
     }
 
     return (capacity - used) > (snap::TagBytes + 64u);
+}
+
+// The renderer's widening of the picture, as the bound fx_draw's on-screen
+// test uses in place of the console's 1.0: the picture's half-width in the
+// projection's own units. 256 in the mailbox word is none, so every 4:3
+// screen keeps the cartridge's test.
+extern "C" float snap_fx_x_bound(void) {
+    const uint32_t q8 = snap::view_wide_q8();
+    if (q8 <= 256u) {
+        return 1.0f;
+    }
+    return float(q8 > 1024u ? 1024u : q8) / 256.0f;
+}
+
+// The viewport's x translate fx_draw stores once per camera pass, shifted
+// right while the picture is widened (see FxShiftQ2).
+extern "C" uint32_t snap_fx_x_translate(uint32_t bits) {
+    if (snap::view_wide_q8() <= 256u) {
+        return bits;
+    }
+    float translate;
+    std::memcpy(&translate, &bits, sizeof(translate));
+    translate += float(snap::FxShiftQ2);
+    std::memcpy(&bits, &translate, sizeof(bits));
+    return bits;
+}
+
+namespace snap {
+namespace {
+
+// Writes the extension's rectangle alignment into the display list: every
+// rectangle that follows is moved by the offset, in quarter pixels. The
+// enable words precede it as they do the tags; nothing else about the
+// rectangles changes.
+void write_rect_align(uint8_t* rdram, int32_t offsetQ2) {
+    const uint32_t cursor = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)GMainGfxPos));
+    if (!valid_ram_address(cursor) || !snap_fx_tag_fits(rdram, cursor)) {
+        return;
+    }
+    const uint32_t offset = static_cast<uint32_t>(offsetQ2) & 0xFFFFu;
+    MEM_W(0x0, (gpr)(int32_t)cursor) = EnableWord0;
+    MEM_W(0x4, (gpr)(int32_t)cursor) = EnableWord1;
+    MEM_W(0x8, (gpr)(int32_t)cursor) = RectAlignWord0;
+    MEM_W(0xC, (gpr)(int32_t)cursor) = RectAlignWord1;
+    MEM_W(0x10, (gpr)(int32_t)cursor) = Param(offset, 16, 16);
+    MEM_W(0x14, (gpr)(int32_t)cursor) = Param(offset, 16, 16);
+    MEM_W(0, (gpr)(int32_t)GMainGfxPos) = static_cast<int32_t>(cursor + AlignBytes);
+}
+
+}
 }
 
 // Called from inside fx_draw, at the address where one particle's display-list
@@ -309,12 +379,24 @@ extern "C" void fx_draw(uint8_t* rdram, recomp_context* ctx) {
     // Each pass counts its own drawings, so an id names one rectangle.
     snap::g_particle_occurrence.clear();
 
+    // While the picture is widened, the pass's rectangles are moved back by
+    // the shift fx_draw's translate carries (FxShiftQ2), and the alignment is
+    // cleared again after the pass so nothing drawn later inherits it.
+    const bool wide = (snap::view_wide_q8() > 256u);
+    if (wide) {
+        snap::write_rect_align(rdram, -snap::FxShiftQ2);
+    }
+
     const bool counting = snapdiag::statsEnabled();
     const uint32_t before = counting
         ? static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)snap::GMainGfxPos))
         : 0u;
 
     __real_fx_draw(rdram, ctx);
+
+    if (wide) {
+        snap::write_rect_align(rdram, 0);
+    }
 
     const uint32_t cursor = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)snap::GMainGfxPos));
     if (counting && snap::valid_ram_address(before) && snap::valid_ram_address(cursor) &&

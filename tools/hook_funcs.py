@@ -161,6 +161,48 @@ INNER_HOOKS = [
     ('fx_draw', 0x800A5158, 'snap_fx_particle'),
 ]
 
+# Statements rewritten INSIDE a recompiled function, at a guest address.
+#
+# The generated C names the guest address of every instruction in a comment on
+# the line before its statement, so an instruction is an anchor the way a label
+# is. Each entry is (function, guest address, the statement as generated, its
+# replacement). Idempotent -- a file already carrying the replacement is left
+# alone -- and loud: if neither form follows the anchor, a regeneration has
+# changed the code and the rewrite would otherwise go silently missing.
+INSTRUCTION_PATCHES = [
+    # fx_draw's on-screen test: a particle whose projected x lies outside the
+    # console's picture, -1..1 in the projection's own units, is not drawn (the
+    # test at 0x800A4C8C rejects x below -1, the one at 0x800A4C9C above 1;
+    # y and depth keep their tests). Under Widescreen the picture is wider by
+    # the renderer's factor, which snap_fx_x_bound (src/fx_tags.cpp) returns
+    # as the bound to use -- 1.0 on every 4:3 screen, so the test is the
+    # cartridge's own there.
+    ('fx_draw', 0x800A4C8C,
+     'c1cs = ctx->f12.fl < ctx->f8.fl;',
+     'c1cs = ctx->f12.fl < -snap_fx_x_bound();'),
+    ('fx_draw', 0x800A4C9C,
+     'c1cs = ctx->f30.fl < ctx->f12.fl;',
+     'c1cs = snap_fx_x_bound() < ctx->f12.fl;'),
+    # The viewport's x translate, read once per camera pass and used for every
+    # particle's rectangle. The game draws each particle as a scissored
+    # rectangle, whose left edge is clamped to zero, so a particle left of the
+    # console's picture would be cut at that edge. While the picture is
+    # widened the translate is moved right by 128 pixels (snap_fx_x_translate)
+    # and the renderer moves every rectangle of the pass back by the same
+    # amount (the rectangle alignment src/fx_tags.cpp writes around the pass),
+    # so the clamp lands 128 pixels past the picture's own edge, outside any
+    # width the port draws.
+    ('fx_draw', 0x800A49DC,
+     'MEM_W(0X214, ctx->r29) = ctx->f8.u32l;',
+     'MEM_W(0X214, ctx->r29) = snap_fx_x_translate(ctx->f8.u32l);'),
+]
+
+# What the rewritten statements call; declared in funcs.h like the callbacks.
+PATCH_DECLS = [
+    'float snap_fx_x_bound(void);',
+    'uint32_t snap_fx_x_translate(uint32_t bits);',
+]
+
 
 def main() -> int:
     # Default: the port root's RecompiledFuncs, wherever this is run from.
@@ -251,9 +293,45 @@ def main() -> int:
         if decl not in header_text:
             header_text = decl + '\n' + header_text
 
+    # Instruction patches: the statement after an address comment, rewritten.
+    patched = 0
+    for func_name, address, old_stmt, new_stmt in INSTRUCTION_PATCHES:
+        anchor = '// 0x%08X:' % address
+        found = False
+        for path in sorted(root.glob('funcs_*.c')):
+            text = path.read_text(encoding='utf-8')
+            at = text.find(anchor)
+            if at < 0:
+                continue
+            assert text.count(anchor) == 1, (
+                f'{anchor} appears {text.count(anchor)} times in {path.name}')
+            # The statement follows within a few lines (the address comment,
+            # then the register checks the recompiler emits, then the statement).
+            window_end = text.find('\n    // 0x', at + 1)
+            window = text[at:window_end if window_end > 0 else at + 600]
+            if new_stmt in window:
+                found = True
+                break
+            assert old_stmt in window, (
+                f'instruction patch for {func_name} at {address:#010x}: the statement '
+                f'after {anchor} in {path.name} is neither the generated one nor the '
+                f'rewrite; the code has changed and the patch must be redone')
+            text = text[:at] + window.replace(old_stmt, new_stmt, 1) + text[at + len(window):]
+            path.write_text(text, encoding='utf-8', newline='')
+            patched += 1
+            found = True
+            break
+        assert found, (
+            f'instruction patch for {func_name} at {address:#010x}: no {anchor} in {root}')
+
+    for decl in PATCH_DECLS:
+        if decl not in header_text:
+            header_text = decl + '\n' + header_text
+
     header.write_text(header_text, encoding='utf-8', newline='')
     print(f'hooked {len(HOOKED)} functions across {renamed} file(s), '
-          f'{len(INNER_HOOKS)} inner hook(s), {inner} inserted')
+          f'{len(INNER_HOOKS)} inner hook(s), {inner} inserted, '
+          f'{len(INSTRUCTION_PATCHES)} instruction patch(es), {patched} rewritten')
     return 0
 
 

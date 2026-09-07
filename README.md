@@ -533,7 +533,7 @@ the defaults below are that file's.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `fullscreen` | `false` | not persisted across runs: every boot starts windowed, except that the Snap Station's own relaunches return in the state the print started in |
-| `widescreen` | `false` | RT64 Expand: a true 16:9 field of view, not a stretch, in a course; the title, the lab and the other 4:3 screens sit in black bars. Pokémon at the edges are kept by the culling patch, effect sprites are not ("Known limitations") |
+| `widescreen` | `false` | RT64 Expand: a true 16:9 field of view, not a stretch, in a course; the title, the lab and the other 4:3 screens sit in black bars. Pokémon and effect sprites at the edges are kept ("Known limitations") |
 | `msaa` | `0` | 0, 2, 4 or 8 |
 | `fps_mode` | `0` | 0 Original, 1 Display refresh, 2 Manual (`fps_manual_target`) |
 | `fps_manual_target` | `120` | |
@@ -725,10 +725,10 @@ fine.
   Pokémon vanishing at the edges of the wider picture, is fixed in 1.0.1:
   the game's own on-screen test projected each Pokémon at a fixed 4:3
   focal length against fixed pixel bounds, and a patch now widens the
-  horizontal bound by the factor the renderer applies. Effect sprites
-  (sparkles, splashes, smoke) have a test of their own and still pop at
-  the 4:3 edge. The rest of the game under Widescreen has not been
-  played through with the option on.
+  horizontal bound by the factor the renderer applies, and the effect
+  drawer's own test (sparkles, splashes, smoke, the leaves out of the
+  grass) is widened the same way. The rest of the game under Widescreen
+  has not been played through with the option on.
 * Some 2D content is drawn without a name the interpolation can pair
   (the photo panels, Oak's thumbnails and full-screen backgrounds while they
   slide during a transition) and steps at the game's rate when it moves;
@@ -762,9 +762,9 @@ In the order it will be worked on; nothing here is a promise until it runs.
    the same shape, so any button or trigger can stand for any N64 button,
    and a page to change them in the game comes after that. Asked for in
    [Discussions](https://github.com/JackandBeans/Snap64Recomp/discussions/3).
-3. **Widescreen beyond the Beach.** The missing Pokémon are fixed; the
-   other courses have not been played with the option on, and effect
-   sprites still pop at the 4:3 edge.
+3. **Widescreen beyond the Beach.** The missing Pokémon and effect
+   sprites are fixed; the other courses have not been played with the
+   option on.
 4. **Steam Deck.** The native Linux build compiles, packs, and has started
    and drawn the game on a Deck in desktop mode, where it takes the Deck's
    defaults (fullscreen at the panel, Steam's keyboard kept down). What

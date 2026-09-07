@@ -109,8 +109,13 @@
   on very wide pictures; a game-side patch widens that bound by exactly
   the factor the renderer applies (a mailbox word the port publishes each
   tick), and leaves the vertical bound and every 4:3 run untouched. Effect
-  sprites (sparkles, splashes) have a test of their own and still pop at
-  the 4:3 edge. Widescreen is still untested beyond the Beach.
+  sprites -- the leaves out of the tall grass, the sparkles, the splashes
+  -- have a test of their own inside the effect drawer, against the
+  console's picture in the projection's own units; it is widened by the
+  same factor, and the drawer's viewport is shifted for the pass, with the
+  renderer moving the rectangles back, so a particle left of the console's
+  picture is not clamped to its edge. Widescreen is still untested beyond
+  the Beach.
 * Widescreen widens the course and nothing else. The title, Oak's lab, the
   album, the reports and the credits are drawn for a 4:3 screen -- their
   art is 320 wide with nothing behind it -- and under Widescreen they went
