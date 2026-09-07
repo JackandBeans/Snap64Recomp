@@ -97,15 +97,20 @@
   now, the exit waits for one still in flight rather than dropping it, the
   Snap Station's relaunch brings the save to disk before it replaces its own
   process, and a save that cannot be read is never written over.
-* Widescreen no longer loses Pokémon at the edges. The game decides
-  whether a Pokémon is on screen by projecting its position at a fixed
-  4:3 focal length and rejecting it outside fixed pixel bounds, so a
-  wider picture kept culling at the old edge; a game-side patch now widens
-  the horizontal bound by exactly the factor the renderer applies (a
-  mailbox word the port publishes each tick), and leaves the vertical
-  bound and every 4:3 run untouched. Effect sprites (sparkles, splashes)
-  have a test of their own and still pop at the 4:3 edge. Widescreen is
-  still untested beyond the Beach.
+* Widescreen no longer loses Pokémon at the edges. Two things took them.
+  The renderer drops a pass whose triangles all landed outside the 4:3
+  viewport, measured before the projection is widened, and the game's
+  photo detector puts each Pokémon in a pass of its own, so a Pokémon
+  entirely in the widened margin was never drawn and popped out just past
+  the film counter's end; identified by mstan in pull request 5, and such
+  a pass is now kept (the RDRAM writeback it bounds is unchanged). And the
+  game decides whether a Pokémon is on screen by projecting its position
+  at a fixed 4:3 focal length against fixed pixel bounds, which only bites
+  on very wide pictures; a game-side patch widens that bound by exactly
+  the factor the renderer applies (a mailbox word the port publishes each
+  tick), and leaves the vertical bound and every 4:3 run untouched. Effect
+  sprites (sparkles, splashes) have a test of their own and still pop at
+  the 4:3 edge. Widescreen is still untested beyond the Beach.
 * Widescreen widens the course and nothing else. The title, Oak's lab, the
   album, the reports and the credits are drawn for a 4:3 screen -- their
   art is 320 wide with nothing behind it -- and under Widescreen they went
@@ -126,6 +131,12 @@
   frame of the ride until Oak's lab was up; its quad now follows the
   renderer's widening and the margins fade with the rest. Both from a
   Steam Deck screenshot.
+* A slit of the scene at the picture's right edge beside the viewfinder's
+  black bands, ten pixels wide at 2560x1440, is closed. The renderer snaps
+  a right-anchored rectangle's edge down to the native pixel grid and
+  takes the target's misalignment off it, which left the bands short of
+  the edge by an amount that depended on the resolution; an edge that
+  reached the picture's right edge now stays on it.
 * A stalled audio device cannot crash the game any more. When the device
   stops draining (a sink that never plays, a Bluetooth switch mid-stream,
   a machine back from sleep), the queue the game reads as its DAC backlog

@@ -4,6 +4,8 @@
 
 #include "rt64_workload_queue.h"
 
+#include <cstdlib>
+
 #include "common/rt64_thread.h"
 
 #include "rt64_present_queue.h"
@@ -564,11 +566,21 @@ namespace RT64 {
                 const auto &colorImg = fbPair.colorImage;
                 const auto &depthImg = fbPair.depthImage;
                 fixedResScale = workloadConfig.resolutionScale;
-                if (!fbPair.drawColorRect.isEmpty()) {
+                const FixedRect displayRect = fbPair.displayColorRect(workloadConfig.aspectRatioScale > 1.0f);
+                // Pokemon Snap port, diagnostic (SNAP_WIDE_DIAG): a pass the
+                // native rectangle would have dropped and the display one keeps.
+                {
+                    static const bool snapPassDiag = (getenv("SNAP_WIDE_DIAG") != nullptr);
+                    if (snapPassDiag && fbPair.drawColorRect.isEmpty() && !displayRect.isEmpty()) {
+                        fprintf(stdout, "[SNAP-PASS] pair %u kept: calls %u sc %d..%d x %d..%d\n", f, fbPair.gameCallCount,
+                            fbPair.scissorRect.ulx / 4, fbPair.scissorRect.lrx / 4, displayRect.ulx / 4, displayRect.lrx / 4);
+                    }
+                }
+                if (!displayRect.isEmpty()) {
                     colorFb = nullptr;
                     depthFb = nullptr;
                     nativeColorWidth = colorImg.width;
-                    nativeColorHeight = fbPair.drawColorRect.bottom(true);
+                    nativeColorHeight = displayRect.bottom(true);
 
                     // The height cannot be allowed to shrink to the geometry, because
                     // that height ends up clipping the geometry.
@@ -1170,7 +1182,7 @@ namespace RT64 {
                     for (int32_t f = workload.fbPairCount - 1; f >= 0; f--) {
                         const FramebufferPair &fbPair = workload.fbPairs[f];
                         bool interpolationCandidate = fbPair.earlyPresentCandidate();
-                        if (fbPair.drawColorRect.isEmpty()) {
+                        if (fbPair.displayColorRect(workloadConfig.aspectRatioScale > 1.0f).isEmpty()) {
                             continue;
                         }
 

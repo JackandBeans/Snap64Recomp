@@ -89,8 +89,22 @@ namespace RT64 {
             int32_t right = static_cast<int32_t>(std::ceil((computeOrigin(rightOrigin) + (rect.right(true) - computeOrigin(rightOrigin)) * aspectRatioScale) * resScale.x));
             int32_t top = lround(rect.top(true) * resScale.y);
             int32_t bottom = lround(rect.bottom(true) * resScale.y);
+            const int32_t rightUnaligned = right;
             left = correctMisalignment(left, leftOrigin);
             right = correctMisalignment(right, rightOrigin);
+
+            // Pokemon Snap port: the alignment above snaps a right-anchored
+            // edge down to the native pixel grid and takes the target's
+            // misalignment off it, so an edge the game put on the picture's
+            // right edge landed up to a native pixel short of it: a slit of
+            // the scene beside the viewfinder's black bands, ten pixels wide
+            // at 2560x1440. An edge that reached the target's right edge
+            // stays on it.
+            const int32_t rightEdge = int32_t(std::lround(fbWidth * resScale.x));
+            if ((rightOrigin == G_EX_ORIGIN_RIGHT) && (rightUnaligned >= rightEdge)) {
+                right = rightEdge;
+            }
+
             return RenderRect(left, top, right, bottom);
         }
         else {

@@ -60,5 +60,6 @@ namespace RT64 {
         int changeProjection(uint32_t transformsIndex, Projection::Type type);
         bool isEmpty() const;
         bool earlyPresentCandidate() const;
+        FixedRect displayColorRect(bool expandedView) const;
     };
 };
