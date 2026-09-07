@@ -10,6 +10,7 @@
 #include <atomic>
 #include <cstdio>
 #include <cstdint>
+#include <cstring>
 #include <string>
 #include <thread>
 #include <vector>
@@ -216,6 +217,12 @@ static void snap_confirm_quit() {
     }
 }
 
+void snap_show_deferred_message_boxes();
+
+// True only while frames are running, so a background thread knows whether
+// anything will come to show a dialog it defers (see error_message_box).
+static std::atomic<bool> s_defer_boxes{false};
+
 static void update_gfx(void* /*gfx_data*/) {
     // Publish SDL's real audio backlog where the game's patched AI_LEN read
     // (auThreadMain, vram 0x800219D8) now looks for it. Without this the game
@@ -267,6 +274,12 @@ static void update_gfx(void* /*gfx_data*/) {
     static bool escHeld = false;
     static bool escArmed = false;
     static std::chrono::steady_clock::time_point escDownAt;
+
+    // A frame is running, so there is something to empty the queue: from here
+    // a background thread may defer instead of forking. Anything it left is
+    // said now, on the thread SDL can safely fork from.
+    s_defer_boxes.store(true, std::memory_order_relaxed);
+    snap_show_deferred_message_boxes();
 
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -397,8 +410,64 @@ static void gfx_init_callback() {
 // ---------------------------------------------------------------------------
 // Error handling callback
 // ---------------------------------------------------------------------------
+// The thread that may raise a dialog. SDL's Linux message box forks -- X11
+// runs the whole dialog in the child without exec, Wayland forks zenity --
+// and a fork from a process with a dozen running threads can inherit a held
+// malloc lock and deadlock in the child, with the parent stuck in waitpid.
+// librecomp calls this from its saving thread on every failed write, so on
+// Linux a full disk could hang the exit forever. Off the main thread the
+// message is logged and queued, and the main loop shows it.
+//
+// Queueing is only safe while something is going to empty the queue. A fatal
+// error raised before the first frame -- no compatible graphics device, a ROM
+// that will not load -- reaches no main loop, and one raised after the last
+// frame reaches no more; both would be swallowed, leaving a window that closes
+// with no explanation at all. So the deferral applies strictly between the
+// first frame and the last, and outside that window the dialog is shown where
+// it stands. The fork hazard is a risk; losing a fatal message is a certainty.
+static SDL_threadID s_main_thread_id = 0;
+static std::mutex s_deferred_box_mutex;
+static std::vector<std::string> s_deferred_boxes;
+
+void snap_show_deferred_message_boxes() {
+    std::vector<std::string> pending;
+    {
+        std::lock_guard<std::mutex> lock(s_deferred_box_mutex);
+        pending.swap(s_deferred_boxes);
+    }
+    for (const std::string& msg : pending) {
+        if (sdl_window) {
+            SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, SNAP_PORT_NAME " - Error", msg.c_str(), sdl_window);
+        }
+    }
+}
+
 static void error_message_box(const char* msg) {
     fprintf(stderr, "[SNAP] ERROR: %s\n", msg);
+    fflush(stderr);
+    // Linux only. The hazard is SDL's fork-based message box there; Windows
+    // shows MessageBoxW straight from any thread and has done since 1.0.0, so
+    // deferring it there would only delay a dialog, or lose it if the game is
+    // already wedged, for no gain.
+#if defined(__linux__)
+    if ((s_main_thread_id != 0) && (SDL_ThreadID() != s_main_thread_id) &&
+        s_defer_boxes.load(std::memory_order_relaxed)) {
+        // Repeats say nothing new -- a failing save fails for a reason that
+        // belongs to the directory, not to the write -- so one box per
+        // distinct message per run is enough.
+        std::lock_guard<std::mutex> lock(s_deferred_box_mutex);
+        static std::vector<std::string> seen;
+        const std::string text(msg);
+        for (const std::string& had : seen) {
+            if (had == text) {
+                return;
+            }
+        }
+        seen.push_back(text);
+        s_deferred_boxes.push_back(text);
+        return;
+    }
+#endif
     if (sdl_window) {
         SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, SNAP_PORT_NAME " - Error", msg, sdl_window);
         return;
@@ -694,15 +763,42 @@ static void snap_bind_stdio() {
 // ends). A newcomer waits for the holder, as the Snap Station's relaunch
 // starts the next copy while this one is still quitting; a holder still up
 // after the wait is a real second copy.
-static bool snap_take_instance_lock() {
+static bool snap_take_instance_lock(std::string& note) {
     const std::filesystem::path lock = snap::base_path("snap64.lock");
-    const int fd = open(lock.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
+    int fd = open(lock.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
     if (fd < 0) {
         return true;   // nowhere to lock (a read-only directory): run anyway
     }
+    // open returns the lowest free descriptor, and a launcher can hand this
+    // process a closed stdout or stderr -- a .desktop entry, a systemd unit
+    // with StandardOutput=null. The lock would then be descriptor 1 or 2, and
+    // snap_bind_stdio's freopen a few lines later closes those, which releases
+    // the lock silently: two copies would run and race the save file. Move it
+    // out of the way first. From a terminal this never happens, which is why
+    // it cannot be found by running one.
+    if (fd <= STDERR_FILENO) {
+        const int moved = fcntl(fd, F_DUPFD_CLOEXEC, STDERR_FILENO + 1);
+        if (moved >= 0) {
+            close(fd);
+            fd = moved;
+        }
+    }
     const auto deadline = std::chrono::steady_clock::now() + std::chrono::seconds(25);
     while (flock(fd, LOCK_EX | LOCK_NB) != 0) {
-        if (errno != EWOULDBLOCK || std::chrono::steady_clock::now() >= deadline) {
+        const int err = errno;
+        // Only a real holder, or an interrupted lock call, is worth waiting
+        // for. Anything else -- ENOLCK from a CIFS or FUSE mount, EINVAL from
+        // an exotic filesystem -- means this directory cannot host the guard
+        // at all, which is the same situation as a lock file that will not
+        // open above: run without it rather than tell the player a second
+        // copy exists when none does.
+        if ((err != EWOULDBLOCK) && (err != EAGAIN) && (err != EINTR)) {
+            note = "[SNAP] cannot lock " + lock.string() + " (" + std::strerror(err) +
+                   "); continuing without the single-instance guard\n";
+            close(fd);
+            return true;
+        }
+        if (std::chrono::steady_clock::now() >= deadline) {
             close(fd);
             return false;
         }
@@ -717,12 +813,20 @@ int main(int argc, char* argv[]) {
     (void)argv;
 
 #if defined(__linux__)
-    if (!snap_take_instance_lock()) {
+    std::string lock_note;
+    if (!snap_take_instance_lock(lock_note)) {
         error_message_box("Snap64 Recomp is already running. Close the other window first.");
         return 0;
     }
     snap_bind_stdio();
+    if (!lock_note.empty()) {
+        // Said here rather than where it happened: before snap_bind_stdio
+        // there may be no stderr to say it on.
+        fputs(lock_note.c_str(), stdout);
+        fflush(stdout);
+    }
 #endif
+    s_main_thread_id = SDL_ThreadID();
 
 #if defined(_WIN32)
     // One copy at a time. A second launch from the same folder would race
@@ -896,6 +1000,12 @@ int main(int argc, char* argv[]) {
     if (snap::settings_dirty()) {
         snap::save_settings();
     }
+
+    // No more frames are coming, so nothing may be deferred from here on: a
+    // message raised during shutdown is shown where it stands. Whatever is
+    // still queued is said now, while the window exists to parent it.
+    s_defer_boxes.store(false, std::memory_order_relaxed);
+    snap_show_deferred_message_boxes();
 
     // Cleanup
     if (sdl_window) {
