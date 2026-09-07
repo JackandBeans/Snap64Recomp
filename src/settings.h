@@ -159,6 +159,11 @@ struct Settings {
     // The Rumble Pak's strength as a percentage; 0 switches it off. The
     // cartridge had one setting, on, so 100 is the faithful default.
     int   rumble_strength   = 100;
+    // How the pad's shoulders and triggers are read: 0 decides by the pad's
+    // name, 1 is the Xbox-style layout the defaults describe, 2 is a pad
+    // shaped like the N64's (the Switch Online N64 controller), whose L and
+    // R arrive as SDL's shoulders and whose Z arrives as the left trigger.
+    int   pad_layout        = 0;
     // Multiplies the angle per pixel: 1 is a full turn in about 2500
     // pixels, 2 twice as quick, 0.5 half. Bounded to 0.1 .. 10 where read.
     float mouse_sensitivity = 1.0f;

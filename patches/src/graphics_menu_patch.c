@@ -56,6 +56,19 @@ extern GObj* D_800E8358_A0F8E8;              /* Sound value pair */
 extern GObj* D_800E835C_A0F8EC;              /* Z Button value pair */
 extern GObj* D_800E8360_A0F8F0;              /* Control Stick value pair */
 
+/* The stick as the controller reports it, -80..80 each way, up positive.
+ * The pages used to move on the game's slow-stick bits, which fire at a
+ * small deflection in any direction: scrolling a page with a thumb that
+ * drifted a little sideways changed the row's value on the way. The pages
+ * read the stick themselves now: a dead band, the dominant axis only, an
+ * edge, and a slow repeat while it is held. */
+extern s8 gContInputStickX;
+extern s8 gContInputStickY;
+static s32 snap_nav_dir_v = 0;
+static s32 snap_nav_dir_h = 0;
+static s32 snap_nav_repeat_v = 0;
+static s32 snap_nav_repeat_h = 0;
+
 void func_800E71DC_A0E76C(void);
 void func_800E7408_A0E998(void);
 s8 func_800E7700_A0EC90(void);
@@ -879,6 +892,10 @@ static s32 snap_option_labels(void) {
  * label-and-<value> style, the help box explaining the controls. */
 static void snap_graphics_page(void) {
     UnkStruct800BEDF8* input;
+    s32 navUp;
+    s32 navDown;
+    s32 navLeft;
+    s32 navRight;
     GObj* hdrStrip;
     GObj* descStrip;
     s32 sel, i, moved, hiddenCount;
@@ -1045,7 +1062,61 @@ static void snap_graphics_page(void) {
             break;
         }
 
-        if (input->pressedButtons & STICK_SLOW_UP) {
+        {
+            s32 sx = gContInputStickX;
+            s32 sy = gContInputStickY;
+            s32 mx = (sx < 0) ? -sx : sx;
+            s32 my = (sy < 0) ? -sy : sy;
+            s32 dirV = 0;
+            s32 dirH = 0;
+            navUp = navDown = navLeft = navRight = 0;
+            if ((my >= 24) && (my >= mx)) {
+                dirV = (sy > 0) ? 1 : -1;
+            }
+            else if ((mx >= 40) && (mx > 2 * my)) {
+                dirH = (sx > 0) ? 1 : -1;
+            }
+            if (dirV != snap_nav_dir_v) {
+                snap_nav_dir_v = dirV;
+                snap_nav_repeat_v = 15;
+                if (dirV > 0) {
+                    navUp = 1;
+                }
+                else if (dirV < 0) {
+                    navDown = 1;
+                }
+            }
+            else if ((dirV != 0) && (--snap_nav_repeat_v <= 0)) {
+                snap_nav_repeat_v = 6;
+                if (dirV > 0) {
+                    navUp = 1;
+                }
+                else {
+                    navDown = 1;
+                }
+            }
+            if (dirH != snap_nav_dir_h) {
+                snap_nav_dir_h = dirH;
+                snap_nav_repeat_h = 20;
+                if (dirH > 0) {
+                    navRight = 1;
+                }
+                else if (dirH < 0) {
+                    navLeft = 1;
+                }
+            }
+            else if ((dirH != 0) && (--snap_nav_repeat_h <= 0)) {
+                snap_nav_repeat_h = 12;
+                if (dirH > 0) {
+                    navRight = 1;
+                }
+                else {
+                    navLeft = 1;
+                }
+            }
+        }
+
+        if (navUp) {
             snap_tint((GObj*) PAGE_LABEL(sel), 0xFF, 0xFF, 0xFF);
             sel = (sel == 0) ? (PAGE_ITEMS - 1) : (sel - 1);
             pulseState = 0;
@@ -1062,7 +1133,7 @@ static void snap_graphics_page(void) {
             snap_swap_strip(descStrip, snap_row_desc(sel));
             auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
         }
-        else if (input->pressedButtons & STICK_SLOW_DOWN) {
+        else if (navDown) {
             snap_tint((GObj*) PAGE_LABEL(sel), 0xFF, 0xFF, 0xFF);
             sel = (sel + 1) % PAGE_ITEMS;
             pulseState = 0;
@@ -1079,7 +1150,7 @@ static void snap_graphics_page(void) {
             snap_swap_strip(descStrip, snap_row_desc(sel));
             auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
         }
-        else if (input->pressedButtons & STICK_SLOW_RIGHT) {
+        else if (navRight) {
             field = snap_row_field(sel);
             v = MBOX_FIELD(field) + 1;
             if (v >= snap_value_count(sel)) {
@@ -1088,7 +1159,7 @@ static void snap_graphics_page(void) {
             MBOX_FIELD(field) = v;
             moved = 1;
         }
-        else if (input->pressedButtons & STICK_SLOW_LEFT) {
+        else if (navLeft) {
             field = snap_row_field(sel);
             v = MBOX_FIELD(field) - 1;
             if (v < 0) {
@@ -1548,6 +1619,10 @@ static s32 snap_snd_value_str(s32 row, s32 v) {
 
 static void snap_sound_page(void) {
     UnkStruct800BEDF8* input;
+    s32 navUp;
+    s32 navDown;
+    s32 navLeft;
+    s32 navRight;
     GObj* hdrStrip;
     GObj* descStrip;
     s32 sel, i, moved, hiddenCount;
@@ -1674,27 +1749,81 @@ static void snap_sound_page(void) {
             break;
         }
 
-        if (input->pressedButtons & STICK_SLOW_UP) {
+        {
+            s32 sx = gContInputStickX;
+            s32 sy = gContInputStickY;
+            s32 mx = (sx < 0) ? -sx : sx;
+            s32 my = (sy < 0) ? -sy : sy;
+            s32 dirV = 0;
+            s32 dirH = 0;
+            navUp = navDown = navLeft = navRight = 0;
+            if ((my >= 24) && (my >= mx)) {
+                dirV = (sy > 0) ? 1 : -1;
+            }
+            else if ((mx >= 40) && (mx > 2 * my)) {
+                dirH = (sx > 0) ? 1 : -1;
+            }
+            if (dirV != snap_nav_dir_v) {
+                snap_nav_dir_v = dirV;
+                snap_nav_repeat_v = 15;
+                if (dirV > 0) {
+                    navUp = 1;
+                }
+                else if (dirV < 0) {
+                    navDown = 1;
+                }
+            }
+            else if ((dirV != 0) && (--snap_nav_repeat_v <= 0)) {
+                snap_nav_repeat_v = 6;
+                if (dirV > 0) {
+                    navUp = 1;
+                }
+                else {
+                    navDown = 1;
+                }
+            }
+            if (dirH != snap_nav_dir_h) {
+                snap_nav_dir_h = dirH;
+                snap_nav_repeat_h = 20;
+                if (dirH > 0) {
+                    navRight = 1;
+                }
+                else if (dirH < 0) {
+                    navLeft = 1;
+                }
+            }
+            else if ((dirH != 0) && (--snap_nav_repeat_h <= 0)) {
+                snap_nav_repeat_h = 12;
+                if (dirH > 0) {
+                    navRight = 1;
+                }
+                else {
+                    navLeft = 1;
+                }
+            }
+        }
+
+        if (navUp) {
             snap_tint((GObj*) PAGE_LABEL(sel), 0xFF, 0xFF, 0xFF);
             sel = (sel == 0) ? 5 : (sel - 1);
             pulseState = 0;
             snap_swap_strip(descStrip, STR_SND_DESC + sel);
             auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
         }
-        else if (input->pressedButtons & STICK_SLOW_DOWN) {
+        else if (navDown) {
             snap_tint((GObj*) PAGE_LABEL(sel), 0xFF, 0xFF, 0xFF);
             sel = (sel + 1) % 6;
             pulseState = 0;
             snap_swap_strip(descStrip, STR_SND_DESC + sel);
             auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
         }
-        else if (input->pressedButtons & STICK_SLOW_RIGHT) {
+        else if (navRight) {
             v = (sel < 4) ? (SND_FIELD(sel) / 10) : SND_FIELD(sel);
             v = (v + 1) % snap_snd_value_count(sel);
             SND_FIELD(sel) = (sel < 4) ? (v * 10) : v;
             moved = 1;
         }
-        else if (input->pressedButtons & STICK_SLOW_LEFT) {
+        else if (navLeft) {
             v = (sel < 4) ? (SND_FIELD(sel) / 10) : SND_FIELD(sel);
             v = (v == 0) ? (snap_snd_value_count(sel) - 1) : (v - 1);
             SND_FIELD(sel) = (sel < 4) ? (v * 10) : v;
@@ -1880,6 +2009,10 @@ static void snap_ctl_set(s32 row, s32 v) {
 
 static void snap_controls_page(void) {
     UnkStruct800BEDF8* input;
+    s32 navUp;
+    s32 navDown;
+    s32 navLeft;
+    s32 navRight;
     GObj* hdrStrip;
     GObj* descStrip;
     s32 sel, i, moved, hiddenCount;
@@ -2005,7 +2138,61 @@ static void snap_controls_page(void) {
             break;
         }
 
-        if (input->pressedButtons & STICK_SLOW_UP) {
+        {
+            s32 sx = gContInputStickX;
+            s32 sy = gContInputStickY;
+            s32 mx = (sx < 0) ? -sx : sx;
+            s32 my = (sy < 0) ? -sy : sy;
+            s32 dirV = 0;
+            s32 dirH = 0;
+            navUp = navDown = navLeft = navRight = 0;
+            if ((my >= 24) && (my >= mx)) {
+                dirV = (sy > 0) ? 1 : -1;
+            }
+            else if ((mx >= 40) && (mx > 2 * my)) {
+                dirH = (sx > 0) ? 1 : -1;
+            }
+            if (dirV != snap_nav_dir_v) {
+                snap_nav_dir_v = dirV;
+                snap_nav_repeat_v = 15;
+                if (dirV > 0) {
+                    navUp = 1;
+                }
+                else if (dirV < 0) {
+                    navDown = 1;
+                }
+            }
+            else if ((dirV != 0) && (--snap_nav_repeat_v <= 0)) {
+                snap_nav_repeat_v = 6;
+                if (dirV > 0) {
+                    navUp = 1;
+                }
+                else {
+                    navDown = 1;
+                }
+            }
+            if (dirH != snap_nav_dir_h) {
+                snap_nav_dir_h = dirH;
+                snap_nav_repeat_h = 20;
+                if (dirH > 0) {
+                    navRight = 1;
+                }
+                else if (dirH < 0) {
+                    navLeft = 1;
+                }
+            }
+            else if ((dirH != 0) && (--snap_nav_repeat_h <= 0)) {
+                snap_nav_repeat_h = 12;
+                if (dirH > 0) {
+                    navRight = 1;
+                }
+                else {
+                    navLeft = 1;
+                }
+            }
+        }
+
+        if (navUp) {
             snap_tint((GObj*) PAGE_LABEL(sel), 0xFF, 0xFF, 0xFF);
             sel = (sel == 0) ? (CTL_ROWS - 1) : (sel - 1);
             pulseState = 0;
@@ -2021,7 +2208,7 @@ static void snap_controls_page(void) {
             snap_swap_strip(descStrip, snap_ctl_desc_str(sel));
             auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
         }
-        else if (input->pressedButtons & STICK_SLOW_DOWN) {
+        else if (navDown) {
             snap_tint((GObj*) PAGE_LABEL(sel), 0xFF, 0xFF, 0xFF);
             sel = (sel + 1) % CTL_ROWS;
             pulseState = 0;
@@ -2037,7 +2224,7 @@ static void snap_controls_page(void) {
             snap_swap_strip(descStrip, snap_ctl_desc_str(sel));
             auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
         }
-        else if (input->pressedButtons & STICK_SLOW_RIGHT) {
+        else if (navRight) {
             v = snap_ctl_get(sel) + 1;
             if (v >= snap_ctl_value_count(sel)) {
                 v = 0;
@@ -2045,7 +2232,7 @@ static void snap_controls_page(void) {
             snap_ctl_set(sel, v);
             moved = 1;
         }
-        else if (input->pressedButtons & STICK_SLOW_LEFT) {
+        else if (navLeft) {
             v = snap_ctl_get(sel) - 1;
             if (v < 0) {
                 v = snap_ctl_value_count(sel) - 1;

@@ -53,7 +53,7 @@ The key on the left, the N64 control it stands for on the right.
     Left Shift     Z, zoom in
     Q and E        L and R
     I J K L        the C buttons
-    Arrow keys     the D-pad
+    Arrow keys     the D-pad (which also moves the stick in menus)
     Return         Start
     Esc            pause menu; hold it for a second to quit
     F11            fullscreen
@@ -66,7 +66,8 @@ The key on the left, the N64 control it stands for on the right.
                    is Z, the middle button is B, the wheel is C-Up and C-Down.
 
 A gamepad works as soon as it is plugged in: Xbox, PlayStation, Switch Pro,
-the Steam Deck's own controls, and most third-party pads. Rumble works where
+the Switch Online N64 controller, the Steam Deck's own controls, and most
+third-party pads. The D-pad walks the menus as the stick does. Rumble works where
 the pad has it, and "rumble_strength" in snapsettings.json turns it down or
 off. If yours does nothing, snap64.log will name it, and dropping the
 community's gamecontrollerdb.txt next to Snap64Recomp will teach the port

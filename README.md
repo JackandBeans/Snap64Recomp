@@ -300,7 +300,11 @@ what is sold: Xbox pads (360, One, Series) over USB or Bluetooth, PlayStation
 controls, the Steam Controller, and a long tail of third-party pads. Rumble
 works where the pad has it, and the game is told a Rumble Pak is present while
 a pad is attached. Gyro aim needs a pad with a motion sensor: DualShock 4,
-DualSense, Switch Pro, and the Steam Deck.
+DualSense, Switch Pro, and the Steam Deck. A pad shaped like the N64's -- the
+Switch Online N64 controller, over Bluetooth or USB -- is recognised by its
+name, and its L, R and Z are L, R and Z, its C buttons the C buttons; the
+`pad_layout` key forces either layout. The D-pad walks every menu as the
+stick does, since the cartridge never reads it.
 
 The first pad SDL recognises is the one used. A pad SDL has *no* mapping for
 is named in the log at start-up (`[SNAP-Input] joystick ... has no game
@@ -549,6 +553,7 @@ the defaults below are that file's.
 | `interpolate_camera` | `true` | interpolate the view as well as objects (F4; no row on the Graphics page) |
 | `snap_station` | `false` | keep the Snap Station on port 4 from the title menu on, every start (see "The Snap Station") |
 | `rumble_strength` | `100` | the Rumble Pak's strength, 0 to 100; `0` switches rumble off |
+| `pad_layout` | `0` | how a pad's shoulders and triggers are read: `0` decides by the pad's name, `1` the Xbox-style layout the defaults describe, `2` an N64-shaped pad (the Switch Online N64 controller), whose L, R and Z are L, R and Z |
 | `mouse_aim` | `true` | the mouse aims while a course runs and the window has focus ("Controls"); its buttons work whenever the window has focus, through `keys` |
 | `mouse_sensitivity` | `1.0` | angle per pixel of mouse: 1 is a full turn in about 2500 pixels, 2 twice as quick, 0.5 half; 0.1 to 10 |
 | `mouse_invert_y` | `false` | mouse forward, or the pad's front rising, tilts the view down (Camera Tilt: Reverse) |

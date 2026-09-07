@@ -137,6 +137,7 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         s.snap_station       = j.value("snap_station", s.snap_station);
         s.mouse_aim          = j.value("mouse_aim", s.mouse_aim);
         s.rumble_strength    = std::clamp(j.value("rumble_strength", s.rumble_strength), 0, 100);
+        s.pad_layout         = std::clamp(j.value("pad_layout", s.pad_layout), 0, 2);
         s.mouse_sensitivity  = std::clamp(j.value("mouse_sensitivity", s.mouse_sensitivity), 0.1f, 10.0f);
         s.mouse_invert_y     = j.value("mouse_invert_y", s.mouse_invert_y);
         s.mouse_zoom_speed   = std::clamp(j.value("mouse_zoom_speed", s.mouse_zoom_speed), 0.25f, 1.0f);
@@ -166,7 +167,7 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         // upgraded file gains the new keys (and keys_help) on the next flush
         // rather than staying silent about them.
         s_fields_missing = !j.contains("gyro_aim") || !j.contains("rumble_strength") ||
-                           !j.contains("keys_help");
+                           !j.contains("keys_help") || !j.contains("pad_layout");
         out = s;
         return SettingsRead::Ok;
     } catch (const std::exception& e) {
@@ -334,6 +335,7 @@ bool save_settings() {
         {"snap_station",          copy.snap_station},
         {"mouse_aim",             copy.mouse_aim},
         {"rumble_strength",       copy.rumble_strength},
+        {"pad_layout",            copy.pad_layout},
         {"mouse_sensitivity",     copy.mouse_sensitivity},
         {"mouse_invert_y",        copy.mouse_invert_y},
         {"mouse_zoom_speed",      copy.mouse_zoom_speed},

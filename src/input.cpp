@@ -126,6 +126,50 @@ const uint16_t kInputBits[IN_CR + 1] = {
 
 enum class SourceKind : uint8_t { Key, MouseButton, WheelUp, WheelDown, PadButton, PadAxis };
 
+// The pad's layout. The defaults name SDL's Xbox-style parts: the left
+// shoulder is Z, the triggers are L and R. A pad shaped like the N64's --
+// the Switch Online N64 controller, which SDL calls "Nintendo N64
+// Controller" -- reports its L and R as the shoulders and its Z as the left
+// trigger, so under the defaults its L acted as Z, its Z as L and its R as
+// nothing. Under this layout shoulders and triggers change roles, and every
+// binding that names one reads the other; the C buttons already arrive as
+// the right stick, which the port has always read as C. Chosen at the
+// pad's opening from its name, or by pad_layout in the settings file.
+static bool g_pad_layout_n64 = false;
+
+static bool pad_button_held(int code) {
+    if (game_controller == nullptr) {
+        return false;
+    }
+    if (g_pad_layout_n64) {
+        if (code == SDL_CONTROLLER_BUTTON_LEFTSHOULDER) {
+            return SDL_GameControllerGetAxis(game_controller, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 8000;
+        }
+        if (code == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) {
+            return SDL_GameControllerGetAxis(game_controller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 8000;
+        }
+    }
+    return SDL_GameControllerGetButton(game_controller, SDL_GameControllerButton(code)) != 0;
+}
+
+static bool pad_axis_held(int code) {
+    if (game_controller == nullptr) {
+        return false;
+    }
+    if (g_pad_layout_n64) {
+        if (code == SDL_CONTROLLER_AXIS_TRIGGERLEFT) {
+            return SDL_GameControllerGetButton(game_controller, SDL_CONTROLLER_BUTTON_LEFTSHOULDER) != 0;
+        }
+        if (code == SDL_CONTROLLER_AXIS_TRIGGERRIGHT) {
+            return SDL_GameControllerGetButton(game_controller, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) != 0;
+        }
+    }
+    // A trigger counts as held past the same eighth of its travel the
+    // hardcoded mapping used. A stick axis bound to a button behaves the
+    // same way, in its positive direction.
+    return SDL_GameControllerGetAxis(game_controller, SDL_GameControllerAxis(code)) > 8000;
+}
+
 struct Source {
     SourceKind kind;
     int code;   // SDL_Scancode, the SDL mouse button index, or the pad's
@@ -407,16 +451,9 @@ bool source_down(const Source& src, const uint8_t* keys, uint32_t held, int64_t 
         case SourceKind::WheelDown:
             return t < g_wheel_down_until.load(std::memory_order_relaxed);
         case SourceKind::PadButton:
-            return (game_controller != nullptr) &&
-                   (SDL_GameControllerGetButton(game_controller,
-                                                SDL_GameControllerButton(src.code)) != 0);
+            return pad_button_held(src.code);
         case SourceKind::PadAxis:
-            // A trigger counts as held past the same eighth of its travel the
-            // hardcoded mapping used. A stick axis bound to a button behaves
-            // the same way, in its positive direction.
-            return (game_controller != nullptr) &&
-                   (SDL_GameControllerGetAxis(game_controller,
-                                              SDL_GameControllerAxis(src.code)) > 8000);
+            return pad_axis_held(src.code);
     }
     return false;
 }
@@ -828,6 +865,28 @@ static void try_open_controller() {
                 printf("[SNAP-Input] Opened game controller: %s (gyro: %s%s%s)\n",
                        SDL_GameControllerName(game_controller), gyro ? "yes" : "none",
                        path ? ", " : "", path ? path : "");
+
+                // The layout: by name unless the settings file decides.
+                {
+                    const int layout = settings().pad_layout;
+                    const char* name = SDL_GameControllerName(game_controller);
+                    bool n64 = false;
+                    if (layout == 2) {
+                        n64 = true;
+                    }
+                    else if (layout == 0) {
+                        for (const char* p = name; (p != nullptr) && (*p != '\0'); p++) {
+                            if (SDL_strncasecmp(p, "N64", 3) == 0) {
+                                n64 = true;
+                                break;
+                            }
+                        }
+                    }
+                    g_pad_layout_n64 = n64;
+                    printf("[SNAP-Input] pad layout: %s%s\n",
+                           n64 ? "N64-shaped (its L and R are L and R, its Z is Z)" : "standard (the left shoulder is Z, the triggers are L and R)",
+                           (layout == 0) ? ", from the pad's name" : ", from pad_layout");
+                }
                 break;
             }
         }
@@ -1390,6 +1449,26 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
             const float rescale = std::fmin(scaled, 1.0f) / rawMagnitude;
             ax = gc_x * rescale;
             ay = gc_y * rescale;
+        }
+    }
+
+    // The D-pad moves the stick as well, while the stick itself is at rest.
+    // The cartridge never reads the D-pad -- only its crash screen does --
+    // so every menu answers to the stick alone, and a player with a pad in
+    // hand expects the D-pad to walk the lab, the title and the Options
+    // pages. Whatever is bound to the D-pad counts, the arrow keys included;
+    // the D-pad's own bits still go to the game, which ignores them. In a
+    // course this turns the view at full deflection, as W A S D do.
+    if ((std::fabs(ax) < 0.15f) && (std::fabs(ay) < 0.15f)) {
+        float dx = 0.0f;
+        float dy = 0.0f;
+        if (btn & N64_BTN_DU) dy += 1.0f;
+        if (btn & N64_BTN_DD) dy -= 1.0f;
+        if (btn & N64_BTN_DL) dx -= 1.0f;
+        if (btn & N64_BTN_DR) dx += 1.0f;
+        if ((dx != 0.0f) || (dy != 0.0f)) {
+            ax = dx;
+            ay = dy;
         }
     }
 

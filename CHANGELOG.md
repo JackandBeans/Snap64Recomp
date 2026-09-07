@@ -136,6 +136,23 @@
   frame of the ride until Oak's lab was up; its quad now follows the
   renderer's widening and the margins fade with the rest. Both from a
   Steam Deck screenshot.
+* The D-pad walks the menus. The cartridge never reads the D-pad -- only
+  its crash screen does -- so the lab, the title and every other menu
+  answered to the stick alone; the D-pad, and the arrow keys bound to it,
+  now move the stick as well while the stick is at rest. Asked for on
+  Reddit.
+* The Switch Online N64 controller's buttons land where they belong. SDL
+  reports that pad's L and R as the shoulders and its Z as the left
+  trigger, the reverse of the port's Xbox-style defaults, so its L acted as
+  Z, its Z as L and its R as nothing. A pad whose name says N64 has
+  shoulders and triggers change roles; `pad_layout` in the settings file
+  forces either layout. Its C buttons arrive as the right stick, which the
+  port has always read as C. Reported on Reddit.
+* The Options pages no longer change a value on a sideways drift of the
+  stick while scrolling. They moved on the game's slow-stick bits, which
+  fire at a small deflection in any direction; they read the stick
+  themselves now, with a dead band, the dominant axis only, an edge, and a
+  slow repeat while it is held. Reported on Reddit.
 * A slit of the scene at the picture's right edge beside the viewfinder's
   black bands, ten pixels wide at 2560x1440, is closed. The renderer snaps
   a right-anchored rectangle's edge down to the native pixel grid and
