@@ -582,12 +582,15 @@ documentation.
 
 ## Linux and Steam Deck
 
-The release page is Windows. Two other ways exist: the Windows build
-through Proton, which players ran on the day of the release, and a native
-Linux build, which compiles and packs but has not yet been run on a Linux
-desktop or a Steam Deck by me. Both are described here as they stand on
-2026-09-06; the Deck instructions follow what the other N64
-recompilations' players do, and every "untested" below means exactly that.
+The release page carries the Windows build and, from 1.0.1, a native Linux
+build marked experimental. Two ways onto a Deck exist: the Windows build
+through Proton, which players ran on the day of the 1.0.0 release, and the
+native build, which has been played on a Steam Deck in Desktop Mode by me
+on 2026-09-06 -- the menus, the Beach, gyro aim and the settings all as on
+Windows, with one known blemish noted below. Both are described here as
+they stand on that date; the Gaming Mode instructions follow what the other
+N64 recompilations' players do, and every "untested" below means exactly
+that.
 
 ### The Windows build through Proton
 
@@ -620,13 +623,16 @@ whether this port does is unmeasured.
 
 ### The native Linux build
 
-The same source builds on Linux with GCC, rendering through Vulkan, and
-packs as `Snap64Recomp-<version>-linux-x86_64.tar.gz`
+The same source builds on Linux with Clang or GCC, rendering through
+Vulkan, and packs as `Snap64Recomp-<version>-linux-x86_64.tar.gz`
 ([BUILDING, step 14](BUILDING.md#14-linux-build-experimental)). It has
-played the Beach replay and drawn correct frames on a software Vulkan
-device under WSL, and has not run on real Linux hardware; it will be on
-the release page once it has. Until then, anyone who builds it uses it
-like this:
+played the Beach replay under WSL and, on 2026-09-06, a Steam Deck in
+Desktop Mode. One blemish is known there and not yet understood: at the
+start of the Beach, when the tutorial asks for Z and the camera is raised
+and lowered, something flickers in the top-left corner for a moment and is
+gone. It does not happen on Windows, so it lies in the Vulkan side of the
+renderer or the Deck's driver, and it is on the list. No Linux desktop has
+run the build yet. It is used like this:
 
 1. Unpack the tarball under your home folder and put `pokemonsnap.z64`
    beside `Snap64Recomp`. That folder is where everything lives, as on
@@ -635,10 +641,13 @@ like this:
    `$XDG_CONFIG_HOME/Snap64Recomp`) and the ROM is looked for there; the
    log's first line names the folder in use, and `SNAP_DATA_DIR` in the
    environment names one outright.
-2. On a Deck, in Desktop Mode, right-click `Snap64Recomp` and choose
-   **Add to Steam**, then launch it from Gaming Mode. The port boots
-   fullscreen on a Deck (F11 or the maximize button leaves it); on any
-   other Linux machine it boots windowed, as on Windows.
+2. On a Deck, run it from Desktop Mode, which is where it has been
+   tested; or right-click `Snap64Recomp`, choose **Add to Steam**, and
+   launch it from Gaming Mode, which is untested and where Steam offers
+   the game only its own virtual pad, so gyro aim has to come from Steam's
+   layout ("Controls" above). The port boots fullscreen on a Deck (F11 or
+   the maximize button leaves it); on any other Linux machine it boots
+   windowed, as on Windows.
 
 It needs the system's SDL2 (2.26 or newer), GTK 3 and a Vulkan driver,
 and a glibc no older than the one it was built against (2.39; SteamOS 3.8
