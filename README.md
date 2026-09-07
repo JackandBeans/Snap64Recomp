@@ -193,7 +193,7 @@ Everything is in the folder with the executable.
 | `snapsettings.json`, `snapsettings.json.bak` | settings, written by the in-game Graphics and Sound pages and by the hotkeys |
 | `saves/pokemonsnap.bin`, `saves/pokemonsnap.bin.bak` | the game's save data, one file (a raw image of the cartridge's save memory) |
 | `photos/` | the photos you save with P or the controller's Back button (see "Photos"); created on the first save |
-| `cache/` | RT64's compiled shaders, the driver's pipeline cache and the seen-shader list; safe to delete, the next start is slower |
+| `cache/` | RT64's compiled shaders and the driver's pipeline cache, built on your machine, and `rt64-seen-shaders.bin`, the list of every shader the game is known to ask for -- shipped with 623 entries from a full playthrough, so the first start compiles them all during the boot logos rather than the first time each appears in play; the game adds any it meets that are not on it. Safe to delete; the next start is slower |
 | `snap64.log`, `snap64.prev.log` | the log of this run and of the one before it, written when the port was not started from a terminal |
 | `mods/`, `mod_config/` | the runtime's mod folders; the loader runs at every start, no mod ships with this release, and there is no in-game mod manager (see "Mods and texture packs") |
 | `texture_packs/` | HD texture packs you install yourself, scanned once at start-up; created empty, none ships with this port (see "Mods and texture packs") |
@@ -424,14 +424,16 @@ on screen. The code is `src/photo_export.cpp`.
 ### The Snap Station
 
 The port emulates the Pokémon Snap Station's printer on controller port 4.
-The station was the Blockbuster Video kiosk of 1999 (Lawson stores in Japan)
-that printed a player's photos as a sheet of sixteen stickers; inside it a
-Nintendo 64 with the Expansion Pak ran the ordinary retail cartridge, and the
-printer sat on controller port 4, where the game speaks to it as if it were a
-Controller Pak. Every retail cartridge carries the code, and the protocol was
-recovered without a station by James Chambers in 2021 and matches the
-decompilation line for line. The kiosk's own story (the cards, the prices,
-how many were built) is under [The game, and its history](#the-game-and-its-history).
+The station was the kiosk of 1999 and 2000 -- in Blockbuster Video stores in
+North America, Lawson convenience stores in Japan, and Myer department
+stores in Australia -- that printed a player's photos as a sheet of sixteen
+stickers; inside it a Nintendo 64 with the Expansion Pak ran the ordinary
+retail cartridge, and the printer sat on controller port 4, where the game
+speaks to it as if it were a Controller Pak. Every retail cartridge carries
+the code, and the protocol was recovered without a station by James Chambers
+in 2021 and matches the decompilation line for line. The kiosk's own story
+(the cards, the prices, how many were built) is under
+[The game, and its history](#the-game-and-its-history).
 
 It is reached from the title screen. Once the saved report holds more than
 three species, the game adds its Gallery entry to the title menu, and the
@@ -863,20 +865,24 @@ that year, and took the Interactive Achievement Award for console children's
 and family title of the year.
 
 Two things about the original release shaped this port. The first was the
-kiosk. In 1999 Nintendo put Pokémon Snap Station kiosks into Blockbuster Video
-stores in the United States (the deal was announced in May 1999) and Lawson
-convenience stores in Japan: a Nintendo 64 in a blue cabinet with a slot for
-the player's own cartridge, a sticker printer on controller port 4, and a card
-reader. A player bought print credit on one of five Pokémon smart cards
-(Bulbasaur, Charmander, Squirtle, Pikachu and Jigglypuff), brought a save in,
-and left with a sheet of sixteen postage-stamp stickers of their own photos,
-for three dollars or 300 yen; Blockbuster ran a "Take Your Best Shot" contest
-around them. About 4,500 units were built, by the Arcade Museum's count; most
-were later converted into demo units for other games or recalled, and a
-working one is a rarity. The cartridge's code for the printer was recovered
-without a station by James Chambers in 2021, from the ROM, a debugger and a
-controller-bus tool of his own, and it matches the decompilation; the port
-emulates the device ("The Snap Station" above).
+kiosk. In 1999 Nintendo put Pokémon Snap Station kiosks into Blockbuster
+Video stores across North America (the deal was announced in May 1999 and
+the stations were in stores by November), Lawson convenience stores in
+Japan, and Myer department stores in Australia (Toys "R" Us there too, by
+one account), and the promotion ran until late 2000. Each was a Nintendo 64
+in a blue child-height cabinet with a slot for the player's own cartridge, a
+Canon photo printer on controller port 4, and a Gemco card reader. A player
+bought print credit on one of five Pokémon smart cards (Bulbasaur,
+Charmander, Squirtle, Pikachu and Jigglypuff), brought a save in, and left
+with a sheet of sixteen postage-stamp stickers of their own photos, for
+three dollars or 300 yen; Blockbuster ran a "Take Your Best Shot" contest
+around them. About 4,500 units were built, by the Arcade Museum's count;
+when the promotion ended most were scrapped or turned into demo units for
+other games, Nintendo recalled some, and a working one is a rarity. The
+cartridge's code for the printer was recovered without a station by James
+Chambers in 2021, from the ROM, a debugger and a controller-bus tool of his
+own, and it matches the decompilation; the port emulates the device ("The
+Snap Station" above).
 
 The second was the re-release. When Nintendo brought the game to the Wii's
 Virtual Console in December 2007 (Wii U in 2016 and 2017, Nintendo Switch
@@ -906,8 +912,16 @@ Sources:
 * [Bulbapedia](https://bulbapedia.bulbagarden.net/wiki/Pok%C3%A9mon_Snap),
   for the kiosk's cards and prices.
 * [Serebii, Virtual Console changes](https://www.serebii.net/snap/virtualconsole.shtml).
+* [Museum of the Game, "Pokemon Snap Station"](https://www.arcade-museum.com/Vending/pokemon-snap-station),
+  for the unit count, the Gemco reader and Canon printer, the run to late
+  2000, and what became of the units.
+* [Nintendo Wiki, "Pokémon Snap Station"](https://nintendo.fandom.com/wiki/Pok%C3%A9mon_Snap_Station),
+  for Toys "R" Us in Australia, which no other source read names.
+* [Den of Geek, "How Pokemon Snap Stations Defined the Original N64 Game's Legacy"](https://www.denofgeek.com/games/pokemon-snap-original-n64-blockbuster/),
+  for the November 1999 rollout and for Myer in Australia; Myer's own kiosk
+  cards still turn up for sale, which is the corroboration.
 * [TheGamer, "I Almost Bought A Pokemon Snap Station (Twice)"](https://www.thegamer.com/nintendo-pokemon-snap-station/)
-  (2021), for the Arcade Museum's count.
+  (2021).
 * [jamchamb, "Reversing the Pokémon Snap Station without a Snap Station"](https://jamchamb.net/2021/08/17/snap-station.html)
   (2021).
 
