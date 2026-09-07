@@ -405,18 +405,26 @@ if (WIN32)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/menu_text/recomp_logo.png"
             "$<TARGET_FILE_DIR:Snap64Recomp>/menu_text/recomp_logo.png"
-        COMMENT "Placing the runtime DLLs and menu_text/ next to Snap64Recomp.exe"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:Snap64Recomp>/cache"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/shaders/rt64-seen-shaders.bin"
+            "$<TARGET_FILE_DIR:Snap64Recomp>/cache/rt64-seen-shaders.bin"
+        COMMENT "Placing the runtime DLLs, menu_text/ and the seen-shader list next to Snap64Recomp.exe"
         VERBATIM)
 else()
     # Linux: no runtime libraries of the port's own (SDL2 is the system's and
     # RT64 specialises its Vulkan shaders with re-spirv, needing no compiler
-    # at run time); only the badge.
+    # at run time); the badge and the seen-shader list.
     add_custom_command(TARGET Snap64Recomp POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:Snap64Recomp>/menu_text"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/menu_text/recomp_logo.png"
             "$<TARGET_FILE_DIR:Snap64Recomp>/menu_text/recomp_logo.png"
-        COMMENT "Placing menu_text/ next to Snap64Recomp"
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:Snap64Recomp>/cache"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/shaders/rt64-seen-shaders.bin"
+            "$<TARGET_FILE_DIR:Snap64Recomp>/cache/rt64-seen-shaders.bin"
+        COMMENT "Placing menu_text/ and the seen-shader list next to Snap64Recomp"
         VERBATIM)
 endif()
 
@@ -445,6 +453,14 @@ if (WIN32)
     install(FILES "${SNAP_MAP_FILTERED}" DESTINATION . OPTIONAL)
 endif()
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/menu_text/recomp_logo.png" DESTINATION menu_text)
+# The list of every shader the game is known to ask for -- 623 raw packed
+# ShaderDescriptions from a full playthrough, no compiled code, valid on both
+# backends. RT64 warms the whole list during the boot logos on idle threads
+# (rt64_application.cpp, openSeenList), so a course's first frame never pays
+# for pipeline creation; without a shipped list every machine started cold,
+# which under Proton was a slowdown in the later courses. RT64 appends any
+# shader it meets that is not on the list.
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/shaders/rt64-seen-shaders.bin" DESTINATION cache)
 # The two folders players are told about (README "Mods and texture packs")
 # exist in a fresh unpack, each with the note that says what it is for and
 # that nothing ships in it.

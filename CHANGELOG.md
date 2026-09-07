@@ -2,6 +2,15 @@
 
 ## 1.0.1 -- unreleased
 
+* Every shader the game is known to ask for is compiled during the boot
+  logos, on idle threads, instead of the first time it appears in play. The
+  port always had the machinery -- it records each shader it meets in
+  `cache/rt64-seen-shaders.bin` and warms the list at the next start -- but
+  it shipped no list, so every machine started cold and met each course's
+  shaders as a stall on their first frame, which under Proton is the
+  slowdown a player reported in the later courses. The archive carries a
+  623-entry list from a full playthrough now; a shader not on it is still
+  compiled when met, and added.
 * Rumble lasted a tenth of a second. The Rumble Pak is on or off -- the game
   runs the motor with `osMotorStart` and stops it with `osMotorStop`, and
   nothing re-triggers in between -- but the port asked SDL for a hundred
