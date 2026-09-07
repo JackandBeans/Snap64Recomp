@@ -1,8 +1,9 @@
 # Screenshots
 
-All nineteen, in the order a session meets them. Every one was taken from the
-1.0.0 build at 1440p with Render Scale and Anti-Aliasing both at 8x on the
-game's Graphics page, then cropped to the game's picture. They are frames of
+All twenty-one, in the order a session meets them. Every one was taken from
+the 1.0.0 build, or the 1.0.1 build where it says so, at 1440p with Render
+Scale and Anti-Aliasing both at 8x on the game's Graphics page, then cropped
+to the game's picture. They are frames of
 Pokémon Snap as the port renders it, and the game is Nintendo's, Creatures',
 GAME FREAK's and HAL Laboratory's (`NOTICE.md`); the README shows eight of
 them.
@@ -21,6 +22,11 @@ under it, the copyright block, and the port's credits line
 **Snap Station**, the fifth entry, is the port's, drawn in the title's own
 lettering. Like the Gallery entry above it, it is shown once the saved
 report holds more than three species.
+
+<a href="screenshots/01b-title-101.png"><img src="screenshots/01b-title-101.png" width="640" alt="The title screen, 1.0.1"></a>
+
+**The title screen, 1.0.1.** The same title from the 1.0.1 build, with the
+credits line the port adds reading v1.0.1.
 
 ## A course
 
@@ -48,6 +54,12 @@ buttons bottom right.
 **The Camera Check.** At the end of every course, before Oak's check, the
 course's own tally: pictures, points,
 kinds, the high score and the challenge score.
+
+<a href="screenshots/04b-beach-widescreen.png"><img src="screenshots/04b-beach-widescreen.png" width="640" alt="The Beach in Widescreen"></a>
+
+**The Beach in Widescreen, 1.0.1.** Surfing Pikachu with Widescreen on, the
+whole 16:9 frame rather than the 4:3 crop: the wider field of view the
+renderer draws, with the Pokémon kept to its edges.
 
 ## The lab
 

@@ -101,14 +101,18 @@ and what to attach to a bug report.
 </tr><tr>
 <td><a href="docs/screenshots/11-gallery-print.png"><img src="docs/screenshots/11-gallery-print.png" width="400" alt="The Gallery with the Snap Station's Print"></a></td>
 <td><a href="docs/screenshots/13-printer-stars.png"><img src="docs/screenshots/13-printer-stars.png" width="400" alt="The printer's display, three stars"></a></td>
+</tr><tr>
+<td><a href="docs/screenshots/01b-title-101.png"><img src="docs/screenshots/01b-title-101.png" width="400" alt="The title screen, 1.0.1"></a></td>
+<td><a href="docs/screenshots/04b-beach-widescreen.png"><img src="docs/screenshots/04b-beach-widescreen.png" width="400" alt="The Beach in Widescreen: Surfing Pikachu"></a></td>
 </tr></table>
 
-Taken from the 1.0.0 build, the Options screen and the Controls page from
-1.0.1, at 1440p with Render Scale and Anti-Aliasing both
-at 8x on the Graphics page, cropped to the game's picture. All nineteen, with
-a caption each (the title menu, the Tunnel, the lab, the Options and Sound
-pages, the printer's marks, Oak's check from the photo choice to the score
-sheet, the Camera Check), are in [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md).
+Taken from the 1.0.0 build, and the Options screen, the Controls page, the
+title and the widescreen Beach from 1.0.1, at 1440p with Render Scale and
+Anti-Aliasing both at 8x on the Graphics page, cropped to the game's picture
+(the widescreen one is the whole 16:9 frame). All twenty-one, with a caption
+each (the title menu, the Tunnel, the lab, the Options and Sound pages, the
+printer's marks, Oak's check from the photo choice to the score sheet, the
+Camera Check), are in [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md).
 
 ## What you need
 
