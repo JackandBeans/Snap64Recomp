@@ -278,7 +278,230 @@ static GObj* snap_make_strip_fmt(s32 id, s32 x, s32 y, u8 fmt) {
                           sp, 0, NULL, 1);
 }
 
+/* -------------------------------------------------------------------------
+ * The strip pool
+ *
+ * Every strip on these pages is a Sprite plus its Bitmap array, and both
+ * used to come out of gtlMalloc -- the scene's general heap, which is a bump
+ * allocator with no free at all (sys/ml.c: mlHeapAlloc moves a cursor, and
+ * on overflow calls PANIC, which is `while (1) {}`; the recompiler turns
+ * that into pause_self, so the game thread parks forever with no message and
+ * no crash screen). The only reset is gtlInitHeap, called from omSetupScene
+ * and func_80007354 -- scene setup. The Option screen is a state INSIDE the
+ * main-menu scene, so nothing between two visits ever moved that cursor
+ * back. Each strip costs 136 bytes of it, a Graphics visit builds 36, and
+ * the scene's heap is 1,887,328 bytes: a few hundred visits walked it off
+ * the end and froze the game.
+ *
+ * The strips come from a fixed table now. It is sized by what can be on
+ * screen at once, and a slot comes back by reachability rather than by a
+ * free call at each teardown -- snap_strip_sweep says why that is the only
+ * definition of "free" that is true here.
+ *
+ * How many slots. Every call site, counted:
+ *
+ *   the title screen        3   the Recomp badge on the background's chain,
+ *                               the credits line on the logo's, and the
+ *                               Snap Station label
+ *   the Option list         4   the GRAPHICS item and its help line, the
+ *                               CONTROLS item and its help line; alive for
+ *                               the whole visit
+ *   one open page          36   the largest is GRAPHICS: header, description,
+ *                               16 labels, 16 values, 2 scroll arrows.
+ *                               (SOUND is 14, CONTROLS is 20, and the three
+ *                               are dispatched from the same switch, so only
+ *                               ever one of them is open.)
+ *   ------------------------------------------------------------------------
+ *   peak on screen         43
+ *
+ * 64 slots, then: the peak plus 21, which is more than a whole CONTROLS page
+ * of not-yet-swept garbage, and leaves room for the seventeenth Graphics row
+ * the arrays above are already sized for.
+ * ---------------------------------------------------------------------- */
+
+/* Six bitmaps a slot. The old allocator sized the array from the string and
+ * gave a narrow one four anyway, so a later snap_swap_strip to a wider
+ * string had somewhere to write; the slot has to cover the widest string
+ * either path can ask for. Six -- 384 texels, wider than the screen -- so
+ * that no string the stager will accept is ever truncated by the pool.
+ * (snap_swap_strip's own clamp moves from 4 to this, and the stager's
+ * warning threshold with it: src/menu_assets.cpp.) */
+#define SNAP_STRIP_CHUNKS 6
+#define SNAP_STRIP_SLOTS  64
+/* 0x100 a slot, not the 0xA4 it uses: a round stride keeps the slot
+ * arithmetic readable and leaves room to widen the chunk count again
+ * without anything else moving. 64 * 0x100 is 16 KB of .bss. Correctness
+ * does not depend on the number -- snap_strip_slot_of confirms a candidate
+ * against the slot's own address. */
+#define SNAP_STRIP_STRIDE 0x100
+
+/* Sprite (0x44) + the bitmaps, and the rest of the stride left spare. */
+#define SNAP_STRIP_INUSE (0x44 + SNAP_STRIP_CHUNKS * 0x10)
+
+typedef struct SnapStripSlot {
+    /* 0x00 */ Sprite sprite;                    /* 0x44 */
+    /* 0x44 */ Bitmap bitmap[SNAP_STRIP_CHUNKS];
+    /*      */ u8 spare[SNAP_STRIP_STRIDE - SNAP_STRIP_INUSE];
+} SnapStripSlot;                                 /* SNAP_STRIP_STRIDE */
+
+/* Patch statics live in the patch ELF's .bss, which the linker places right
+ * above .data at 0x80801000+ (patch.ld). Verified on a build: the section
+ * lands past the last byte objcopy puts in patches.bin, so librecomp's copy
+ * of the patch image stops before it and never writes here; the recompiler
+ * turns every access into the same absolute lui/addiu pair it uses for game
+ * data, so nothing needs relocating at run time; and the rdram allocation is
+ * zero-filled at start-up (VirtualAlloc / mmap MAP_ANON), so the table
+ * starts empty without an initialiser. patches/check_bss.sh refuses a build
+ * whose .bss reaches the menu mailbox at 0x80C00000; the ASSERT in patch.ld
+ * says the same thing but only prints it, because ld runs with
+ * --noinhibit-exec and exits 0 on a failed assert under that flag. */
+static SnapStripSlot snap_strip_pool[SNAP_STRIP_SLOTS];
+/* 1 while a slot must not be handed out. snap_strip_take sets it; a sweep
+ * recomputes the whole array from what is actually on screen. */
+static u8 snap_strip_used[SNAP_STRIP_SLOTS];
+/* Round-robin, so a slot is not re-issued the instant it comes free and a
+ * stale display list from the frame in flight cannot land on new content. */
+static s32 snap_strip_next;
+/* The bitmap array handed out by the last build, before its SObj exists:
+ * its caller is between snap_build_sprite and omGObjAddSprite, so no sweep
+ * may reclaim it. One deep -- no call site holds two unattached strips, and
+ * none may be added. */
+static Bitmap* snap_strip_pending;
+/* Occupancy, for the peak the host prints. */
+static s32 snap_strip_live;
+
+/* Refused strips and the high-water occupancy, for the host to print
+ * (src/menu_assets.cpp). In the mailbox hole above the CONTROLS bank
+ * (+0x6A..+0xFF) and below SCRATCH_ARRAYS at +0x100. */
+#define MBOX_POOL_FAIL (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x70))
+#define MBOX_POOL_PEAK (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x74))
+
+/* Which slot a Bitmap array is the head of, or -1 for anything else.
+ * The divide names a candidate; the compare against that slot's own address
+ * is what decides, so this stays exact whatever the stride works out to be
+ * and a pointer into the middle of a slot is never taken for one. */
+static s32 snap_strip_slot_of(Bitmap* bm) {
+    u32 base;
+    u32 off;
+    s32 slot;
+
+    if (bm == NULL) {
+        return -1;
+    }
+    base = (u32) &snap_strip_pool[0].bitmap[0];
+    if ((u32) bm < base) {
+        return -1;
+    }
+    off = (u32) bm - base;
+    slot = (s32) (off / sizeof(SnapStripSlot));
+    if (slot >= SNAP_STRIP_SLOTS) {
+        return -1;
+    }
+    if (bm != &snap_strip_pool[slot].bitmap[0]) {
+        return -1;
+    }
+    return slot;
+}
+
+/* Frees every slot nothing on screen points at.
+ *
+ * Liveness is read off the one thing that actually matters. omGObjAddSprite
+ * copies the whole Sprite into the SObj (sobj->sprite = *sprite, 0x44
+ * bytes), so the Sprite half of a slot is dead the moment that call returns
+ * -- but the copy's sprite.bitmap still points into the slot, and the sprite
+ * library re-reads that array every time the strip is drawn. So a slot is
+ * live exactly while some live SObj names it, and that is what this walks.
+ *
+ * The walk is complete. omAddGObj links every GObj into omGObjListHead[link]
+ * at creation and omDeleteGObj frees the SObjs (ohRemoveSprite) BEFORE it
+ * unlinks the GObj, so there is no window in which a live SObj hangs off a
+ * GObj this loop cannot reach -- including the deferred case where
+ * omDeleteGObj refuses to delete omCurrentObject and returns with the object
+ * still listed, which this conservatively keeps. Nothing else can hold a
+ * slot: a freed SObj went onto omFreeSObjList, which this never visits, and
+ * omFreeSObj overwrites only its nextFree word, so its stale sprite.bitmap
+ * is exactly the dangling reference this design must not trust.
+ *
+ * That is the whole guarantee the requirement asks for: a slot is reused
+ * only when no SObj points at it, because "no SObj points at it" is the
+ * test. */
+static void snap_strip_sweep(void) {
+    s32 i;
+    s32 slot;
+
+    for (i = 0; i < SNAP_STRIP_SLOTS; i++) {
+        snap_strip_used[i] = 0;
+    }
+    for (i = 0; i < 32; i++) {
+        GObj* obj = omGObjListHead[i];
+        while (obj != NULL) {
+            if (obj->type == 2) {
+                SObj* sobj = obj->data.sobj;
+                while (sobj != NULL) {
+                    slot = snap_strip_slot_of(sobj->sprite.bitmap);
+                    if (slot >= 0) {
+                        snap_strip_used[slot] = 1;
+                    }
+                    sobj = sobj->next;
+                }
+            }
+            obj = obj->next;
+        }
+    }
+    slot = snap_strip_slot_of(snap_strip_pending);
+    if (slot >= 0) {
+        snap_strip_used[slot] = 1;
+    }
+
+    snap_strip_live = 0;
+    for (i = 0; i < SNAP_STRIP_SLOTS; i++) {
+        if (snap_strip_used[i]) {
+            snap_strip_live++;
+        }
+    }
+    /* The high-water mark is taken here and nowhere else. Counted as slots
+     * are handed out it would only ever reach the table size, because
+     * nothing is reclaimed until the table is full; counted after a sweep it
+     * is the number of strips genuinely reachable at once, which is what
+     * says whether the table is big enough. */
+    if ((u32) snap_strip_live > MBOX_POOL_PEAK) {
+        MBOX_POOL_PEAK = (u32) snap_strip_live;
+    }
+}
+
+/* A free slot, sweeping once if the table looks full. Returns NULL rather
+ * than failing: every call site already treats NULL as "this strip does not
+ * appear", so the worst a dry pool can do is leave a row blank, and the
+ * count it bumps says so in the log. */
+static SnapStripSlot* snap_strip_take(void) {
+    s32 pass;
+    s32 tries;
+    s32 i;
+
+    for (pass = 0; pass < 2; pass++) {
+        for (tries = 0; tries < SNAP_STRIP_SLOTS; tries++) {
+            i = snap_strip_next;
+            snap_strip_next = i + 1;
+            if (snap_strip_next >= SNAP_STRIP_SLOTS) {
+                snap_strip_next = 0;
+            }
+            if (!snap_strip_used[i]) {
+                snap_strip_used[i] = 1;
+                snap_strip_pending = &snap_strip_pool[i].bitmap[0];
+                snap_strip_live++;
+                return &snap_strip_pool[i];
+            }
+        }
+        if (pass == 0) {
+            snap_strip_sweep();
+        }
+    }
+    MBOX_POOL_FAIL = MBOX_POOL_FAIL + 1;
+    return NULL;
+}
+
 static Sprite* snap_build_sprite(s32 id, s32 x, s32 y, u8 fmt) {
+    SnapStripSlot* slot;
     Sprite* sp;
     Bitmap* bm;
     s32 w, h, chunks, i;
@@ -295,13 +518,23 @@ static Sprite* snap_build_sprite(s32 id, s32 x, s32 y, u8 fmt) {
     }
 
     chunks = w / 64;
-    /* Room for four chunks even when the first string is narrower, so a
-     * later snap_swap_strip to a wider string has bitmaps to fill. */
-    sp = (Sprite*) gtlMalloc(sizeof(Sprite) + ((chunks < 4) ? 4 : chunks) * sizeof(Bitmap), 8);
-    if (sp == NULL) {
+    /* Clamped to the slot, as the swap path is: both paths carry the same
+     * six now, so the two can no longer disagree about how much of a wide
+     * string is drawn. Nothing staged today is past three (the widest are
+     * the help lines at four), and the stager warns at stage time if one
+     * ever spills past what the pages draw. */
+    if (chunks > SNAP_STRIP_CHUNKS) {
+        chunks = SNAP_STRIP_CHUNKS;
+    }
+
+    /* No heap. A free slot, or nothing -- and nothing is a strip that does
+     * not appear, which every caller already handles. */
+    slot = snap_strip_take();
+    if (slot == NULL) {
         return NULL;
     }
-    bm = (Bitmap*) (sp + 1);
+    sp = &slot->sprite;
+    bm = &slot->bitmap[0];
 
     sp->x = x;
     sp->y = y;
@@ -323,7 +556,7 @@ static Sprite* snap_build_sprite(s32 id, s32 x, s32 y, u8 fmt) {
     sp->istart = 0;
     sp->istep = 0;
     sp->nbitmaps = chunks;
-    sp->ndisplist = 24 + 12 * ((chunks < 4) ? 4 : chunks);
+    sp->ndisplist = 24 + 12 * SNAP_STRIP_CHUNKS;
     sp->bmheight = h;
     sp->bmHreal = h;
     sp->bmfmt = fmt;
@@ -334,9 +567,9 @@ static Sprite* snap_build_sprite(s32 id, s32 x, s32 y, u8 fmt) {
     sp->frac_s = 0;
     sp->frac_t = 0;
 
-    /* Every allocated slot gets valid fields, including the spares a wider
-     * swapped-in string will use. */
-    for (i = 0; i < ((chunks < 4) ? 4 : chunks); i++) {
+    /* Every bitmap of the slot gets valid fields, including the spares a
+     * wider swapped-in string will use. */
+    for (i = 0; i < SNAP_STRIP_CHUNKS; i++) {
         bm[i].width = 64;
         bm[i].width_img = 64;
         bm[i].s = 0;
@@ -368,8 +601,8 @@ static void snap_swap_strip(GObj* gobj, s32 id) {
     w = DIR_W(id);
     h = DIR_H(id);
     chunks = w / 64;
-    if (chunks > 4) {
-        chunks = 4;
+    if (chunks > SNAP_STRIP_CHUNKS) {
+        chunks = SNAP_STRIP_CHUNKS;
     }
 
     sp = &sobj->sprite;
@@ -677,6 +910,18 @@ static void snap_graphics_page(void) {
     }
     {
         GObj* mine = (GObj*) SCRATCH_GRAPHICS_GOBJ;
+        if ((mine != NULL) && (mine->data.sobj != NULL) &&
+            !(mine->data.sobj->sprite.attr & SP_HIDDEN) && (hiddenCount < 64)) {
+            mine->data.sobj->sprite.attr |= SP_HIDDEN;
+            PAGE_HIDDEN(hiddenCount) = (u32) mine->data.sobj;
+            hiddenCount++;
+        }
+        /* Both staged rows have to go, not just this page's own: the Option
+         * list's CONTROLS label is the patch's too, it is not in any of the
+         * chains the loop above walks, and left behind it drew on top of the
+         * fourth row here (a Deck found it on the Graphics and Sound pages,
+         * 2026-09-06). */
+        mine = (GObj*) SCRATCH_CONTROLS_GOBJ;
         if ((mine != NULL) && (mine->data.sobj != NULL) &&
             !(mine->data.sobj->sprite.attr & SP_HIDDEN) && (hiddenCount < 64)) {
             mine->data.sobj->sprite.attr |= SP_HIDDEN;
@@ -1340,6 +1585,18 @@ static void snap_sound_page(void) {
     }
     {
         GObj* mine = (GObj*) SCRATCH_GRAPHICS_GOBJ;
+        if ((mine != NULL) && (mine->data.sobj != NULL) &&
+            !(mine->data.sobj->sprite.attr & SP_HIDDEN) && (hiddenCount < 64)) {
+            mine->data.sobj->sprite.attr |= SP_HIDDEN;
+            PAGE_HIDDEN(hiddenCount) = (u32) mine->data.sobj;
+            hiddenCount++;
+        }
+        /* Both staged rows have to go, not just this page's own: the Option
+         * list's CONTROLS label is the patch's too, it is not in any of the
+         * chains the loop above walks, and left behind it drew on top of the
+         * fourth row here (a Deck found it on the Graphics and Sound pages,
+         * 2026-09-06). */
+        mine = (GObj*) SCRATCH_CONTROLS_GOBJ;
         if ((mine != NULL) && (mine->data.sobj != NULL) &&
             !(mine->data.sobj->sprite.attr & SP_HIDDEN) && (hiddenCount < 64)) {
             mine->data.sobj->sprite.attr |= SP_HIDDEN;

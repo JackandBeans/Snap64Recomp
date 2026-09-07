@@ -1442,14 +1442,22 @@ void stage_menu_strings(uint8_t* rdram) {
         // library loads each bitmap with a block load that cannot stride
         // through a wider image. Chunk k covers columns [64k, 64k+cw).
         const int chunks = (w + 63) / 64;
-        if (chunks > 4) {
-            // The patch's swap path carries at most four chunks, and nine
-            // help lines already pad to exactly 256 -- a reworded line
-            // that spills over would truncate on screen with no other
-            // symptom, so the spill announces itself here instead.
-            printf("[SNAP-GFX] WARNING: string %d is %dpx wide (%d chunks); "
-                   "the menu draws at most 4 -- it will truncate at 256px\n",
+        // A strip slot carries six chunks, 384px, on both the build and the
+        // swap path (SNAP_STRIP_CHUNKS in graphics_menu_patch.c). This was a
+        // warning while the old allocator sized itself from the string and
+        // simply grew to fit; the pool cannot grow, so anything past the slot
+        // is cut off on screen with no other symptom. It is an error now.
+        // The string is still staged, clamped: the directory entry for this
+        // id was written a few lines above, so skipping it here would leave
+        // that entry pointing at pixels nobody staged, which is worse than a
+        // truncated line.
+        if (chunks > 6) {
+            printf("[SNAP-GFX] ERROR: string %d is %dpx wide (%d chunks); a strip carries "
+                   "six (384px), so it WILL be cut off. Shorten the string, or raise "
+                   "SNAP_STRIP_CHUNKS and SNAP_STRIP_STRIDE together in "
+                   "graphics_menu_patch.c.\n",
                    id, w, chunks);
+            fflush(stdout);
         }
         uint32_t at = cursor;
         for (int k = 0; k < chunks; k++) {
