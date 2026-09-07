@@ -136,6 +136,12 @@
   frame of the ride until Oak's lab was up; its quad now follows the
   renderer's widening and the margins fade with the rest. Both from a
   Steam Deck screenshot.
+* On a Steam Deck launched from Desktop Mode with Steam running, a shot
+  opened the pause menu and B kept bringing it back: Steam's desktop
+  layout sends Enter for A and Escape for B along with the pad's own
+  buttons, and Enter is the port's Start, Escape its pause key. While the
+  Deck's own controller is attached, those two keys are ignored. Seen on
+  a Deck.
 * The D-pad walks the menus. The cartridge never reads the D-pad -- only
   its crash screen does -- so the lab, the title and every other menu
   answered to the stick alone; the D-pad, and the arrow keys bound to it,

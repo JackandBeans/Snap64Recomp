@@ -137,6 +137,15 @@ enum class SourceKind : uint8_t { Key, MouseButton, WheelUp, WheelDown, PadButto
 // pad's opening from its name, or by pad_layout in the settings file.
 static bool g_pad_layout_n64 = false;
 
+// On a Steam Deck whose own controller is attached, the keyboard's Return
+// and Escape are ignored. Launched outside a Steam shortcut while Steam
+// runs, Steam's desktop layout sends Enter for A and Escape for B along
+// with the pad's own buttons, so a shot opened the pause menu (Return is
+// Start) and B kept bringing it back (Escape is the pause key). Through a
+// Steam shortcut the layout is the gamepad one and nothing is sent; the
+// pad is then Steam's virtual one, not the Deck's, and the keys stay live.
+static bool g_deck_pad_keys_ignored = false;
+
 static bool pad_button_held(int code) {
     if (game_controller == nullptr) {
         return false;
@@ -442,6 +451,10 @@ void apply_mouse_look(uint8_t* rdram) {
 bool source_down(const Source& src, const uint8_t* keys, uint32_t held, int64_t t) {
     switch (src.kind) {
         case SourceKind::Key:
+            if (g_deck_pad_keys_ignored &&
+                ((src.code == SDL_SCANCODE_RETURN) || (src.code == SDL_SCANCODE_ESCAPE))) {
+                return false;
+            }
             return keys != nullptr && src.code >= 0 && src.code < SDL_NUM_SCANCODES && keys[src.code];
         case SourceKind::MouseButton:
             return (src.code >= 0) && (src.code < 8) &&
@@ -459,6 +472,12 @@ bool source_down(const Source& src, const uint8_t* keys, uint32_t held, int64_t 
 }
 
 } // namespace
+
+static bool is_steam_deck_pad(SDL_GameController* gc);
+
+bool input_deck_keys_ignored() {
+    return g_deck_pad_keys_ignored;
+}
 
 const Bindings& input_default_bindings() {
     return defaults();
@@ -848,6 +867,7 @@ static void try_open_controller() {
     if (game_controller != nullptr && !SDL_GameControllerGetAttached(game_controller)) {
         SDL_GameControllerClose(game_controller);
         game_controller = nullptr;
+        g_deck_pad_keys_ignored = false;
     }
 
     if (game_controller != nullptr) return;
@@ -886,6 +906,12 @@ static void try_open_controller() {
                     printf("[SNAP-Input] pad layout: %s%s\n",
                            n64 ? "N64-shaped (its L and R are L and R, its Z is Z)" : "standard (the left shoulder is Z, the triggers are L and R)",
                            (layout == 0) ? ", from the pad's name" : ", from pad_layout");
+                }
+
+                g_deck_pad_keys_ignored = is_steam_deck_pad(game_controller);
+                if (g_deck_pad_keys_ignored) {
+                    printf("[SNAP-Input] the Deck's own controller is attached: keyboard Return and Escape are ignored "
+                           "(Steam's desktop layout sends them for A and B)\n");
                 }
                 break;
             }

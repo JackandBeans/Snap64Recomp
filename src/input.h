@@ -74,6 +74,11 @@ void input_update_mouse_capture();
 // everywhere else, for every settings file ever written. Main thread.
 void input_tap_start();
 
+// True while the Steam Deck's own controller is attached: the keyboard's
+// Return and Escape are then ignored, because Steam's desktop layout sends
+// them for the pad's A and B (input.cpp).
+bool input_deck_keys_ignored();
+
 // Lets the cursor go at once (a dialog is about to take the screen); the
 // next input_update_mouse_capture takes it back if a course still runs.
 // Main thread.

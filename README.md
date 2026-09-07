@@ -693,6 +693,12 @@ fine.
   View button saves the photo on screen ("Controls" above). Back paddles,
   trackpads and gyro reach the game only as whatever Steam's controller
   layout maps them to.
+* **Desktop Mode with Steam running.** Launched from a terminal or a file
+  manager, Steam's desktop layout also sends Enter for A and Escape for B,
+  which are the port's Start and pause keys: a shot opened the pause menu
+  and B kept bringing it back. While the Deck's own controller is attached
+  the port ignores those two keys, and says so in the log. Through a Steam
+  shortcut the layout is the gamepad one and nothing is sent.
 * **Gyro aiming.** In Gaming Mode the game cannot read the Deck's gyro:
   Steam's controller layer keeps it. In the shortcut's controller settings
   set *Gyro Behavior* to **As Mouse** and *Gyro Activation Buttons* to

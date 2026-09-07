@@ -300,7 +300,8 @@ static void update_gfx(void* /*gfx_data*/) {
                     snap_update_window_title();
                     break;
                 }
-                if ((event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) && !event.key.repeat) {
+                if ((event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) && !event.key.repeat &&
+                    !snap::input_deck_keys_ignored()) {
                     // A tap is Start: the pause menu in a course, with its
                     // Continue, Retry and Quit, and Start on every other
                     // screen. Holding Esc for a second and letting go asks
@@ -315,7 +316,7 @@ static void update_gfx(void* /*gfx_data*/) {
                 }
                 break;
             case SDL_KEYUP:
-                if (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) {
+                if ((event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) && !snap::input_deck_keys_ignored()) {
                     escHeld = false;
                     if (escArmed) {
                         escArmed = false;
