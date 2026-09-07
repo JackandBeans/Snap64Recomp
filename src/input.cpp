@@ -664,21 +664,28 @@ void input_handle_sdl_event(const SDL_Event& event) {
                     g_gyro_live_us.store(now_us(), std::memory_order_relaxed);
                 }
                 // Yaw is the turn about the world's vertical: the reading
-                // projected onto the up vector the accelerometer gives.
-                // Tilted back -- how a Deck is actually held -- this is the
-                // part of the turn that the pad's own up axis alone was
-                // missing, and it was hardware-confirmed on a Deck.
+                // projected onto the up vector the accelerometer gives (SDL's
+                // accelerometer reads +9.8 along the axis pointing away from
+                // the earth, so g_grav is UP). Held upright that projection
+                // is exactly ry, the pad's own up axis, which is what the
+                // fallback for a pad with no accelerometer uses; tilted back
+                // -- how a Deck is actually held -- it is the part of the
+                // turn that ry alone was missing. The negation to the game's
+                // own yaw sense happens once, below, for both paths.
                 //
-                // The fallback for a pad with no accelerometer has to carry
-                // the same sign as that projection, or the two kinds of pad
-                // would aim opposite ways: held upright the projection is
-                // -ry, so the fallback is -ry too.
+                // A first version of this negated the projection here as
+                // well, on the belief that the vector pointed down. It aimed
+                // backwards. The first Deck report said it felt right; a
+                // deliberate left-turn test on 2026-09-07 said otherwise, and
+                // two reviewers had said so from the maths before that. A
+                // sign is confirmed by turning left and watching, never by
+                // feel.
                 const float rz = event.csensor.data[2];
                 const float gm = std::sqrt(g_grav[0] * g_grav[0] + g_grav[1] * g_grav[1] +
                                            g_grav[2] * g_grav[2]);
-                float yawRate = -ry;
+                float yawRate = ry;
                 if (gm > 1.0f) {
-                    yawRate = -(rx * g_grav[0] + ry * g_grav[1] + rz * g_grav[2]) / gm;
+                    yawRate = (rx * g_grav[0] + ry * g_grav[1] + rz * g_grav[2]) / gm;
                 }
                 // Tightening: under a degree per second the rate is scaled
                 // toward zero, so a pad at rest does not creep, without the
