@@ -824,9 +824,9 @@ The same list, with a place to reply, is pinned under
   stage from the harvested font with no character missing, the settings file
   is valid, and the archive carries everything it must; `--only station` puts the Snap Station print
   through both relaunches and checks the sheets. On the 1.0.1 executable
-  (SHA-256 beginning `f53f2c67`), run without diagnostics in the
+  (SHA-256 beginning `bae41aea`), run without diagnostics in the
   environment, the suite passed 22 of 22 checks in 781 seconds, and the
-  station's 5 of 5 in 488; the 1.0.0 executable had passed the same 22 and
+  station's 5 of 5 in 489; the 1.0.0 executable had passed the same 22 and
   5, in 781 and 489, on a cold shader cache. The suite opens the game window
   for each run and takes about
   thirteen minutes, plus eight for the station. There is no CI run, and no
