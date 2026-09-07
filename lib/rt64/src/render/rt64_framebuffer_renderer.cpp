@@ -1564,6 +1564,23 @@ namespace RT64 {
                 viewportClip = convertViewportRect(viewport.rect(viewportClipRatios), p.resolutionScale, p.fbWidth, projInvRatioScale, extOriginPercentage, 0.0f, viewportOrigin, viewportOrigin);
             }
 
+            // Pokemon Snap port: a scissor narrower than the projection's own
+            // viewport is a crop the game authored in its picture's pixels --
+            // the viewfinder's letterbox, viewport -20..340 against a scissor
+            // of 30..290. The scene inside is widened like the rest of the
+            // course, but the crop keeps its place: converted at the 4:3
+            // picture's scale about the centre, not stretched with the target,
+            // which had opened it to the wide edges and let the world into
+            // what the console shows black beside the film counter. A scissor
+            // that matches its viewport (the course itself, the photo renders)
+            // is stretched as before.
+            bool snapCropScissor = false;
+            if (proj.usesViewport() && (projInvRatioScale == 1.0f) && (proj.transformsIndex < drawData.rspViewports.size())) {
+                const FixedRect vpRect = drawData.rspViewports[proj.transformsIndex].rect(viewportClipRatios);
+                snapCropScissor = !proj.scissorRect.isNull() && (vpRect.ulx < proj.scissorRect.ulx) && (vpRect.lrx > proj.scissorRect.lrx);
+            }
+            const float snapCropInvRatioScale = (p.aspectRatioTarget > 0.0f) ? (p.aspectRatioSource / p.aspectRatioTarget) : 1.0f;
+
             for (uint32_t d = 0; (d < proj.gameCallCount) && (globalCallIndex < p.maxGameCall); d++) {
                 const GameCall &call = proj.gameCalls[d];
                 renderIndices.instanceIndex = call.callDesc.callIndex;
@@ -1693,7 +1710,7 @@ namespace RT64 {
                         case Projection::Type::Orthographic: {
                             instanceDrawCall.type = InstanceDrawCall::Type::IndexedTriangles;
                             triangles.indexStart = triangles.vertexTestZ ? vertexTestZFaceIndicesStart : call.meshDesc.faceIndicesStart;
-                            invRatioScale = projInvRatioScale;
+                            invRatioScale = snapCropScissor ? snapCropInvRatioScale : projInvRatioScale;
                             break;
                         }
                         case Projection::Type::Rectangle: {

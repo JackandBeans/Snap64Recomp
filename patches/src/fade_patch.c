@@ -18,8 +18,18 @@
  * before the model matrix is built. The colour, alpha and pacing of the
  * fade are untouched; the other quad drawn with this display list, the
  * iris that shrinks to a point, keeps its own scale.
+ *
+ * Under Widescreen the renderer draws a course wider than the quad reaches,
+ * and a fade out of a course darkened the 4:3 picture while the margins
+ * kept the last frame of the ride beside the lab that followed. The quad's
+ * width follows the renderer's own widening, published in the mailbox word
+ * at 0x80C00044 in Q8 (256 = none, the value on every 4:3 screen), so it
+ * covers the picture at whatever width it is drawn.
  */
 #include "common.h"
+
+/* Host-owned: the renderer's horizontal widening, Q8 (256 = none). */
+#define SNAP_VIEW_WIDE_Q8 (*(volatile u32*) 0x80C00044)
 
 extern Gfx D_800AECB0[];
 extern s32 D_800AF054;
@@ -30,9 +40,18 @@ extern s32 D_800AF060;
 /* The full-screen quad is the one created at 3.2 by 2.4; anything else
  * drawn through these functions is left alone. */
 static void fadeCoverFrame(DObj* dobj) {
+    u32 q8;
+
     if (dobj->scale.v.y == 3.2f && dobj->scale.v.z == 2.4f) {
         dobj->scale.v.y = 3.3f;
         dobj->scale.v.z = 2.5f;
+        q8 = SNAP_VIEW_WIDE_Q8;
+        if (q8 > 256) {
+            if (q8 > 1024) {
+                q8 = 1024;
+            }
+            dobj->scale.v.y = (3.3f * q8) / 256.0f;
+        }
     }
 }
 

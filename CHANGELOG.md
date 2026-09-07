@@ -114,6 +114,18 @@
   island spread past the panel that frames it. The renderer now widens
   only while a course's code is loaded; every other screen sits in black
   bars, as it does with the option off. Seen on a Steam Deck.
+* The viewfinder keeps the console's frame under Widescreen, and a fade
+  covers the whole picture. Raising the camera letterboxes the view to an
+  inset of the screen -- black bands thirty pixels wide at the sides, the
+  film counter sitting over the right one -- and the renderer had stretched
+  that inset with the wider picture, so the world filled the bands and ran
+  past the counter. A scissor narrower than its own viewport is a crop the
+  game authored in its picture's pixels, and it now keeps its place; the
+  view inside is still drawn from the wider render. The fade to black at a
+  course's end reached only the 4:3 picture, so the margins held the last
+  frame of the ride until Oak's lab was up; its quad now follows the
+  renderer's widening and the margins fade with the rest. Both from a
+  Steam Deck screenshot.
 * A stalled audio device cannot crash the game any more. When the device
   stops draining (a sink that never plays, a Bluetooth switch mid-stream,
   a machine back from sleep), the queue the game reads as its DAC backlog
