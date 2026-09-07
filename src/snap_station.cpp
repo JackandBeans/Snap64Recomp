@@ -359,13 +359,13 @@ void remove_marker() {
 // Starts a fresh copy of this program in the executable's directory and asks
 // this one to quit. The new process reads the marker and waits for this
 // process to be gone before it touches the save or the shader cache.
-void relaunch_self(const char* why) {
+bool relaunch_self(const char* why) {
 #if defined(_WIN32)
     wchar_t exe[MAX_PATH];
     const DWORD len = GetModuleFileNameW(nullptr, exe, MAX_PATH);
     if (len == 0 || len >= MAX_PATH) {
         say("could not find this executable's path; not relaunching (%s)", why);
-        return;
+        return false;
     }
     std::wstring command = L"\"" + std::wstring(exe) + L"\"";
     // The new process is a plain launch: an input replay or a capture
@@ -381,7 +381,7 @@ void relaunch_self(const char* why) {
     const std::wstring cwd = base_dir().wstring();
     if (!CreateProcessW(exe, command.data(), nullptr, nullptr, FALSE, 0, nullptr, cwd.c_str(), &si, &pi)) {
         say("CreateProcess failed with error %lu; not relaunching (%s)", GetLastError(), why);
-        return;
+        return false;
     }
     CloseHandle(pi.hThread);
     CloseHandle(pi.hProcess);
@@ -396,6 +396,7 @@ void relaunch_self(const char* why) {
     freopen_s(&sink, "NUL", "w", stdout);
     freopen_s(&sink, "NUL", "w", stderr);
     ultramodern::quit();
+    return true;
 #elif defined(__linux__)
     // The same boot the Windows path starts: this executable, no arguments,
     // in the data directory, with the run's own diagnostics out of its
@@ -405,7 +406,7 @@ void relaunch_self(const char* why) {
     const ssize_t len = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
     if (len <= 0) {
         say("could not find this executable's path; not relaunching (%s)", why);
-        return;
+        return false;
     }
     exe[len] = '\0';
     for (const char* name : { "SNAP_REPLAY", "SNAP_RECORD", "SNAP_PCAP_AT", "SNAP_PCAP_EVERY",
@@ -425,14 +426,22 @@ void relaunch_self(const char* why) {
     // follows this one's last in the same snap64.log.
     if (chdir(cwd.c_str()) != 0) {
         say("could not enter %s; not relaunching (%s)", cwd.c_str(), why);
-        return;
+        return false;
     }
+    // execv replaces this image, so anything the saving thread still holds
+    // goes with it. The print itself is preceded by a save, and the kiosk's
+    // whole point is that the photos survive into the next boot, so the save
+    // is brought to disk first. Called from this detached thread; the main
+    // thread's own join later finds nothing left to join.
+    ultramodern::join_saving_thread();
     char* const argv[] = { exe, nullptr };
     execv(exe, argv);
     say("execv failed with errno %d; not relaunching (%s)", errno, why);
+    return false;
 #else
     (void)why;
 #endif
+    return false;
 }
 
 // The runtime writes the save on its own thread, coalescing the game's writes
@@ -475,7 +484,18 @@ void schedule_relaunch(const char* mode, const char* why, int delayMs, bool sett
         }
         std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
         write_marker(mode, extra);
-        relaunch_self(why);
+        if (!relaunch_self(why)) {
+            // The image is still this one: the boot the kiosk resets into is
+            // never coming. The game polls the busy byte and would wait for
+            // a print that cannot finish, so it is released here and the
+            // player keeps a running game instead of a hung one.
+            Station& st2 = st();
+            std::lock_guard<std::mutex> lock(st2.mutex);
+            if (st2.busy) {
+                st2.busy = false;
+                say("the relaunch did not happen; the printer is released so the game can carry on");
+            }
+        }
     }).detach();
 }
 

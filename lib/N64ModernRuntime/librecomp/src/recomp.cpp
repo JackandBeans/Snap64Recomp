@@ -906,9 +906,16 @@ void recomp::start(const recomp::Configuration& cfg) {
     graphics_shutdown_ready.signal();
 
     game_thread.join();
+    // The saving thread comes down before the event threads, not after. It
+    // waits for the game's write burst to go quiet so that a save is never
+    // published half-written, and join_event_threads takes down the VI and
+    // graphics threads -- the ones that deliver retrace messages to guest
+    // threads. Joined in the old order, that wait could be spent behind a
+    // guest thread blocked on a queue nothing was left alive to feed, so the
+    // grace expired and the save was dropped for want of a message.
+    ultramodern::join_saving_thread();
     ultramodern::join_event_threads();
     ultramodern::join_thread_cleaner_thread();
-    ultramodern::join_saving_thread();
     
     // Free rdram.
     bool free_failed;

@@ -134,21 +134,26 @@ static void rename_file(const std::filesystem::path& from, const std::filesystem
 
 // Publishes filepath's temporary file: the current file becomes the backup and the temporary file
 // becomes the current file, each by one atomic rename, so every name on disk always refers to a
-// complete image.
-static bool publish_temp_file(const std::filesystem::path& filepath) {
-    std::filesystem::path backup_path{filepath};
-    backup_path += backup_suffix;
-
+// whole file. With rotate_backup clear the first rename is skipped: the temporary file replaces the
+// current file in place and the backup keeps whatever it already held. The caller asks for that when
+// the file being replaced is not known to be usable, so that rotating it cannot destroy the last
+// good copy.
+static bool publish_temp_file(const std::filesystem::path& filepath, bool rotate_backup) {
     std::filesystem::path temp_path{filepath};
     temp_path += temp_suffix;
 
     std::error_code ec;
-    rename_file(filepath, backup_path, ec);
-    // No current file means this is the first publish, or the previous one stopped between its two
-    // renames. Either way the backup is left as it is and the new file simply takes the name.
-    if (ec && ec != std::errc::no_such_file_or_directory) {
-        fprintf(stderr, "[files] Failed to move " PATHFMT " to " PATHFMT ": %s\n", filepath.c_str(), backup_path.c_str(), ec.message().c_str());
-        return false;
+    if (rotate_backup) {
+        std::filesystem::path backup_path{filepath};
+        backup_path += backup_suffix;
+
+        rename_file(filepath, backup_path, ec);
+        // No current file means this is the first publish, or the previous one stopped between its two
+        // renames. Either way the backup is left as it is and the new file simply takes the name.
+        if (ec && ec != std::errc::no_such_file_or_directory) {
+            fprintf(stderr, "[files] Failed to move " PATHFMT " to " PATHFMT ": %s\n", filepath.c_str(), backup_path.c_str(), ec.message().c_str());
+            return false;
+        }
     }
     rename_file(temp_path, filepath, ec);
     if (ec) {
@@ -175,7 +180,11 @@ std::ifstream recomp::open_input_file_with_backup(const std::filesystem::path& f
     return ret;
 }
 
-bool recomp::read_file_with_backup(const std::filesystem::path& filepath, std::span<char> contents) {
+bool recomp::read_file_with_backup(const std::filesystem::path& filepath, std::span<char> contents, bool* used_backup) {
+    if (used_backup != nullptr) {
+        *used_backup = false;
+    }
+
     std::string why;
     if (read_exact_file(filepath, contents, why)) {
         return true;
@@ -186,6 +195,9 @@ bool recomp::read_file_with_backup(const std::filesystem::path& filepath, std::s
 
     std::string backup_why;
     if (read_exact_file(backup_path, contents, backup_why)) {
+        if (used_backup != nullptr) {
+            *used_backup = true;
+        }
         fprintf(stderr, "[files] " PATHFMT " unusable (%s); loaded backup " PATHFMT "\n", filepath.c_str(), why.c_str(), backup_path.c_str());
         return true;
     }
@@ -203,10 +215,10 @@ std::ofstream recomp::open_output_file_with_backup(const std::filesystem::path& 
 }
 
 bool recomp::finalize_output_file_with_backup(const std::filesystem::path& filepath) {
-    return publish_temp_file(filepath);
+    return publish_temp_file(filepath, true);
 }
 
-bool recomp::write_file_with_backup(const std::filesystem::path& filepath, std::span<const char> contents) {
+bool recomp::write_file_with_backup(const std::filesystem::path& filepath, std::span<const char> contents, bool rotate_backup) {
     std::filesystem::path temp_path{filepath};
     temp_path += temp_suffix;
 
@@ -215,5 +227,5 @@ bool recomp::write_file_with_backup(const std::filesystem::path& filepath, std::
         fprintf(stderr, "[files] Failed to write " PATHFMT ": %s\n", temp_path.c_str(), ec.message().c_str());
         return false;
     }
-    return publish_temp_file(filepath);
+    return publish_temp_file(filepath, rotate_backup);
 }

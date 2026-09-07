@@ -131,45 +131,156 @@ void set_save_file_path(const std::u8string& subfolder, const std::u8string& nam
     save_context.save_file_path = save_folder_path / (name + u8".bin");
 }
 
-void update_save_file() {
-    // Copy the buffer out under the lock so the game's writes only wait for a memcpy, not for the
-    // disk write and flush.
+// Cleared when a save exists on disk that could not be read. The buffer then holds zeros that are
+// not the player's data, and writing them back would destroy a save that is very likely still
+// intact, so no publish happens for the rest of the run.
+static std::atomic_bool save_writable{true};
+
+// Whether what currently sits at the save file's own name is known to be a whole record. Only such
+// a file may be rotated into the backup; rotating a partial or unread one would push the last good
+// copy out. Atomic because read_save_file sets it from a game thread when a mod swaps save files.
+static std::atomic_bool current_save_file_complete{true};
+
+// One dialog per run. The saving thread would otherwise raise one on every publish, and a folder
+// that cannot be written to fails for a reason that does not change between attempts.
+static bool reported_save_write_failure = false;
+
+// Copies the buffer out under the lock so the game's writes only wait for a memcpy, not for the
+// disk write and flush. rotate_backup says whether the file being replaced is known to be whole and
+// may therefore become the new backup.
+bool update_save_file(bool rotate_backup) {
+    // A save that could not be read at boot is still on disk. Never write over it.
+    if (!save_writable.load(std::memory_order_acquire)) {
+        return false;
+    }
+
     std::vector<char> save_contents;
     {
         std::lock_guard lock{ save_context.save_buffer_mutex };
         save_contents = save_context.save_buffer;
     }
 
-    if (!recomp::write_file_with_backup(ultramodern::get_save_file_path(), save_contents)) {
-        ultramodern::error_handling::message_box("Failed to write to the save file. Check your file permissions and whether the save folder has been moved to Dropbox or similar, as this can cause issues.");
+    if (!recomp::write_file_with_backup(ultramodern::get_save_file_path(), save_contents, rotate_backup)) {
+        if (!reported_save_write_failure) {
+            reported_save_write_failure = true;
+            ultramodern::error_handling::message_box("Failed to write to the save file. Check your file permissions and whether the save folder has been moved to Dropbox or similar, as this can cause issues.");
+        }
+        return false;
     }
+
+    reported_save_write_failure = false;
+    return true;
 }
 
 extern std::atomic_bool exited;
 
-void saving_thread_func(RDRAM_ARG1) {
-    while (!exited) {
-        bool save_buffer_updated = false;
-        // Repeatedly wait for a new action to be sent.
-        constexpr int64_t wait_time_microseconds = 10000;
-        constexpr int max_actions = 128;
-        int num_actions = 0;
+// Set by join_saving_thread to bring the saving thread down. This is deliberately not `exited`.
+// The game's threads are pooled host threads that are never joined, so when `exited` is set they
+// can still be part-way through writing a save; a saving thread that stopped there would drop the
+// whole thing. The thread instead waits for the writes to stop, with a bound so a wedged game
+// cannot hold the exit open.
+static std::atomic_bool saving_thread_stop{false};
 
-        // Wait up to the given timeout for a write to come in. Allow multiple writes to coalesce together into a single save.
-        // Cap the number of coalesced writes to guarantee that the save buffer eventually gets written out to the file even if the game
-        // is constantly sending writes.
-        while (save_context.write_sempahore.wait(wait_time_microseconds) && num_actions < max_actions) {
-            save_buffer_updated = true;
-            num_actions++;
+void saving_thread_func(RDRAM_ARG1) {
+    using clock = std::chrono::steady_clock;
+
+    // The game does not hand its save over in one piece. Pokemon Snap rewrites the image a 16 KB
+    // sector at a time -- one osFlashSectorErase and then 128 osFlashWriteArray pages per sector,
+    // across the eight sectors its 0x1F2A4-byte record spans (decomp func_800C09C0_5D860 and
+    // func_800C08DC_5D77C) -- which is over a thousand separate writes into the buffer for a full
+    // save. The record carries a checksum over the whole image, so a copy taken part-way through
+    // that run is not merely stale: it fails the game's own check and the save is thrown away. A
+    // publish therefore only ever happens once the writes have stopped for this long.
+    constexpr auto quiet_period = std::chrono::milliseconds(250);
+    // How long the exit waits for a save that is still in flight when the player quits.
+    constexpr auto shutdown_grace = std::chrono::seconds(3);
+    // A game that never pauses would never get a save to disk at all. Reaching this only produces a
+    // warning: nothing partial is published, because a stale save the game accepts is worth more
+    // than a fresh one it rejects.
+    constexpr auto stuck_warning_after = std::chrono::seconds(10);
+    // The longest the drain below may run before the checks after it get a turn.
+    constexpr auto drain_slice = std::chrono::milliseconds(250);
+    constexpr int64_t poll_microseconds = 10000;
+
+    bool pending = false;
+    bool stopping = false;
+    bool warned_stuck = false;
+    clock::time_point first_write{};
+    clock::time_point last_write{};
+    clock::time_point stop_deadline{};
+    clock::duration widest_gap{};
+
+    while (true) {
+        if (!stopping && saving_thread_stop.load(std::memory_order_acquire)) {
+            stopping = true;
+            stop_deadline = clock::now() + shutdown_grace;
         }
 
-        // If an action came through that affected the save file, save the updated contents.
-        if (save_buffer_updated) {
-            update_save_file();
+        // Take every write the game has queued. There is deliberately no cap on the *count*: cutting
+        // a burst short at a fixed number of writes is exactly what puts a half-written record on
+        // disk. Only wall-clock time bounds this, and only so the shutdown check keeps running.
+        const auto drain_start = clock::now();
+        while (save_context.write_sempahore.wait(poll_microseconds)) {
+            const auto now = clock::now();
+            if (!pending) {
+                first_write = now;
+                widest_gap = clock::duration::zero();
+                warned_stuck = false;
+            }
+            else if (now - last_write > widest_gap) {
+                widest_gap = now - last_write;
+            }
+            pending = true;
+            last_write = now;
+            // Hand control back to the checks below at least this often. Nothing is published by
+            // leaving here -- the quiet test still has to pass -- but a game that never stops
+            // writing would otherwise pin this thread and hold the exit open forever.
+            if (now - drain_start >= drain_slice) {
+                break;
+            }
+        }
+
+        const auto now = clock::now();
+
+        if (pending) {
+            if (now - last_write >= quiet_period) {
+                // The gap this burst went quiet on is the one thing that decides whether the image
+                // is whole. If the game's own pauses ever get close to the window, say so: the next
+                // run would publish in the middle of a record and nothing else would report it.
+                if (widest_gap >= quiet_period / 2) {
+                    fprintf(stderr, "[save] Warning: the game paused for %lld ms in the middle of a save burst, "
+                                    "close to the %lld ms window used to decide the record is finished.\n",
+                            (long long)std::chrono::duration_cast<std::chrono::milliseconds>(widest_gap).count(),
+                            (long long)std::chrono::duration_cast<std::chrono::milliseconds>(quiet_period).count());
+                }
+                if (update_save_file(current_save_file_complete.load(std::memory_order_acquire))) {
+                    // What was just written was written at a rest point, so it is whole and may
+                    // become the backup at the next publish.
+                    current_save_file_complete.store(true, std::memory_order_release);
+                }
+                pending = false;
+            }
+            else if (!warned_stuck && now - first_write >= stuck_warning_after) {
+                fprintf(stderr, "[save] The game has been writing to the save without a pause for %lld s; "
+                                "the last complete save on disk is being kept until it stops.\n",
+                        (long long)std::chrono::duration_cast<std::chrono::seconds>(now - first_write).count());
+                warned_stuck = true;
+            }
         }
 
         if (save_context.swap_file_pending_sempahore.tryWait()) {
             save_context.swap_file_ready_sempahore.signal();
+        }
+
+        if (stopping) {
+            if (!pending) {
+                break;
+            }
+            if (now >= stop_deadline) {
+                fprintf(stderr, "[save] Quit while the game was still writing its save; that save was not finished "
+                                "and has not been written, so the last complete one on disk is untouched.\n");
+                break;
+            }
         }
     }
 }
@@ -239,13 +350,57 @@ void read_save_file() {
     std::filesystem::path save_file_path = ultramodern::get_save_file_path();
 
     // Ensure the save file directory exists.
-    std::filesystem::create_directories(save_file_path.parent_path());
+    std::error_code ec;
+    std::filesystem::create_directories(save_file_path.parent_path(), ec);
 
     // Read the save file, or its backup when the save file is missing or not a complete image.
-    if (!recomp::read_file_with_backup(save_file_path, save_context.save_buffer)) {
-        // Neither is usable (first run, or both damaged): start from an all-zero save.
-        std::fill(save_context.save_buffer.begin(), save_context.save_buffer.end(), 0);
+    bool used_backup = false;
+    if (recomp::read_file_with_backup(save_file_path, save_context.save_buffer, &used_backup)) {
+        // When the backup had to stand in, what is at the save's own name is something this build
+        // could not use. The first publish must replace it in place rather than rotate it over the
+        // backup that just supplied the player's data.
+        current_save_file_complete.store(!used_backup, std::memory_order_release);
+        save_writable.store(true, std::memory_order_release);
+        return;
     }
+
+    // Nothing readable. Two very different situations arrive here and they must not be treated the
+    // same way, because one of them still has the player's save sitting on the disk.
+    std::filesystem::path backup_path{save_file_path};
+    backup_path += u8".bak";
+    ec.clear();
+    const bool primary_exists = std::filesystem::exists(save_file_path, ec) && !ec;
+    ec.clear();
+    const bool backup_exists = std::filesystem::exists(backup_path, ec) && !ec;
+
+    std::fill(save_context.save_buffer.begin(), save_context.save_buffer.end(), 0);
+
+    if (primary_exists || backup_exists) {
+        // A save is there and could not be read: a lock held by antivirus or a cloud sync client, a
+        // permissions problem, a file something else truncated. These zeros did not come from the
+        // player, so nothing may be written back over what is still on disk. Saving is disarmed for
+        // this run and the player is told now, before they play, rather than after an hour of
+        // progress has been committed over the save they still have.
+        current_save_file_complete.store(false, std::memory_order_release);
+        save_writable.store(false, std::memory_order_release);
+
+        std::u8string path_u8 = save_file_path.u8string();
+        std::string message =
+            "Your save file is there but could not be read, so this session will not write to it.\n\n"
+            + std::string(reinterpret_cast<const char*>(path_u8.c_str())) + "\n\n"
+            "Nothing on disk has been changed. Close anything that may be holding the file open "
+            "(antivirus, OneDrive or Dropbox sync, a backup tool), or move the save folder out of a "
+            "synced directory, then start the game again.\n\n"
+            "If you play on, the game will act as though there is no save and none of this session's "
+            "progress will be kept.";
+        ultramodern::error_handling::message_box(message.c_str());
+        return;
+    }
+
+    // No save file and no backup: a first run. An all-zero buffer is the right starting state and
+    // there is nothing on disk to lose by writing it.
+    current_save_file_complete.store(true, std::memory_order_release);
+    save_writable.store(true, std::memory_order_release);
 }
 
 void ultramodern::init_saving(RDRAM_ARG1) {
@@ -270,8 +425,15 @@ void ultramodern::change_save_file(const std::u8string& subfolder, const std::u8
 
 void ultramodern::join_saving_thread() {
     if (save_context.saving_thread.joinable()) {
+        // The thread stops on this rather than on `exited` so that a save the game is still writing
+        // when the player quits gets finished and written out. It waits for the writes to go quiet,
+        // then publishes once, then returns; shutdown_grace bounds how long that can take.
+        saving_thread_stop.store(true, std::memory_order_release);
         save_context.saving_thread.join();
     }
+    // Nothing is left to answer a swap request, so release anyone already waiting on one instead of
+    // leaving them blocked through the rest of the exit.
+    save_context.swap_file_ready_sempahore.signal();
 }
 
 void do_dma(RDRAM_ARG PTR(OSMesgQueue) mq, gpr rdram_address, uint32_t physical_addr, uint32_t size, uint32_t direction) {
