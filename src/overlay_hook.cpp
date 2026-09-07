@@ -106,10 +106,22 @@ extern "C" void dmaLoadOverlay(uint8_t* rdram, recomp_context* ctx) {
         // actually means.
         constexpr uint32_t LevelCodeStart = 0x80350200u;
         constexpr uint32_t LevelCodeEnd = 0x803AB1C0u;
+        //
+        // The title screen is the one scene that loads nothing over the
+        // course's code: SCENE_MAIN_MENU (app_render/46270.c) loads only its
+        // own overlay, at 0x800E18A0, while every other screen -- the lab,
+        // the album, the reports, the credits -- also loads the window
+        // overlay, which lands inside the course's range. The attract demo
+        // is a real ride through the Beach or the Tunnel, so the title that
+        // follows it was still "in a course" by the range test alone: the
+        // mouse stayed captured there and, once the picture's width
+        // followed this flag, the title would have stayed wide.
+        constexpr uint32_t TitleRomStart = 0xA08E30u;
         if (rom_start == 0x4F0610u) {
             snap::g_app_level_resident.store(true, std::memory_order_relaxed);
         }
-        else if ((vram_start < LevelCodeEnd) && ((vram_start + size) > LevelCodeStart)) {
+        else if (((vram_start < LevelCodeEnd) && ((vram_start + size) > LevelCodeStart)) ||
+                 (rom_start == TitleRomStart)) {
             snap::g_app_level_resident.store(false, std::memory_order_relaxed);
         }
     }

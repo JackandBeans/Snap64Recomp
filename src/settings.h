@@ -316,10 +316,12 @@ void poll_menu_mailbox(uint8_t* rdram);
 
 // The horizontal widening the renderer is applying to the game's
 // projection under Widescreen, in Q8 (256 = none): max(window w/h, 4/3)
-// over 4/3, the rule RT64's Expand mode uses. The renderer thread sets it
-// per display list (rt64_render_context.cpp); the game thread writes it to
-// the mailbox word at +0x44 every tick (poll_menu_mailbox), where the
-// widescreen culling patch (patches/src/widescreen_cull_patch.c) reads it.
+// over 4/3, the rule RT64's Expand mode uses, while a course's code is
+// resident, and 256 on every other screen, which the renderer keeps at
+// 4:3. The renderer thread sets it per display list
+// (rt64_render_context.cpp); the game thread writes it to the mailbox word
+// at +0x44 every tick (poll_menu_mailbox), where the widescreen culling
+// patch (patches/src/widescreen_cull_patch.c) reads it.
 void set_view_wide_q8(uint32_t q8);
 uint32_t view_wide_q8();
 

@@ -16,6 +16,26 @@
 #include "rt64_snap_diag.h"
 #include "rt64_state.h"
 
+#include <cstdlib>
+#include <unordered_map>
+
+// Pokemon Snap port, diagnostic (SNAP_WIDE_DIAG): which named objects are
+// drawn past the 4:3 picture's side edges, per display list.
+namespace {
+    struct SnapEdgeEntry {
+        float minX = 1e9f;
+        float maxX = -1e9f;
+        float minY = 1e9f;
+        float maxY = -1e9f;
+        int32_t scUlx = 0;
+        int32_t scLrx = 0;
+        uint32_t tris = 0;
+    };
+    const bool snapEdgeDiag = (getenv("SNAP_WIDE_DIAG") != nullptr);
+    std::unordered_map<uint64_t, SnapEdgeEntry> snapEdgeByObject;
+    uint32_t snapEdgeList = 0;
+}
+
 //#define LOG_SPECIAL_MATRIX_OPERATIONS
 
 namespace RT64 {
@@ -39,6 +59,18 @@ namespace RT64 {
     }
 
     void RSP::reset() {
+        if (snapEdgeDiag) {
+            for (const auto &kv : snapEdgeByObject) {
+                const SnapEdgeEntry &e = kv.second;
+                if ((e.maxX > 320.0f) || (e.minX < 0.0f)) {
+                    fprintf(stdout, "[SNAP-EDGE] list %u obj %08x img %08x sc %d..%d x %.0f..%.0f y %.0f..%.0f tris %u\n",
+                        snapEdgeList, uint32_t(kv.first >> 32), uint32_t(kv.first & 0xFFFFFFFFu),
+                        e.scUlx, e.scLrx, e.minX, e.maxX, e.minY, e.maxY, e.tris);
+                }
+            }
+            snapEdgeByObject.clear();
+            snapEdgeList++;
+        }
         modelMatrixStackSize = 1;
         projectionMatrixStackSize = 1;
         viewportStackSize = 1;
@@ -1178,6 +1210,33 @@ namespace RT64 {
         }
 
         // Indicates the vertex has been used in a tri. Whatever routines modify the vertex afterwards must use a new index instead.
+
+        if (snapEdgeDiag) {
+            const auto &groups = workload.drawData.transformGroups;
+            const auto &worldGroups = workload.drawData.worldTransformGroups;
+            const uint32_t worldIdx = worldIndices[globalIndices[0]];
+            uint32_t objectId = 0;
+            if (worldIdx < worldGroups.size() && worldGroups[worldIdx] < groups.size()) {
+                const TransformGroup &g = groups[worldGroups[worldIdx]];
+                objectId = (g.coherenceId != 0) ? g.coherenceId : g.matrixId;
+            }
+            if (objectId != 0) {
+                const uint32_t imgAddr = state->rdp->colorImage.address;
+                SnapEdgeEntry &e = snapEdgeByObject[(uint64_t(objectId) << 32) | imgAddr];
+                const FixedRect &sc = state->rdp->scissorRectStack[state->rdp->scissorStackSize - 1];
+                e.scUlx = sc.ulx / 4;
+                e.scLrx = sc.lrx / 4;
+                for (int i = 0; i < 3; i++) {
+                    const float x = posScreen[globalIndices[i]].x;
+                    const float y = posScreen[globalIndices[i]].y;
+                    e.minX = std::min(e.minX, x);
+                    e.maxX = std::max(e.maxX, x);
+                    e.minY = std::min(e.minY, y);
+                    e.maxY = std::max(e.maxY, y);
+                }
+                e.tris++;
+            }
+        }
 
         for (int i = 0; i < 3; i++) {
             // TODO: Figure out how to handle texcoord tracking on TEXGEN cases.

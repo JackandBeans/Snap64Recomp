@@ -106,6 +106,14 @@
   bound and every 4:3 run untouched. Effect sprites (sparkles, splashes)
   have a test of their own and still pop at the 4:3 edge. Widescreen is
   still untested beyond the Beach.
+* Widescreen widens the course and nothing else. The title, Oak's lab, the
+  album, the reports and the credits are drawn for a 4:3 screen -- their
+  art is 320 wide with nothing behind it -- and under Widescreen they went
+  into a wider picture whose margins nothing repainted, so the last frame
+  of a course stayed beside the lab after quitting one, and the lab's
+  island spread past the panel that frames it. The renderer now widens
+  only while a course's code is loaded; every other screen sits in black
+  bars, as it does with the option off. Seen on a Steam Deck.
 * A stalled audio device cannot crash the game any more. When the device
   stops draining (a sink that never plays, a Bluetooth switch mid-stream,
   a machine back from sleep), the queue the game reads as its DAC backlog

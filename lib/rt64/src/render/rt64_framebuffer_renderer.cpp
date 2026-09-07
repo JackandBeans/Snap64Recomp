@@ -4,6 +4,8 @@
 
 #include "rt64_framebuffer_renderer.h"
 
+#include <cstdlib>
+
 #include <atomic>
 #include <cmath>
 
@@ -1528,6 +1530,25 @@ namespace RT64 {
                 bool coversWholeWidth = !intersectionRect.isEmpty() && (intersectionRect.ulx <= fbPair.scissorRect.ulx) && (intersectionRect.lrx >= fbPair.scissorRect.lrx);
                 bool horizontalRatio = !intersectionRect.isEmpty() && (intersectionRect.width(true, true) > intersectionRect.height(true, true));
                 bool useWideViewport = (viewportOrigin == G_EX_ORIGIN_NONE) && coversWholeWidth && horizontalRatio;
+                // Pokemon Snap port, diagnostic (SNAP_WIDE_DIAG): the inputs
+                // of this decision, for a sample of projections.
+                {
+                    static const bool snapWideDiag = (getenv("SNAP_WIDE_DIAG") != nullptr);
+                    static uint32_t snapWideSeen = 0;
+                    if (snapWideDiag && ((snapWideSeen++ % 3000) < 40)) {
+                        const FixedRect vpRect = viewport.rect(viewportClipRatios);
+                        const auto &steppedVp = drawData.rspViewports[proj.transformsIndex];
+                        const FixedRect steppedRect = steppedVp.rect(viewportClipRatios);
+                        fprintf(stdout, "[SNAP-WIDE] proj t%u calls %u vp %d,%d-%d,%d (stepped %d,%d-%d,%d) sc %d,%d-%d,%d fb %d,%d-%d,%d ratios %d,%d,%d,%d origin %u covers %d horiz %d WIDE %d\n",
+                            proj.transformsIndex, proj.gameCallCount,
+                            vpRect.ulx / 4, vpRect.uly / 4, vpRect.lrx / 4, vpRect.lry / 4,
+                            steppedRect.ulx / 4, steppedRect.uly / 4, steppedRect.lrx / 4, steppedRect.lry / 4,
+                            proj.scissorRect.ulx / 4, proj.scissorRect.uly / 4, proj.scissorRect.lrx / 4, proj.scissorRect.lry / 4,
+                            fbPair.scissorRect.ulx / 4, fbPair.scissorRect.uly / 4, fbPair.scissorRect.lrx / 4, fbPair.scissorRect.lry / 4,
+                            viewportClipRatios[0], viewportClipRatios[1], viewportClipRatios[2], viewportClipRatios[3],
+                            unsigned(viewportOrigin), int(coversWholeWidth), int(horizontalRatio), int(useWideViewport));
+                    }
+                }
                 if (useWideViewport) {
                     projInvRatioScale = 1.0f;
                 }

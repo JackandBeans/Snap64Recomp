@@ -453,7 +453,8 @@ static std::atomic<uint32_t> s_view_wide_q8{256};
 void set_view_wide_q8(uint32_t q8) {
     const uint32_t before = s_view_wide_q8.exchange(q8, std::memory_order_relaxed);
     if (before != q8) {
-        printf("[SNAP-CFG] view widening q8=%u (%s)\n", q8, (q8 > 256) ? "the culling patch widens by it" : "none");
+        printf("[SNAP-CFG] view widening q8=%u (%s)\n", q8,
+               (q8 > 256) ? "a course: the culling patch widens by it" : "none: a 4:3 screen, or Widescreen off");
         fflush(stdout);
     }
 }

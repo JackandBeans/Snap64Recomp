@@ -354,12 +354,10 @@ public:
         namespace ren = ultramodern::renderer;
 
         // Aspect: Expand = true widescreen (extended FOV), applied to both the
-        // primary and extended-origin framebuffers.
-        auto ar = (new_config.ar_option == ren::AspectRatio::Expand)
-            ? RT64::UserConfiguration::AspectRatio::Expand
-            : RT64::UserConfiguration::AspectRatio::Original;
-        app_->userConfig.aspectRatio = ar;
-        app_->userConfig.extAspectRatio = ar;
+        // primary and extended-origin framebuffers -- and only in a course
+        // (apply_aspect below). The setting is read from the port's own
+        // copy; new_config.ar_option carries the same bit.
+        apply_aspect(wide_wanted());
 
         switch (new_config.msaa_option) {
             case ren::Antialiasing::MSAA8X: app_->userConfig.antialiasing = RT64::UserConfiguration::Antialiasing::MSAA8X; break;
@@ -470,6 +468,21 @@ public:
         app_->workloadQueue->snapInterpolateCamera.store(snap::settings().interpolate_camera, std::memory_order_relaxed);
         app_->workloadQueue->ubershadersOnly = snap::settings().ubershaders_only;
 
+        // Widescreen widens the course and nothing else. Decided here, per
+        // list, because a course begins and ends between two lists: the
+        // course's code arriving or being replaced (overlay_hook.cpp) is
+        // the boundary, and the renderer takes the change at its next
+        // workload. The push discards the render targets, as every edit on
+        // the Graphics page does; a course boundary is a scene change, so
+        // nothing on screen depends on what they held.
+        {
+            const bool wide = wide_wanted();
+            if (wide != wide_applied_) {
+                apply_aspect(wide);
+                app_->updateUserConfig(true);
+            }
+        }
+
         // What the game's culling patch needs to know: how much wider than
         // 4:3 the renderer is drawing. RT64's Expand rule, from the window
         // it draws into (rt64_workload_queue.cpp: target = max(swap chain
@@ -478,7 +491,7 @@ public:
         // next list corrects it and the patch clamps what it reads.
         {
             uint32_t q8 = 256;
-            if (snap::settings().widescreen && app_->presentQueue) {
+            if (wide_applied_ && app_->presentQueue) {
                 const auto* shared = app_->presentQueue->ext.sharedResources;
                 const uint32_t w = shared->swapChainWidth;
                 const uint32_t h = shared->swapChainHeight;
@@ -756,7 +769,33 @@ public:
     }
 
 private:
+    // Widescreen is a course's option. The title, Oak's lab, the album, the
+    // reports and the credits are 4:3 screens: their art is 320 wide with
+    // nothing behind it, and the lab's island and the title's scene are
+    // framed for that width. Under Expand they were drawn into a wide
+    // target whose margins nothing repainted, so the last frame of a course
+    // stayed beside the lab after quitting one, and the island spread past
+    // the panel that frames it. The course's code being resident is the
+    // port's one test for "in a course" (overlay_hook.cpp); the attract
+    // demo is a course by it, which is right, since it is one.
+    bool wide_wanted() const {
+        return snap::settings().widescreen &&
+               snap::g_app_level_resident.load(std::memory_order_relaxed);
+    }
+
+    // Writes the choice into the configuration the next push carries;
+    // wide_applied_ is what the last push carried, so a list can tell
+    // whether a push is due.
+    void apply_aspect(bool wide) {
+        const auto ar = wide ? RT64::UserConfiguration::AspectRatio::Expand
+                             : RT64::UserConfiguration::AspectRatio::Original;
+        app_->userConfig.aspectRatio = ar;
+        app_->userConfig.extAspectRatio = ar;
+        wide_applied_ = wide;
+    }
+
     std::unique_ptr<RT64::Application> app_;
+    bool wide_applied_ = false;
 };
 
 // ---------------------------------------------------------------------------

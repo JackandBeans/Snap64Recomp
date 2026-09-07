@@ -533,7 +533,7 @@ the defaults below are that file's.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `fullscreen` | `false` | not persisted across runs: every boot starts windowed, except that the Snap Station's own relaunches return in the state the print started in |
-| `widescreen` | `false` | RT64 Expand: a true 16:9 field of view, not a stretch; Pokémon at the edges are kept by the culling patch, effect sprites are not ("Known limitations") |
+| `widescreen` | `false` | RT64 Expand: a true 16:9 field of view, not a stretch, in a course; the title, the lab and the other 4:3 screens sit in black bars. Pokémon at the edges are kept by the culling patch, effect sprites are not ("Known limitations") |
 | `msaa` | `0` | 0, 2, 4 or 8 |
 | `fps_mode` | `0` | 0 Original, 1 Display refresh, 2 Manual (`fps_manual_target`) |
 | `fps_manual_target` | `120` | |
@@ -710,8 +710,8 @@ fine.
 * **Screen.** The panel is 1280x800; leave the shortcut's Game Resolution
   alone. The Deck's own refresh and frame-limit setting should match the
   panel (60, or 90 on the OLED); the port's Frame Rate: Display then
-  follows it. 16:10 with Widescreen fills the panel; 4:3 sits in black
-  bars.
+  follows it. 16:10 with Widescreen fills the panel in a course; the
+  menus, and 4:3, sit in black bars.
 * **Silent?** Desktop Mode's audio mixer sometimes has an app muted on
   its own; check it before anything else. Waking the Deck from sleep or
   switching to Bluetooth audio while the game runs is untested here; the
