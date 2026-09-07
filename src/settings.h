@@ -319,6 +319,10 @@ void stage_menu_assets(uint8_t* rdram);
 void stage_menu_strings(uint8_t* rdram);
 void poll_menu_mailbox(uint8_t* rdram);
 
+// The window's icon from Snap64Recomp.png beside the executable (Linux; on
+// Windows the executable's own resource serves). False without the file.
+bool set_window_icon(void* sdlWindow);
+
 // The horizontal widening the renderer is applying to the game's
 // projection under Widescreen, in Q8 (256 = none): max(window w/h, 4/3)
 // over 4/3, the rule RT64's Expand mode uses, while a course's code is

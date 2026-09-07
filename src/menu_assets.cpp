@@ -51,6 +51,8 @@
 // (rt64_texture_cache.cpp); this include only brings the declarations.
 #include "stb/stb_image.h"
 
+#include <SDL.h>
+
 // stb_image hands a narrow file name to fopen, which on Windows is the ANSI
 // code page: an install path with a character outside it would lose the
 // badge and every override. Open the file here, hand stb the stream.
@@ -66,6 +68,33 @@ static stbi_uc* load_png(const std::filesystem::path& path, int* w, int* h, int*
     stbi_uc* data = stbi_load_from_file(f, w, h, comp, 4);
     fclose(f);
     return data;
+}
+
+namespace snap {
+
+// The window's icon, from Snap64Recomp.png beside the executable: the same
+// tile the Windows executable carries as its resource, which SDL shows for
+// the window there without being asked. A Linux binary has no icon of its
+// own, so the Deck's window and taskbar showed nothing until this. False
+// when the file is absent, which is the Windows archive, where the
+// resource already serves.
+bool set_window_icon(void* sdlWindow) {
+    int w = 0;
+    int h = 0;
+    int comp = 0;
+    stbi_uc* data = load_png(base_path("Snap64Recomp.png"), &w, &h, &comp);
+    if (data == nullptr) {
+        return false;
+    }
+    SDL_Surface* icon = SDL_CreateRGBSurfaceWithFormatFrom(data, w, h, 32, w * 4, SDL_PIXELFORMAT_RGBA32);
+    if (icon != nullptr) {
+        SDL_SetWindowIcon(static_cast<SDL_Window*>(sdlWindow), icon);
+        SDL_FreeSurface(icon);
+    }
+    stbi_image_free(data);
+    return icon != nullptr;
+}
+
 }
 
 // The menu sprite fonts and furniture, harvested from RDRAM at run time.

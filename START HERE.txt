@@ -84,6 +84,7 @@ a motion sensor: a Deck, a DualShock 4, a DualSense or a Switch Pro.
     saves/             your save file, and its backup
     snapsettings.json  your settings, in plain text
     snap64.log         the log of the last run
+    Snap64Recomp.png   the icon (Linux; pick it for a Steam shortcut)
 
 To change what any key, mouse button or controller button does, edit the
 "keys" section of snapsettings.json: every input is listed there after the

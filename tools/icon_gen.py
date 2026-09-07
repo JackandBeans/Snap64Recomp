@@ -31,6 +31,11 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ROOT = os.path.dirname(HERE)
 LOGO = os.path.join(ROOT, 'docs', 'logo.png')
 OUT = os.path.join(ROOT, 'src', 'snap64.ico')
+# The 256 px entry on its own, for Linux: a binary there carries no icon,
+# so the tarball ships this beside it as Snap64Recomp.png, the window takes
+# it at start-up (src/menu_assets.cpp, set_window_icon) and a Steam
+# shortcut can be pointed at it.
+PNG_OUT = os.path.join(ROOT, 'src', 'snap64.png')
 
 TILE_TOP = (104, 86, 156)       # a little lighter than the logo's outline blue
 TILE_BOTTOM = (76, 61, 118)     # a little darker
@@ -156,7 +161,8 @@ def main():
     frames += [alone(canister, s) for s in (24, 16)]
     frames[0].save(OUT, format='ICO', sizes=[f.size for f in frames],
                    append_images=frames[1:])
-    print('wrote', OUT, [f.size for f in frames], 'canister', canister.size)
+    frames[0].save(PNG_OUT, format='PNG')
+    print('wrote', OUT, [f.size for f in frames], 'canister', canister.size, 'and', PNG_OUT)
     return canister
 
 

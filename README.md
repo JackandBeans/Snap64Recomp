@@ -693,6 +693,11 @@ fine.
   View button saves the photo on screen ("Controls" above). Back paddles,
   trackpads and gyro reach the game only as whatever Steam's controller
   layout maps them to.
+* **The icon.** A Linux binary carries none, so the port's icon ships
+  beside it as `Snap64Recomp.png`: the window takes it at start-up, and a
+  Steam shortcut shows it once you pick that file in the shortcut's
+  Properties (the artwork Steam shows in Gaming Mode is a separate choice
+  there, and yours to make).
 * **Desktop Mode with Steam running.** Launched from a terminal or a file
   manager, Steam's desktop layout also sends Enter for A and Escape for B,
   which are the port's Start and pause keys: a shot opened the pause menu
@@ -765,25 +770,25 @@ fine.
 In the order it will be worked on; nothing here is a promise until it runs.
 
 1. **Reports from machines other than mine.** The port was built and played
-   on one PC; what other GPUs, drivers and Windows 10 do with it is what
-   1.0.1 will be made of. The issue form is the way to send them.
-2. **Gamepad remapping.** The keyboard's bindings are a table in the
-   settings file; a pad's are still fixed in the port's own code, with Z on
-   the left shoulder and L and R on the triggers. The pad gets a table of
-   the same shape, so any button or trigger can stand for any N64 button,
-   and a page to change them in the game comes after that. Asked for in
+   on one PC and, for 1.0.1, a Steam Deck; what other GPUs, drivers and
+   Windows 10 do with it is what 1.0.2 will be made of, as 1.0.1 was made
+   of the first reports. The issue form is the way to send them.
+2. **A page in the game for rebinding.** Since 1.0.1 every key, mouse button
+   and pad button is a row in the settings file's table and an N64-shaped
+   pad is recognised; what is left is changing them without editing the
+   file, and binding the sticks themselves. Asked for in
    [Discussions](https://github.com/JackandBeans/Snap64Recomp/discussions/3).
 3. **Widescreen beyond the Beach.** The missing Pokémon and effect
    sprites are fixed; the other courses have not been played with the
    option on.
-4. **Steam Deck.** The native Linux build compiles, packs, and has started
-   and drawn the game on a Deck in desktop mode, where it takes the Deck's
-   defaults (fullscreen at the panel, Steam's keyboard kept down). What
-   remains is gaming mode, where Steam offers only its own virtual pad, and
-   confirming gyro aim on the hardware: the Deck's motion sensor is switched
-   off by Steam's own layout and the port switches it back on, which has
-   been seen to work but not yet seen to hold. The Windows build under
-   Proton already has one good report.
+4. **Steam Deck.** The native Linux build has been played on a Deck in
+   Desktop Mode through a day of testing -- the Beach with gyro aim, the
+   menus, the settings, the Snap Station -- where it takes the Deck's
+   defaults (fullscreen at the panel, Steam's keyboard kept down, Steam's
+   desktop-layout keys ignored). What remains is Gaming Mode, where Steam
+   offers only its own virtual pad and the gyro reaches the port as mouse
+   look, and the top-left flicker at the Beach's start. The Windows build
+   under Proton already has one good report.
 5. **VR.** An idea under investigation, not a plan: stereo rendering and
    head tracking would have to be built into the renderer.
 
@@ -1067,7 +1072,8 @@ None of this would exist without:
   shown in the game's opening and at the head of its credits, gave the
   port's author a name.
 * Everyone who plays it and reports what they see: the first reports from
-  other machines are what 1.0.1 will be made of.
+  other machines are what 1.0.1 was made of, and the next ones are what
+  1.0.2 will be.
 
 ## License
 

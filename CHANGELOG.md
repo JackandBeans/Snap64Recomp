@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.1 -- unreleased
+## 1.0.1 -- 2026-09-07
 
 * Every shader the game is known to ask for is compiled during the boot
   logos, on idle threads, instead of the first time it appears in play. The
@@ -175,11 +175,15 @@
 * A native Linux build, experimental: the same source compiles with Clang
   or GCC, renders through Vulkan and packs as a tarball (BUILDING, step
   14). It has played the Beach replay and drawn correct frames on a
-  software Vulkan device under WSL; it has not yet run on a Linux desktop
-  or a Steam Deck, so it is not on the release page. Two portability fixes
-  came from a contributor's macOS build; the presented-frame capture and
-  the Snap Station's sheet capture needed a texture-to-buffer copy the
-  Vulkan backend lacked.
+  software Vulkan device under WSL, and on a Steam Deck in Desktop Mode
+  the Beach with gyro aim, the menus, the settings and the Snap Station;
+  it is on the release page marked experimental. No Linux desktop has run
+  it yet. Two portability fixes came from a contributor's macOS build; the
+  presented-frame capture and the Snap Station's sheet capture needed a
+  texture-to-buffer copy the Vulkan backend lacked. The port's icon, which
+  the Windows executable carries as a resource, ships beside the Linux
+  binary as `Snap64Recomp.png`; the window takes it at start-up and a
+  Steam shortcut can be pointed at it.
 * Steam Deck: the port knows a Deck (Steam's `SteamDeck=1`, or the board
   vendor under `/sys`) and boots fullscreen there; SDL's screen keyboard
   is kept off so Steam's does not open over the game; the Snap Station's

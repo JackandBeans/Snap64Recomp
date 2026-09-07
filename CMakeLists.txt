@@ -426,6 +426,18 @@ else()
             "$<TARGET_FILE_DIR:Snap64Recomp>/cache/rt64-seen-shaders.bin"
         COMMENT "Placing menu_text/ and the seen-shader list next to Snap64Recomp"
         VERBATIM)
+    # The port's icon. A Windows executable carries it as a resource
+    # (src/snap64.rc.in); a Linux binary has none, so the same 256 px tile
+    # sits beside it as Snap64Recomp.png: the window takes it at start-up
+    # (src/menu_assets.cpp, set_window_icon) and a Steam shortcut can be
+    # pointed at it (README, "Linux and Steam Deck").
+    add_custom_command(TARGET Snap64Recomp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/src/snap64.png"
+            "$<TARGET_FILE_DIR:Snap64Recomp>/Snap64Recomp.png"
+        COMMENT "Placing the icon next to Snap64Recomp"
+        VERBATIM)
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/snap64.png" DESTINATION . RENAME Snap64Recomp.png)
 endif()
 
 # =============================================================================
