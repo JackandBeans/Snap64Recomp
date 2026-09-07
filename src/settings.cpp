@@ -1,4 +1,5 @@
 ﻿#include "settings.h"
+#include "steam_deck.h"
 #include "hle/rt64_snap_diag.h"
 
 #include <algorithm>
@@ -135,6 +136,7 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         s.jynx_vc            = j.value("jynx_vc", s.jynx_vc);
         s.snap_station       = j.value("snap_station", s.snap_station);
         s.mouse_aim          = j.value("mouse_aim", s.mouse_aim);
+        s.rumble_strength    = std::clamp(j.value("rumble_strength", s.rumble_strength), 0, 100);
         s.mouse_sensitivity  = std::clamp(j.value("mouse_sensitivity", s.mouse_sensitivity), 0.1f, 10.0f);
         s.mouse_invert_y     = j.value("mouse_invert_y", s.mouse_invert_y);
         s.mouse_zoom_speed   = std::clamp(j.value("mouse_zoom_speed", s.mouse_zoom_speed), 0.25f, 1.0f);
@@ -160,7 +162,11 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         }
         // A file from before a field existed is complete once rewritten;
         // the next write puts the new names in it to edit.
-        s_fields_missing = !j.contains("gyro_aim");
+        // Any field the file has never carried marks it for rewriting, so an
+        // upgraded file gains the new keys (and keys_help) on the next flush
+        // rather than staying silent about them.
+        s_fields_missing = !j.contains("gyro_aim") || !j.contains("rumble_strength") ||
+                           !j.contains("keys_help");
         out = s;
         return SettingsRead::Ok;
     } catch (const std::exception& e) {
@@ -178,6 +184,15 @@ void load_settings() {
     {
         std::lock_guard<std::mutex> lock(s_settings_mutex);
         loaded = s_settings;
+    }
+    // A Steam Deck has no mouse, and mouse aim there only puts a pointer on
+    // top of the game and takes the cursor for the whole of a course. The
+    // default has to be decided here rather than as the fallback of the
+    // file's own key: on a first boot there is no file to parse, and that is
+    // the only case this exists for. A file that names mouse_aim still wins,
+    // so a docked player with a real mouse keeps their choice.
+    if (snap::is_steam_deck()) {
+        loaded.mouse_aim = false;
     }
     bool carried_render_to_ram = false;
     Bindings keys;
@@ -271,6 +286,20 @@ bool save_settings() {
     for (const auto& entry : input_bindings()) {
         keys[entry.first] = entry.second;
     }
+    // JSON carries no comments, and the table above shows only what IS bound,
+    // never what COULD be. So the file lists the names it accepts, right next
+    // to the table: a player never has to leave the file, or find the README,
+    // to learn how to write the button they want. Written, never read back.
+    const nlohmann::json keys_help{
+        {"note", "Each input lists what presses it: one name or several. Remove a name to unbind it."},
+        {"keyboard", "any SDL key name, for example: X, Z, Left Shift, Return, Space, Up, F1, Keypad 5"},
+        {"mouse", "Mouse Left, Mouse Right, Mouse Middle, Mouse X1, Mouse X2, Wheel Up, Wheel Down"},
+        {"controller", "the word Pad and one of: A, B, X, Y, Back, Guide, Start, LeftStick, RightStick, "
+                       "LeftShoulder, RightShoulder, DPUp, DPDown, DPLeft, DPRight, LeftTrigger, RightTrigger"},
+        {"example", "\"z\": [\"Left Shift\", \"Pad LeftTrigger\"] puts Z on the left trigger"},
+        {"unknown_names", "reported in snap64.log and skipped; an input left with nothing keeps its default"},
+        {"not_bindable", "the sticks themselves: the left stick aims and the right stick works the C buttons"},
+    };
     const nlohmann::json j{
         {"fullscreen",            copy.fullscreen},
         {"widescreen",            copy.widescreen},
@@ -304,12 +333,14 @@ bool save_settings() {
         {"jynx_vc",               copy.jynx_vc},
         {"snap_station",          copy.snap_station},
         {"mouse_aim",             copy.mouse_aim},
+        {"rumble_strength",       copy.rumble_strength},
         {"mouse_sensitivity",     copy.mouse_sensitivity},
         {"mouse_invert_y",        copy.mouse_invert_y},
         {"mouse_zoom_speed",      copy.mouse_zoom_speed},
         {"gyro_aim",              copy.gyro_aim},
         {"gyro_sensitivity",      copy.gyro_sensitivity},
         {"keys",                  keys},
+        {"keys_help",             keys_help},
     };
     // dump() throws only for a string that is not valid UTF-8; the key
     // names above came through the parser or are this file's own.

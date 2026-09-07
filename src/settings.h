@@ -155,7 +155,10 @@ struct Settings {
     // never read. The table itself lives in input.cpp, not here: it is
     // strings, and this struct's lock-free readers need word-sized fields
     // (below).
-    bool  mouse_aim         = true;
+    bool  mouse_aim         = true;   // load_settings turns it off on a Steam Deck
+    // The Rumble Pak's strength as a percentage; 0 switches it off. The
+    // cartridge had one setting, on, so 100 is the faithful default.
+    int   rumble_strength   = 100;
     // Multiplies the angle per pixel: 1 is a full turn in about 2500
     // pixels, 2 twice as quick, 0.5 half. Bounded to 0.1 .. 10 where read.
     float mouse_sensitivity = 1.0f;

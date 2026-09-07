@@ -60,6 +60,7 @@
 #include <cmath>
 #include <SDL2/SDL.h>
 
+#include "paths.h"
 #include "photo_export.h"
 #include "settings.h"
 #include "snap_station.h"
@@ -96,6 +97,11 @@ extern uint8_t* g_rdram;
 // overlay_hook.cpp: true while a course's code overlay is resident.
 extern std::atomic<bool> g_app_level_resident;
 
+// The pad the port is reading. Defined here rather than with the rest of the
+// internal state because a binding can now name one of its buttons, and
+// source_down below has to be able to ask it.
+static SDL_GameController* game_controller = nullptr;
+
 // ---------------------------------------------------------------------------
 // Bindings
 // ---------------------------------------------------------------------------
@@ -118,11 +124,12 @@ const uint16_t kInputBits[IN_CR + 1] = {
     N64_BTN_L, N64_BTN_R, N64_BTN_CU, N64_BTN_CD, N64_BTN_CL, N64_BTN_CR,
 };
 
-enum class SourceKind : uint8_t { Key, MouseButton, WheelUp, WheelDown };
+enum class SourceKind : uint8_t { Key, MouseButton, WheelUp, WheelDown, PadButton, PadAxis };
 
 struct Source {
     SourceKind kind;
-    int code;   // SDL_Scancode, or the SDL mouse button index
+    int code;   // SDL_Scancode, the SDL mouse button index, or the pad's
+                // SDL_GameControllerButton / SDL_GameControllerAxis
 };
 
 struct Resolved {
@@ -131,16 +138,21 @@ struct Resolved {
 
 const Bindings& defaults() {
     static const Bindings table = {
-        {"a",           {"X", "Mouse Left"}},
-        {"b",           {"Z", "Mouse Middle"}},
-        {"z",           {"Left Shift", "Mouse Right"}},
-        {"start",       {"Return"}},
-        {"d_up",        {"Up"}},
-        {"d_down",      {"Down"}},
-        {"d_left",      {"Left"}},
-        {"d_right",     {"Right"}},
-        {"l",           {"Q"}},
-        {"r",           {"E"}},
+        // Keyboard, mouse and pad in one list per input: a name that starts
+        // with "Pad " is the controller's, everything else is a key or a
+        // mouse button. The pad entries below are exactly the mapping that
+        // used to be written into input_get, so a player who never edits the
+        // file feels no difference.
+        {"a",           {"X", "Mouse Left", "Pad A"}},
+        {"b",           {"Z", "Mouse Middle", "Pad B", "Pad X"}},
+        {"z",           {"Left Shift", "Mouse Right", "Pad LeftShoulder"}},
+        {"start",       {"Return", "Pad Start"}},
+        {"d_up",        {"Up", "Pad DPUp"}},
+        {"d_down",      {"Down", "Pad DPDown"}},
+        {"d_left",      {"Left", "Pad DPLeft"}},
+        {"d_right",     {"Right", "Pad DPRight"}},
+        {"l",           {"Q", "Pad LeftTrigger"}},
+        {"r",           {"E", "Pad RightTrigger"}},
         {"c_up",        {"I", "Wheel Up"}},
         {"c_down",      {"K", "Wheel Down"}},
         {"c_left",      {"J", "Mouse X1"}},
@@ -168,6 +180,26 @@ bool resolve_source(const std::string& name, Source& out) {
             out = {m.kind, m.code};
             return true;
         }
+    }
+    // "Pad " and then SDL's own name for the button or axis: A, B, X, Y,
+    // Back, Guide, Start, LeftStick, RightStick, LeftShoulder, RightShoulder,
+    // DPUp, DPDown, DPLeft, DPRight, LeftTrigger, RightTrigger. SDL parses
+    // them, so the names a player writes are the ones SDL documents and no
+    // table here can fall out of date with it.
+    if (SDL_strncasecmp(name.c_str(), "Pad ", 4) == 0) {
+        const char* what = name.c_str() + 4;
+        while (*what == ' ') what++;
+        const SDL_GameControllerButton b = SDL_GameControllerGetButtonFromString(what);
+        if (b != SDL_CONTROLLER_BUTTON_INVALID) {
+            out = {SourceKind::PadButton, int(b)};
+            return true;
+        }
+        const SDL_GameControllerAxis a = SDL_GameControllerGetAxisFromString(what);
+        if (a != SDL_CONTROLLER_AXIS_INVALID) {
+            out = {SourceKind::PadAxis, int(a)};
+            return true;
+        }
+        return false;
     }
     const SDL_Scancode sc = SDL_GetScancodeFromName(name.c_str());
     if (sc == SDL_SCANCODE_UNKNOWN) {
@@ -262,6 +294,30 @@ std::atomic<bool> g_gyro_enabled{false};       // the sensor is on and its event
 std::atomic<int32_t> g_gyro_instance{-1};      // the joystick the readings must come from
 uint64_t g_gyro_last_us = 0;                   // the sensor's own clock, when it has one
 float g_gyro_rate_hz = 0.0f;                   // else its nominal rate spaces the readings
+// SNAP_GYRO_DEBUG: what the sensor sent and what became of it. Guarded by
+// g_motion_mutex, which the reading path already takes.
+const bool g_gyro_debug = (getenv("SNAP_GYRO_DEBUG") != nullptr);
+float g_dbg_peak[3] = {0.0f, 0.0f, 0.0f};   // largest |rate| per axis, rad/s
+uint32_t g_dbg_n = 0;                        // readings counted this second
+float g_dbg_last_yaw = 0.0f;                 // angle handed over, radians
+float g_dbg_last_pitch = 0.0f;
+float g_dbg_dt_sum = 0.0f;                   // seconds the readings claimed to span
+uint32_t g_dbg_clock = 0;                    // readings whose own clock was believed
+float g_dbg_grav[3] = {0.0f, 0.0f, 0.0f};    // where up was, last reading
+
+// Which way is UP, in the pad's own frame, low-passed out of the
+// accelerometer (about a quarter second). Touched only on the event thread.
+// SDL's accelerometer measures proper acceleration, so a pad at rest reads
+// +9.8 along the axis pointing away from the earth (SDL_sensor.h): the
+// vector points up, and calling it "down" is what put a sign error in the
+// first version of this.
+// A turn of the pad is a rotation about the world's vertical, not about the
+// pad's own up axis; the two are the same only when the pad is held upright,
+// and a Steam Deck is held tilted back, which put the whole of a left-right
+// turn onto an axis the port was not reading (found on a Deck, 2026-09-06).
+float g_grav[3] = {0.0f, 0.0f, 0.0f};
+const char* g_dbg_stop = "not called";       // the test that dropped it
+
 std::atomic<int64_t> g_gyro_live_us{0};        // when a reading last carried any turning at all
 std::atomic<uint32_t> g_gyro_readings{0};      // readings since the gyro was turned on
 
@@ -296,15 +352,22 @@ void apply_mouse_look(uint8_t* rdram) {
         g_motion_dx = 0.0f; g_motion_dy = 0.0f;
         g_gyro_yaw = 0.0f; g_gyro_pitch = 0.0f;
     }
-    if ((dx == 0.0f && dy == 0.0f && gyaw == 0.0f && gpitch == 0.0f) || rdram == nullptr) return;
-    if (!g_app_level_resident.load(std::memory_order_relaxed)) return;
-    if (read_u8(rdram, ADDR_IsPaused) != 0) return;
-    if (read_s32(rdram, ADDR_IsInputDisabled) != 0) return;
+    if (g_gyro_debug) {
+        std::lock_guard<std::mutex> lock(g_motion_mutex);
+        g_dbg_last_yaw = gyaw;
+        g_dbg_last_pitch = gpitch;
+    }
+#define SNAP_GYRO_DROP(why) do { if (g_gyro_debug) g_dbg_stop = (why); return; } while (0)
+    if (dx == 0.0f && dy == 0.0f && gyaw == 0.0f && gpitch == 0.0f) SNAP_GYRO_DROP("no angle arrived");
+    if (rdram == nullptr) SNAP_GYRO_DROP("no rdram");
+    if (!g_app_level_resident.load(std::memory_order_relaxed)) SNAP_GYRO_DROP("not in a course");
+    if (read_u8(rdram, ADDR_IsPaused) != 0) SNAP_GYRO_DROP("paused");
+    if (read_s32(rdram, ADDR_IsInputDisabled) != 0) SNAP_GYRO_DROP("input disabled");
     const int32_t direction = read_s32(rdram, ADDR_gDirectionIndex);
-    if (direction < -1) return;
+    if (direction < -1) SNAP_GYRO_DROP("direction changing");
     const bool zoomedIn = (direction == -1);
-    if (zoomedIn && (read_s32(rdram, ADDR_TargetDirectionZoomedIn) != 0)) return;
-    if (zoomedIn && (read_s32(rdram, ADDR_ZoomedInCameraHeld) != 0)) return;
+    if (zoomedIn && (read_s32(rdram, ADDR_TargetDirectionZoomedIn) != 0)) SNAP_GYRO_DROP("zoom turning");
+    if (zoomedIn && (read_s32(rdram, ADDR_ZoomedInCameraHeld) != 0)) SNAP_GYRO_DROP("photo held");
 
     const Settings& s = settings();
     const float sens = std::fmax(0.1f, std::fmin(10.0f, s.mouse_sensitivity));
@@ -328,7 +391,9 @@ void apply_mouse_look(uint8_t* rdram) {
     if (pitch < lo) pitch = lo;
     if (pitch > hi) pitch = hi;
     write_f32(rdram, ADDR_ViewPitch, pitch);
+    if (g_gyro_debug) g_dbg_stop = "applied to the view";
 }
+#undef SNAP_GYRO_DROP
 
 bool source_down(const Source& src, const uint8_t* keys, uint32_t held, int64_t t) {
     switch (src.kind) {
@@ -341,6 +406,17 @@ bool source_down(const Source& src, const uint8_t* keys, uint32_t held, int64_t 
             return t < g_wheel_up_until.load(std::memory_order_relaxed);
         case SourceKind::WheelDown:
             return t < g_wheel_down_until.load(std::memory_order_relaxed);
+        case SourceKind::PadButton:
+            return (game_controller != nullptr) &&
+                   (SDL_GameControllerGetButton(game_controller,
+                                                SDL_GameControllerButton(src.code)) != 0);
+        case SourceKind::PadAxis:
+            // A trigger counts as held past the same eighth of its travel the
+            // hardcoded mapping used. A stick axis bound to a button behaves
+            // the same way, in its positive direction.
+            return (game_controller != nullptr) &&
+                   (SDL_GameControllerGetAxis(game_controller,
+                                              SDL_GameControllerAxis(src.code)) > 8000);
     }
     return false;
 }
@@ -351,7 +427,51 @@ const Bindings& input_default_bindings() {
     return defaults();
 }
 
-void input_set_bindings(const Bindings& bindings) {
+// True when a binding names a controller button or axis.
+static bool is_pad_name(const std::string& name) {
+    return SDL_strncasecmp(name.c_str(), "Pad ", 4) == 0;
+}
+
+// A file written before the pad joined this table names no pad source at all,
+// and a file's list REPLACES the default rather than adding to it -- so
+// reading one as it stands would leave the controller dead, buttons and
+// triggers both, for every player who had ever run the port before. Such a
+// table is migrated: the pad half of each input's default is put back, the
+// player's own keys and mouse buttons untouched. A table that names any pad
+// source was written by someone who knew about them and is left exactly as it
+// is, so unbinding a pad button stays possible.
+static Bindings migrate_pad_bindings(const Bindings& in) {
+    for (const auto& entry : in) {
+        for (const std::string& src : entry.second) {
+            if (is_pad_name(src)) {
+                return in;
+            }
+        }
+    }
+    Bindings out = in;
+    int added = 0;
+    for (const auto& def : defaults()) {
+        auto it = out.find(def.first);
+        if (it == out.end()) {
+            continue;   // the file never mentioned this input; the default applies
+        }
+        for (const std::string& src : def.second) {
+            if (is_pad_name(src)) {
+                it->second.push_back(src);
+                added++;
+            }
+        }
+    }
+    if (added > 0) {
+        printf("[SNAP-Input] the settings file predates controller bindings; "
+               "%d pad defaults added back, keys and mouse left as they were\n", added);
+        fflush(stdout);
+    }
+    return out;
+}
+
+void input_set_bindings(const Bindings& given) {
+    const Bindings bindings = migrate_pad_bindings(given);
     auto r = std::make_shared<Resolved>();
     Bindings in_force = defaults();
     for (int i = 0; i < IN_COUNT; i++) {
@@ -366,7 +486,11 @@ void input_set_bindings(const Bindings& bindings) {
                 sources.push_back(src);
                 accepted.push_back(src_name);
             } else {
-                printf("[SNAP-Input] keys.%s: \"%s\" is not a key or mouse name SDL knows; skipped\n",
+                printf("[SNAP-Input] keys.%s: \"%s\" is not a name SDL knows; skipped. "
+                       "Keys are SDL key names (\"X\", \"Left Shift\", \"Return\"); the mouse is "
+                       "\"Mouse Left/Right/Middle/X1/X2\", \"Wheel Up/Down\"; a controller "
+                       "is \"Pad \" and one of A B X Y Back Guide Start LeftStick RightStick "
+                       "LeftShoulder RightShoulder DPUp DPDown DPLeft DPRight LeftTrigger RightTrigger\n",
                        name.c_str(), src_name.c_str());
             }
         }
@@ -432,20 +556,30 @@ void input_handle_sdl_event(const SDL_Event& event) {
                 g_buttons_from.store(now_us() + FocusSettleUs, std::memory_order_relaxed);
             }
             break;
+        // SDL turns a touch into mouse motion and a mouse button unless it is
+        // told not to, and a Steam Deck has a touchscreen under the player's
+        // thumbs. Only a real pointer aims the camera; the synthetic one would
+        // swing the view every time the screen was brushed.
         case SDL_MOUSEMOTION:
-            if (captured) {
+            if (captured && (event.motion.which != SDL_TOUCH_MOUSEID)) {
                 std::lock_guard<std::mutex> lock(g_motion_mutex);
                 g_motion_dx += float(event.motion.xrel);
                 g_motion_dy += float(event.motion.yrel);
             }
             break;
         case SDL_MOUSEBUTTONDOWN:
+            if (event.button.which == SDL_TOUCH_MOUSEID) {
+                break;
+            }
             if (buttons_live && event.button.button < 8) {
                 g_mouse_held.fetch_or(1u << event.button.button, std::memory_order_relaxed);
                 g_mouse_press_until[event.button.button].store(now_us() + PressHoldUs, std::memory_order_relaxed);
             }
             break;
         case SDL_MOUSEBUTTONUP:
+            if (event.button.which == SDL_TOUCH_MOUSEID) {
+                break;
+            }
             if (event.button.button < 8) {
                 g_mouse_held.fetch_and(~(1u << event.button.button), std::memory_order_relaxed);
             }
@@ -458,18 +592,68 @@ void input_handle_sdl_event(const SDL_Event& event) {
             }
             break;
         case SDL_CONTROLLERSENSORUPDATE:
+            if ((event.csensor.sensor == SDL_SENSOR_ACCEL) &&
+                g_gyro_enabled.load(std::memory_order_relaxed) &&
+                (event.csensor.which == g_gyro_instance.load(std::memory_order_relaxed))) {
+                const float a[3] = {event.csensor.data[0], event.csensor.data[1],
+                                    event.csensor.data[2]};
+                // A reading only says which way is up while the pad is not
+                // being accelerated: at rest its length is one gravity. A
+                // shaken pad, or one in a moving vehicle, reads something
+                // else, and folding that in would tilt the axis yaw is
+                // measured against. Anything well away from 9.8 m/s^2 is
+                // simply not used; the last good vector stands.
+                const float am = std::sqrt(a[0] * a[0] + a[1] * a[1] + a[2] * a[2]);
+                if ((am < 6.5f) || (am > 13.0f)) {
+                    break;
+                }
+                const float have = std::sqrt(g_grav[0] * g_grav[0] + g_grav[1] * g_grav[1] +
+                                             g_grav[2] * g_grav[2]);
+                if (have < 0.1f) {
+                    g_grav[0] = a[0]; g_grav[1] = a[1]; g_grav[2] = a[2];
+                } else {
+                    constexpr float Follow = 0.015f;   // about a quarter second at 250 Hz
+                    for (int i = 0; i < 3; i++) {
+                        g_grav[i] += Follow * (a[i] - g_grav[i]);
+                    }
+                }
+            }
             // Each reading is a rate; integrated here over the sensor's own
             // clock (its timestamp, when the driver gives one) or its
             // nominal rate, into an angle the game thread adds to the view.
             if ((event.csensor.sensor == SDL_SENSOR_GYRO) &&
                 g_gyro_enabled.load(std::memory_order_relaxed) &&
                 (event.csensor.which == g_gyro_instance.load(std::memory_order_relaxed))) {
+                // The interval the sensor's own rate implies, and the one its
+                // clock claims. The claim is believed only when the two agree
+                // within a factor of four: SDL's Steam Deck driver ticks
+                // timestamp_us in units of its own, and taking it for
+                // microseconds made every reading worth a millionth of the
+                // turn it represented, so a 14 rad/s swing moved the view by
+                // nothing at all (found on a Deck, 2026-09-06). A clock that
+                // disagrees is discarded, not scaled: what it is counting is
+                // not known, only that it is not microseconds.
                 const uint64_t ts = event.csensor.timestamp_us;
-                float dt;
+                // Where the driver reports a rate, the sensor's own clock is
+                // believed only when it agrees with that rate within a factor
+                // of four. Where it reports none -- SDL's evdev sensor path
+                // does -- there is nothing to check against, so any interval
+                // that is physically sensible for a motion sensor is taken,
+                // and only the assumed interval stands in when even that
+                // fails. Guessing 250 Hz and then rejecting a good clock for
+                // disagreeing with the guess would be worse than not checking.
+                const bool rateKnown = (g_gyro_rate_hz > 0.0f);
+                const float nominal = rateKnown ? (1.0f / g_gyro_rate_hz) : 0.004f;
+                const float lo = rateKnown ? (nominal * 0.25f) : 0.0002f;   /* 5 kHz */
+                const float hi = rateKnown ? (nominal * 4.0f) : 0.05f;      /* 20 Hz */
+                float dt = nominal;
+                bool clockUsed = false;
                 if ((ts != 0) && (g_gyro_last_us != 0) && (ts > g_gyro_last_us)) {
-                    dt = float(ts - g_gyro_last_us) * 1e-6f;
-                } else {
-                    dt = (g_gyro_rate_hz > 0.0f) ? (1.0f / g_gyro_rate_hz) : 0.004f;
+                    const float measured = float(ts - g_gyro_last_us) * 1e-6f;
+                    if ((measured > lo) && (measured < hi)) {
+                        dt = measured;
+                        clockUsed = true;
+                    }
                 }
                 if (ts != 0) g_gyro_last_us = ts;
                 if (dt > 0.05f) dt = 0.05f;   // a gap (focus, a stall) is not a turn
@@ -479,19 +663,50 @@ void input_handle_sdl_event(const SDL_Event& event) {
                 if ((rx != 0.0f) || (ry != 0.0f) || (event.csensor.data[2] != 0.0f)) {
                     g_gyro_live_us.store(now_us(), std::memory_order_relaxed);
                 }
+                // Yaw is the turn about the world's vertical: the reading
+                // projected onto the up vector the accelerometer gives.
+                // Tilted back -- how a Deck is actually held -- this is the
+                // part of the turn that the pad's own up axis alone was
+                // missing, and it was hardware-confirmed on a Deck.
+                //
+                // The fallback for a pad with no accelerometer has to carry
+                // the same sign as that projection, or the two kinds of pad
+                // would aim opposite ways: held upright the projection is
+                // -ry, so the fallback is -ry too.
+                const float rz = event.csensor.data[2];
+                const float gm = std::sqrt(g_grav[0] * g_grav[0] + g_grav[1] * g_grav[1] +
+                                           g_grav[2] * g_grav[2]);
+                float yawRate = -ry;
+                if (gm > 1.0f) {
+                    yawRate = -(rx * g_grav[0] + ry * g_grav[1] + rz * g_grav[2]) / gm;
+                }
                 // Tightening: under a degree per second the rate is scaled
                 // toward zero, so a pad at rest does not creep, without the
                 // dead band a cutoff would put on slow, deliberate aiming.
                 constexpr float Tight = 0.01745f;
-                const float mag = std::sqrt(rx * rx + ry * ry);
+                const float mag = std::sqrt(rx * rx + yawRate * yawRate);
                 if (mag < Tight) {
                     const float f = mag / Tight;
                     rx *= f;
-                    ry *= f;
+                    yawRate *= f;
                 }
                 std::lock_guard<std::mutex> lock(g_motion_mutex);
-                g_gyro_yaw += -ry * dt;
+                g_gyro_yaw += -yawRate * dt;
                 g_gyro_pitch += rx * dt;
+                if (g_gyro_debug) {
+                    const float raw[3] = {event.csensor.data[0], event.csensor.data[1],
+                                          event.csensor.data[2]};
+                    for (int i = 0; i < 3; i++) {
+                        const float a = std::fabs(raw[i]);
+                        if (a > g_dbg_peak[i]) g_dbg_peak[i] = a;
+                    }
+                    g_dbg_n++;
+                    g_dbg_dt_sum += dt;
+                    if (clockUsed) g_dbg_clock++;
+                    g_dbg_grav[0] = g_grav[0];
+                    g_dbg_grav[1] = g_grav[1];
+                    g_dbg_grav[2] = g_grav[2];
+                }
             }
             break;
         default:
@@ -509,6 +724,20 @@ void input_update_mouse_capture() {
                         settings().mouse_aim &&
                         g_focused.load(std::memory_order_relaxed) &&
                         g_app_level_resident.load(std::memory_order_relaxed);
+    // The pointer has no business on screen in fullscreen: there is nothing
+    // beside the game to point at, and on a Steam Deck, which boots
+    // fullscreen, it sat over the picture for the whole session. Windowed it
+    // stays, because the window still has chrome to drag, resize and close.
+    // Kept out of the early return below: fullscreen can change while the
+    // capture state does not.
+    {
+        static int cursorState = -1;
+        const int want = (settings().fullscreen && !wanted) ? SDL_DISABLE : SDL_ENABLE;
+        if (cursorState != want) {
+            SDL_ShowCursor(want);
+            cursorState = want;
+        }
+    }
     const bool current = g_captured.load(std::memory_order_relaxed);
     if (wanted == current) {
         return;
@@ -530,7 +759,6 @@ void input_update_mouse_capture() {
 // Internal state
 // ---------------------------------------------------------------------------
 
-static SDL_GameController* game_controller = nullptr;
 static bool controller_initialized = false;
 
 // The Back button's press, taken from SDL's event stream rather than from
@@ -550,6 +778,24 @@ static int SDLCALL photo_button_watch(void* /*userdata*/, SDL_Event* event) {
         export_photo(g_rdram);
     }
     return 1;
+}
+
+// SDL knows a few thousand pads already. For the rest there is
+// gamecontrollerdb.txt, the community's own list, which every other port of
+// this kind accepts: drop the file beside the game and the pad works. The
+// alternative SDL offers is an environment variable holding one raw mapping
+// string, which is a developer's tool, not a player's. Absent is the normal
+// case and says nothing.
+static void load_controller_mappings() {
+    const std::string path = base_path("gamecontrollerdb.txt").string();
+    const int added = SDL_GameControllerAddMappingsFromFile(path.c_str());
+    if (added > 0) {
+        printf("[SNAP-Input] gamecontrollerdb.txt: %d controller mappings added\n", added);
+        fflush(stdout);
+    } else if (added == 0) {
+        printf("[SNAP-Input] gamecontrollerdb.txt: no mappings in the file\n");
+        fflush(stdout);
+    }
 }
 
 static void try_open_controller() {
@@ -583,7 +829,8 @@ static void try_open_controller() {
             // seen, so a player knows why it does nothing and can hand SDL a
             // mapping through SDL_GAMECONTROLLERCONFIG (README, Controls).
             const char* name = SDL_JoystickNameForIndex(i);
-            printf("[SNAP-Input] joystick %d (%s) has no game controller mapping; it is not used\n",
+            printf("[SNAP-Input] joystick %d (%s) has no game controller mapping; it is not used. "
+                   "A line for it in gamecontrollerdb.txt, beside the game, would teach SDL this pad\n",
                    i, name ? name : "unnamed");
         }
     }
@@ -724,6 +971,32 @@ static void gyro_watch(bool justEnabled) {
         return;
     }
     if (!g_gyro_enabled.load(std::memory_order_relaxed)) return;
+    if (g_gyro_debug) {
+        static int64_t said = 0;
+        if (t - said >= 1000000) {
+            said = t;
+            float pk[3], gv[3];
+            uint32_t n, clk;
+            float ly, lp, dts;
+            {
+                std::lock_guard<std::mutex> lock(g_motion_mutex);
+                pk[0] = g_dbg_peak[0]; pk[1] = g_dbg_peak[1]; pk[2] = g_dbg_peak[2];
+                n = g_dbg_n;
+                ly = g_dbg_last_yaw; lp = g_dbg_last_pitch;
+                dts = g_dbg_dt_sum; clk = g_dbg_clock;
+                gv[0] = g_dbg_grav[0]; gv[1] = g_dbg_grav[1]; gv[2] = g_dbg_grav[2];
+                g_dbg_peak[0] = g_dbg_peak[1] = g_dbg_peak[2] = 0.0f;
+                g_dbg_n = 0;
+                g_dbg_dt_sum = 0.0f;
+                g_dbg_clock = 0;
+            }
+            printf("[SNAP-GYRO] %u readings spanning %.3f s (%u by the sensor's own clock), "
+                   "biggest rate x=%.4f y=%.4f z=%.4f rad/s; down=(%.1f %.1f %.1f); "
+                   "angle handed over yaw=%.4f pitch=%.4f rad; %s\n",
+                   n, dts, clk, pk[0], pk[1], pk[2], gv[0], gv[1], gv[2], ly, lp, g_dbg_stop);
+            fflush(stdout);
+        }
+    }
     constexpr int64_t Dead = 500000;
     constexpr int64_t Resend = 1000000;
     const int64_t live = g_gyro_live_us.load(std::memory_order_relaxed);
@@ -772,15 +1045,24 @@ static void gyro_watch(bool justEnabled) {
 // enable, and the setting then does nothing.
 static void sync_gyro() {
     static bool enabledFor = false;
-    static SDL_GameController* pad = nullptr;
+    // The pad is named by its joystick instance id, which SDL never reuses
+    // within a run. The address of the handle is not usable for this: it is
+    // closed when a pad goes away, and the allocator can hand the same
+    // address back for the next one, which would leave the gyro switched off
+    // on a pad the port believed it had already seen.
+    static SDL_JoystickID padId = -1;
     const bool has = (game_controller != nullptr) &&
                      (SDL_GameControllerHasSensor(game_controller, SDL_SENSOR_GYRO) == SDL_TRUE);
     const bool want = has && (settings().gyro_aim != 0);
-    if ((pad == game_controller) && (enabledFor == want)) {
+    const SDL_JoystickID nowId =
+        (game_controller != nullptr)
+            ? SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(game_controller))
+            : -1;
+    if ((padId == nowId) && (enabledFor == want)) {
         gyro_watch(false);
         return;
     }
-    pad = game_controller;
+    padId = nowId;
     enabledFor = want;
     if (!has) {
         g_gyro_enabled.store(false, std::memory_order_relaxed);
@@ -793,6 +1075,13 @@ static void sync_gyro() {
         g_gyro_enabled.store(false, std::memory_order_relaxed);
         return;
     }
+    // The accelerometer says which way is down, which is what makes a turn a
+    // turn whatever angle the pad is held at. A pad without one still aims;
+    // the yaw simply falls back to the pad's own up axis.
+    if (SDL_GameControllerHasSensor(game_controller, SDL_SENSOR_ACCEL) == SDL_TRUE) {
+        SDL_GameControllerSetSensorEnabled(game_controller, SDL_SENSOR_ACCEL, want ? SDL_TRUE : SDL_FALSE);
+    }
+    g_grav[0] = g_grav[1] = g_grav[2] = 0.0f;
     g_gyro_rate_hz = SDL_GameControllerGetSensorDataRate(game_controller, SDL_SENSOR_GYRO);
     g_gyro_last_us = 0;
     g_gyro_instance.store(SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(game_controller)), std::memory_order_relaxed);
@@ -815,6 +1104,9 @@ static void sync_gyro() {
 void input_poll() {
     if (!controller_initialized) {
         // SDL_Init should have been called by the gfx create callback.
+        // Any extra mappings first, so a pad this file teaches SDL about is
+        // recognised by the open below rather than on some later poll.
+        load_controller_mappings();
         // Try to open a game controller if we haven't yet.
         try_open_controller();
         // Registered once, after SDL_Init, for the life of the process.
@@ -1046,32 +1338,11 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
     // Game controller input (overrides keyboard if connected)
     // -----------------------------------------------------------------------
     if (game_controller && SDL_GameControllerGetAttached(game_controller)) {
-        // Buttons
-        if (SDL_GameControllerGetButton(game_controller, SDL_CONTROLLER_BUTTON_A))
-            btn |= N64_BTN_A;
-        if (SDL_GameControllerGetButton(game_controller, SDL_CONTROLLER_BUTTON_B))
-            btn |= N64_BTN_B;
-        // X = B on N64 (alternative)
-        if (SDL_GameControllerGetButton(game_controller, SDL_CONTROLLER_BUTTON_X))
-            btn |= N64_BTN_B;
-        if (SDL_GameControllerGetButton(game_controller, SDL_CONTROLLER_BUTTON_LEFTSHOULDER))
-            btn |= N64_BTN_Z;
-        if (SDL_GameControllerGetButton(game_controller, SDL_CONTROLLER_BUTTON_START))
-            btn |= N64_BTN_START;
-        if (SDL_GameControllerGetButton(game_controller, SDL_CONTROLLER_BUTTON_DPAD_UP))
-            btn |= N64_BTN_DU;
-        if (SDL_GameControllerGetButton(game_controller, SDL_CONTROLLER_BUTTON_DPAD_DOWN))
-            btn |= N64_BTN_DD;
-        if (SDL_GameControllerGetButton(game_controller, SDL_CONTROLLER_BUTTON_DPAD_LEFT))
-            btn |= N64_BTN_DL;
-        if (SDL_GameControllerGetButton(game_controller, SDL_CONTROLLER_BUTTON_DPAD_RIGHT))
-            btn |= N64_BTN_DR;
-
-        // Triggers → L/R
-        int16_t lt = SDL_GameControllerGetAxis(game_controller, SDL_CONTROLLER_AXIS_TRIGGERLEFT);
-        int16_t rt = SDL_GameControllerGetAxis(game_controller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
-        if (lt > 8000)  btn |= N64_BTN_L;
-        if (rt > 8000)  btn |= N64_BTN_R;
+        // The pad's buttons and triggers went through the binding table above,
+        // beside the keyboard's: their defaults are the mapping that used to
+        // be written out here, and the settings file can now say otherwise.
+        // What stays is the analogue: a stick is a direction and a magnitude,
+        // not a button, and neither of the two below is expressible as one.
 
         // Right stick → C buttons (threshold-based)
         int16_t rx = SDL_GameControllerGetAxis(game_controller, SDL_CONTROLLER_AXIS_RIGHTX);
@@ -1159,8 +1430,19 @@ void input_set_rumble(int controller_num, bool rumble) {
     if (controller_num != 0 || !game_controller) return;
 
 #if SDL_VERSION_ATLEAST(2, 0, 9)
-    if (rumble) {
-        SDL_GameControllerRumble(game_controller, 0xFFFF, 0xFFFF, 100);
+    // The Rumble Pak is on or off: the game runs the motor with osMotorStart
+    // and stops it with osMotorStop, and nothing re-triggers in between. The
+    // hundred milliseconds asked for here was therefore a cutoff, not a
+    // duration -- every rumble the game meant to hold ended after a tenth of
+    // a second. It runs until it is told to stop now.
+    const int pct = std::clamp(settings().rumble_strength, 0, 100);
+    if (rumble && (pct > 0)) {
+        const Uint16 mag = Uint16((0xFFFF * pct) / 100);
+        // SDL caps a rumble at SDL_MAX_RUMBLE_DURATION_MS (0xFFFF, about
+        // 65 seconds) whatever is asked for, so that is the longest a single
+        // start can run. The game always stops its own buzzes long before
+        // then; asking for more would only be clamped to this anyway.
+        SDL_GameControllerRumble(game_controller, mag, mag, 0xFFFF);
     } else {
         SDL_GameControllerRumble(game_controller, 0, 0, 0);
     }
