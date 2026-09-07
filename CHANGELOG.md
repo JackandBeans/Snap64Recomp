@@ -62,8 +62,8 @@
   from the scene's general heap, which is a bump allocator with no free of
   any kind, and the Option screen is a state inside the main-menu scene
   rather than a scene of its own, so nothing between two visits ever moved
-  that cursor back. A Graphics visit cost about 5.8 KB of the 1,887,328 the
-  scene has, and a few hundred visits walked it off the end, where the
+  that cursor back. A Graphics visit cost about 5.8 KB of the 1,887,328
+  bytes the scene has, and a few hundred visits walked it off the end, where the
   game's allocator branches to itself for ever: the last picture stayed on
   screen, the sound stopped, and nothing answered the controller. The strips
   come from a table of the port's own now, sized by what can be on screen at
@@ -75,13 +75,13 @@
 * Three ways a save could be lost, all in the runtime's own save path. The
   game rewrites its record a sector at a time -- an erase and 128 page
   writes for each of the eight sectors it spans, over a thousand writes for
-  a whole save -- and the port published the file after 128 of them, or
+  a whole save -- and the runtime published the file after 128 of them, or
   after ten milliseconds of quiet, which is part of the way through by
   construction. What reached the disk carried a fresh checksum over
   partly-old bytes, so the game rejected it on the next boot. The same
   publish rotated the previous file into the backup, so both copies could be
   spoiled at once, and a torn file is exactly the right length and reads
-  cleanly, so the backup was never reached for either. Writes still in
+  cleanly, so the backup was never consulted at all. Writes still in
   flight when the player quit were dropped. And a save that existed but
   could not be read was replaced by zeros, which the next write committed
   over it. The file is published only once the game's writes have stopped

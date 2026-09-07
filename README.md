@@ -46,8 +46,8 @@ The people and projects this port stands on are thanked under [Thanks](#thanks).
 
 ## Get it running
 
-> **In a hurry?** The archive holds a `START HERE.txt` with the same thing in
-> ten lines. The one part people miss: this port has no launcher and no
+> **In a hurry?** The archive holds a `START HERE.txt` with the short version.
+> The one part people miss: this port has no launcher and no
 > overlay, so everything it adds lives inside the game's own **Options**
 > screen. Options > Graphics is where widescreen, the frame rate and the rest
 > of the enhancements are, and they all start off, set to what the console
@@ -306,8 +306,9 @@ controller mapping`) and does nothing until it is taught. Two ways to teach
 it, easiest first:
 
 * Put [`gamecontrollerdb.txt`](https://github.com/mdqinc/SDL_GameControllerDB)
-  next to `Snap64Recomp.exe`. It is the community's list of pad mappings; the
-  port reads it at start-up and says how many it added. Nothing else to do.
+  next to the executable (`Snap64Recomp.exe` on Windows). It is the
+  community's list of pad mappings; the port reads it at start-up and says how
+  many it added. Nothing else to do.
 * Or set SDL's `SDL_GAMECONTROLLERCONFIG` environment variable to a single
   mapping string, which is what SDL itself documents.
 
