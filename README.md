@@ -582,6 +582,27 @@ mode, "Mods and texture packs") and `SNAP_MENU_FONT_DUMP` (the harvested
 menu font written out). They are development switches; the source is their
 documentation.
 
+### Every course open
+
+The game opens its courses in its own order, and that order is the game;
+the port does not change it and has no switch that does. But a save with
+every course already open has real uses -- checking a later course on a new
+machine, a stream that wants the Volcano without an hour of Beach first, a
+save that was lost -- so the repository carries the tool that makes one,
+`tools/unlock_save.py`. It reads a copy of your `saves/pokemonsnap.bin`,
+sets the highest-unlocked course to Rainbow Cloud, gives the Apple, the
+Pester Ball, the Poké Flute and the Dash Engine, marks the tutorial done,
+and writes the result with the game's own checksum; your Pokémon Report,
+your album and the ending flags are left exactly as they were, so the report
+still fills as you earn it. It needs only Python 3:
+
+    python tools/unlock_save.py saves/pokemonsnap.bin unlocked.bin
+
+Then, with the game closed, keep your original somewhere safe and put
+`unlocked.bin` in `saves/` as `pokemonsnap.bin`. The tool refuses a file
+whose checksum it cannot reproduce, so it cannot be run on anything but a
+real save, and it never touches the file it reads.
+
 ## Linux and Steam Deck
 
 The release page carries the Windows build and, from 1.0.1, a native Linux
