@@ -25,7 +25,7 @@ does contain the game's code, translated from the builder's own dump into C
 by N64Recomp and compiled, as every N64Recomp port does; `NOTICE.md` says
 exactly what is derived from the game and how.
 
-The title screen's credits line, `JackandBeans (Snap64 Recomp) · v1.0.0`, is
+The title screen's credits line, `JackandBeans (Snap64 Recomp) · v1.0.1`, is
 the author's name, the port's name and its version; the name comes from the
 HAL team that made the game ([The game, and its history](#the-game-and-its-history)).
 The people and projects this port stands on are thanked under [Thanks](#thanks).
@@ -57,10 +57,10 @@ You need a 64-bit Windows 10 or 11 PC whose graphics driver provides
 Direct3D 12, and your own dump of the US cartridge; nothing has to be
 installed. Then:
 
-1. Download `Snap64Recomp-1.0.0-win64.zip` from the
+1. Download `Snap64Recomp-1.0.1-win64.zip` from the
    [Releases](https://github.com/JackandBeans/Snap64Recomp/releases/latest)
    page and unpack it anywhere; it holds one folder,
-   `Snap64Recomp-1.0.0-win64`, with `Snap64Recomp.exe` inside.
+   `Snap64Recomp-1.0.1-win64`, with `Snap64Recomp.exe` inside.
 2. Put your own dump of the US cartridge (the ROM: the cartridge's contents
    read out into one file) next to `Snap64Recomp.exe`, named
    `pokemonsnap.z64`. You do not have to check the file yourself: a missing
@@ -103,7 +103,8 @@ and what to attach to a bug report.
 <td><a href="docs/screenshots/13-printer-stars.png"><img src="docs/screenshots/13-printer-stars.png" width="400" alt="The printer's display, three stars"></a></td>
 </tr></table>
 
-Taken from the 1.0.0 build at 1440p with Render Scale and Anti-Aliasing both
+Taken from the 1.0.0 build, the Options screen and the Controls page from
+1.0.1, at 1440p with Render Scale and Anti-Aliasing both
 at 8x on the Graphics page, cropped to the game's picture. All nineteen, with
 a caption each (the title menu, the Tunnel, the lab, the Options and Sound
 pages, the printer's marks, Oak's check from the photo choice to the score
@@ -143,7 +144,7 @@ sheet, the Camera Check), are in [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md).
 Start `Snap64Recomp.exe`; a shortcut works from anywhere, because the port
 reads and writes the folder the executable is in, whatever the working
 directory (`src/paths.cpp`). It opens a 1280x960 window titled
-`Snap64 Recomp 1.0.0`; `SNAP_WINDOW=WxH` in the environment opens it at
+`Snap64 Recomp 1.0.1`; `SNAP_WINDOW=WxH` in the environment opens it at
 an exact size instead (at least 320x240). The window's maximize button is the
 fullscreen switch; the in-game Graphics page and F11 do the same, and F11
 is the way out of fullscreen from anywhere. **A tap of Esc is Start** (the
@@ -289,8 +290,9 @@ the control stick, A is A, B or X is B, the left shoulder button is Z, Start
 is Start, the D-pad is the D-pad, the triggers are L and R, and the right stick
 is the C buttons. The Back button (Select, View or Share on most pads) is not
 an N64 button: it saves the photo on screen, as P does on the keyboard (see
-"Photos"). Every one of those is a row in the settings file's `keys` table and
-can be moved.
+"Photos"). The eight buttons -- A, B, Z, Start, the D-pad's four, L and R --
+are each a row in the settings file's `keys` table and can be moved; the two
+sticks and the Back button are not, and keep the mapping above.
 
 **Which controllers work.** Anything SDL2 has a mapping for, which is most of
 what is sold: Xbox pads (360, One, Series) over USB or Bluetooth, PlayStation
@@ -747,9 +749,11 @@ The same list, with a place to reply, is pinned under
 
 ## Status
 
-* Built and run on one machine: Windows 11, MSVC 2019, a Direct3D 12 GPU. No
-  other platform, GPU or compiler has been tried; the first report from a
-  different machine is welcome, good or bad.
+* Built and run on one Windows machine (Windows 11, MSVC 2019, a Direct3D 12
+  GPU), and, since 1.0.1, as a Linux build under WSL with Clang that has
+  started and played on a Steam Deck in desktop mode ("Linux and Steam
+  Deck"). No other GPU, Windows version or Linux desktop has been tried; the
+  first report from a different machine is welcome, good or bad.
 * **Buildable from a clean checkout, in two steps beyond `git clone`.**
   `python tools/fetch_deps.py` fetches the vendored trees (SDL,
   DirectX-Headers, RT64's third-party trees) at the recorded upstream commits
@@ -760,7 +764,7 @@ The same list, with a place to reply, is pinned under
 * No CI and no installer. The release archive is the ZIP that `cpack`
   writes (`BUILDING.md`, step 13), after the headless suite in
   `tools/release_check.py` has passed on it ("What has been verified").
-* Version `1.0.0`, typed once in `CMakeLists.txt` and shown in the title
+* Version `1.0.1`, typed once in `CMakeLists.txt` and shown in the title
   bar, the log banner, the credits line, the executable's file properties and
   the ZIP's name. `CHANGELOG.md` says what each release changed.
 * Licensed under the GPLv3 (`LICENSE`); `NOTICE.md` lists every third-party
@@ -787,10 +791,12 @@ The same list, with a place to reply, is pinned under
   exports the photos it shows, the Options screen's Graphics and Sound rows
   stage from the harvested font with no character missing, the settings file
   is valid, and the archive carries everything it must; `--only station` puts the Snap Station print
-  through both relaunches and checks the sheets. On the 1.0.0 executable,
-  run without diagnostics in the environment and on a cold shader cache,
-  the suite passed 22 of 22 checks in 781 seconds, and the station's 5 of 5
-  in 489. The suite opens the game window for each run and takes about
+  through both relaunches and checks the sheets. On the 1.0.1 executable
+  (SHA-256 beginning `f53f2c67`), run without diagnostics in the
+  environment, the suite passed 22 of 22 checks in 781 seconds, and the
+  station's 5 of 5 in 488; the 1.0.0 executable had passed the same 22 and
+  5, in 781 and 489, on a cold shader cache. The suite opens the game window
+  for each run and takes about
   thirteen minutes, plus eight for the station. There is no CI run, and no
   build on any other machine is recorded in this repository. Anything not
   listed here should be assumed untried.
@@ -810,7 +816,7 @@ WSL, N64Recomp for the game and the patches, CMake and MSVC on Windows, and a
 list of things git does not carry
 ([What a clean checkout is missing](BUILDING.md#what-a-clean-checkout-is-missing)).
 `cpack -C Release` in the build directory then writes
-`Snap64Recomp-1.0.0-win64.zip` ([step 13](BUILDING.md#13-package)).
+`Snap64Recomp-1.0.1-win64.zip` ([step 13](BUILDING.md#13-package)).
 
 ## The game, and its history
 
