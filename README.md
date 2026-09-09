@@ -41,7 +41,8 @@ The people and projects this port stands on are thanked under [Thanks](#thanks).
 [settings file](#settings-file)) ·
 [Known limitations](#known-limitations) · [What's next](#whats-next) · [Status](#status) ·
 [What has been verified](#what-has-been-verified-and-what-has-not) ·
-[Building](#building) · [The game, and its history](#the-game-and-its-history) ·
+[Building](#building) · [The game, and its history](#the-game-and-its-history)
+([further watching](docs/VIDEOS.md)) ·
 [How it was made](#how-it-was-made) · [Thanks](#thanks) · [License](#license)
 
 ## Get it running
@@ -993,6 +994,11 @@ Sources:
   (2021).
 * [jamchamb, "Reversing the Pokémon Snap Station without a Snap Station"](https://jamchamb.net/2021/08/17/snap-station.html)
   (2021).
+
+Some of it can be watched rather than read: a retrospective on how the game
+was made, a working Snap Station printing, what never made it into the
+cartridge, and the commercials that sold it, in
+[docs/VIDEOS.md](docs/VIDEOS.md).
 
 ## How it was made
 
