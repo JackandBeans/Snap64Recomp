@@ -1004,8 +1004,8 @@ made it, under the title that channel gave it.
 
 * [How a Cult Classic Nearly Broke Its Developers (Pokémon Snap
   Retrospective) - CQ](https://youtu.be/sKd9-1xT8fY) -- CorruptionQuest.
-  The long version of the section above: a photography game for the 64DD that
-  became a Pokémon game.
+  A retrospective on the game and what making it cost the people who made
+  it.
 * [Using Pokemon Snap Station For First Time In 20
   Years!](https://youtu.be/lCnvpIEVpqo) -- Leonhart. A working kiosk,
   printing -- the recording the port's own printer display was measured
@@ -1015,12 +1015,13 @@ made it, under the title that channel gave it.
   the cartridge that never reached a player.
 * [Off Camera Secrets | Pokemon Snap - Boundary Break ft. The Real Professor
   Oak (Stuart Zagnit)](https://youtu.be/mQLYWeQjAIw) -- Boundary Break. The
-  camera taken off its rails, with Professor Oak's own voice along for it.
+  camera taken off its rails, with Stuart Zagnit -- whom the title calls the
+  real Professor Oak -- along for it.
 
 ### The commercials
 
 * [Pokemon Snap N64 Commercial 1999](https://youtu.be/ICv7IsCxt2E) -- 90s
-  Nostalgia. The American television spot.
+  Nostalgia. The 1999 television spot.
 * [Pokemon Snap N64 Blockbuster Contest Commercial
   1999](https://youtu.be/VQ5eX9K2GXw) -- 90s Nostalgia. The "Take Your Best
   Shot" contest Blockbuster ran around the kiosks.
