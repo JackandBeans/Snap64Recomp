@@ -999,41 +999,40 @@ Sources:
 
 The sources above are the ones to read; these are the ones to watch. How the
 game was made, the kiosk this port emulates, what its camera never showed,
-and the advertisements that sold it. Each is credited to the channel that
-made it, under the title that channel gave it.
+and the advertisements that sold it. Each is listed under the channel it
+comes from, with the title that channel gave it.
 
-* [How a Cult Classic Nearly Broke Its Developers (Pokémon Snap
-  Retrospective) - CQ](https://youtu.be/sKd9-1xT8fY) -- CorruptionQuest.
-  A retrospective on the game and what making it cost the people who made
-  it.
-* [Using Pokemon Snap Station For First Time In 20
-  Years!](https://youtu.be/lCnvpIEVpqo) -- Leonhart. A working kiosk,
-  printing -- the recording the port's own printer display was measured
-  against, frame by frame.
-* [Pokemon Snap Unused Content & History | Pokemon Cut
-  Content](https://youtu.be/RFSr9TiL3ME) -- The Obsessive Gamer. What is in
-  the cartridge that never reached a player.
-* [Off Camera Secrets | Pokemon Snap - Boundary Break ft. The Real Professor
-  Oak (Stuart Zagnit)](https://youtu.be/mQLYWeQjAIw) -- Boundary Break. The
-  camera taken off its rails, with Stuart Zagnit -- whom the title calls the
-  real Professor Oak -- along for it.
+* **CorruptionQuest** -- [How a Cult Classic Nearly Broke Its Developers
+  (Pokémon Snap Retrospective) - CQ](https://youtu.be/sKd9-1xT8fY). A
+  retrospective on the game and what making it cost the people who made it.
+* **Leonhart** -- [Using Pokemon Snap Station For First Time In 20
+  Years!](https://youtu.be/lCnvpIEVpqo) A working kiosk, printing: the
+  recording the port's own printer display was measured against, frame by
+  frame.
+* **The Obsessive Gamer** -- [Pokemon Snap Unused Content & History | Pokemon
+  Cut Content](https://youtu.be/RFSr9TiL3ME). What is in the cartridge that
+  never reached a player.
+* **Boundary Break** -- [Off Camera Secrets | Pokemon Snap - Boundary Break
+  ft. The Real Professor Oak (Stuart Zagnit)](https://youtu.be/mQLYWeQjAIw).
+  The camera taken off its rails, with Stuart Zagnit, whom the title calls
+  the real Professor Oak, along for it.
 
 ### The commercials
 
-* [Pokemon Snap N64 Commercial 1999](https://youtu.be/ICv7IsCxt2E) -- 90s
-  Nostalgia. The 1999 television spot.
-* [Pokemon Snap N64 Blockbuster Contest Commercial
-  1999](https://youtu.be/VQ5eX9K2GXw) -- 90s Nostalgia. The "Take Your Best
-  Shot" contest Blockbuster ran around the kiosks.
-* [Pokemon Snap, N64 (Nintendo, 2000) UK TV
-  advert](https://youtu.be/FrB9hBb2O3Q) -- Transmit Him. The British spot,
-  from the year Europe finally got the game.
-* [Pokemon Snap (Katsuhiko Wakabiki) Japanese
-  Commercial](https://youtu.be/cZAd3r498cA) -- 83Chrisaaron. The Japanese
-  spot, for the release the other two followed.
-* [Pokemon Snap (Katsuhiko Wakabiki) (Lawson Stickers) Japanese
-  Commercial](https://youtu.be/dypI8_sU2_E) -- 83Chrisaaron. The Lawson
-  tie-in: the convenience-store chain that carried Snap Stations in Japan.
+* **90s Nostalgia** -- [Pokemon Snap N64 Commercial
+  1999](https://youtu.be/ICv7IsCxt2E). The 1999 television spot.
+* **90s Nostalgia** -- [Pokemon Snap N64 Blockbuster Contest Commercial
+  1999](https://youtu.be/VQ5eX9K2GXw). The "Take Your Best Shot" contest
+  Blockbuster ran around the kiosks.
+* **Transmit Him** -- [Pokemon Snap, N64 (Nintendo, 2000) UK TV
+  advert](https://youtu.be/FrB9hBb2O3Q). The British spot, from the year
+  Europe finally got the game.
+* **83Chrisaaron** -- [Pokemon Snap (Katsuhiko Wakabiki) Japanese
+  Commercial](https://youtu.be/cZAd3r498cA). The Japanese spot, for the
+  release the other two followed.
+* **83Chrisaaron** -- [Pokemon Snap (Katsuhiko Wakabiki) (Lawson Stickers)
+  Japanese Commercial](https://youtu.be/dypI8_sU2_E). The Lawson tie-in: the
+  convenience-store chain that carried Snap Stations in Japan.
 
 ## How it was made
 
