@@ -22,10 +22,21 @@ union SDL_Event;
 namespace snap {
 
 /**
- * Poll for new input events.
- * Called once per input poll cycle by the runtime.
+ * The runtime's poll, at every osContStartReadData, on the game's controller
+ * thread. Nothing runs here any more: the pad thread below polls SDL on its
+ * own clock. Kept so the callback table stays complete.
  */
 void input_poll();
+
+// The pad thread: the one thread that opens, polls and closes the
+// controller and talks to SDL about it (input.cpp, pad_thread_main). Started
+// by the main thread once SDL is up and the game is going (update_gfx),
+// stopped before SDL_Quit. The game's threads read a snapshot it publishes;
+// the window's thread pumps no controller state (SDL_HINT_AUTO_UPDATE_JOYSTICKS
+// is off in main.cpp), so a controller driver that blocks holds this thread
+// and nothing else.
+void input_start_pad_thread();
+void input_stop_pad_thread();
 
 /**
  * Get the current input state for a controller.
@@ -39,10 +50,13 @@ void input_poll();
 bool input_get(int controller_num, uint16_t* buttons, float* x, float* y);
 
 /**
- * Set rumble state for a controller.
+ * The runtime's motor callback (osMotorStart / osMotorStop), on a game
+ * thread; the pad thread passes the change to SDL. The cartridge never runs
+ * the motor in play -- its only motor calls are in the reset handler -- so
+ * this exists to keep the callback table complete, not as a feature.
  *
  * @param controller_num  Zero-indexed controller number.
- * @param rumble          true to enable rumble, false to disable.
+ * @param rumble          true to start the motor, false to stop it.
  */
 void input_set_rumble(int controller_num, bool rumble);
 

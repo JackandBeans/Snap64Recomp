@@ -111,6 +111,13 @@ static void* create_gfx() {
         }
     }
 #endif
+    // The controllers are polled by the port's own pad thread (input.cpp),
+    // not by the event pump on this thread: a controller driver that blocks
+    // -- SDL's HIDAPI handshake with a Nintendo pad over Bluetooth runs for
+    // seconds, synchronously (issue #7) -- must hold neither the window nor
+    // the game. Off, SDL_PumpEvents leaves the joystick state alone and the
+    // pad thread's SDL_GameControllerUpdate is the only thing that touches it.
+    SDL_SetHint(SDL_HINT_AUTO_UPDATE_JOYSTICKS, "0");
     if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) {
         // Nothing downstream can work without SDL, and the failures it would
         // produce (no window, no native handle, no renderer) all read as
@@ -232,6 +239,11 @@ void snap_show_deferred_message_boxes();
 static std::atomic<bool> s_defer_boxes{false};
 
 static void update_gfx(void* /*gfx_data*/) {
+    // The pad thread starts with the first frame of the main loop: SDL is
+    // up, the ROM check has passed, and the window exists. It is stopped in
+    // main() before SDL_Quit.
+    snap::input_start_pad_thread();
+
     // Publish SDL's real audio backlog where the game's patched AI_LEN read
     // (auThreadMain, vram 0x800219D8) now looks for it. Without this the game
     // believes the audio queue is always empty and synthesizes a full frame of
@@ -1016,7 +1028,9 @@ int main(int argc, char* argv[]) {
     s_defer_boxes.store(false, std::memory_order_relaxed);
     snap_show_deferred_message_boxes();
 
-    // Cleanup
+    // Cleanup. The pad thread first: it is the one thread holding SDL's
+    // controller state, and SDL_Quit must not pull that from under it.
+    snap::input_stop_pad_thread();
     if (sdl_window) {
         SDL_DestroyWindow(sdl_window);
         sdl_window = nullptr;

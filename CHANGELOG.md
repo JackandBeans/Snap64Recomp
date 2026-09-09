@@ -1,5 +1,59 @@
 # Changelog
 
+## 1.0.2 -- unreleased
+
+* A Switch Online N64 controller over Bluetooth opened a black window that
+  never drew the boot logo (issue #7). Two faults met. Every SDL call the
+  port made for a controller ran on the game's own controller thread, and
+  SDL's HIDAPI driver for a Nintendo pad over Bluetooth spends seconds
+  there: its open and close handshakes are synchronous, up to five attempts
+  of a 500 ms write and a 100 ms wait for each command, it puts the pad in
+  the report mode that only speaks when a button moves, declares it gone
+  after three seconds of silence and takes it back at the next touch. And
+  the game's controller thread, straight after opening the pad, registers
+  with the scheduler by sending into an eight-slot queue without waiting
+  and then waits for the answer forever (`scExecuteBlocking`); the runtime
+  delivers every retrace that piled up while the thread was held before
+  that send, so a pad open longer than eight retraces -- about 130 ms --
+  filled the queue, the registration was dropped, and the boot never got
+  its hand-off. Reproduced here with an injected 20 s pause. Both are
+  fixed: the pad now lives on a thread of its own, which opens, polls and
+  closes it and hands the game a copy of its state, so the game's threads
+  make no SDL controller call at all and neither does the window's; and a
+  periodic interrupt message (a retrace, an audio tick) no longer takes
+  the last free slot of a game queue when a burst of them is delivered,
+  which is what a console does too, where at most one such interrupt is
+  ever pending. `SNAP_PAD_STALL_MS=<ms>` in the environment holds the pad
+  thread that long after an open, for anyone who wants to watch the game
+  carry on regardless.
+* `pad_enabled` in the settings file: `false` makes the port ignore every
+  pad without unplugging one.
+* The renderer no longer drops a Pokemon's pass because its triangles
+  reach the camera plane. RT64 fits a box to where each triangle's
+  vertices project, from positions divided by w with no clipping, and
+  drops a pass whose box stays empty; a vertex at or behind the camera
+  plane lands anywhere by that arithmetic, so a triangle that straddles
+  the plane was judged back-facing or its box missed the picture, and a
+  pass made only of such triangles vanished whole. The console clips such
+  a triangle and draws what remains. A triangle with such a vertex now
+  counts as visible and as covering the scissor; the same family of fault
+  as 1.0.1's Widescreen pop-out, which only the widened view had been
+  guarded against. Found while chasing Snorlax vanishing when the camera
+  is pitched up at him on the Beach -- which turned out to be the
+  cartridge's own rule, not this (README, "Known limitations").
+* Rumble, corrected. 1.0.1's notes said the Rumble Pak now ran for as long
+  as the game asked; the game never asks. The only motor calls in the
+  cartridge are in its reset handler, which the port never runs, and
+  `contRumbleStart` is called nowhere in the ROM, so no player has ever
+  felt a buzz from this port and none will. The two 1.0.1 entries below say
+  so now. `rumble_strength` is gone from the settings file (a file that
+  still carries it loads as before), and the port no longer tells the game
+  a Rumble Pak sits in port one: a console with an empty pak slot reports
+  none, and so does the port, which also keeps the game's pak probe off a
+  slot with nothing in it. The stub that probe reached returned 2, which is
+  `PFS_ERR_NEW_PACK`, under a comment calling it "no pak"; it returns 1,
+  `PFS_ERR_NOPACK`, which is what it meant.
+
 ## 1.0.1 -- 2026-09-07
 
 * Every shader the game is known to ask for is compiled during the boot
@@ -15,10 +69,13 @@
   runs the motor with `osMotorStart` and stops it with `osMotorStop`, and
   nothing re-triggers in between -- but the port asked SDL for a hundred
   millisecond buzz, so every rumble the game meant to hold was cut short. It
-  now runs until the game stops it, as the pak did.
+  now runs until the game stops it, as the pak did. [Corrected in 1.0.2:
+  the cartridge never runs the motor in play, so this changed nothing a
+  player could feel.]
 * `rumble_strength` in the settings file sets the Rumble Pak's strength from
   0 to 100, and `0` switches rumble off. The cartridge had no such control,
-  so the default is full strength.
+  so the default is full strength. [Removed in 1.0.2: the game never asks
+  for rumble, so the key had nothing to set.]
 * A pad SDL does not recognise can be taught with `gamecontrollerdb.txt`,
   the community's own mapping list, dropped beside the executable; the port
   reads it at start-up and reports how many mappings it added. The log line

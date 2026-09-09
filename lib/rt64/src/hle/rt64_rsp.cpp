@@ -1247,9 +1247,39 @@ namespace RT64 {
             maxMatrix = std::max(maxMatrix, worldIndices[globalIndex]);
         }
 
+        // Pokemon Snap port: the fitted box and the facing test below are read
+        // off posScreen, which is xyz / w with no clipping (readVertices). For
+        // a vertex at or behind the camera plane (w <= 0) that is not where
+        // the vertex lands: the divide flips it through the picture's centre
+        // and sends it far off, so a triangle that straddles the plane gets a
+        // box that lies anywhere and a winding that is a coin toss; and a
+        // vertex a hair in front projects to a coordinate the int32 casts
+        // below cannot hold, which makes an inverted box that merges nothing.
+        // The RSP clips such a triangle and the RDP draws what remains. Here
+        // it was judged back-facing, or its box missed the viewport, and a
+        // pass made only of such triangles -- a Pokemon filling the bottom of
+        // the picture with the camera pitched up at it, Snorlax on the Beach
+        // -- had an empty fitted box and was dropped whole by the selection
+        // gates (rt64_workload_queue.cpp), so it vanished until the camera
+        // came back down. Such a triangle is taken as visible and as covering
+        // the scissor: its extent is unknowable before clipping, and the
+        // scissor is the bound the RDP draws against. Drawing itself is not
+        // touched; the GPU clips the triangle as it always did.
+        bool unprojectable = false;
+        for (int i = 0; i < 3; i++) {
+            const hlslpp::float4 &t = workload.drawData.posTransformed[globalIndices[i]];
+            const hlslpp::float3 &s = posScreen[globalIndices[i]];
+            // 4096 pixels each way is far past any framebuffer; squared so a
+            // NaN fails the test too.
+            if ((t[3] <= 0.0f) || !(s[0] * s[0] < 16777216.0f) || !(s[1] * s[1] < 16777216.0f)) {
+                unprojectable = true;
+                break;
+            }
+        }
+
         bool visibleTri = true;
         const bool usesCulling = geometryMode & cullBothMask;
-        if (usesCulling) {
+        if (usesCulling && !unprojectable) {
             const hlslpp::float3 U = posScreen[globalIndices[1]] - posScreen[globalIndices[0]];
             const hlslpp::float3 V = posScreen[globalIndices[2]] - posScreen[globalIndices[0]];
             const hlslpp::float3 N = hlslpp::cross(V, U);
@@ -1261,12 +1291,17 @@ namespace RT64 {
             fbPair.scissorRect.merge(scissorRect);
 
             FixedRect drawRect;
-            for (int i = 0; i < 3; i++) {
-                const hlslpp::float3 &v = posScreen[globalIndices[i]];
-                drawRect.ulx = std::min(drawRect.ulx, int32_t(v[0] * 4.0f));
-                drawRect.uly = std::min(drawRect.uly, int32_t(v[1] * 4.0f));
-                drawRect.lrx = std::max(drawRect.lrx, int32_t(hlslpp::ceil(v.x).x * 4.0f));
-                drawRect.lry = std::max(drawRect.lry, int32_t(hlslpp::ceil(v.y).x * 4.0f));
+            if (unprojectable) {
+                drawRect = scissorRect;
+            }
+            else {
+                for (int i = 0; i < 3; i++) {
+                    const hlslpp::float3 &v = posScreen[globalIndices[i]];
+                    drawRect.ulx = std::min(drawRect.ulx, int32_t(v[0] * 4.0f));
+                    drawRect.uly = std::min(drawRect.uly, int32_t(v[1] * 4.0f));
+                    drawRect.lrx = std::max(drawRect.lrx, int32_t(hlslpp::ceil(v.x).x * 4.0f));
+                    drawRect.lry = std::max(drawRect.lry, int32_t(hlslpp::ceil(v.y).x * 4.0f));
+                }
             }
 
             const interop::RSPViewport &viewport = viewportStack[viewportStackSize - 1];

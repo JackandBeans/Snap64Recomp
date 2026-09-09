@@ -67,9 +67,9 @@ The key on the left, the N64 control it stands for on the right.
 
 A gamepad works as soon as it is plugged in: Xbox, PlayStation, Switch Pro,
 the Switch Online N64 controller, the Steam Deck's own controls, and most
-third-party pads. The D-pad walks the menus as the stick does. Rumble works where
-the pad has it, and "rumble_strength" in snapsettings.json turns it down or
-off. If yours does nothing, snap64.log will name it, and dropping the
+third-party pads. The D-pad walks the menus as the stick does. No pad rumbles:
+the cartridge never asks for it. "pad_enabled": false in snapsettings.json
+makes the port ignore every pad. If yours does nothing, snap64.log will name it, and dropping the
 community's gamecontrollerdb.txt next to Snap64Recomp will teach the port
 about it (README, "Which controllers work").
 

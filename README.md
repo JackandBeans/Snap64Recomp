@@ -25,7 +25,7 @@ does contain the game's code, translated from the builder's own dump into C
 by N64Recomp and compiled, as every N64Recomp port does; `NOTICE.md` says
 exactly what is derived from the game and how.
 
-The title screen's credits line, `JackandBeans (Snap64 Recomp) · v1.0.1`, is
+The title screen's credits line, `JackandBeans (Snap64 Recomp) · v1.0.2`, is
 the author's name, the port's name and its version; the name comes from the
 HAL team that made the game ([The game, and its history](#the-game-and-its-history)).
 The people and projects this port stands on are thanked under [Thanks](#thanks).
@@ -57,10 +57,10 @@ You need a 64-bit Windows 10 or 11 PC whose graphics driver provides
 Direct3D 12, and your own dump of the US cartridge; nothing has to be
 installed. Then:
 
-1. Download `Snap64Recomp-1.0.1-win64.zip` from the
+1. Download `Snap64Recomp-1.0.2-win64.zip` from the
    [Releases](https://github.com/JackandBeans/Snap64Recomp/releases/latest)
    page and unpack it anywhere; it holds one folder,
-   `Snap64Recomp-1.0.1-win64`, with `Snap64Recomp.exe` inside.
+   `Snap64Recomp-1.0.2-win64`, with `Snap64Recomp.exe` inside.
 2. Put your own dump of the US cartridge (the ROM: the cartridge's contents
    read out into one file) next to `Snap64Recomp.exe`, named
    `pokemonsnap.z64`. You do not have to check the file yourself: a missing
@@ -145,7 +145,7 @@ Beach in Widescreen and the Controls page's gyro rows), are in
 Start `Snap64Recomp.exe`; a shortcut works from anywhere, because the port
 reads and writes the folder the executable is in, whatever the working
 directory (`src/paths.cpp`). It opens a 1280x960 window titled
-`Snap64 Recomp 1.0.1`; `SNAP_WINDOW=WxH` in the environment opens it at
+`Snap64 Recomp 1.0.2`; `SNAP_WINDOW=WxH` in the environment opens it at
 an exact size instead (at least 320x240). The window's maximize button is the
 fullscreen switch; the in-game Graphics page and F11 do the same, and F11
 is the way out of fullscreen from anywhere. **A tap of Esc is Start** (the
@@ -298,14 +298,17 @@ sticks and the Back button are not, and keep the mapping above.
 **Which controllers work.** Anything SDL2 has a mapping for, which is most of
 what is sold: Xbox pads (360, One, Series) over USB or Bluetooth, PlayStation
 (DualShock 3 and 4, DualSense), Switch Pro and Joy-Con, the Steam Deck's own
-controls, the Steam Controller, and a long tail of third-party pads. Rumble
-works where the pad has it, and the game is told a Rumble Pak is present while
-a pad is attached. Gyro aim needs a pad with a motion sensor: DualShock 4,
+controls, the Steam Controller, and a long tail of third-party pads. No pad
+rumbles, because the cartridge never asks: the only motor calls in the ROM
+are in its reset handler, and the port reports port one as a controller with
+nothing in its pak slot, as a console without a Rumble Pak does. Gyro aim
+needs a pad with a motion sensor: DualShock 4,
 DualSense, Switch Pro, and the Steam Deck. A pad shaped like the N64's -- the
 Switch Online N64 controller, over Bluetooth or USB -- is recognised by its
 name, and its L, R and Z are L, R and Z, its C buttons the C buttons; the
 `pad_layout` key forces either layout. The D-pad walks every menu as the
-stick does, since the cartridge never reads it.
+stick does, since the cartridge never reads it. `pad_enabled: false` in the
+settings file makes the port ignore every pad without unplugging one.
 
 The first pad SDL recognises is the one used. A pad SDL has *no* mapping for
 is named in the log at start-up (`[SNAP-Input] joystick ... has no game
@@ -553,7 +556,7 @@ the defaults below are that file's.
 | `jynx_vc` | `false` | Jynx Recolor, Jynx's face and hands: Off: the cartridge's black; On: the purple of the re-releases, matched to a published Virtual Console screenshot |
 | `interpolate_camera` | `true` | interpolate the view as well as objects (F4; no row on the Graphics page) |
 | `snap_station` | `false` | keep the Snap Station on port 4 from the title menu on, every start (see "The Snap Station") |
-| `rumble_strength` | `100` | the Rumble Pak's strength, 0 to 100; `0` switches rumble off |
+| `pad_enabled` | `true` | `false` makes the port ignore every pad: none is opened, and the keyboard and mouse carry on |
 | `pad_layout` | `0` | how a pad's shoulders and triggers are read: `0` decides by the pad's name, `1` the Xbox-style layout the defaults describe, `2` an N64-shaped pad (the Switch Online N64 controller), whose L, R and Z are L, R and Z |
 | `mouse_aim` | `true` | the mouse aims while a course runs and the window has focus ("Controls"); its buttons work whenever the window has focus, through `keys` |
 | `mouse_sensitivity` | `1.0` | angle per pixel of mouse: 1 is a full turn in about 2500 pixels, 2 twice as quick, 0.5 half; 0.1 to 10 |
@@ -759,6 +762,27 @@ fine.
 * The Snap Station's printer lettering is set from a typeface of the same
   construction as the printer's, whose own character set no source records,
   and its pass timings are estimates from footage without a clock.
+* A Pokémon pops out of the picture before it has fully left it. The
+  cartridge decides each frame whether to draw a Pokémon by projecting its
+  collision point and testing it against a box 1.5 times the half-screen
+  each way (±240 by ±180 pixels around the centre; `func_80364618_504A28`),
+  and the seven `renderPokemonModelType*` wrappers skip any Pokémon that
+  fails. A big, close one still has part of its body in the picture when
+  its centre crosses that line: Snorlax on the Beach, with the camera
+  pitched up to the 45-degree limit, vanishes and returns as the camera
+  comes down. The console does the same; a television's overscan hid part
+  of the last sliver. The port keeps the rule as the cartridge has it (the
+  Widescreen patch widens its horizontal bound to the wider picture and
+  nothing else).
+* A Nintendo pad over Bluetooth (the Switch Online N64 controller among
+  them) is handled by SDL's own driver for it, which puts the pad in the
+  report mode that only speaks when a button or stick moves, declares it
+  gone after three seconds of silence, and takes it back with a handshake
+  of several commands at the next touch. Since 1.0.2 that runs on the
+  port's pad thread and holds nothing else, but the first press after a
+  pause may arrive a moment late, and each return is a fresh `Opened game
+  controller` line in `snap64.log`. This is read from SDL's code, not seen
+  on such a pad here; a report from one would settle it.
 * Vulkan (`graphics_api` 1) is compiled in but has never been run by the
   developer; it exists for a machine whose Direct3D 12 path fails. To try
   it, add `"graphics_api": 1` to `snapsettings.json` next to the executable,
@@ -778,8 +802,8 @@ In the order it will be worked on; nothing here is a promise until it runs.
 
 1. **Reports from machines other than mine.** The port was built and played
    on one PC and, for 1.0.1, a Steam Deck; what other GPUs, drivers and
-   Windows 10 do with it is what 1.0.2 will be made of, as 1.0.1 was made
-   of the first reports. The issue form is the way to send them.
+   Windows 10 do with it is what 1.0.3 will be made of, as 1.0.1 and 1.0.2
+   were made of the first reports. The issue form is the way to send them.
 2. **A page in the game for rebinding.** Since 1.0.1 every key, mouse button
    and pad button is a row in the settings file's table and an N64-shaped
    pad is recognised; what is left is changing them without editing the
@@ -819,7 +843,7 @@ The same list, with a place to reply, is pinned under
 * No CI and no installer. The release archive is the ZIP that `cpack`
   writes (`BUILDING.md`, step 13), after the headless suite in
   `tools/release_check.py` has passed on it ("What has been verified").
-* Version `1.0.1`, typed once in `CMakeLists.txt` and shown in the title
+* Version `1.0.2`, typed once in `CMakeLists.txt` and shown in the title
   bar, the log banner, the credits line, the executable's file properties and
   the ZIP's name. `CHANGELOG.md` says what each release changed.
 * Licensed under the GPLv3 (`LICENSE`); `NOTICE.md` lists every third-party
@@ -846,11 +870,12 @@ The same list, with a place to reply, is pinned under
   exports the photos it shows, the Options screen's Graphics and Sound rows
   stage from the harvested font with no character missing, the settings file
   is valid, and the archive carries everything it must; `--only station` puts the Snap Station print
-  through both relaunches and checks the sheets. On the 1.0.1 executable
-  (SHA-256 beginning `74ca2197`), run without diagnostics in the
+  through both relaunches and checks the sheets. On the 1.0.2 executable
+  (SHA-256 beginning `f1c51718`), run without diagnostics in the
   environment, the suite passed 22 of 22 checks in 781 seconds, and the
-  station's 5 of 5 in 491; the 1.0.0 executable had passed the same 22 and
-  5, in 781 and 489, on a cold shader cache. The suite opens the game window
+  station's 5 of 5 in 491; the 1.0.1 executable had passed the same 22 and
+  5, in 781 and 491, and 1.0.0's in 781 and 489 on a cold shader cache. The
+  suite opens the game window
   for each run and takes about
   thirteen minutes, plus eight for the station. There is no CI run, and no
   build on any other machine is recorded in this repository. Anything not
@@ -871,7 +896,7 @@ WSL, N64Recomp for the game and the patches, CMake and MSVC on Windows, and a
 list of things git does not carry
 ([What a clean checkout is missing](BUILDING.md#what-a-clean-checkout-is-missing)).
 `cpack -C Release` in the build directory then writes
-`Snap64Recomp-1.0.1-win64.zip` ([step 13](BUILDING.md#13-package)).
+`Snap64Recomp-1.0.2-win64.zip` ([step 13](BUILDING.md#13-package)).
 
 ## The game, and its history
 
@@ -1079,8 +1104,8 @@ None of this would exist without:
   shown in the game's opening and at the head of its credits, gave the
   port's author a name.
 * Everyone who plays it and reports what they see: the first reports from
-  other machines are what 1.0.1 was made of, and the next ones are what
-  1.0.2 will be.
+  other machines are what 1.0.1 and 1.0.2 were made of, and the next ones
+  are what 1.0.3 will be.
 
 ## License
 

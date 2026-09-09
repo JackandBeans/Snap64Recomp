@@ -58,8 +58,10 @@
 #include <cstdlib>
 #include <cstring>
 #include <cmath>
+#include <thread>
 #include <SDL2/SDL.h>
 
+#include "ultramodern/ultramodern.hpp"
 #include "paths.h"
 #include "photo_export.h"
 #include "settings.h"
@@ -97,10 +99,35 @@ extern uint8_t* g_rdram;
 // overlay_hook.cpp: true while a course's code overlay is resident.
 extern std::atomic<bool> g_app_level_resident;
 
-// The pad the port is reading. Defined here rather than with the rest of the
-// internal state because a binding can now name one of its buttons, and
-// source_down below has to be able to ask it.
-static SDL_GameController* game_controller = nullptr;
+// The pad. Every SDL controller call the port makes -- opening, polling,
+// closing, the sensors, rumble -- runs on one thread of the port's own, the
+// pad thread (pad_thread_main below), and nowhere else. It used to run on
+// the game's controller thread, the one the game's main thread waits on for
+// each frame's input, so a slow controller driver held the whole game:
+// SDL's HIDAPI driver for a Nintendo pad over Bluetooth spends seconds in
+// its synchronous open and close handshakes, and a Switch Online N64
+// controller opened a black window that never drew the boot logo (issue
+// #7; the game's side of that is in the CHANGELOG). The game's threads
+// read a copy of the pad's state, taken by the pad thread after each poll,
+// and the window's thread pumps no controller state at all
+// (SDL_HINT_AUTO_UPDATE_JOYSTICKS is off, main.cpp).
+static SDL_GameController* game_controller = nullptr;   // pad thread only
+
+// What the game's threads see of the pad: taken by the pad thread, read by
+// input_get. The buttons are a bit per SDL_GameControllerButton.
+struct PadSnapshot {
+    bool attached = false;
+    bool n64_layout = false;
+    uint32_t buttons = 0;
+    int16_t axes[SDL_CONTROLLER_AXIS_MAX] = {};
+};
+static std::mutex g_pad_mutex;
+static PadSnapshot g_pad;   // guarded by g_pad_mutex
+
+static PadSnapshot pad_snapshot() {
+    std::lock_guard<std::mutex> lock(g_pad_mutex);
+    return g_pad;
+}
 
 // ---------------------------------------------------------------------------
 // Bindings
@@ -144,39 +171,50 @@ static bool g_pad_layout_n64 = false;
 // Start) and B kept bringing it back (Escape is the pause key). Through a
 // Steam shortcut the layout is the gamepad one and nothing is sent; the
 // pad is then Steam's virtual one, not the Deck's, and the keys stay live.
-static bool g_deck_pad_keys_ignored = false;
+// Written by the pad thread at open and close, read by the game's threads
+// (source_down) and the window's (main.cpp).
+static std::atomic<bool> g_deck_pad_keys_ignored{false};
 
-static bool pad_button_held(int code) {
-    if (game_controller == nullptr) {
-        return false;
-    }
-    if (g_pad_layout_n64) {
-        if (code == SDL_CONTROLLER_BUTTON_LEFTSHOULDER) {
-            return SDL_GameControllerGetAxis(game_controller, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 8000;
-        }
-        if (code == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) {
-            return SDL_GameControllerGetAxis(game_controller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 8000;
-        }
-    }
-    return SDL_GameControllerGetButton(game_controller, SDL_GameControllerButton(code)) != 0;
+// The pad's buttons and axes, out of the snapshot the pad thread took.
+static bool snapshot_button(const PadSnapshot& pad, int code) {
+    return (code >= 0) && (code < SDL_CONTROLLER_BUTTON_MAX) && (((pad.buttons >> code) & 1u) != 0);
 }
 
-static bool pad_axis_held(int code) {
-    if (game_controller == nullptr) {
+static int16_t snapshot_axis(const PadSnapshot& pad, int code) {
+    return ((code >= 0) && (code < SDL_CONTROLLER_AXIS_MAX)) ? pad.axes[code] : int16_t(0);
+}
+
+static bool pad_button_held(const PadSnapshot& pad, int code) {
+    if (!pad.attached) {
         return false;
     }
-    if (g_pad_layout_n64) {
+    if (pad.n64_layout) {
+        if (code == SDL_CONTROLLER_BUTTON_LEFTSHOULDER) {
+            return snapshot_axis(pad, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 8000;
+        }
+        if (code == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) {
+            return snapshot_axis(pad, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 8000;
+        }
+    }
+    return snapshot_button(pad, code);
+}
+
+static bool pad_axis_held(const PadSnapshot& pad, int code) {
+    if (!pad.attached) {
+        return false;
+    }
+    if (pad.n64_layout) {
         if (code == SDL_CONTROLLER_AXIS_TRIGGERLEFT) {
-            return SDL_GameControllerGetButton(game_controller, SDL_CONTROLLER_BUTTON_LEFTSHOULDER) != 0;
+            return snapshot_button(pad, SDL_CONTROLLER_BUTTON_LEFTSHOULDER);
         }
         if (code == SDL_CONTROLLER_AXIS_TRIGGERRIGHT) {
-            return SDL_GameControllerGetButton(game_controller, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) != 0;
+            return snapshot_button(pad, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);
         }
     }
     // A trigger counts as held past the same eighth of its travel the
     // hardcoded mapping used. A stick axis bound to a button behaves the
     // same way, in its positive direction.
-    return SDL_GameControllerGetAxis(game_controller, SDL_GameControllerAxis(code)) > 8000;
+    return snapshot_axis(pad, code) > 8000;
 }
 
 struct Source {
@@ -448,10 +486,10 @@ void apply_mouse_look(uint8_t* rdram) {
 }
 #undef SNAP_GYRO_DROP
 
-bool source_down(const Source& src, const uint8_t* keys, uint32_t held, int64_t t) {
+bool source_down(const Source& src, const uint8_t* keys, uint32_t held, int64_t t, const PadSnapshot& pad) {
     switch (src.kind) {
         case SourceKind::Key:
-            if (g_deck_pad_keys_ignored &&
+            if (g_deck_pad_keys_ignored.load(std::memory_order_relaxed) &&
                 ((src.code == SDL_SCANCODE_RETURN) || (src.code == SDL_SCANCODE_ESCAPE))) {
                 return false;
             }
@@ -464,9 +502,9 @@ bool source_down(const Source& src, const uint8_t* keys, uint32_t held, int64_t 
         case SourceKind::WheelDown:
             return t < g_wheel_down_until.load(std::memory_order_relaxed);
         case SourceKind::PadButton:
-            return pad_button_held(src.code);
+            return pad_button_held(pad, src.code);
         case SourceKind::PadAxis:
-            return pad_axis_held(src.code);
+            return pad_axis_held(pad, src.code);
     }
     return false;
 }
@@ -476,7 +514,7 @@ bool source_down(const Source& src, const uint8_t* keys, uint32_t held, int64_t 
 static bool is_steam_deck_pad(SDL_GameController* gc);
 
 bool input_deck_keys_ignored() {
-    return g_deck_pad_keys_ignored;
+    return g_deck_pad_keys_ignored.load(std::memory_order_relaxed);
 }
 
 const Bindings& input_default_bindings() {
@@ -822,19 +860,15 @@ void input_update_mouse_capture() {
 // Internal state
 // ---------------------------------------------------------------------------
 
-static bool controller_initialized = false;
-
 // The Back button's press, taken from SDL's event stream rather than from
-// the state polled below. The game reads button STATE (input_get, on the
-// thread the game reads its controller on), and a photo is saved on a
-// press, on the main thread, where the hotkeys run and where the settings
-// file is written. SDL already turns the press into an
-// SDL_CONTROLLERBUTTONDOWN event on the thread that pumps events -- the
-// main thread, in main.cpp's update_gfx, which then ignores controller
-// events -- and an event watch is SDL's hook into that same delivery: it
-// runs synchronously, on the pumping thread, as the event is queued. So
-// this callback IS main-thread code, without a poll or a queue of its own.
-// The return value of a watch is ignored by SDL.
+// the state polled below. The game reads button STATE (input_get), and a
+// photo is saved on a press. SDL turns the press into an
+// SDL_CONTROLLERBUTTONDOWN event on the thread that polls the controllers
+// -- the pad thread, in its SDL_GameControllerUpdate -- and an event watch
+// is SDL's hook into that delivery: it runs synchronously, on that thread,
+// as the event is queued. export_photo takes its own lock, so the P key's
+// path on the main thread and this one never overlap. The return value of
+// a watch is ignored by SDL.
 static int SDLCALL photo_button_watch(void* /*userdata*/, SDL_Event* event) {
     if ((event->type == SDL_CONTROLLERBUTTONDOWN) &&
         (event->cbutton.button == SDL_CONTROLLER_BUTTON_BACK)) {
@@ -867,7 +901,7 @@ static void try_open_controller() {
     if (game_controller != nullptr && !SDL_GameControllerGetAttached(game_controller)) {
         SDL_GameControllerClose(game_controller);
         game_controller = nullptr;
-        g_deck_pad_keys_ignored = false;
+        g_deck_pad_keys_ignored.store(false, std::memory_order_relaxed);
     }
 
     if (game_controller != nullptr) return;
@@ -908,10 +942,29 @@ static void try_open_controller() {
                            (layout == 0) ? ", from the pad's name" : ", from pad_layout");
                 }
 
-                g_deck_pad_keys_ignored = is_steam_deck_pad(game_controller);
-                if (g_deck_pad_keys_ignored) {
+                const bool deck = is_steam_deck_pad(game_controller);
+                g_deck_pad_keys_ignored.store(deck, std::memory_order_relaxed);
+                if (deck) {
                     printf("[SNAP-Input] the Deck's own controller is attached: keyboard Return and Escape are ignored "
                            "(Steam's desktop layout sends them for A and B)\n");
+                }
+                // SNAP_PAD_STALL_MS: a diagnostic. Holds this thread for the
+                // given time right after a pad opens, standing in for the
+                // seconds SDL's HIDAPI Switch driver can spend in its
+                // synchronous open and close handshakes with a Bluetooth pad
+                // (issue #7). On the game's controller thread, where the
+                // open used to run, 20 s of this left the boot black for
+                // good; on the pad thread the game carries on and the pad
+                // simply arrives late.
+                if (const char* stall = getenv("SNAP_PAD_STALL_MS")) {
+                    const int ms = atoi(stall);
+                    if (ms > 0) {
+                        printf("[SNAP-Input] SNAP_PAD_STALL_MS: holding this thread %d ms after the open\n", ms);
+                        fflush(stdout);
+                        SDL_Delay(Uint32(ms));
+                        printf("[SNAP-Input] SNAP_PAD_STALL_MS: released\n");
+                        fflush(stdout);
+                    }
                 }
                 break;
             }
@@ -1190,27 +1243,129 @@ static void sync_gyro() {
 }
 
 // ---------------------------------------------------------------------------
+// The pad thread
+// ---------------------------------------------------------------------------
+
+// Rumble as the game asks for it, through the runtime's motor callback on a
+// game thread: -1 nothing asked yet, 0 stop, 1 start. The pad thread sends
+// the change to SDL. The cartridge never asks (its only motor calls are in
+// the reset handler, which the port never runs), so this is the runtime's
+// callback kept complete, not a feature.
+static std::atomic<int> g_rumble_wanted{-1};
+
+static void pad_close() {
+    if (game_controller != nullptr) {
+        SDL_GameControllerClose(game_controller);
+        game_controller = nullptr;
+    }
+    g_deck_pad_keys_ignored.store(false, std::memory_order_relaxed);
+}
+
+static void pad_apply_rumble() {
+    static int applied = 0;
+    const int want = g_rumble_wanted.load(std::memory_order_relaxed);
+    if ((want < 0) || (want == applied) || (game_controller == nullptr)) {
+        return;
+    }
+    applied = want;
+    // On or off, as the Rumble Pak is; SDL caps one start at
+    // SDL_MAX_RUMBLE_DURATION_MS (0xFFFF), about 65 seconds.
+    const Uint16 mag = want ? 0xFFFF : 0;
+    SDL_GameControllerRumble(game_controller, mag, mag, want ? 0xFFFF : 0);
+}
+
+// The pad's state, as SDL holds it after this poll, for the game's threads.
+static void pad_publish() {
+    PadSnapshot s{};
+    if ((game_controller != nullptr) && SDL_GameControllerGetAttached(game_controller)) {
+        s.attached = true;
+        s.n64_layout = g_pad_layout_n64;
+        for (int b = 0; b < SDL_CONTROLLER_BUTTON_MAX; b++) {
+            if (SDL_GameControllerGetButton(game_controller, SDL_GameControllerButton(b)) != 0) {
+                s.buttons |= (1u << b);
+            }
+        }
+        for (int a = 0; a < SDL_CONTROLLER_AXIS_MAX; a++) {
+            s.axes[a] = SDL_GameControllerGetAxis(game_controller, SDL_GameControllerAxis(a));
+        }
+    }
+    std::lock_guard<std::mutex> lock(g_pad_mutex);
+    g_pad = s;
+}
+
+static std::thread* g_pad_thread = nullptr;
+static std::atomic<bool> g_pad_thread_quit{false};
+
+// Polls SDL for the controllers (SDL_GameControllerUpdate: device arrivals
+// and departures, every driver's reads, the events they raise), opens the
+// first pad it finds and closes a departed one, keeps the gyro in step with
+// the settings, sends rumble, and publishes a snapshot -- every two
+// milliseconds, so the game's next reading is at most that stale, which is
+// no more than the window's pump gave it before. A driver that blocks holds
+// this thread and nothing else: the game keeps running and the window keeps
+// answering, and the pad turns up when the driver is done.
+static void pad_thread_main() {
+    ultramodern::set_native_thread_name("Pad Thread");
+    // Any extra mappings first, so a pad this file teaches SDL about is
+    // recognised by the first open rather than on some later poll.
+    load_controller_mappings();
+    // Registered once, for the life of the process; the watch runs on the
+    // thread that queues the event, which is this one.
+    SDL_AddEventWatch(photo_button_watch, nullptr);
+    bool disabledSaid = false;
+    while (!g_pad_thread_quit.load(std::memory_order_relaxed)) {
+        SDL_GameControllerUpdate();
+        if (!settings().pad_enabled) {
+            // Ignored, not merely unread: nothing is opened, so a driver
+            // that misbehaves at open (issue #7) is never entered.
+            pad_close();
+            if (!disabledSaid) {
+                disabledSaid = true;
+                printf("[SNAP-Input] pad_enabled is false: controllers are ignored\n");
+                fflush(stdout);
+            }
+        } else {
+            disabledSaid = false;
+            // Pick up a newly connected controller, and replace a detached one.
+            try_open_controller();
+            pad_apply_rumble();
+        }
+        sync_gyro();
+        pad_publish();
+        SDL_Delay(2);
+    }
+    pad_close();
+    sync_gyro();
+    pad_publish();
+}
+
+void input_start_pad_thread() {
+    if (g_pad_thread != nullptr) {
+        return;
+    }
+    g_pad_thread_quit.store(false, std::memory_order_relaxed);
+    g_pad_thread = new std::thread(pad_thread_main);
+}
+
+void input_stop_pad_thread() {
+    if (g_pad_thread == nullptr) {
+        return;
+    }
+    g_pad_thread_quit.store(true, std::memory_order_relaxed);
+    g_pad_thread->join();
+    delete g_pad_thread;
+    g_pad_thread = nullptr;
+}
+
+// ---------------------------------------------------------------------------
 // Public API (matches ultramodern::input::callbacks_t)
 // ---------------------------------------------------------------------------
 
+// The runtime's poll, at every osContStartReadData, on the game's controller
+// thread. Nothing to do here any more: the pad thread polls SDL on its own
+// clock and the reading below takes its snapshot. Kept so the callback
+// table stays complete.
 void input_poll() {
-    if (!controller_initialized) {
-        // SDL_Init should have been called by the gfx create callback.
-        // Any extra mappings first, so a pad this file teaches SDL about is
-        // recognised by the open below rather than on some later poll.
-        load_controller_mappings();
-        // Try to open a game controller if we haven't yet.
-        try_open_controller();
-        // Registered once, after SDL_Init, for the life of the process.
-        // SDL_AddEventWatch is thread-safe, so the thread this runs on does
-        // not matter; the thread the watch runs on is the one that pumps.
-        SDL_AddEventWatch(photo_button_watch, nullptr);
-        controller_initialized = true;
-    }
-
-    // Pick up newly connected controllers, and replace detached ones.
-    try_open_controller();
-    sync_gyro();
 }
 
 
@@ -1383,6 +1538,9 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
     // Keyboard and mouse buttons, through the binding table
     // -----------------------------------------------------------------------
     const uint8_t* keys = SDL_GetKeyboardState(nullptr);
+    // The pad as the pad thread last saw it; the only view of it this thread
+    // ever takes.
+    const PadSnapshot pad = pad_snapshot();
     {
         std::shared_ptr<const Resolved> table = resolved();
         if (table == nullptr) {
@@ -1397,7 +1555,7 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
         for (int i = 0; i < IN_COUNT; i++) {
             bool down = false;
             for (const Source& src : table->sources[i]) {
-                if (source_down(src, keys, held, t)) { down = true; break; }
+                if (source_down(src, keys, held, t, pad)) { down = true; break; }
             }
             if (!down) continue;
             if (i <= IN_CR) {
@@ -1429,7 +1587,7 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
     // -----------------------------------------------------------------------
     // Game controller input (overrides keyboard if connected)
     // -----------------------------------------------------------------------
-    if (game_controller && SDL_GameControllerGetAttached(game_controller)) {
+    if (pad.attached) {
         // The pad's buttons and triggers went through the binding table above,
         // beside the keyboard's: their defaults are the mapping that used to
         // be written out here, and the settings file can now say otherwise.
@@ -1437,8 +1595,8 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
         // not a button, and neither of the two below is expressible as one.
 
         // Right stick → C buttons (threshold-based)
-        int16_t rx = SDL_GameControllerGetAxis(game_controller, SDL_CONTROLLER_AXIS_RIGHTX);
-        int16_t ry = SDL_GameControllerGetAxis(game_controller, SDL_CONTROLLER_AXIS_RIGHTY);
+        int16_t rx = snapshot_axis(pad, SDL_CONTROLLER_AXIS_RIGHTX);
+        int16_t ry = snapshot_axis(pad, SDL_CONTROLLER_AXIS_RIGHTY);
         constexpr int16_t C_THRESHOLD = 16000;
         if (ry < -C_THRESHOLD) btn |= N64_BTN_CU;
         if (ry >  C_THRESHOLD) btn |= N64_BTN_CD;
@@ -1446,8 +1604,8 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
         if (rx >  C_THRESHOLD) btn |= N64_BTN_CR;
 
         // Left stick → analog
-        int16_t lx = SDL_GameControllerGetAxis(game_controller, SDL_CONTROLLER_AXIS_LEFTX);
-        int16_t ly = SDL_GameControllerGetAxis(game_controller, SDL_CONTROLLER_AXIS_LEFTY);
+        int16_t lx = snapshot_axis(pad, SDL_CONTROLLER_AXIS_LEFTX);
+        int16_t ly = snapshot_axis(pad, SDL_CONTROLLER_AXIS_LEFTY);
 
         // Normalize to -1.0..1.0 range.
         float gc_x = static_cast<float>(lx) / 32767.0f;
@@ -1538,29 +1696,13 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
     return true;
 }
 
+// The runtime's motor callback (osMotorStart / osMotorStop), on a game
+// thread. The Rumble Pak is on or off; the pad thread passes the change to
+// SDL. Reachable only through the game's reset handler, which the port never
+// runs: the cartridge does not rumble in play (see input_get_connected_device_info).
 void input_set_rumble(int controller_num, bool rumble) {
-    if (controller_num != 0 || !game_controller) return;
-
-#if SDL_VERSION_ATLEAST(2, 0, 9)
-    // The Rumble Pak is on or off: the game runs the motor with osMotorStart
-    // and stops it with osMotorStop, and nothing re-triggers in between. The
-    // hundred milliseconds asked for here was therefore a cutoff, not a
-    // duration -- every rumble the game meant to hold ended after a tenth of
-    // a second. It runs until it is told to stop now.
-    const int pct = std::clamp(settings().rumble_strength, 0, 100);
-    if (rumble && (pct > 0)) {
-        const Uint16 mag = Uint16((0xFFFF * pct) / 100);
-        // SDL caps a rumble at SDL_MAX_RUMBLE_DURATION_MS (0xFFFF, about
-        // 65 seconds) whatever is asked for, so that is the longest a single
-        // start can run. The game always stops its own buzzes long before
-        // then; asking for more would only be clamped to this anyway.
-        SDL_GameControllerRumble(game_controller, mag, mag, 0xFFFF);
-    } else {
-        SDL_GameControllerRumble(game_controller, 0, 0, 0);
-    }
-#else
-    (void)rumble;
-#endif
+    if (controller_num != 0) return;
+    g_rumble_wanted.store(rumble ? 1 : 0, std::memory_order_relaxed);
 }
 
 ultramodern::input::connected_device_info_t input_get_connected_device_info(int controller_num) {
@@ -1582,15 +1724,6 @@ ultramodern::input::connected_device_info_t input_get_connected_device_info(int 
         };
     }
 
-    // Asked here as well as from the poll, because the game asks this first.
-    // contInitialize calls osContInit before it ever reads the port, and this
-    // used to be reachable only through osContStartReadData -- so at the one
-    // moment the answer mattered no controller had been opened yet, the port
-    // reported nothing attached, and the game skipped its pak and motor setup
-    // for good. It runs once and is never repeated, so rumble was dead for
-    // every player in every session, controller plugged in or not.
-    try_open_controller();
-
     // Port one is NEVER empty on PC: the keyboard is always attached, and
     // the game samples this exactly once at boot to pick its whole session's
     // shape -- controller present means title-first boot with the letter
@@ -1598,14 +1731,22 @@ ultramodern::input::connected_device_info_t input_get_connected_device_info(int 
     // pad's true state here made every boot a race against SDL's device
     // enumeration: some sessions got the real intro and some quietly lost
     // it, which also made the same input recording take different routes on
-    // different boots. Only the Rumble Pak claim follows the physical pad,
-    // because pak probing paths should not run against hardware that is not
-    // there.
-    const bool attached = (game_controller != nullptr) && SDL_GameControllerGetAttached(game_controller);
+    // different boots.
+    //
+    // And nothing in the slot. Until 1.0.2 the port claimed a Rumble Pak
+    // here whenever a pad was attached, and opened the pad on this call to
+    // know -- the game asks at osContInit, before its first read -- so that
+    // the game would set its motor up. The claim was worth nothing: the
+    // cartridge never runs the motor in play (its only motor calls are in
+    // the reset handler, and contRumbleStart is called nowhere in the ROM),
+    // and the game's pak probe against the claim (contInitialize,
+    // contDetectDevices) hit stubs and gave up. The open, on the game's own
+    // controller thread, was where a slow controller driver held the game
+    // (issue #7). A console with a controller and an empty pak slot reports
+    // no pak; so does the port, from a function that touches no SDL.
     return {
         .connected_device = ultramodern::input::Device::Controller,
-        .connected_pak    = attached ? ultramodern::input::Pak::RumblePak
-                                     : ultramodern::input::Pak::None,
+        .connected_pak    = ultramodern::input::Pak::None,
     };
 }
 

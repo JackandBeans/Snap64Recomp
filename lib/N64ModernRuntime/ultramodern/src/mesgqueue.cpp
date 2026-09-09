@@ -13,6 +13,9 @@ struct QueuedMessage {
     OSMesg mesg;
     bool jam;
     bool requeue_if_blocked;
+    // Pokemon Snap port: a retrace or an audio tick, the messages the VI
+    // thread posts on a clock. See dequeue_external_messages.
+    bool periodic;
 };
 
 static moodycamel::BlockingConcurrentQueue<QueuedMessage> external_messages {};
@@ -30,11 +33,12 @@ void ultramodern::set_message_queue_control(const ultramodern::MessageQueueContr
 }
 
 void ultramodern::enqueue_external_message_src(PTR(OSMesgQueue) mq, OSMesg msg, bool jam, EventMessageSource src) {
-    external_messages.enqueue({mq, msg, jam, requeue_enabled[static_cast<int>(src)]});
+    const bool periodic = (src == EventMessageSource::Vi) || (src == EventMessageSource::Ai);
+    external_messages.enqueue({mq, msg, jam, requeue_enabled[static_cast<int>(src)], periodic});
 }
 
 void ultramodern::enqueue_external_message(PTR(OSMesgQueue) mq, OSMesg msg, bool jam, bool requeue_if_blocked) {
-    external_messages.enqueue({mq, msg, jam, requeue_if_blocked});
+    external_messages.enqueue({mq, msg, jam, requeue_if_blocked, false});
 }
 
 bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block);
@@ -43,6 +47,26 @@ void dequeue_external_messages(RDRAM_ARG1) {
     QueuedMessage to_send;
     std::vector<QueuedMessage> requeued_messages{};
     while (external_messages.try_dequeue(to_send)) {
+        // Pokemon Snap port: a periodic message -- a retrace, an audio tick --
+        // never takes the last free slot of its queue. These pile up here
+        // while a game thread sits in host code (a controller driver's
+        // handshake, issue #7) and are all delivered at that thread's next OS
+        // call, ahead of whatever that call itself sends. The console never
+        // has more than one such interrupt pending, and its scheduler thread
+        // services each before the next, so no game queue is ever filled by
+        // them; filled here, the game's own non-blocking send that follows
+        // the drain fails -- scExecuteBlocking waits forever for the answer
+        // to a task that was never queued -- and the boot stops on a black
+        // window. The slot kept free is the least that keeps that send
+        // alive; the retraces dropped for it are the ones a full queue
+        // dropped anyway. Queues of one slot are left alone: there the rule
+        // would drop every message.
+        if (to_send.periodic) {
+            OSMesgQueue* mq = TO_PTR(OSMesgQueue, to_send.mq);
+            if ((mq->msgCount >= 2) && (mq->validCount + 1 >= mq->msgCount)) {
+                continue;
+            }
+        }
         if (!do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false) && to_send.requeue_if_blocked) {
             requeued_messages.push_back(to_send);
         }

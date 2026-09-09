@@ -156,9 +156,12 @@ struct Settings {
     // strings, and this struct's lock-free readers need word-sized fields
     // (below).
     bool  mouse_aim         = true;   // load_settings turns it off on a Steam Deck
-    // The Rumble Pak's strength as a percentage; 0 switches it off. The
-    // cartridge had one setting, on, so 100 is the faithful default.
-    int   rumble_strength   = 100;
+    // False makes the port ignore every controller: none is opened, the
+    // keyboard and mouse carry on. For a pad whose driver misbehaves (issue
+    // #7) without unplugging it. There is no rumble setting: the cartridge
+    // never runs the Rumble Pak's motor in play (its only motor calls are in
+    // the reset handler), so there is nothing to set.
+    bool  pad_enabled       = true;
     // How the pad's shoulders and triggers are read: 0 decides by the pad's
     // name, 1 is the Xbox-style layout the defaults describe, 2 is a pad
     // shaped like the N64's (the Switch Online N64 controller), whose L and

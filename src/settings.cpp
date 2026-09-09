@@ -136,7 +136,10 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         s.jynx_vc            = j.value("jynx_vc", s.jynx_vc);
         s.snap_station       = j.value("snap_station", s.snap_station);
         s.mouse_aim          = j.value("mouse_aim", s.mouse_aim);
-        s.rumble_strength    = std::clamp(j.value("rumble_strength", s.rumble_strength), 0, 100);
+        // rumble_strength, written by 1.0.1, is read by nothing: the
+        // cartridge never rumbles. A file that still carries it loads as
+        // before, and the key is not written back.
+        s.pad_enabled        = j.value("pad_enabled", s.pad_enabled);
         s.pad_layout         = std::clamp(j.value("pad_layout", s.pad_layout), 0, 2);
         s.mouse_sensitivity  = std::clamp(j.value("mouse_sensitivity", s.mouse_sensitivity), 0.1f, 10.0f);
         s.mouse_invert_y     = j.value("mouse_invert_y", s.mouse_invert_y);
@@ -166,7 +169,7 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         // Any field the file has never carried marks it for rewriting, so an
         // upgraded file gains the new keys (and keys_help) on the next flush
         // rather than staying silent about them.
-        s_fields_missing = !j.contains("gyro_aim") || !j.contains("rumble_strength") ||
+        s_fields_missing = !j.contains("gyro_aim") || !j.contains("pad_enabled") ||
                            !j.contains("keys_help") || !j.contains("pad_layout");
         out = s;
         return SettingsRead::Ok;
@@ -334,7 +337,7 @@ bool save_settings() {
         {"jynx_vc",               copy.jynx_vc},
         {"snap_station",          copy.snap_station},
         {"mouse_aim",             copy.mouse_aim},
-        {"rumble_strength",       copy.rumble_strength},
+        {"pad_enabled",           copy.pad_enabled},
         {"pad_layout",            copy.pad_layout},
         {"mouse_sensitivity",     copy.mouse_sensitivity},
         {"mouse_invert_y",        copy.mouse_invert_y},

@@ -18,10 +18,13 @@
 // must write it. Left unwritten, v0 holds whatever the previously executed
 // recompiled function left there and the game branches on register residue.
 static constexpr int32_t StubOk = 0;
-// PFS_ERR_NOPACK: no Controller Pak. Snap saves to EEPROM and never needs one,
-// and reporting "no pak" keeps callers away from the out-parameters these
-// stubs do not write.
-static constexpr int32_t StubNoPak = 2;
+// PFS_ERR_NOPACK (1): no Controller Pak. Snap saves to EEPROM and never needs
+// one, and reporting "no pak" keeps callers away from the out-parameters
+// these stubs do not write. This was 2 until 1.0.2, which is PFS_ERR_NEW_PACK
+// ("the pak was swapped"), under this same comment; the game's probe
+// (contInitialize) retries once on that value and then gives up, so the
+// difference never showed, but the number should say what it means.
+static constexpr int32_t StubNoPak = 1;
 
 // ---------------------------------------------------------------------------
 // RSP audio microcode stub
