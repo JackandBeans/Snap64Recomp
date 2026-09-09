@@ -1003,14 +1003,13 @@ and the advertisements that sold it. Each is credited to the channel that
 made it, under the title that channel gave it.
 
 * [How a Cult Classic Nearly Broke Its Developers (Pokémon Snap
-  Retrospective) - CQ](https://youtu.be/sKd9-1xT8fY) -- CQ (CorruptionQuest).
+  Retrospective) - CQ](https://youtu.be/sKd9-1xT8fY) -- CorruptionQuest.
   The long version of the section above: a photography game for the 64DD that
   became a Pokémon game.
 * [Using Pokemon Snap Station For First Time In 20
   Years!](https://youtu.be/lCnvpIEVpqo) -- Leonhart. A working kiosk,
-  printing. About 4,500 were built and most were scrapped, and this recording
-  is what the port's own printer display was measured against, frame by
-  frame.
+  printing -- the recording the port's own printer display was measured
+  against, frame by frame.
 * [Pokemon Snap Unused Content & History | Pokemon Cut
   Content](https://youtu.be/RFSr9TiL3ME) -- The Obsessive Gamer. What is in
   the cartridge that never reached a player.
