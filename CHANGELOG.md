@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.2 -- unreleased
+## 1.0.2 -- 2026-09-09
 
 * A Switch Online N64 controller over Bluetooth opened a black window that
   never drew the boot logo (issue #7). Two faults met. Every SDL call the
