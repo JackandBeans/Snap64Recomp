@@ -41,8 +41,8 @@ The people and projects this port stands on are thanked under [Thanks](#thanks).
 [settings file](#settings-file)) ·
 [Known limitations](#known-limitations) · [What's next](#whats-next) · [Status](#status) ·
 [What has been verified](#what-has-been-verified-and-what-has-not) ·
-[Building](#building) · [The game, and its history](#the-game-and-its-history)
-([further watching](docs/VIDEOS.md)) ·
+[Building](#building) · [The game, and its history](#the-game-and-its-history) ·
+[Further watching](#further-watching) ·
 [How it was made](#how-it-was-made) · [Thanks](#thanks) · [License](#license)
 
 ## Get it running
@@ -995,10 +995,49 @@ Sources:
 * [jamchamb, "Reversing the Pokémon Snap Station without a Snap Station"](https://jamchamb.net/2021/08/17/snap-station.html)
   (2021).
 
-Some of it can be watched rather than read: a retrospective on how the game
-was made, a working Snap Station printing, what never made it into the
-cartridge, and the commercials that sold it, in
-[docs/VIDEOS.md](docs/VIDEOS.md).
+## Further watching
+
+Some of the history above can be watched rather than read. None of it is the
+port's own work; each entry names the channel that made it.
+
+**How it was made**
+
+* [How a Cult Classic Nearly Broke Its Developers (Pokémon Snap
+  Retrospective)](https://youtu.be/sKd9-1xT8fY) -- CQ (CorruptionQuest). The
+  long version of what the section above compresses into a few paragraphs: a
+  photography game for the 64DD that became a Pokémon game.
+
+**The Snap Station**
+
+* [Using Pokemon Snap Station For First Time In 20
+  Years!](https://youtu.be/lCnvpIEVpqo) -- Leonhart. A working kiosk,
+  printing. About 4,500 were built and most were scrapped; this is the device
+  the port emulates on controller port 4, and the recording its printer
+  display was measured from ("Thanks" below).
+
+**Inside the game**
+
+* [Pokemon Snap Unused Content & History](https://youtu.be/RFSr9TiL3ME) --
+  The Obsessive Gamer. What is in the cartridge that never reached a player.
+* [Off Camera Secrets | Pokemon Snap ft. The Real Professor Oak (Stuart
+  Zagnit)](https://youtu.be/mQLYWeQjAIw) -- Boundary Break. The camera taken
+  off its rails, with Professor Oak's own voice along for it.
+
+**The commercials**
+
+* [Pokemon Snap N64 Commercial 1999](https://youtu.be/ICv7IsCxt2E) --
+  90s Nostalgia. North America.
+* [Pokemon Snap N64 Blockbuster Contest Commercial
+  1999](https://youtu.be/VQ5eX9K2GXw) -- 90s Nostalgia. The "Take Your Best
+  Shot" contest Blockbuster ran around the kiosks.
+* [Pokemon Snap, N64 (Nintendo, 2000) UK TV
+  advert](https://youtu.be/FrB9hBb2O3Q) -- Transmit Him. Europe waited until
+  15 September 2000, a year and a half after Japan.
+* [Pokemon Snap (Katsuhiko Wakabiki) Japanese
+  Commercial](https://youtu.be/cZAd3r498cA) -- 83Chrisaaron.
+* [Pokemon Snap (Katsuhiko Wakabiki) (Lawson Stickers) Japanese
+  Commercial](https://youtu.be/dypI8_sU2_E) -- 83Chrisaaron. Lawson is the
+  convenience-store chain that carried Snap Stations in Japan.
 
 ## How it was made
 
