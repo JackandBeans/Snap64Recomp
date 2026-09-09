@@ -1000,38 +1000,38 @@ Sources:
 The sources above are the ones to read; these are the ones to watch. How the
 game was made, the kiosk this port emulates, what its camera never showed,
 and the advertisements that sold it. Each is listed under the channel it
-comes from, with the title that channel gave it.
+comes from, with that channel's own title; where a title says what the video
+is, nothing is added to it.
 
 * **CorruptionQuest** -- [How a Cult Classic Nearly Broke Its Developers
-  (Pokémon Snap Retrospective) - CQ](https://youtu.be/sKd9-1xT8fY). A
-  retrospective on the game and what making it cost the people who made it.
+  (Pokémon Snap Retrospective) - CQ](https://youtu.be/sKd9-1xT8fY).
 * **Leonhart** -- [Using Pokemon Snap Station For First Time In 20
   Years!](https://youtu.be/lCnvpIEVpqo) A working kiosk, printing: the
   recording the port's own printer display was measured against, frame by
   frame.
 * **The Obsessive Gamer** -- [Pokemon Snap Unused Content & History | Pokemon
-  Cut Content](https://youtu.be/RFSr9TiL3ME). What is in the cartridge that
-  never reached a player.
+  Cut Content](https://youtu.be/RFSr9TiL3ME).
 * **Boundary Break** -- [Off Camera Secrets | Pokemon Snap - Boundary Break
   ft. The Real Professor Oak (Stuart Zagnit)](https://youtu.be/mQLYWeQjAIw).
-  The camera taken off its rails, with Stuart Zagnit, whom the title calls
-  the real Professor Oak, along for it.
+  The world the game's rails keep the camera away from; Widescreen shows a
+  little more of it.
 
 ### The commercials
 
 * **90s Nostalgia** -- [Pokemon Snap N64 Commercial
-  1999](https://youtu.be/ICv7IsCxt2E). The 1999 television spot.
+  1999](https://youtu.be/ICv7IsCxt2E). The plain spot; the one below is the
+  Blockbuster tie-in.
 * **90s Nostalgia** -- [Pokemon Snap N64 Blockbuster Contest Commercial
   1999](https://youtu.be/VQ5eX9K2GXw). The "Take Your Best Shot" contest
   Blockbuster ran around the kiosks.
 * **Transmit Him** -- [Pokemon Snap, N64 (Nintendo, 2000) UK TV
-  advert](https://youtu.be/FrB9hBb2O3Q). The British spot, from the year
-  Europe finally got the game.
+  advert](https://youtu.be/FrB9hBb2O3Q). Europe waited until 15 September
+  2000.
 * **83Chrisaaron** -- [Pokemon Snap (Katsuhiko Wakabiki) Japanese
-  Commercial](https://youtu.be/cZAd3r498cA). The Japanese spot, for the
-  release the other two followed.
+  Commercial](https://youtu.be/cZAd3r498cA). Japan had the game first, on 21
+  March 1999.
 * **83Chrisaaron** -- [Pokemon Snap (Katsuhiko Wakabiki) (Lawson Stickers)
-  Japanese Commercial](https://youtu.be/dypI8_sU2_E). The Lawson tie-in: the
+  Japanese Commercial](https://youtu.be/dypI8_sU2_E). Lawson is the
   convenience-store chain that carried Snap Stations in Japan.
 
 ## How it was made
