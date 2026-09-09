@@ -1000,8 +1000,7 @@ Sources:
 The sources above are the ones to read; these are the ones to watch. How the
 game was made, the kiosk this port emulates, what its camera never showed,
 and the advertisements that sold it. Each is listed under the channel it
-comes from, with that channel's own title; where a title says what the video
-is, nothing is added to it.
+comes from, with that channel's own title.
 
 * **CorruptionQuest** -- [How a Cult Classic Nearly Broke Its Developers
   (Pokémon Snap Retrospective) - CQ](https://youtu.be/sKd9-1xT8fY).
@@ -1013,14 +1012,14 @@ is, nothing is added to it.
   Cut Content](https://youtu.be/RFSr9TiL3ME).
 * **Boundary Break** -- [Off Camera Secrets | Pokemon Snap - Boundary Break
   ft. The Real Professor Oak (Stuart Zagnit)](https://youtu.be/mQLYWeQjAIw).
-  The world the game's rails keep the camera away from; Widescreen shows a
-  little more of it.
+  The world the game's rails keep the camera away from; the port's
+  Widescreen shows a little more of it.
 
 ### The commercials
 
 * **90s Nostalgia** -- [Pokemon Snap N64 Commercial
-  1999](https://youtu.be/ICv7IsCxt2E). The plain spot; the one below is the
-  Blockbuster tie-in.
+  1999](https://youtu.be/ICv7IsCxt2E). The main spot, in full: a live-action
+  safari.
 * **90s Nostalgia** -- [Pokemon Snap N64 Blockbuster Contest Commercial
   1999](https://youtu.be/VQ5eX9K2GXw). The "Take Your Best Shot" contest
   Blockbuster ran around the kiosks.
