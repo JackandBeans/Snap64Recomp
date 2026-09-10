@@ -878,11 +878,12 @@ static int SDLCALL photo_button_watch(void* /*userdata*/, SDL_Event* event) {
 }
 
 // SDL knows a few thousand pads already. For the rest there is
-// gamecontrollerdb.txt, the community's own list, which every other port of
-// this kind accepts: drop the file beside the game and the pad works. The
-// alternative SDL offers is an environment variable holding one raw mapping
-// string, which is a developer's tool, not a player's. Absent is the normal
-// case and says nothing.
+// gamecontrollerdb.txt, the community's own list, which other ports of
+// this kind ship and, since 1.0.3, so does this one, beside the executable
+// (assets/ in the tree; NOTICE.md). A newer copy dropped over it is read the
+// same way. The alternative SDL offers is an environment variable holding
+// one raw mapping string, which is a developer's tool, not a player's. The
+// file is expected now, so its absence is worth a line.
 static void load_controller_mappings() {
     const std::string path = base_path("gamecontrollerdb.txt").string();
     const int added = SDL_GameControllerAddMappingsFromFile(path.c_str());
@@ -891,6 +892,9 @@ static void load_controller_mappings() {
         fflush(stdout);
     } else if (added == 0) {
         printf("[SNAP-Input] gamecontrollerdb.txt: no mappings in the file\n");
+        fflush(stdout);
+    } else {
+        printf("[SNAP-Input] gamecontrollerdb.txt: not beside the executable; only the pads SDL knows on its own are used\n");
         fflush(stdout);
     }
 }

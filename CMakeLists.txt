@@ -1,5 +1,5 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(Snap64Recomp VERSION 1.0.2 LANGUAGES C CXX)
+project(Snap64Recomp VERSION 1.0.3 LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -489,6 +489,12 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/texture_packs/README.txt" DESTINATION
 # first. It says where the ROM goes and that the port's additions live inside
 # the game's own Options screen, which is the one thing a launcher would have
 # made obvious and this design does not.
+# The community's pad mappings, read by SDL at start-up (src/input.cpp,
+# load_controller_mappings). SDL's own list has a few thousand pads and not
+# every one that is sold; this one is the rest. NOTICE.md and VENDORING.md
+# say where it comes from and how to refresh it.
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/gamecontrollerdb.txt" DESTINATION .)
+
 install(FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/START HERE.txt"
     "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
@@ -548,7 +554,7 @@ install(FILES "${CMAKE_CURRENT_BINARY_DIR}/generated/licenses/concurrentqueue.tx
 # is Microsoft's LICENSE-MS.txt of release v1.7.2308, the terms dxil.dll is
 # shipped under (NOTICE.md, VENDORING.md "dxc"). A package without them is not
 # produced.
-foreach(_lic IN ITEMS DirectXShaderCompiler.txt DirectXShaderCompiler-dxil.txt roboto.txt)
+foreach(_lic IN ITEMS DirectXShaderCompiler.txt DirectXShaderCompiler-dxil.txt roboto.txt SDL_GameControllerDB.txt)
     if (NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/licenses/${_lic}")
         message(WARNING "licenses/${_lic} is missing; cpack stops until it is added (BUILDING.md, step 13)")
     endif()
@@ -558,6 +564,7 @@ install(FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/licenses/DirectXShaderCompiler.txt"
     "${CMAKE_CURRENT_SOURCE_DIR}/licenses/DirectXShaderCompiler-dxil.txt"
     "${CMAKE_CURRENT_SOURCE_DIR}/licenses/roboto.txt"
+    "${CMAKE_CURRENT_SOURCE_DIR}/licenses/SDL_GameControllerDB.txt"
     DESTINATION licenses)
 
 # cpack -C Release (from the build directory) -> Snap64Recomp-<version>-win64.zip

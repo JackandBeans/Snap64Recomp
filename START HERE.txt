@@ -67,11 +67,13 @@ The key on the left, the N64 control it stands for on the right.
 
 A gamepad works as soon as it is plugged in: Xbox, PlayStation, Switch Pro,
 the Switch Online N64 controller, the Steam Deck's own controls, and most
-third-party pads. The D-pad walks the menus as the stick does. No pad rumbles:
-the cartridge never asks for it. "pad_enabled": false in snapsettings.json
-makes the port ignore every pad. If yours does nothing, snap64.log will name it, and dropping the
-community's gamecontrollerdb.txt next to Snap64Recomp will teach the port
-about it (README, "Which controllers work").
+third-party pads; gamecontrollerdb.txt beside Snap64Recomp is the community's
+list of the rest, read at start-up. The D-pad walks the menus as the stick
+does. No pad rumbles: the cartridge never asks for it. "pad_enabled": false
+in snapsettings.json makes the port ignore every pad. If yours does nothing,
+snap64.log will name it; a newer copy of that file, from
+github.com/mdqinc/SDL_GameControllerDB, dropped over the shipped one is the
+first thing to try (README, "Which controllers work").
 
 On a Steam Deck the port takes the Deck's own defaults and can aim the camera
 by tilting the console (Options > Controls > Gyro Aim). Gyro needs a pad with

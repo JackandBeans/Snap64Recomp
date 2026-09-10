@@ -452,7 +452,8 @@ def check_package(c, zip_path):
     top = names[0].split('/')[0]
     need = [EXE, 'SDL2.dll', 'dxcompiler.dll', 'dxil.dll', 'LICENSE', 'NOTICE.md', 'README.md', 'CHANGELOG.md',
             'licenses/DirectXShaderCompiler.txt', 'licenses/DirectXShaderCompiler-dxil.txt',
-            'licenses/nlohmann-json.txt', 'licenses/roboto.txt',
+            'licenses/nlohmann-json.txt', 'licenses/roboto.txt', 'licenses/SDL_GameControllerDB.txt',
+            'gamecontrollerdb.txt',
             'menu_text/recomp_logo.png', 'mods/README.md', 'texture_packs/README.txt', 'Snap64Recomp.map']
     missing = [n for n in need if (top + '/' + n) not in names]
     c.add('package', not missing, '%s: %d entries%s' % (zip_path.name, len(names), (', missing ' + ', '.join(missing)) if missing else ''))

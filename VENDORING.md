@@ -275,6 +275,16 @@ updating plume silently reverts all three changes**; whoever updates plume must
 re-apply them or confirm upstream has an equivalent. The null guard is worth
 offering upstream (renderbag/plume): the bug is theirs.
 
+## `assets/gamecontrollerdb.txt`
+
+The community's pad mappings, <https://github.com/mdqinc/SDL_GameControllerDB>
+(zlib; `licenses/SDL_GameControllerDB.txt`), at commit `28a856f2b92d` of
+2026-09-07, with a section appended at the end -- marked `Snap64 Recomp` --
+holding lines the list lacks (NOTICE.md). Shipped beside the executable and
+read by SDL at start-up (`src/input.cpp`, `load_controller_mappings`). To
+refresh: fetch the raw file from that repository's `master`, keep the port's
+section from the marker down, and update the commit in NOTICE.md and here.
+
 ## Generated and derived files
 
 * `patches/game_syms.ld` and `patches/pokemonsnap.syms.toml` are tracked as of

@@ -13,3 +13,7 @@ patches/pokemonsnap.syms.toml   linguist-generated
 *.png  binary
 *.bin  binary
 *.inputs binary
+
+# The pad mapping list is read by SDL line by line and shipped as it is
+# checked out; it stays LF everywhere so the packaged copy is the tested one.
+assets/gamecontrollerdb.txt     text eol=lf

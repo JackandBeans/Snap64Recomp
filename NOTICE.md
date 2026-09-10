@@ -77,6 +77,7 @@ files say:
 | Component | License (as found) | Origin | In this tree |
 | --- | --- | --- | --- |
 | **SDL2** 2.30.11 | zlib (`lib/SDL/LICENSE.txt`, Sam Lantinga 1997-2025) | <https://github.com/libsdl-org/SDL>, tag `release-2.30.11`, commit `fa24d868ac2f8fd558e4e914c9863411245db8fd` | `lib/SDL`, ignored, pristine clone; built as `SDL2.dll`, shipped beside the executable |
+| **SDL_GameControllerDB** | zlib (`licenses/SDL_GameControllerDB.txt`, Sam Lantinga 1997-2025; the list itself is community-maintained) | <https://github.com/mdqinc/SDL_GameControllerDB>, commit `28a856f2b92d` (2026-09-07) | `assets/gamecontrollerdb.txt`, shipped beside the executable as `gamecontrollerdb.txt`; three lines for 8BitDo's N64 pads over Bluetooth on Windows appended by the port, marked in the file. Read by SDL at start-up (`src/input.cpp`) |
 | **DirectX-Headers** v1.619.5 | MIT (Microsoft) | <https://github.com/microsoft/DirectX-Headers>, commit `ee479f0bd5f7b884f202bcf0c3f076cc050dd256` | `lib/DirectX-Headers`, ignored, pristine clone; headers only |
 | Direct3D 12, DXGI, Vulkan loader | system components | Windows / the GPU driver | `d3d12.dll`, `dxgi.dll` and `vulkan-1.dll` are loaded from the system; not vendored |
 

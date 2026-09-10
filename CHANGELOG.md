@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.3 -- unreleased
+
+* The port ships `gamecontrollerdb.txt`, the community's list of pad
+  mappings (SDL_GameControllerDB, zlib licence, `licenses/`), beside the
+  executable. SDL uses only the pads it has a mapping for; its own list
+  holds a few thousand and no 8BitDo N64 Mod Kit, so that pad was seen at
+  start-up and ignored, as the log said, while the recompilations that ship
+  the community's list took it. Reported on Reddit by alefsousa017. The
+  port has read the file since 1.0.1 when a player put it there; now it is
+  there. Three lines are appended for 8BitDo's three N64 pad ids over
+  Bluetooth on Windows, where SDL tags a pad with the bus it arrived on
+  and the list's lines for them are USB lines: the same mappings with the
+  Bluetooth bus byte, derived, not read from a pad.
+* The log says when `gamecontrollerdb.txt` is not beside the executable,
+  since it is expected to be.
+
 ## 1.0.2 -- 2026-09-09
 
 * A Switch Online N64 controller over Bluetooth opened a black window that
