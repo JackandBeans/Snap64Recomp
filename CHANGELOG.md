@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.3 -- unreleased
+## 1.0.3 -- 2026-09-10
 
 * The port ships `gamecontrollerdb.txt`, the community's list of pad
   mappings (SDL_GameControllerDB, zlib licence, `licenses/`), beside the
