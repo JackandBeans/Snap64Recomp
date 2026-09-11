@@ -62,13 +62,17 @@
   (`upscale_2d` 2) costs: a line under a logo and a fringe around a keyed
   sprite, seen on a Steam Deck.
 * On a Steam Deck in Gaming Mode the port drew into a 1280x720 surface,
-  which gamescope scaled onto the 1280x800 panel with bars and a softer,
-  less even picture: Steam's Game Resolution for a non-Steam shortcut is
-  not the panel's unless set to Native, and the port took the size it was
-  given (found in a 1.0.4 test log, where the view widened by 16:9 in
-  Gaming Mode and by 16:10 in Desktop Mode). The log now says so when it
-  happens, with the setting to change, and the README's Deck section says
-  it up front.
+  which gamescope scaled onto the 1280x800 panel with bars top and bottom
+  and a softer, less even picture: gamescope gives a non-Steam shortcut a
+  16:9 screen unless its Game Resolution is set to Native, and the port
+  took the screen it was given (found in a 1.0.4 test log, where the view
+  widened by 16:9 in Gaming Mode and by 16:10 in Desktop Mode). The port
+  now asks gamescope for the display's own size at every start, before
+  its first fullscreen -- the request Steam's Native setting makes, a
+  property on the X root window that gamescope clamps to the display --
+  and applies fullscreen once more if the screen changed size after it.
+  The log says what was asked, what the screen then is, and, if a surface
+  still is not the panel, that the Native setting is the fallback.
 
 ## 1.0.3 -- 2026-09-10
 

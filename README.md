@@ -682,13 +682,15 @@ run the build yet. It is used like this:
    `snap64.log` in the data directory on every launch, whatever the port
    was started from; a terminal shows the lines as well.
 2. On a Deck, run it from Desktop Mode; or right-click `Snap64Recomp`,
-   choose **Add to Steam**, open the shortcut's Properties and set its
-   Game Resolution to **Native**, then launch it from Gaming Mode. Without
-   that setting Steam hands a non-Steam shortcut a 16:9 surface, and
-   gamescope scales the picture onto the 16:10 panel with bars and a
-   softer, less even image; the log says so when it happens. In Gaming
-   Mode Steam offers the game only its own virtual pad, so gyro aim has
-   to come from Steam's layout ("Controls" above). The port boots
+   choose **Add to Steam**, and launch it from Gaming Mode. Steam gives a
+   non-Steam shortcut a 16:9 screen there, which gamescope would scale
+   onto the 16:10 panel with bars; the port asks gamescope for the
+   panel's own size itself at every start, the same request the
+   shortcut's Game Resolution set to Native makes, and the log says what
+   it asked and what the screen then is. If the picture still shows bars
+   top and bottom, set that Game Resolution to Native and send the log.
+   In Gaming Mode Steam offers the game only its own virtual pad, so gyro
+   aim has to come from Steam's layout ("Controls" above). The port boots
    fullscreen on a Deck (F11 or the maximize button leaves it); on any
    other Linux machine it boots windowed, as on Windows.
 

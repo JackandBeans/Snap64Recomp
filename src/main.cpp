@@ -186,6 +186,21 @@ static ultramodern::renderer::WindowHandle create_window(void* /*gfx_data*/) {
     snap_update_window_title();
     wh.window = wmInfo.info.win.window; wh.thread_id = GetCurrentThreadId(); return wh;
 #else
+#if defined(__linux__)
+    // A Steam Deck in Gaming Mode: gamescope sizes this window's screen to
+    // what Steam configured for the shortcut -- 1280x720 for a non-Steam
+    // one until the player finds the setting -- and letterboxes the port
+    // onto the 16:10 panel. Asked now, before the first fullscreen, for the
+    // display's own size (steam_deck.cpp); the fullscreen that follows a
+    // moment later takes the screen as it then is, and update_gfx looks
+    // once more after it in case the screen changed size later.
+    if ((sdl_window != nullptr) && snap::in_gamescope()) {
+        char note[256];
+        snap::gamescope_request_output_size(sdl_window, note, sizeof(note));
+        printf("[SNAP] gamescope: %s\n", note);
+        fflush(stdout);
+    }
+#endif
     return sdl_window;
 #endif
 }
@@ -269,6 +284,8 @@ static void update_gfx(void* /*gfx_data*/) {
         static bool restorePending = false;
         static const char* restoreWhy = "";
         static std::chrono::steady_clock::time_point restoreAt;
+        static bool recheckPending = false;
+        static std::chrono::steady_clock::time_point recheckAt;
         const auto now = std::chrono::steady_clock::now();
         if (!restoreChecked) {
             restoreChecked = true;
@@ -289,8 +306,38 @@ static void update_gfx(void* /*gfx_data*/) {
             }
             snap::apply_graphics_settings();
             snap_update_window_title();
-            printf("[SNAP] fullscreen: %s\n", restoreWhy);
+            SDL_DisplayMode screen{};
+            const int display = SDL_GetWindowDisplayIndex(sdl_window);
+            if ((display >= 0) && (SDL_GetDesktopDisplayMode(display, &screen) == 0)) {
+                printf("[SNAP] fullscreen: %s; the screen is %dx%d at %d Hz\n", restoreWhy, screen.w, screen.h, screen.refresh_rate);
+            }
+            else {
+                printf("[SNAP] fullscreen: %s\n", restoreWhy);
+            }
             fflush(stdout);
+            // Under gamescope the screen may still be changing size on the
+            // port's request (create_window); looked at once more shortly.
+            recheckPending = snap::in_gamescope();
+            recheckAt = now + std::chrono::milliseconds(3000);
+        }
+        if (recheckPending && (sdl_window != nullptr) && (now >= recheckAt)) {
+            recheckPending = false;
+            int windowW = 0;
+            int windowH = 0;
+            SDL_GetWindowSize(sdl_window, &windowW, &windowH);
+            SDL_DisplayMode screen{};
+            const int display = SDL_GetWindowDisplayIndex(sdl_window);
+            const bool fullscreenDesktop = (SDL_GetWindowFlags(sdl_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) == SDL_WINDOW_FULLSCREEN_DESKTOP;
+            if (fullscreenDesktop && (display >= 0) && (SDL_GetDesktopDisplayMode(display, &screen) == 0) &&
+                ((windowW != screen.w) || (windowH != screen.h))) {
+                // The screen took the display's size after the window had
+                // gone fullscreen at the old one: once more, at the new.
+                SDL_SetWindowFullscreen(sdl_window, 0);
+                SDL_SetWindowFullscreen(sdl_window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+                printf("[SNAP] gamescope: the screen is %dx%d and the window was %dx%d; fullscreen applied again\n",
+                       screen.w, screen.h, windowW, windowH);
+                fflush(stdout);
+            }
         }
     }
 

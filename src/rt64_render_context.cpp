@@ -542,7 +542,7 @@ public:
             if (!surfaceSaid && (swapW > 0) && (swapH > 0) && snap::settings().fullscreen &&
                 snap::is_steam_deck() && snap::in_gamescope() && ((swapW != 1280) || (swapH != 800))) {
                 surfaceSaid = true;
-                printf("[SNAP] fullscreen surface is %ux%u, not the Deck's 1280x800 panel: gamescope scales it with bars. Set the shortcut's Game Resolution to Native in its Properties\n", swapW, swapH);
+                printf("[SNAP] fullscreen surface is %ux%u, not the Deck's 1280x800 panel, although gamescope was asked for the display's size at start: it scales the picture with bars. The fallback is the shortcut's Game Resolution set to Native\n", swapW, swapH);
                 fflush(stdout);
             }
         }
