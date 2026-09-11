@@ -22,6 +22,12 @@
   on this Deck or on Windows: the next report's log will name the stuck
   side. `[SNAP-OS]` reports a message the game sent without waiting that a
   full queue dropped, twice per queue, for the same reason.
+* The texture decode shader declares its output as 8-bit RGBA for Vulkan,
+  the format the texture has, instead of the 32-bit float format the
+  compiler inferred; the validation layer reported that mismatch seven
+  times a run. The mismatches it reports for the framebuffer read-back and
+  write-back buffers, whose format follows the framebuffer's depth, need a
+  newer shader compiler than the tree's and are left as they were.
 
 ## 1.0.3 -- 2026-09-10
 

@@ -166,12 +166,13 @@ marks most changed sites (grep for it), but not all of them.
 
 ### RT64
 
-Against rt64/rt64 `a012a23`, 69 of the 301 tracked files differ (blob hash
+Against rt64/rt64 `a012a23`, 70 of the 301 tracked files differ (blob hash
 comparison of 2026-09-05 against the index's blob ids and
-`git ls-tree -r a012a23`, repeatable that way).
+`git ls-tree -r a012a23`, repeatable that way; `shaders/TextureDecodeCS.hlsl`
+joined the list on 2026-09-10).
 
-**Forty-six files carry the marker**: forty-five under `lib/rt64/src` and
-`lib/rt64/include/rt64_extended_gbi.h`. Forty-one are modified upstream
+**Forty-seven files carry the marker**: forty-six under `lib/rt64/src` and
+`lib/rt64/include/rt64_extended_gbi.h`. Forty-two are modified upstream
 files and five are new (`hle/rt64_snap_diag.h`, `hle/rt64_snap_overlay.h`,
 `hle/rt64_snap_photo_detail.h`, `render/rt64_shader_blob_cache.h`,
 `render/rt64_snap_recolor.h`). By area:
@@ -186,8 +187,9 @@ object identity and transform-group pairing (`hle/rt64_state.cpp/.h`,
 `render/rt64_framebuffer_renderer.cpp/.h`, `render/rt64_projection_processor.cpp`),
 framebuffer readback and photo detail (`hle/rt64_framebuffer.h`,
 `rt64_framebuffer_manager.cpp/.h`, `rt64_snap_photo_detail.h`,
-`shaders/TextureCopyPS.hlsl`, `shared/rt64_texture_copy.h`), the shader
-seen-list warmer (`render/rt64_raster_shader_cache.cpp`,
+`shaders/TextureCopyPS.hlsl`, `shared/rt64_texture_copy.h`), the Vulkan
+image format the texture decoder declares (`shaders/TextureDecodeCS.hlsl`),
+the shader seen-list warmer (`render/rt64_raster_shader_cache.cpp`,
 `render/rt64_shader_blob_cache.h`), the Jynx recolour
 (`render/rt64_snap_recolor.h`), the depth of primitive-depth sprites and the
 per-call parameters the pixel stage reads (`shaders/RasterPS.hlsl`,

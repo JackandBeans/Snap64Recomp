@@ -18,7 +18,10 @@ struct TextureDecodeCB {
 
 [[vk::push_constant]] ConstantBuffer<TextureDecodeCB> gConstants : register(b0);
 Texture1D<uint> TMEM : register(t1);
-RWTexture2D<float4> RGBA32 : register(u2);
+// Pokemon Snap port: the texture is always R8G8B8A8_UNORM (rt64_texture_cache.cpp);
+// said here so the SPIR-V declares that format instead of the rgba32f DXC
+// infers from float4, which the validation layer reports as a mismatch.
+[[vk::image_format("rgba8")]] RWTexture2D<float4> RGBA32 : register(u2);
 
 [numthreads(GROUP_SIZE, GROUP_SIZE, 1)]
 void CSMain(uint2 coord : SV_DispatchThreadID) {

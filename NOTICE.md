@@ -41,7 +41,7 @@ but not in git (`VENDORING.md` explains).
 
 | Component | License (as found) | Origin | In this tree |
 | --- | --- | --- | --- |
-| **RT64** | MIT, "Copyright (c) 2024 RT64 Contributors" (`lib/rt64/LICENSE`) | <https://github.com/rt64/rt64>, forked from commit `a012a23` (2026-07-22; established by content, `VENDORING.md`) | `lib/rt64` outside `contrib` tracked (301 files); **modified** by this port in 69 of them: forty-six marked `Pokemon Snap port` (forty-five under `src`, one under `include`; object identity and transform pairing, frame pacing and presentation, framebuffer readback, diagnostics, configuration) and twenty-three without the marker (list in `VENDORING.md`). Statically linked. |
+| **RT64** | MIT, "Copyright (c) 2024 RT64 Contributors" (`lib/rt64/LICENSE`) | <https://github.com/rt64/rt64>, forked from commit `a012a23` (2026-07-22; established by content, `VENDORING.md`) | `lib/rt64` outside `contrib` tracked (301 files); **modified** by this port in 70 of them: forty-seven marked `Pokemon Snap port` (forty-six under `src`, one under `include`; object identity and transform pairing, frame pacing and presentation, framebuffer readback, the texture decoder's declared format, diagnostics, configuration) and twenty-three without the marker (list in `VENDORING.md`). Statically linked. |
 
 RT64's own third-party trees live in `lib/rt64/src/contrib`, which is ignored
 by git (except the three plume files named in the `plume` row below); `tools/fetch_deps.py` fetches them at
