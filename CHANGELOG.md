@@ -28,6 +28,9 @@
   times a run. The mismatches it reports for the framebuffer read-back and
   write-back buffers, whose format follows the framebuffer's depth, need a
   newer shader compiler than the tree's and are left as they were.
+* The 2D Detail help and the README say what Sharp for everything
+  (`upscale_2d` 2) costs: a line under a logo and a fringe around a keyed
+  sprite, seen on a Steam Deck.
 
 ## 1.0.3 -- 2026-09-10
 

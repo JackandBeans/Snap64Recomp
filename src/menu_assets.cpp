@@ -1106,7 +1106,7 @@ void stage_menu_strings(uint8_t* rdram) {
         { "Smooths jagged edges on 3D models.",        "Higher levels cost more performance." },
         { "Widens the view for widescreen displays.",  "The picture stays undistorted." },
         { "Original keeps the native frame pace.",     "Display interpolates to your monitor." },
-        { "Classic keeps 2D art at its original size.","Sharp redraws it at high resolution." },
+        { "Classic keeps 2D art at its original size.","Sharp redraws all, and may fringe logos." },
         { "How the picture is scaled to the window.",  "Crisp keeps pixels sharp and smooth." },
         { "The original console dither pattern.",      "Adds fine noise to smooth gradients." },
         { "Switches between fullscreen and window.",   "" },

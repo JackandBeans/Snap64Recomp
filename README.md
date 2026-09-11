@@ -571,7 +571,7 @@ the defaults below are that file's.
 | `downsample` | `1` | Super Sampling factor |
 | `resolution_scale` | `0` | 0 follows the window; 1-8 caps the render scale in multiples of 320x240 |
 | `present_filter` | `2` | 0 nearest, 1 linear, 2 RT64's anti-aliased pixel scaling |
-| `upscale_2d` | `1` | 0 original pixels, 1 only content that scales anyway, 2 everything sharp |
+| `upscale_2d` | `1` | 0 original pixels, 1 only content that scales anyway, 2 everything sharp, which can put a line under a logo and a fringe around a keyed sprite (seen on a Steam Deck) |
 | `dither_noise` | `true` | the console's post-blend dither |
 | `color_depth` | `0` | 0 RT64 decides, 1 console-accurate 8-bit, 2 high precision; restart |
 | `triple_buffering` | `false` | restart |
