@@ -551,15 +551,15 @@ extern "C" void snap_dump_game_threads(uint8_t* rdram) {
             case OSThreadState::BLOCKED: state = "blocked"; break;
         }
         if (t->queue == ultramodern::running_queue) {
-            printf("[SNAP-STALL]   thread %d (pri %d) %s, in the running queue\n", (int)t->id, (int)t->priority, state);
+            printf("[SNAP-HANG]   thread %d (pri %d) %s, in the running queue\n", (int)t->id, (int)t->priority, state);
         }
         else if (t->queue != NULLPTR) {
             const uint32_t list = (uint32_t)t->queue;
-            printf("[SNAP-STALL]   thread %d (pri %d) %s on message queue 0x%08X (%s)\n", (int)t->id, (int)t->priority, state,
+            printf("[SNAP-HANG]   thread %d (pri %d) %s on message queue 0x%08X (%s)\n", (int)t->id, (int)t->priority, state,
                    list & ~7u, ((list & 7u) == 4u) ? "send" : "receive");
         }
         else {
-            printf("[SNAP-STALL]   thread %d (pri %d) %s\n", (int)t->id, (int)t->priority, state);
+            printf("[SNAP-HANG]   thread %d (pri %d) %s\n", (int)t->id, (int)t->priority, state);
         }
     }
     fflush(stdout);

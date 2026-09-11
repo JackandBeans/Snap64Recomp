@@ -31,7 +31,7 @@
   the port writes points at the executable's folder in that case, not at
   the data directory.
 * The log reports a stall. When the game has not run a logic step for ten
-  seconds while the window is up, `[SNAP-STALL]` says what the game had
+  seconds while the window is up, `[SNAP-HANG]` says what the game had
   submitted, what the renderer took and presented, and the state of every
   game thread with the queue it waits on. For the freeze aiming at Moltres
   on a Steam Deck (issue #11, leansteak096-blip), which has not reproduced

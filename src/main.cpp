@@ -331,7 +331,7 @@ static void update_gfx(void* /*gfx_data*/) {
             stallReported = true;
             char queues[320];
             snap_render_queue_state(queues, sizeof(queues));
-            printf("[SNAP-STALL] no game logic step for %lld s (the game had run %u); renderer: %s\n",
+            printf("[SNAP-HANG] no game logic step for %lld s (the game had run %u); renderer: %s\n",
                    (long long)std::chrono::duration_cast<std::chrono::seconds>(now - stallSince).count(), steps, queues);
             snap_dump_game_threads(snap::g_rdram);
             fflush(stdout);
