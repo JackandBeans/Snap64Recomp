@@ -18,6 +18,7 @@
 
 #include "paths.h"
 #include "settings.h"
+#include "steam_deck.h"
 #include "hle/rt64_snap_diag.h"
 
 // Time the game thread lost inside osCreateThread (ultramodern/src/threads.cpp).
@@ -516,16 +517,34 @@ public:
         // next list corrects it and the patch clamps what it reads.
         {
             uint32_t q8 = 256;
-            if (wide_applied_ && app_->presentQueue) {
+            uint32_t swapW = 0;
+            uint32_t swapH = 0;
+            if (app_->presentQueue) {
                 const auto* shared = app_->presentQueue->ext.sharedResources;
-                const uint32_t w = shared->swapChainWidth;
-                const uint32_t h = shared->swapChainHeight;
-                if ((w > 0) && (h > 0)) {
-                    const float scale = std::max(float(w) / float(h), 4.0f / 3.0f) / (4.0f / 3.0f);
-                    q8 = uint32_t(std::lround(scale * 256.0f));
-                }
+                swapW = shared->swapChainWidth;
+                swapH = shared->swapChainHeight;
+            }
+            if (wide_applied_ && (swapW > 0) && (swapH > 0)) {
+                const float scale = std::max(float(swapW) / float(swapH), 4.0f / 3.0f) / (4.0f / 3.0f);
+                q8 = uint32_t(std::lround(scale * 256.0f));
             }
             snap::set_view_wide_q8(q8);
+
+            // A Steam Deck in Gaming Mode draws into whatever size Steam gave
+            // the shortcut, and for a non-Steam shortcut that is a 16:9
+            // surface unless its Game Resolution is set to Native: gamescope
+            // then scales the picture onto the 16:10 panel, with bars and a
+            // second scaling pass. Found in a 1.0.4 test log, where the view
+            // widened by 16:9 in Gaming Mode and by 16:10 in Desktop Mode.
+            // Said once, with the setting that fixes it; the panel is
+            // 1280x800 on every Deck so far.
+            static bool surfaceSaid = false;
+            if (!surfaceSaid && (swapW > 0) && (swapH > 0) && snap::settings().fullscreen &&
+                snap::is_steam_deck() && snap::in_gamescope() && ((swapW != 1280) || (swapH != 800))) {
+                surfaceSaid = true;
+                printf("[SNAP] fullscreen surface is %ux%u, not the Deck's 1280x800 panel: gamescope scales it with bars. Set the shortcut's Game Resolution to Native in its Properties\n", swapW, swapH);
+                fflush(stdout);
+            }
         }
 
         // The crop follows edits to the settings file like the toggles above

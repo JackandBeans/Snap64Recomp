@@ -61,6 +61,14 @@
 * The 2D Detail help and the README say what Sharp for everything
   (`upscale_2d` 2) costs: a line under a logo and a fringe around a keyed
   sprite, seen on a Steam Deck.
+* On a Steam Deck in Gaming Mode the port drew into a 1280x720 surface,
+  which gamescope scaled onto the 1280x800 panel with bars and a softer,
+  less even picture: Steam's Game Resolution for a non-Steam shortcut is
+  not the panel's unless set to Native, and the port took the size it was
+  given (found in a 1.0.4 test log, where the view widened by 16:9 in
+  Gaming Mode and by 16:10 in Desktop Mode). The log now says so when it
+  happens, with the setting to change, and the README's Deck section says
+  it up front.
 
 ## 1.0.3 -- 2026-09-10
 

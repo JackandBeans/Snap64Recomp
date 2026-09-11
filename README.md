@@ -681,13 +681,16 @@ run the build yet. It is used like this:
    `menu_text/` put in the data directory is read too and wins. The log is
    `snap64.log` in the data directory on every launch, whatever the port
    was started from; a terminal shows the lines as well.
-2. On a Deck, run it from Desktop Mode, which is where it has been
-   tested; or right-click `Snap64Recomp`, choose **Add to Steam**, and
-   launch it from Gaming Mode, which is untested and where Steam offers
-   the game only its own virtual pad, so gyro aim has to come from Steam's
-   layout ("Controls" above). The port boots fullscreen on a Deck (F11 or
-   the maximize button leaves it); on any other Linux machine it boots
-   windowed, as on Windows.
+2. On a Deck, run it from Desktop Mode; or right-click `Snap64Recomp`,
+   choose **Add to Steam**, open the shortcut's Properties and set its
+   Game Resolution to **Native**, then launch it from Gaming Mode. Without
+   that setting Steam hands a non-Steam shortcut a 16:9 surface, and
+   gamescope scales the picture onto the 16:10 panel with bars and a
+   softer, less even image; the log says so when it happens. In Gaming
+   Mode Steam offers the game only its own virtual pad, so gyro aim has
+   to come from Steam's layout ("Controls" above). The port boots
+   fullscreen on a Deck (F11 or the maximize button leaves it); on any
+   other Linux machine it boots windowed, as on Windows.
 
 It needs the system's SDL2 (2.26 or newer), GTK 3 and a Vulkan driver,
 and a glibc no older than the one it was built against (2.39; SteamOS 3.8
