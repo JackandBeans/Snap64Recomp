@@ -224,14 +224,17 @@ anywhere in plume's history, and all four are **force-tracked** in this
 repository (`git add -f`; the directory around them stays ignored):
 
 * `plume_d3d12.cpp` (tracked since commit `7d704d4`, which was `35bcba0`
-  before the history rewrite of 2026-09-02). It carries three changes: the
+  before the history rewrite of 2026-09-02). It carries four changes: the
   null guard in `setSamplePositions` described below; `D3D12SwapChain::present`
   keeping a sync interval of 1 when vsync is on even with present wait (the
-  comment in the file says why); and a Direct3D 12 pipeline-library
+  comment in the file says why); a Direct3D 12 pipeline-library
   persistence layer (`hashGraphicsPipelineDesc`,
   `D3D12Device::setPipelineCacheData` / `getPipelineCacheData`, the
   `snap_pipeline_reused` / `snap_pipeline_built` counters) that
-  `lib/rt64/src/hle/rt64_application.cpp` drives.
+  `lib/rt64/src/hle/rt64_application.cpp` drives; and, since 2026-09-10,
+  `D3D12QueryPool::queryResults` skipping the copy when `Map` returns null
+  (a removed device) and printing `[SNAP-D3D12]` with the removal reason
+  once, where 1.0.3 crashed on the null.
 * `plume_d3d12.h` (tracked since 2026-09-02): ten added lines, the
   `pipelineLibrary`, `pipelineLibraryBlob` and `pipelineLibraryMutex` members
   of `D3D12Device` and the two overrides.
