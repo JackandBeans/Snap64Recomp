@@ -18,11 +18,16 @@
   the first frame after it drew from tiles that named no live texture,
   Direct3D removed the device (`CreateResource failed with error code
   0x887A0005` in the log) and the port crashed on the next call, twice of
-  two runs of 1.0.3 here; the fixed build played the same switch through,
-  thumbnails intact. A tile whose copy is missing for any other reason now
-  draws one transparent black texel instead of texture zero, and the render
-  thread's timing readback no longer dereferences the null a removed device
-  hands back: `[SNAP-D3D12]` names the removal in the log instead.
+  two runs of 1.0.3 here, and once more from this tree with only the copy
+  survival switched off, which is what pins the cause. The fixed build
+  played the same switch through five times on both backends, thumbnails
+  intact in fullscreen and pixel-identical after the return to a window.
+  A tile whose copy is missing for any other reason now draws one
+  transparent black texel instead of texture zero (with that alone the
+  device survived the switch and the thumbnails went blank until the game
+  rendered them again), and the render thread's timing readback no longer
+  dereferences the null a removed device hands back: `[SNAP-D3D12]` names
+  the removal in the log instead.
 * On Linux the log is written on every launch: `snap64.log` in the data
   directory, whatever stdout is. 1.0.3 wrote it only when there was nowhere
   to print, so a launch from Steam, whose stdout is Steam's own pipe, left
