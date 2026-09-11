@@ -14,6 +14,22 @@
   their detail across the switch; a copy pinned before the switch is at the
   render scale of that time, and is replaced when the game next renders the
   photo. A copy's number is also never reused for another copy.
+* On Linux the log is written on every launch: `snap64.log` in the data
+  directory, whatever stdout is. 1.0.3 wrote it only when there was nowhere
+  to print, so a launch from Steam, whose stdout is Steam's own pipe, left
+  no log to attach to a report. A terminal or a redirection still gets
+  every line. The previous run's log is kept as `snap64.prev.log`.
+* On a Linux install whose folder cannot be written, the files the port
+  ships beside the executable -- `gamecontrollerdb.txt`, the window icon,
+  `menu_text/recomp_logo.png`, the seed of the seen-shader list -- were
+  looked for in the data directory (`~/.config/Snap64Recomp`) and not
+  found: no community pad mappings, no window icon, no Recomp badge under
+  the title, and every shader compiled the first time it appeared. They are
+  read from beside the executable now; a `gamecontrollerdb.txt` or a
+  `menu_text/` in the data directory is read too and wins, and the
+  seen-shader list is copied into the data directory once. The launcher
+  the port writes points at the executable's folder in that case, not at
+  the data directory.
 * The log reports a stall. When the game has not run a logic step for ten
   seconds while the window is up, `[SNAP-STALL]` says what the game had
   submitted, what the renderer took and presented, and the state of every

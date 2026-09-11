@@ -196,7 +196,7 @@ Everything is in the folder with the executable.
 | `saves/pokemonsnap.bin`, `saves/pokemonsnap.bin.bak` | the game's save data, one file (a raw image of the cartridge's save memory) |
 | `photos/` | the photos you save with P or the controller's Back button (see "Photos"); created on the first save |
 | `cache/` | RT64's compiled shaders and the driver's pipeline cache, built on your machine, and `rt64-seen-shaders.bin`, the list of every shader the game is known to ask for -- shipped with 623 entries from a full playthrough, so the first start compiles them all during the boot logos rather than the first time each appears in play; the game adds any it meets that are not on it. Safe to delete; the next start is slower |
-| `snap64.log`, `snap64.prev.log` | the log of this run and of the one before it, written when the port was not started from a terminal |
+| `snap64.log`, `snap64.prev.log` | the log of this run and of the one before it; on Windows written when the port was not started from a terminal, on Linux on every launch |
 | `mods/`, `mod_config/` | the runtime's mod folders; the loader runs at every start, no mod ships with this release, and there is no in-game mod manager (see "Mods and texture packs") |
 | `texture_packs/` | HD texture packs you install yourself, scanned once at start-up; created empty, none ships with this port (see "Mods and texture packs") |
 | `stickers/` | the sticker sheets the Snap Station prints (see "The Snap Station"); created on the first print |
@@ -674,7 +674,13 @@ run the build yet. It is used like this:
    directory), the files go to `~/.config/Snap64Recomp` (or
    `$XDG_CONFIG_HOME/Snap64Recomp`) and the ROM is looked for there; the
    log's first line names the folder in use, and `SNAP_DATA_DIR` in the
-   environment names one outright.
+   environment names one outright. The files the port ships beside
+   `Snap64Recomp` (`gamecontrollerdb.txt`, `menu_text/`, the window icon)
+   are still read from beside it in that case, the seen-shader list is copied
+   into the data directory once, and a `gamecontrollerdb.txt` or a
+   `menu_text/` put in the data directory is read too and wins. The log is
+   `snap64.log` in the data directory on every launch, whatever the port
+   was started from; a terminal shows the lines as well.
 2. On a Deck, run it from Desktop Mode, which is where it has been
    tested; or right-click `Snap64Recomp`, choose **Add to Steam**, and
    launch it from Gaming Mode, which is untested and where Steam offers
@@ -706,10 +712,12 @@ fine.
   shortcut shows `Snap64Recomp.png`, the tile, once you pick that file in
   the shortcut's Properties (the artwork Steam shows in Gaming Mode is a
   separate choice there, and yours to make). And the port writes a
-  `Snap64Recomp.desktop` launcher beside itself on the first start, with
-  the tile as its icon and the folder as its working directory: that is
-  what a file manager or an application menu can show a logo for -- run
-  it as it is, or copy it to `~/.local/share/applications`.
+  `Snap64Recomp.desktop` launcher on the first start, beside itself when
+  that folder can be written and in the data directory otherwise, with
+  the tile as its icon and the executable's folder as its working
+  directory: that is what a file manager or an application menu can show
+  a logo for -- run it as it is, or copy it to
+  `~/.local/share/applications`.
 * **Desktop Mode with Steam running.** Launched from a terminal or a file
   manager, Steam's desktop layout also sends Enter for A and Escape for B,
   which are the port's Start and pause keys: a shot opened the pause menu

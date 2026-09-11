@@ -25,6 +25,7 @@
 #include <sys/file.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <csignal>
 #endif
 
 #include "librecomp/game.hpp"
@@ -797,31 +798,162 @@ static void snap_bind_stdio() {
 #endif
 
 #if defined(__linux__)
-// Where the log goes, decided once before the first line is printed, on the
-// Windows rule (above): a terminal or anything a parent gave this process
-// to write into (a pipe, a file, a socket) is kept, so `> out.log` and a
-// capture read exactly as before; a launch with nowhere to print (Steam, a
-// desktop entry: stdout is /dev/null or closed) writes snap64.log in the
-// data directory, keeping the previous run as snap64.prev.log so a crash
-// log survives one relaunch.
-static void snap_bind_stdio() {
-    struct stat st{};
-    if (fstat(STDOUT_FILENO, &st) == 0) {
-        if (isatty(STDOUT_FILENO) || S_ISFIFO(st.st_mode) || S_ISREG(st.st_mode) || S_ISSOCK(st.st_mode)) {
-            return;
-        }
-    }
-    const std::filesystem::path log = snap::base_path("snap64.log");
-    const std::filesystem::path prev = snap::base_path("snap64.prev.log");
-    std::error_code ec;
-    std::filesystem::remove(prev, ec);
-    std::filesystem::rename(log, prev, ec);
-    if (freopen(log.c_str(), "a", stdout) == nullptr) {
+// Where the log goes, decided once before the first line is printed.
+// snap64.log in the data directory is written on every launch: Steam, the
+// Deck's Gaming Mode and a desktop entry give a game nowhere to print that
+// a player can find, a report needs the file, and 1.0.3 wrote it only when
+// stdout was closed or /dev/null, so a launch from Steam (stdout is Steam's
+// own pipe) left no log to attach. Both streams go straight to the file,
+// unbuffered, in append mode, so their lines keep their order and the last
+// line before a crash is on disk; the previous run's log is kept as
+// snap64.prev.log so a crash log survives one relaunch. Anything a parent
+// gave this process to write into -- a terminal, a pipe, a file, a socket:
+// `> out.log`, a capture, Steam's console log -- still gets every line: a
+// thread follows the file and copies what arrives to that descriptor, kept
+// on a duplicate above the standard three.
+//
+// The Snap Station's relaunch replaces this image with execv, and the log
+// stays open across it, so the new boot's first line follows this one's
+// last in the same file. SNAP_LOG_ECHO_FD hands the new boot the duplicate
+// (inheritable on purpose), it echoes from where the file then stands, and
+// snap_log_before_exec copies out the last lines first.
+static int s_log_echo_fd = -1;
+static int s_log_read_fd = -1;
+static off_t s_log_echo_offset = 0;
+static std::mutex s_log_echo_mutex;
+
+// Copies what the file gained to the echo; the caller holds the mutex.
+static void snap_log_echo_copy() {
+    if ((s_log_echo_fd < 0) || (s_log_read_fd < 0)) {
         return;
     }
-    freopen(log.c_str(), "a", stderr);
+    char buf[4096];
+    for (;;) {
+        const ssize_t n = pread(s_log_read_fd, buf, sizeof(buf), s_log_echo_offset);
+        if (n <= 0) {
+            return;
+        }
+        const char* p = buf;
+        ssize_t left = n;
+        while (left > 0) {
+            const ssize_t w = write(s_log_echo_fd, p, size_t(left));
+            if (w <= 0) {
+                // The reader went away (a closed terminal, a pipe with no
+                // one at its end): the file is the log from here.
+                s_log_echo_fd = -1;
+                return;
+            }
+            p += w;
+            left -= w;
+        }
+        s_log_echo_offset += n;
+    }
+}
+
+static void snap_log_echo_drain() {
+    std::lock_guard<std::mutex> lock(s_log_echo_mutex);
+    snap_log_echo_copy();
+}
+
+// The last lines, then no more echo, without waiting on a copy that is
+// stuck in a write nobody reads (a pipe whose reader stopped): the file
+// has every line either way. Bounded so an exit or a relaunch never hangs
+// on the terminal.
+static void snap_log_echo_finish() {
+    for (int attempt = 0; attempt < 20; attempt++) {
+        if (s_log_echo_mutex.try_lock()) {
+            snap_log_echo_copy();
+            s_log_echo_fd = -1;
+            s_log_echo_mutex.unlock();
+            return;
+        }
+        usleep(25 * 1000);
+    }
+}
+
+extern "C" void snap_log_before_exec() {
+    fflush(stdout);
+    fflush(stderr);
+    snap_log_echo_finish();
+}
+
+static void snap_bind_stdio() {
+    const std::filesystem::path log = snap::base_path("snap64.log");
+    const std::filesystem::path prev = snap::base_path("snap64.prev.log");
+
+    // Where stdout points now: kept as the echo when it is somewhere to
+    // write into, on a duplicate the freopen below does not touch. Not when
+    // it is the log file itself (`> snap64.log` in the data directory), which
+    // the echo would feed back into without end.
+    int echo = -1;
+    bool echoIsPipe = false;
+    struct stat st{};
+    struct stat logSt{};
+    const bool logExists = (stat(log.c_str(), &logSt) == 0);
+    if (const char* handed = std::getenv("SNAP_LOG_ECHO_FD")) {
+        // The relaunch's duplicate; fd 1 is already the log.
+        const int fd = std::atoi(handed);
+        if ((fd > STDERR_FILENO) && (fstat(fd, &st) == 0)) {
+            echo = fd;
+            echoIsPipe = S_ISFIFO(st.st_mode) || S_ISSOCK(st.st_mode);
+        }
+    }
+    else if (fstat(STDOUT_FILENO, &st) == 0) {
+        const bool sameAsLog = logExists && (st.st_dev == logSt.st_dev) && (st.st_ino == logSt.st_ino);
+        if (!sameAsLog && (isatty(STDOUT_FILENO) || S_ISFIFO(st.st_mode) || S_ISREG(st.st_mode) || S_ISSOCK(st.st_mode))) {
+            echo = fcntl(STDOUT_FILENO, F_DUPFD, 3);
+            echoIsPipe = S_ISFIFO(st.st_mode) || S_ISSOCK(st.st_mode);
+        }
+    }
+
+    // The relaunched image finds fd 1 already on the log: no rotation, the
+    // session's log goes on in the same file.
+    struct stat outSt{};
+    const bool alreadyLog = logExists && (fstat(STDOUT_FILENO, &outSt) == 0) && S_ISREG(outSt.st_mode) &&
+        (outSt.st_dev == logSt.st_dev) && (outSt.st_ino == logSt.st_ino);
+    if (!alreadyLog) {
+        std::error_code ec;
+        std::filesystem::remove(prev, ec);
+        std::filesystem::rename(log, prev, ec);
+        if (freopen(log.c_str(), "a", stdout) == nullptr) {
+            // Nowhere to write the log (the data directory cannot be
+            // written): stdout stays what it was.
+            if (echo > STDERR_FILENO) {
+                close(echo);
+            }
+            return;
+        }
+        freopen(log.c_str(), "a", stderr);
+    }
     setvbuf(stdout, nullptr, _IONBF, 0);
     setvbuf(stderr, nullptr, _IONBF, 0);
+    if (echo < 0) {
+        return;
+    }
+
+    s_log_read_fd = open(log.c_str(), O_RDONLY | O_CLOEXEC);
+    if (s_log_read_fd < 0) {
+        close(echo);
+        return;
+    }
+    // From the file's end: a fresh log is empty, and the relaunched image's
+    // earlier lines were echoed by the image before it.
+    struct stat nowSt{};
+    s_log_echo_offset = (fstat(STDOUT_FILENO, &nowSt) == 0) ? nowSt.st_size : 0;
+    s_log_echo_fd = echo;
+    if (echoIsPipe) {
+        // A reader that goes away makes the write fail, which ends the echo
+        // (above); it must not end the game.
+        signal(SIGPIPE, SIG_IGN);
+    }
+    setenv("SNAP_LOG_ECHO_FD", std::to_string(echo).c_str(), 1);
+    std::thread([] {
+        for (;;) {
+            snap_log_echo_drain();
+            usleep(50 * 1000);
+        }
+    }).detach();
+    atexit([] { snap_log_echo_finish(); });
 }
 
 // One copy at a time, on the Windows rule: a lock file in the data
@@ -890,6 +1022,14 @@ int main(int argc, char* argv[]) {
         // Said here rather than where it happened: before snap_bind_stdio
         // there may be no stderr to say it on.
         fputs(lock_note.c_str(), stdout);
+        fflush(stdout);
+    }
+    if (snap::base_dir() != snap::exe_dir()) {
+        // paths.cpp said why on stderr when it decided (the executable's
+        // folder cannot be written, or SNAP_DATA_DIR), before the log was
+        // bound; the log itself should say which folders are in use.
+        printf("[SNAP] files resolve against %s; the shipped files are read from beside the executable, %s\n",
+               snap::base_dir().c_str(), snap::exe_dir().c_str());
         fflush(stdout);
     }
 #endif

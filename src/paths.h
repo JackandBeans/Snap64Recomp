@@ -25,6 +25,15 @@ const std::filesystem::path& base_dir();
 // base_dir() / rel, for the relative names the sources already use.
 std::filesystem::path base_path(std::string_view rel);
 
+// The directory containing the executable, always: where the files the port
+// ships and only reads are -- gamecontrollerdb.txt, menu_text/, the icons,
+// the seed of the seen-shader list. On Windows, and on a Linux install
+// whose folder can be written, this is base_dir(); on a read-only Linux
+// install base_dir() is the config home and the shipped files are still
+// beside the executable, which is where 1.0.3 failed to look for them.
+const std::filesystem::path& exe_dir();
+std::filesystem::path exe_path(std::string_view rel);
+
 } // namespace snap
 
 #endif

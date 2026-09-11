@@ -399,16 +399,21 @@ files:
   force-tracked plume file (VENDORING.md): upstream's Vulkan backend has
   no texture-to-buffer copy, which the presented-frame capture and the
   Snap Station's sheet capture use, and dereferenced a null texture.
-* `snap64.log` is written only when there is nowhere to print (stdout is
-  `/dev/null` or closed, as from Steam or a desktop entry); a terminal or a
-  redirection is kept. One copy at a time is a `flock` on `snap64.lock` in
-  the data directory. The Snap Station's relaunch `execv`s
-  `/proc/self/exe` in place, keeping the pid so Steam keeps the game as
-  running, and the sheet's folder opens with `xdg-open` (`src/main.cpp`,
-  `src/snap_station.cpp`).
+* `snap64.log` in the data directory is written on every launch: both
+  streams go to the file, unbuffered. When stdout was a terminal, a pipe,
+  a file or a socket, a thread follows the file and copies every line to a
+  duplicate of that descriptor; `SNAP_LOG_ECHO_FD` carries the duplicate
+  across the Snap Station's relaunch, which keeps the log open. One copy
+  at a time is a `flock` on `snap64.lock` in the data directory. The Snap
+  Station's relaunch `execv`s `/proc/self/exe` in place, keeping the pid
+  so Steam keeps the game as running, and the sheet's folder opens with
+  `xdg-open` (`src/main.cpp`, `src/snap_station.cpp`).
 * The data directory is the executable's when it can be written, else
   `$XDG_CONFIG_HOME/Snap64Recomp` (`~/.config/Snap64Recomp`), and
-  `SNAP_DATA_DIR` names one outright (`src/paths.cpp`).
+  `SNAP_DATA_DIR` names one outright (`src/paths.cpp`). The files the
+  port ships and only reads (`gamecontrollerdb.txt`, `menu_text/`, the
+  icons, the seed of the seen-shader list) are read from the executable's
+  directory, `snap::exe_dir()`, whichever the data directory is.
 * `src/steam_deck.cpp`: `SteamDeck=1` in the environment (Steam sets it
   for a game it launches on a Deck, through Proton too) or a board vendor
   of `Valve` under `/sys` means a Steam Deck, which boots fullscreen

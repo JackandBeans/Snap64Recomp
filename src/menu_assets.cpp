@@ -84,7 +84,7 @@ bool set_window_icon(void* sdlWindow) {
     int w = 0;
     int h = 0;
     int comp = 0;
-    stbi_uc* data = load_png(base_path("Snap64Recomp-window.png"), &w, &h, &comp);
+    stbi_uc* data = load_png(exe_path("Snap64Recomp-window.png"), &w, &h, &comp);
     if (data == nullptr) {
         return false;
     }
@@ -97,21 +97,40 @@ bool set_window_icon(void* sdlWindow) {
     return icon != nullptr;
 }
 
-// A launcher beside the executable, written once on Linux if none is there.
+// A file the port ships beside the executable, or the player's own copy in
+// the data directory when that is a different folder (a read-only Linux
+// install; paths.h): the player's wins. On Windows and on a writable
+// install the two folders are one, and this is base_path.
+static std::filesystem::path asset_path(const std::string& rel) {
+    const std::filesystem::path own = base_path(rel);
+    if (base_dir() == exe_dir()) {
+        return own;
+    }
+    std::error_code ec;
+    if (std::filesystem::exists(own, ec)) {
+        return own;
+    }
+    return exe_path(rel);
+}
+
+// A launcher written once on Linux if none is there: beside the executable
+// when that folder can be written, else in the data directory (paths.h).
 // A Linux binary cannot carry an icon the way a Windows one does; what a
 // file manager or an application menu shows is a .desktop entry, and this
-// is one, with the absolute paths such an entry needs: run it, or copy it
-// to ~/.local/share/applications for the menu. Nothing is written when a
-// file of that name exists, so an edited one stays as edited.
+// is one, with the absolute paths such an entry needs -- the executable,
+// its folder and the tile beside it, wherever the entry itself went: run
+// it, or copy it to ~/.local/share/applications for the menu. Nothing is
+// written when a file of that name exists, so an edited one stays as
+// edited.
 void write_desktop_entry() {
     const std::filesystem::path entry = base_path("Snap64Recomp.desktop");
     std::error_code ec;
     if (std::filesystem::exists(entry, ec)) {
         return;
     }
-    const std::filesystem::path dir = base_path("");
-    const std::filesystem::path exe = base_path("Snap64Recomp");
-    const std::filesystem::path icon = base_path("Snap64Recomp.png");
+    const std::filesystem::path dir = exe_path("");
+    const std::filesystem::path exe = exe_path("Snap64Recomp");
+    const std::filesystem::path icon = exe_path("Snap64Recomp.png");
     FILE* f = fopen(entry.string().c_str(), "wb");
     if (f == nullptr) {
         return;
@@ -817,7 +836,7 @@ void apply_shadow(Strip &strip) {
 // back to the font renderer, so partial sets are fine.
 bool load_override(const char* name, Strip &strip) {
     int w = 0, h = 0, comp = 0;
-    stbi_uc* data = load_png(base_path("menu_text") / (std::string(name) + ".png"), &w, &h, &comp);
+    stbi_uc* data = load_png(asset_path("menu_text/" + std::string(name) + ".png"), &w, &h, &comp);
     if (data == nullptr) {
         return false;
     }
@@ -1227,7 +1246,7 @@ void stage_menu_strings(uint8_t* rdram) {
     struct { int w = 0, h = 0; std::vector<uint16_t> texels; } logo;
     {
         int lw = 0, lh = 0, comp = 0;
-        stbi_uc* data = load_png(base_path("menu_text/recomp_logo.png"), &lw, &lh, &comp);
+        stbi_uc* data = load_png(asset_path("menu_text/recomp_logo.png"), &lw, &lh, &comp);
         if ((data != nullptr) && (lw > 0) && (lh > 0)) {
             // Image generators fight transparency: a fully opaque image is
             // treated as white-backgrounded, and near-white pixels become

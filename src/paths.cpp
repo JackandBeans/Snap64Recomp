@@ -79,4 +79,26 @@ std::filesystem::path base_path(std::string_view rel) {
     return base_dir() / std::filesystem::path(rel);
 }
 
+const std::filesystem::path& exe_dir() {
+    static const std::filesystem::path dir = [] {
+        std::filesystem::path result;
+        if (char* base = SDL_GetBasePath()) {
+            result = std::filesystem::path(
+                std::u8string(reinterpret_cast<const char8_t*>(base)));
+            SDL_free(base);
+        }
+        if (result.empty()) {
+            // The same fallback base_dir() takes, said there.
+            std::error_code ec;
+            result = std::filesystem::current_path(ec);
+        }
+        return result;
+    }();
+    return dir;
+}
+
+std::filesystem::path exe_path(std::string_view rel) {
+    return exe_dir() / std::filesystem::path(rel);
+}
+
 } // namespace snap

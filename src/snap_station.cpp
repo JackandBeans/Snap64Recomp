@@ -62,6 +62,9 @@
 // diagnostic environment nor a schedule.
 extern "C" std::atomic<int32_t> snap_frame_dump_pending;
 extern "C" std::atomic<int32_t> snap_frame_dump_station;
+#if defined(__linux__)
+extern "C" void snap_log_before_exec();   // main.cpp
+#endif
 
 namespace snap {
 namespace {
@@ -415,8 +418,9 @@ bool relaunch_self(const char* why) {
     }
     const std::string cwd = base_dir().string();
     say("relaunching in place for %s", why);
-    fflush(stdout);
-    fflush(stderr);
+    // The log's last lines reach the terminal, when there is one, before
+    // the image goes (main.cpp, snap_bind_stdio).
+    snap_log_before_exec();
     // The new boot replaces this process image and keeps its pid, so Steam
     // (which watches the process it started) keeps the game as running, the
     // overlay and the controller layout stay, and the marker's pid is this

@@ -885,8 +885,18 @@ static int SDLCALL photo_button_watch(void* /*userdata*/, SDL_Event* event) {
 // one raw mapping string, which is a developer's tool, not a player's. The
 // file is expected now, so its absence is worth a line.
 static void load_controller_mappings() {
-    const std::string path = base_path("gamecontrollerdb.txt").string();
-    const int added = SDL_GameControllerAddMappingsFromFile(path.c_str());
+    // Read from beside the executable, where it ships. A copy in the data
+    // directory -- the same folder on Windows and on a writable Linux
+    // install; ~/.config/Snap64Recomp on a read-only one (paths.h) -- is
+    // read after it, and its lines win for the pads both name.
+    const std::string path = exe_path("gamecontrollerdb.txt").string();
+    int added = SDL_GameControllerAddMappingsFromFile(path.c_str());
+    if (base_dir() != exe_dir()) {
+        const int more = SDL_GameControllerAddMappingsFromFile(base_path("gamecontrollerdb.txt").string().c_str());
+        if (more > 0) {
+            added = ((added > 0) ? added : 0) + more;
+        }
+    }
     if (added > 0) {
         printf("[SNAP-Input] gamecontrollerdb.txt: %d controller mappings added\n", added);
         fflush(stdout);
