@@ -2,6 +2,18 @@
 
 ## 1.0.4 -- unreleased
 
+* After a switch between a window and fullscreen on the Gallery or the
+  PKMN Report, the thumbnails showed the wrong pictures (issue #12,
+  Succulent-Puppet). Photo Detail draws each thumbnail from a pinned
+  high-resolution copy of the game's own render of it. The renderer
+  destroys every such copy when the window changes size, and the game does
+  not render its photos again for that: the thumbnails' tiles went on
+  naming copies that were gone, were left unset, and drew from the wrong
+  texture. The pinned copies now outlive that wipe -- each is its own
+  texture and needs nothing the wipe removes -- so the thumbnails keep
+  their detail across the switch; a copy pinned before the switch is at the
+  render scale of that time, and is replaced when the game next renders the
+  photo. A copy's number is also never reused for another copy.
 * The log reports a stall. When the game has not run a logic step for ten
   seconds while the window is up, `[SNAP-STALL]` says what the game had
   submitted, what the renderer took and presented, and the state of every

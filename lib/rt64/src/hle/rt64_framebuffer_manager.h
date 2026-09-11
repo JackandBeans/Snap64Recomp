@@ -4,6 +4,8 @@
 
 #pragma once
 
+#include <atomic>
+
 #include <map>
 #include <set>
 #include <vector>
@@ -79,6 +81,9 @@ namespace RT64 {
             std::unique_ptr<RenderTexture> texture;
             uint32_t textureWidth = 0;
             uint32_t textureHeight = 0;
+            // Pokemon Snap port: the format the texture was made in, so a copy
+            // that outlived a colour-depth change is remade before it is reused.
+            RenderFormat textureFormat = RenderFormat::UNKNOWN;
             uint32_t address = 0;
             uint32_t left = 0;
             uint32_t top = 0;
@@ -177,6 +182,18 @@ namespace RT64 {
 
         std::unordered_map<uint32_t, Framebuffer> framebuffers;
         std::unordered_map<uint64_t, TileCopy> tileCopies;
+        // Pokemon Snap port: a copy's id is never reused for another copy.
+        // The id used to be the largest one present plus one, so clearing the
+        // map (a window or aspect change) restarted the numbering and every
+        // id still held elsewhere -- a TMEM region's, a pinned photo's -- named
+        // whatever copy was made next. There are two managers: the game
+        // thread's (State), which hands out the ids, and the render thread's
+        // (SharedQueueResources), which holds the textures and is the one
+        // destroyAllTileCopies runs on. The count of those wipes is shared
+        // between them, so the photo pins (hle/rt64_snap_photo_detail.h) can
+        // tell a copy made before a wipe from one made after it.
+        uint64_t tileCopyIdCounter = 0;
+        static std::atomic<uint64_t> snapTileCopyWipes;
         std::unordered_map<uint64_t, uint64_t> reinterpretTileCache;
         std::unique_ptr<RenderTexture> dummyTLUTTexture;
         std::vector<std::unique_ptr<ReinterpretDescriptorSet>> descriptorReinterpretSets;

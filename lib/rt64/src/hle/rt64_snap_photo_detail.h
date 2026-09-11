@@ -45,6 +45,18 @@
 // go when the ring is full, so the scoring passes that share the buffer
 // never push a displayed photo out.
 //
+// What a window or aspect change does. The renderer destroys every tile copy
+// when the window's size or the frame's configuration changes (rt64_workload_
+// queue.cpp, threadConfigurationUpdate), and the game does not render its
+// photos again for that: a Gallery page drawn from pinned copies that were
+// gone showed whatever GPU tile the missing copy's id fell on (issue #12,
+// Succulent-Puppet: wrong thumbnails after a switch to fullscreen). The
+// pinned copies now outlive that wipe (rt64_framebuffer_manager.cpp,
+// destroyAllTileCopies); each stands on its own texture, so the thumbnails
+// keep their detail. A copy made before the wipe is at the old render
+// scale; when the game renders the same photo again the newer copy is kept
+// and the older one released, where an unchanged scale keeps the older.
+//
 // Off, none of this runs: no pin, no note, no comparison.
 //
 
@@ -71,6 +83,11 @@ namespace RT64 {
             uint32_t dstHeight = 0;
             uint64_t tileId = 0;
             uint32_t pairIndex = 0;
+            // How many tile-copy wipes the renderer had done when this was
+            // pinned (FramebufferManager::snapTileCopyWipes). The copy itself
+            // survives a wipe; the count tells a re-render of the same photo
+            // after a window change from one before it (see fillPixels).
+            uint64_t generation = 0;
             bool filled = false;
             bool duplicate = false;
             uint64_t matchedTimestamp = 0;
@@ -174,6 +191,7 @@ namespace RT64 {
             }
 
             Candidate candidate;
+            candidate.generation = FramebufferManager::snapTileCopyWipes.load(std::memory_order_acquire);
             candidate.address = address;
             candidate.width = width;
             candidate.dstWidth = dstWidth;
@@ -251,11 +269,23 @@ namespace RT64 {
                 // an earlier candidate already holds. Keep the earlier one,
                 // which the texture loads may be matching this frame, and
                 // release the newcomer, so a re-render never pushes a photo
-                // still on screen out of the ring.
+                // still on screen out of the ring. Unless the earlier one was
+                // pinned before a window change: its copy is at the render
+                // scale of that time, the newcomer's at this one's, so the
+                // newcomer stays and the earlier one is released instead
+                // (its copy is drawn from until the end of this display list
+                // at most, and the loads from then on match the newcomer,
+                // the newest first).
                 for (auto other = candidates.begin(); other != candidates.end(); other++) {
-                    if ((&*other != &candidate) && other->filled && (other->dstWidth == candidate.dstWidth) &&
+                    if ((&*other != &candidate) && other->filled && !other->duplicate && (other->dstWidth == candidate.dstWidth) &&
                         (other->dstHeight == candidate.dstHeight) && (other->pixels == candidate.pixels)) {
-                        candidate.duplicate = true;
+                        if (other->generation != candidate.generation) {
+                            other->duplicate = true;
+                        }
+                        else {
+                            candidate.duplicate = true;
+                        }
+
                         break;
                     }
                 }
