@@ -5,6 +5,7 @@
 #include "rt64_framebuffer_renderer.h"
 
 #include <cstdlib>
+#include <cstring>
 
 #include <atomic>
 #include <cmath>
@@ -192,6 +193,8 @@ namespace RT64 {
         dummyDepthTargetView.reset();
         dummyColorTarget.reset();
         dummyDepthTarget.reset();
+        snapFallbackTexture.reset();
+        snapFallbackUpload.reset();
     }
     
     void FramebufferRenderer::resetFramebuffers(RenderWorker *worker, bool ubershadersVisible, float ditherNoiseStrength, const RenderMultisampling &multisampling) {
@@ -210,6 +213,22 @@ namespace RT64 {
             dummyColorTarget->setName("Framebuffer Renderer Color Dummy");
             dummyColorTargetView = dummyColorTarget->createTextureView(RenderTextureViewDesc::Texture2D(dummyColorDesc.format));
             dummyColorTargetTransitioned = false;
+        }
+
+        // Pokemon Snap port: the fallback texel, made once; its upload is
+        // recorded by the first recordSetup after this (a texture starts with
+        // whatever memory held, and this one must be nothing).
+        if (snapFallbackTexture == nullptr) {
+            snapFallbackTexture = worker->device->createTexture(RenderTextureDesc::Texture2D(1, 1, 1, RenderFormat::R8G8B8A8_UNORM));
+            snapFallbackTexture->setName("Snap Fallback Texel");
+            snapFallbackUpload = worker->device->createBuffer(RenderBufferDesc::UploadBuffer(256));
+            void *uploadData = snapFallbackUpload->map();
+            if (uploadData != nullptr) {
+                memset(uploadData, 0, 256);
+                snapFallbackUpload->unmap();
+            }
+
+            snapFallbackUploaded = false;
         }
 
         // Create dummy depth target if it hasn't been created yet.
@@ -292,6 +311,33 @@ namespace RT64 {
                     gpuTile.flags.fromCopy = true;
                     gpuTile.flags.rawTMEM = false;
                     gpuTile.flags.hasMipmaps = false;
+                }
+                else if (snapFallbackTexture != nullptr) {
+                    // Pokemon Snap port: no copy to draw from -- destroyed, or
+                    // never made because its source had nothing to give. Left
+                    // as it was, the tile named texture 0 with a scale of
+                    // zero, and on an AMD card under D3D12 1.0.3 lost the
+                    // device to that (DXGI_ERROR_DEVICE_REMOVED, twice of two
+                    // runs) on the first frame after a switch to fullscreen
+                    // on Oak's check, whose pinned copies the switch had
+                    // destroyed (issue #12). The pinned copies survive that
+                    // now; what still goes missing draws one transparent
+                    // black texel, and nothing faults.
+                    const uint32_t dstIndex = getDestinationIndex();
+                    dynamicTextureViewVector.emplace_back(DynamicTextureView{ snapFallbackTexture.get(), dstIndex, nullptr });
+                    dynamicTextureBarrierVector.emplace_back(RenderTextureBarrier(snapFallbackTexture.get(), RenderTextureLayout::SHADER_READ));
+                    gpuTile.tcScale = { 1.0f, 1.0f };
+                    gpuTile.ulScale = { 1.0f, 1.0f };
+                    gpuTile.texelShift = { 0, 0 };
+                    gpuTile.texelMask = { UINT_MAX, UINT_MAX };
+                    gpuTile.textureIndex = dstIndex;
+                    gpuTile.textureDimensions = interop::float3(1.0f, 1.0f, 1.0f);
+                    gpuTile.flags.alphaIsCvg = false;
+                    gpuTile.flags.highRes = false;
+                    gpuTile.flags.fromCopy = false;
+                    gpuTile.flags.rawTMEM = false;
+                    gpuTile.flags.hasMipmaps = false;
+                    gpuTile.flags.shiftedByHalf = false;
                 }
             }
             else {
@@ -1228,6 +1274,18 @@ namespace RT64 {
         if (!dummyDepthTargetTransitioned) {
             worker->commandList->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE, RenderTextureBarrier(dummyDepthTarget.get(), RenderTextureLayout::DEPTH_READ));
             dummyDepthTargetTransitioned = true;
+        }
+
+        // Pokemon Snap port: the fallback texel's one upload (resetFramebuffers
+        // made the texture and the zeroed buffer), then shader-read for good.
+        // The row is padded to the copy pitch the way the texture cache pads
+        // its uploads (TextureDataPitchAlignment, 256 bytes = 64 texels).
+        if ((snapFallbackTexture != nullptr) && !snapFallbackUploaded) {
+            worker->commandList->barriers(RenderBarrierStage::COPY, RenderTextureBarrier(snapFallbackTexture.get(), RenderTextureLayout::COPY_DEST));
+            worker->commandList->copyTextureRegion(RenderTextureCopyLocation::Subresource(snapFallbackTexture.get()),
+                RenderTextureCopyLocation::PlacedFootprint(snapFallbackUpload.get(), RenderFormat::R8G8B8A8_UNORM, 1, 1, 1, 64));
+            worker->commandList->barriers(RenderBarrierStage::GRAPHICS_AND_COMPUTE, RenderTextureBarrier(snapFallbackTexture.get(), RenderTextureLayout::SHADER_READ));
+            snapFallbackUploaded = true;
         }
 
         for (BufferUploader *uploader : bufferUploaders) {

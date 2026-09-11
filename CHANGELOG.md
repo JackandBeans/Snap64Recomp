@@ -13,7 +13,16 @@
   texture and needs nothing the wipe removes -- so the thumbnails keep
   their detail across the switch; a copy pinned before the switch is at the
   render scale of that time, and is replaced when the game next renders the
-  photo. A copy's number is also never reused for another copy.
+  photo. A copy's number is also never reused for another copy. On an AMD
+  card under Direct3D 12 the same switch did worse than wrong pictures:
+  the first frame after it drew from tiles that named no live texture,
+  Direct3D removed the device (`CreateResource failed with error code
+  0x887A0005` in the log) and the port crashed on the next call, twice of
+  two runs of 1.0.3 here; the fixed build played the same switch through,
+  thumbnails intact. A tile whose copy is missing for any other reason now
+  draws one transparent black texel instead of texture zero, and the render
+  thread's timing readback no longer dereferences the null a removed device
+  hands back: `[SNAP-D3D12]` names the removal in the log instead.
 * On Linux the log is written on every launch: `snap64.log` in the data
   directory, whatever stdout is. 1.0.3 wrote it only when there was nowhere
   to print, so a launch from Steam, whose stdout is Steam's own pipe, left

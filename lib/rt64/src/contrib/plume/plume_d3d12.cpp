@@ -1810,6 +1810,24 @@ namespace plume {
 
     void D3D12QueryPool::queryResults() {
         void *readbackData = readbackBuffer->map();
+        // Pokemon Snap port: Map hands back null once the device is gone
+        // (DXGI_ERROR_DEVICE_REMOVED), and 1.0.3 died on the memcpy below,
+        // in the render thread, at a switch to fullscreen on Oak's check
+        // (issue #12's trigger; the GPU had faulted on a tile left unset).
+        // The results keep their last values and the reason is said once,
+        // so a lost device reads as what it is in the log.
+        if (readbackData == nullptr) {
+            static bool reported = false;
+            if (!reported) {
+                reported = true;
+                const HRESULT reason = device->d3d->GetDeviceRemovedReason();
+                fprintf(stderr, "[SNAP-D3D12] query readback could not be mapped; device removed reason 0x%lX\n", static_cast<unsigned long>(reason));
+                fflush(stderr);
+            }
+
+            return;
+        }
+
         memcpy(results.data(), readbackData, sizeof(uint64_t) * results.size());
         readbackBuffer->unmap();
 

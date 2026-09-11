@@ -93,6 +93,12 @@ namespace RT64 {
         std::unique_ptr<RenderTexture> dummyDepthTarget;
         std::unique_ptr<RenderTextureView> dummyColorTargetView;
         std::unique_ptr<RenderTextureView> dummyDepthTargetView;
+        // Pokemon Snap port: one transparent black texel for a GPU tile whose
+        // tile copy is gone (createGPUTiles). Never multisampled, whatever the
+        // dummy targets are, so any draw can sample it.
+        std::unique_ptr<RenderTexture> snapFallbackTexture;
+        std::unique_ptr<RenderBuffer> snapFallbackUpload;
+        bool snapFallbackUploaded = false;
         bool dummyColorTargetTransitioned = false;
         bool dummyDepthTargetTransitioned = false;
         std::vector<uint32_t> descriptorTextureVersions;
