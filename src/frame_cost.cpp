@@ -72,6 +72,10 @@ extern "C" {
     // tick, and the pacing takes this one when the display list is submitted.
     // Sharing one counter meant whichever read first left the other reading zero.
     std::atomic<uint32_t> snap_logic_steps_pending{0};
+    // Monotonic, never reset: the stall report on the window's thread
+    // (main.cpp, update_gfx) watches it to tell a game that has stopped
+    // from one that is running.
+    std::atomic<uint32_t> snap_logic_steps_total{0};
     std::atomic<int64_t>  snap_game_parked_nanos{0};
     std::atomic<uint32_t> snap_game_parked_count{0};
     std::atomic<int64_t>  snap_game_draw_nanos{0};
@@ -131,6 +135,7 @@ extern "C" void gtlUpdate(uint8_t* rdram, recomp_context* ctx) {
     // frame by this, so it is no longer only a measurement.
     snap_game_update_count.fetch_add(1, std::memory_order_relaxed);
     snap_logic_steps_pending.fetch_add(1, std::memory_order_relaxed);
+    snap_logic_steps_total.fetch_add(1, std::memory_order_relaxed);
 
     // Anything the in-game GRAPHICS page published since the last tick is
     // applied here, on the thread the page runs on. One word read when idle.

@@ -44,6 +44,12 @@
 #include "steam_deck.h"
 namespace snap { extern uint8_t* g_rdram; }
 extern "C" void snap_publish_ai_len(uint8_t* rdram);
+// The stall report's three sources (update_gfx): the game's logic-step
+// count (frame_cost.cpp), the renderer's queues (rt64_render_context.cpp)
+// and the game's threads (ultramodern threads.cpp).
+extern "C" std::atomic<uint32_t> snap_logic_steps_total;
+extern "C" int snap_render_queue_state(char* buf, size_t cap);
+extern "C" void snap_dump_game_threads(uint8_t* rdram);
 
 // Pull in the recompiled function declarations and overlay tables.
 #include "recomp_overlays.inl"
@@ -290,6 +296,46 @@ static void update_gfx(void* /*gfx_data*/) {
     // The mouse's capture follows the settings, the focus and whether a
     // course is running; decided here, on the thread that pumps events.
     snap::input_update_mouse_capture();
+
+    // A stall report, once per stall. The game's main thread runs a logic
+    // step many times a second on every screen (gtlUpdate, frame_cost.cpp),
+    // so ten seconds without one while the window is up is the game stuck:
+    // waiting on a task it sent and never got back (issue #7's pattern) or
+    // on a renderer that never answers (issue #11: the picture froze aiming
+    // at Moltres with the music still playing, and the log ended with
+    // nothing to name the state). This thread is the window's own and keeps
+    // running when the game stops, so it can say which, as far as the
+    // queues can tell: what the game submitted, what the renderer took and
+    // presented, and every game thread with its state and the queue it
+    // waits on. Not before the first step (the renderer warms its shaders
+    // before the boot logos, for as long as that takes) and not while the
+    // window is minimised.
+    {
+        static uint32_t stallSteps = 0;
+        static bool stallTimed = false;
+        static bool stallReported = false;
+        static std::chrono::steady_clock::time_point stallSince;
+        const uint32_t steps = snap_logic_steps_total.load(std::memory_order_relaxed);
+        const auto now = std::chrono::steady_clock::now();
+        const bool minimised = (sdl_window != nullptr) && ((SDL_GetWindowFlags(sdl_window) & SDL_WINDOW_MINIMIZED) != 0);
+        if (!stallTimed || (steps != stallSteps) || minimised) {
+            // A minimised window may hold the game at its present; the
+            // clock starts again when it comes back.
+            stallTimed = true;
+            stallSteps = steps;
+            stallSince = now;
+            stallReported = false;
+        }
+        else if (!stallReported && (steps > 0) && (now - stallSince >= std::chrono::seconds(10))) {
+            stallReported = true;
+            char queues[320];
+            snap_render_queue_state(queues, sizeof(queues));
+            printf("[SNAP-STALL] no game logic step for %lld s (the game had run %u); renderer: %s\n",
+                   (long long)std::chrono::duration_cast<std::chrono::seconds>(now - stallSince).count(), steps, queues);
+            snap_dump_game_threads(snap::g_rdram);
+            fflush(stdout);
+        }
+    }
 
     static bool escHeld = false;
     static bool escArmed = false;

@@ -74,6 +74,8 @@ extern "C" uint32_t snap_run_table_take(uint32_t* entries, int64_t* nanos, uint3
 #include "hle/rt64_application.h"
 #include "render/rt64_texture_cache.h"
 #include "common/rt64_replacement_database.h"
+#include "hle/rt64_workload_queue.h"
+#include "hle/rt64_present_queue.h"
 
 #include <filesystem>
 
@@ -114,6 +116,11 @@ namespace snap {
 extern std::atomic<bool> g_focus_dot_visible;                // focus_dot.cpp
 extern std::atomic<bool> g_world_rebased;                    // matrix_tags.cpp
 extern float g_world_rebase_delta[3];                        // matrix_tags.cpp
+
+// The live application, for the stall report's look at the renderer's
+// queues (snap_render_queue_state, below); null before it is up and once
+// it is ending.
+static std::atomic<RT64::Application*> s_live_app{ nullptr };
 
 class RT64Context : public ultramodern::renderer::RendererContext {
 public:
@@ -193,11 +200,28 @@ public:
         // earlier builds left them; with the path given, appId is unused.
         app_config.detectDataPath = false;
         app_config.dataPath = snap::base_path("cache");
+        // The seen-shader list ships beside the executable (cache/, the
+        // CMakeLists) and grows in the data directory's cache/ as the game
+        // meets shaders not on it. On Linux the two can be different folders
+        // (paths.h): a data directory with no list yet takes the shipped one
+        // first, so that boot warms the shaders it names, as a boot on
+        // Windows does. A list already there is left alone; it grows on its
+        // own.
+        if (snap::base_dir() != snap::exe_dir()) {
+            const std::filesystem::path shipped = snap::exe_path("cache/rt64-seen-shaders.bin");
+            const std::filesystem::path own = app_config.dataPath / "rt64-seen-shaders.bin";
+            std::error_code ec;
+            if (std::filesystem::is_regular_file(shipped, ec) && !std::filesystem::exists(own, ec)) {
+                std::filesystem::create_directories(app_config.dataPath, ec);
+                std::filesystem::copy_file(shipped, own, ec);
+            }
+        }
         // Disable config file I/O -- we manage settings ourselves.
         app_config.useConfigurationFile = false;
 
         // Create the RT64 application.
         app_ = std::make_unique<RT64::Application>(core, app_config);
+        s_live_app.store(app_.get(), std::memory_order_release);
 
         // Enable developer/debug mode if requested.
         app_->userConfig.developerMode = developer_mode;
@@ -338,6 +362,7 @@ public:
     }
 
     ~RT64Context() override {
+        s_live_app.store(nullptr, std::memory_order_release);
         if (app_) {
             app_->end();
         }
@@ -747,6 +772,7 @@ public:
     }
 
     void shutdown() override {
+        s_live_app.store(nullptr, std::memory_order_release);
         if (app_) {
             app_->end();
             app_.reset();
@@ -822,6 +848,43 @@ std::unique_ptr<ultramodern::renderer::RendererContext> create_render_context(
     // reports the failure. The report was unreachable from the one situation
     // that produces it.
     return ctx;
+}
+
+// The renderer's queues for the stall report (main.cpp, update_gfx): what
+// the game wrote, what the render thread took, what was presented. Each
+// figure is read under its own lock when the lock can be had at once, and
+// named as held when it cannot: a lock the stuck thread holds must not
+// stop the reporter as well.
+extern "C" int snap_render_queue_state(char* buf, size_t cap) {
+    RT64::Application* app = snap::s_live_app.load(std::memory_order_acquire);
+    if ((app == nullptr) || (app->workloadQueue == nullptr) || (app->presentQueue == nullptr)) {
+        snprintf(buf, cap, "not up");
+        return 0;
+    }
+    RT64::WorkloadQueue& wq = *app->workloadQueue;
+    RT64::PresentQueue& pq = *app->presentQueue;
+    char workloads[96] = "cursors held";
+    if (wq.cursorMutex.try_lock()) {
+        snprintf(workloads, sizeof(workloads), "written %d, taken %d", wq.writeCursor, wq.threadCursor);
+        wq.cursorMutex.unlock();
+    }
+    char ids[96] = "ids held";
+    if (wq.workloadIdMutex.try_lock()) {
+        snprintf(ids, sizeof(ids), "id %llu, last presented %llu", (unsigned long long)wq.workloadId, (unsigned long long)wq.lastPresentId);
+        wq.workloadIdMutex.unlock();
+    }
+    char presents[96] = "cursors held";
+    if (pq.cursorMutex.try_lock()) {
+        snprintf(presents, sizeof(presents), "written %d, taken %d", pq.writeCursor, pq.threadCursor);
+        pq.cursorMutex.unlock();
+    }
+    char presentId[64] = "id held";
+    if (pq.presentIdMutex.try_lock()) {
+        snprintf(presentId, sizeof(presentId), "id %llu", (unsigned long long)pq.presentId);
+        pq.presentIdMutex.unlock();
+    }
+    snprintf(buf, cap, "workloads %s (%s); presents %s (%s)", workloads, ids, presents, presentId);
+    return 1;
 }
 
 } // namespace snap

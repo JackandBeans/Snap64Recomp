@@ -1,5 +1,16 @@
 # Changelog
 
+## 1.0.4 -- unreleased
+
+* The log reports a stall. When the game has not run a logic step for ten
+  seconds while the window is up, `[SNAP-STALL]` says what the game had
+  submitted, what the renderer took and presented, and the state of every
+  game thread with the queue it waits on. For the freeze aiming at Moltres
+  on a Steam Deck (issue #11, leansteak096-blip), which has not reproduced
+  on this Deck or on Windows: the next report's log will name the stuck
+  side. `[SNAP-OS]` reports a message the game sent without waiting that a
+  full queue dropped, twice per queue, for the same reason.
+
 ## 1.0.3 -- 2026-09-10
 
 * The port ships `gamecontrollerdb.txt`, the community's list of pad

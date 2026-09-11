@@ -50,6 +50,13 @@ thread_local bool is_main_thread = false;
 thread_local bool is_game_thread = false;
 thread_local PTR(OSThread) thread_self = NULLPTR;
 
+// Pokemon Snap port: every guest thread created, for the stall report
+// (src/main.cpp, update_gfx): which thread is running, which are queued,
+// which wait on a message queue and on which. The structs live in RDRAM
+// for the life of the game; a thread that ended reads as stopped.
+static std::mutex snap_thread_registry_mutex;
+static std::vector<PTR(OSThread)> snap_thread_registry;
+
 void ultramodern::set_main_thread() {
     ::is_game_thread = true;
     is_main_thread = true;
@@ -487,6 +494,17 @@ extern "C" void osCreateThread(RDRAM_ARG PTR(OSThread) t_, OSId id, PTR(thread_f
     t->state = OSThreadState::STOPPED;
     t->sp = sp - 0x10; // Set up the first stack frame
 
+    {
+        std::lock_guard<std::mutex> lock(snap_thread_registry_mutex);
+        bool known = false;
+        for (PTR(OSThread) seen : snap_thread_registry) {
+            known = known || (seen == t_);
+        }
+        if (!known) {
+            snap_thread_registry.push_back(t_);
+        }
+    }
+
     // Hand the thread body to a parked pool worker instead of birthing a
     // host thread: the handshake below used to include a real thread
     // creation and measured ~3ms; a semaphore wake is microseconds. The
@@ -509,6 +527,42 @@ extern "C" void osCreateThread(RDRAM_ARG PTR(OSThread) t_, OSId id, PTR(thread_f
             std::chrono::steady_clock::now() - snapCreateStart).count(),
         std::memory_order_relaxed);
     snap_thread_create_count.fetch_add(1, std::memory_order_relaxed);
+}
+
+// Pokemon Snap port: one line per guest thread, for the stall report. The
+// structs are read as they are, without the scheduler's locks: the report
+// runs when the game has stopped, and a lock a stuck thread holds would
+// stop the reporter too. A message queue's list of threads blocked on
+// receiving is at the queue's own address, the list blocked on sending
+// four bytes in (OSMesgQueue, ultra64.h), which is how a queue is named.
+extern "C" void snap_dump_game_threads(uint8_t* rdram) {
+    std::vector<PTR(OSThread)> threads;
+    {
+        std::lock_guard<std::mutex> lock(snap_thread_registry_mutex);
+        threads = snap_thread_registry;
+    }
+    for (PTR(OSThread) t_ : threads) {
+        const OSThread* t = TO_PTR(OSThread, t_);
+        const char* state = "in an unknown state";
+        switch (t->state) {
+            case OSThreadState::STOPPED: state = "stopped"; break;
+            case OSThreadState::QUEUED: state = "queued to run"; break;
+            case OSThreadState::RUNNING: state = "running"; break;
+            case OSThreadState::BLOCKED: state = "blocked"; break;
+        }
+        if (t->queue == ultramodern::running_queue) {
+            printf("[SNAP-STALL]   thread %d (pri %d) %s, in the running queue\n", (int)t->id, (int)t->priority, state);
+        }
+        else if (t->queue != NULLPTR) {
+            const uint32_t list = (uint32_t)t->queue;
+            printf("[SNAP-STALL]   thread %d (pri %d) %s on message queue 0x%08X (%s)\n", (int)t->id, (int)t->priority, state,
+                   list & ~7u, ((list & 7u) == 4u) ? "send" : "receive");
+        }
+        else {
+            printf("[SNAP-STALL]   thread %d (pri %d) %s\n", (int)t->id, (int)t->priority, state);
+        }
+    }
+    fflush(stdout);
 }
 
 extern "C" void osStopThread(RDRAM_ARG PTR(OSThread) t_) {

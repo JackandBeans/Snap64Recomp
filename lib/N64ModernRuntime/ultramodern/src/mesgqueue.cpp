@@ -212,7 +212,44 @@ extern "C" s32 osSendMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags)
 
     // Try to send the message.
     bool sent = do_send(PASS_RDRAM mq_, msg, jam, flags == OS_MESG_BLOCK);
-    
+
+    // Pokemon Snap port: a message the game sent without blocking and the
+    // queue had no room for is gone, and the game never learns it. Some
+    // queues are meant to work that way -- one- and two-slot queues used as
+    // flags, where "full" means "already signalled" -- but the scheduler's
+    // task queue is not: the game sends every graphics task into it without
+    // blocking and then waits for the completion, so a drop there is a
+    // frozen picture with the music still playing (issue #7 at boot; the
+    // Volcano freeze at the shutter). Report the first two drops of each
+    // queue, for the first dozen queues, with enough to name queue and
+    // sender; the flag queues cost two lines each and nothing more.
+    if (!sent) {
+        static uint32_t seenQueues[12] = {};
+        static int seenDrops[12] = {};
+        static int seenCount = 0;
+        int slot = -1;
+        for (int i = 0; i < seenCount; i++) {
+            if (seenQueues[i] == (uint32_t)mq_) { slot = i; break; }
+        }
+        if ((slot < 0) && (seenCount < 12)) {
+            slot = seenCount++;
+            seenQueues[slot] = (uint32_t)mq_;
+        }
+        if ((slot >= 0) && (seenDrops[slot] < 2)) {
+            seenDrops[slot]++;
+            // A game thread always has a self here (the send from any other
+            // thread went to the external queue above); the check costs
+            // nothing and TO_PTR of a null offset is not null.
+            const PTR(OSThread) self = ultramodern::this_thread();
+            OSThread *t = (self != NULLPTR) ? TO_PTR(OSThread, self) : nullptr;
+            printf("[SNAP-OS] osSendMesg dropped a message: queue 0x%08X full (%d of %d), msg 0x%08X, from thread %d (pri %d)%s\n",
+                   (uint32_t)mq_, (int)mq->validCount, (int)mq->msgCount, (uint32_t)msg,
+                   t ? (int)t->id : -1, t ? (int)t->priority : -1,
+                   (seenDrops[slot] == 2) ? " -- this queue's further drops not reported" : "");
+            fflush(stdout);
+        }
+    }
+
     // Check the queue to see if this thread should swap execution to another.
     ultramodern::check_running_queue(PASS_RDRAM1);
 
