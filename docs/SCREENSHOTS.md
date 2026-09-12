@@ -23,10 +23,10 @@ under it, the copyright block, and the port's credits line
 lettering. Like the Gallery entry above it, it is shown once the saved
 report holds more than three species.
 
-<a href="screenshots/01d-title-103.png"><img src="screenshots/01d-title-103.png" width="640" alt="The title screen, 1.0.3"></a>
+<a href="screenshots/01e-title-104.png"><img src="screenshots/01e-title-104.png" width="640" alt="The title screen, 1.0.4"></a>
 
-**The title screen, 1.0.3.** The same title from the current build, with the
-credits line the port adds reading v1.0.3.
+**The title screen, 1.0.4.** The same title from the current build, with the
+credits line the port adds reading v1.0.4.
 
 ## A course
 
