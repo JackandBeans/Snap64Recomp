@@ -1538,6 +1538,26 @@ static void snap_input_tap(uint16_t* buttons, float* x, float* y) {
         // in the unwritten tail, which was the very part under study.
         fflush(record);
     }
+
+    // SNAP_PCAP_ONZOOM: a burst of presents every time Z changes state in a
+    // course, the viewfinder going up or coming down. For the moment a
+    // player can name but no reading count can: the Deck's top-left flash
+    // at the Beach tutorial's Z press (2026-09-06). Read from the final
+    // buttons, replay included.
+    {
+        static const bool pcapOnZoom = (getenv("SNAP_PCAP_ONZOOM") != nullptr);
+        if (pcapOnZoom) {
+            static bool zoomWas = false;
+            const bool zoomNow = (*buttons & 0x2000) != 0;
+            if ((zoomNow != zoomWas) && g_app_level_resident.load(std::memory_order_relaxed)) {
+                snap_frame_dump_pending.store(int32_t(pcapBurst));
+                printf("[SNAP-PCAP] armed %u presents at reading %u: Z %s\n",
+                       pcapBurst, readingIndex, zoomNow ? "pressed" : "released");
+                fflush(stdout);
+            }
+            zoomWas = zoomNow;
+        }
+    }
 }
 
 bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
