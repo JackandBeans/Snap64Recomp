@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.4 -- unreleased
+## 1.0.4 -- 2026-09-12
 
 * After a switch between a window and fullscreen on the Gallery or the
   PKMN Report, the thumbnails showed the wrong pictures (issue #12,

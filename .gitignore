@@ -63,3 +63,6 @@ desktop.ini
 # N64Recomp ELF dumps (dump.toml, data_dump.toml): nothing reads them; keep local copies out of git.
 dump.toml
 data_dump.toml
+
+# The author's working notes for the coding assistant: local to the machine, never part of a release.
+CLAUDE.md
