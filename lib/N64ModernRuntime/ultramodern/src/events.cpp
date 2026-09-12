@@ -68,6 +68,13 @@ static struct {
         void update_vi() {
             ViState* next_state = get_next_state();
             const OSViMode* next_mode = next_state->mode;
+            // Pokemon Snap port: the VI thread can tick before the game
+            // has chosen its first mode; there is nothing to show yet, and
+            // the registers and the state swap wait for the next tick.
+            // Found by appleforever11 on a macOS build (pull request #2).
+            if (next_mode == nullptr) {
+                return;
+            }
             const OSViCommonRegs* common_regs = &next_mode->comRegs;
             const OSViFieldRegs* field_regs = &next_mode->fldRegs[field];
             PTR(void) framebuffer = osVirtualToPhysical(next_state->framebuffer);
