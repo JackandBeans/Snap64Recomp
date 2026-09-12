@@ -444,6 +444,9 @@ namespace {
         RenderTarget *colorTarget = nullptr;
         int32_t framesToPresent = 1;
         bool lockedWorkloadMutex = false;
+        // Pokemon Snap port: a single-frame tick whose held picture sits in
+        // interpolated target 0 (rt64_workload_queue.cpp, antialiasing).
+        bool snapFirstFromInterpolated = false;
         InterpolatedFrameCounters &frameCounters = ext.sharedResources->interpolatedFrames[ext.sharedResources->interpolatedFramesIndex];
 
         // TODO: There's a possible race condition interactions that can happen while the workload
@@ -516,6 +519,10 @@ namespace {
 
                 if (presentFb->interpolationEnabled) {
                     framesToPresent = frameCounters.count;
+                    if (usingMSAA && (framesToPresent == 1)) {
+                        std::scoped_lock<std::mutex> interpolatedLock(ext.sharedResources->interpolatedMutex);
+                        snapFirstFromInterpolated = frameCounters.snapFirstFromInterpolated;
+                    }
                 }
                 else {
                     // The renderer produced a whole tick of interpolated
@@ -680,6 +687,17 @@ namespace {
             }
             else if (framesToPresent == 1) {
                 frameCountersNextPresented = frameCounters.count;
+                // Pokemon Snap port: the held picture of a one-frame tick
+                // under antialiasing was delivered into interpolated target
+                // 0; the drawn target still carries the transit frame the
+                // hold exists to hide.
+                if (snapFirstFromInterpolated) {
+                    std::scoped_lock<std::mutex> interpolatedLock(ext.sharedResources->interpolatedMutex);
+                    auto &targets = ext.sharedResources->interpolatedColorTargets;
+                    if (!targets.empty() && (targets[0] != nullptr) && !targets[0]->isEmpty()) {
+                        colorTarget = targets[0].get();
+                    }
+                }
             }
 
             snapPTInterp = std::chrono::steady_clock::now();

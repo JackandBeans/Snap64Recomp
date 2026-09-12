@@ -1506,12 +1506,21 @@ namespace RT64 {
                 curFrameCounters.presented = 0;
                 curFrameCounters.available = 0;
                 curFrameCounters.count = displayFrames;
+                curFrameCounters.snapFirstFromInterpolated = false;
 
                 // Create as many render targets as required to store the interpolated targets.
                 auto &interpolatedTargets = ext.sharedResources->interpolatedColorTargets;
                 const bool usingMSAA = (ext.sharedResources->renderTargetManager.multisampling.sampleCount > 1);
                 const bool usesHDR = ext.sharedResources->renderTargetManager.usesHDR;
                 uint32_t requiredFrames = (usingMSAA && generateInterpolatedFrames) ? displayFrames : (displayFrames - 1);
+                // Pokemon Snap port: under antialiasing a cut-transit hold is
+                // delivered through interpolated target 0 whether or not this
+                // tick interpolates (the drawn target is multisampled and
+                // cannot take the copy), so one target has to exist even at
+                // the native rate.
+                if (usingMSAA && !interpolationTargetKey.isEmpty()) {
+                    requiredFrames = std::max(requiredFrames, 1u);
+                }
                 if ((requiredFrames > 0) && (interpolatedTargets.size() < requiredFrames)) {
                     // Pokemon Snap port: the present thread indexes this same
                     // vector while showing the frames of the tick before this
@@ -1610,9 +1619,23 @@ namespace RT64 {
                 // faithfully creates a worse artifact than the one it hides.
                 // Where there is no staged tick to hide, which is all of
                 // ordinary play, it buys nothing and costs that.
+                //
+                // Antialiasing used to refuse the hold outside interpolation,
+                // and under interpolation it lost every hold that landed on a
+                // tick of a single display frame: the drawn target is
+                // multisampled, so the held picture went into interpolated
+                // target 0, which the present thread shows only for a tick of
+                // more than one frame. A 90 Hz display over a 60 fps passage
+                // (the logos, the intro's first shots) alternates one- and
+                // two-frame ticks, and a 60 Hz display never interpolates at
+                // all -- the frame after the HAL logo showed on every Deck
+                // and every 60 Hz monitor with antialiasing on while the
+                // counters said it was held. The hold is now delivered
+                // through interpolated target 0 in every antialiased case and
+                // the present thread is told to show it (snapFirstFromInterpolated).
                 bool snapCutHold = (workload.snapCutHold || snapSteppedFrame) &&
                     workload.snapCutscene &&
-                    !workload.paused && (!usingMSAA || generateInterpolatedFrames) &&
+                    !workload.paused &&
                     !interpolationTargetKey.isEmpty() && !snapPrevTargetKey.isEmpty();
 
                 // Release valve on the renderer-side verdict: a scene that
@@ -1725,6 +1748,12 @@ namespace RT64 {
                 uint32_t targetIndex = 0;
                 uint32_t framesRendered = 0;
                 int64_t renderTimeTotalMicro = 0;
+                // Pokemon Snap port: whether this tick's held picture was
+                // delivered into interpolated target 0 while the tick itself
+                // drew into the multisampled target (the native rate under
+                // antialiasing), so the bookkeeping below knows which target
+                // the screen actually showed.
+                bool snapHeldIntoFirstTarget = false;
                 for (uint32_t frame = 0; (frame < displayFrames) && !skipWorkloadNow; frame++) {
                     // Evaluate if this frame should be skipped. Measure the current time and compare it to what frame is estimated should be have been rendered by now.
                     if ((frame > 0) && (originalTimeMicro > 0)) {
@@ -1845,9 +1874,53 @@ namespace RT64 {
                         // yet, a size that no longer matches), so its answer is
                         // read rather than assumed, and a hold that cannot be
                         // delivered whole is abandoned.
-                        const bool delivered = (overrideTarget != nullptr) ?
-                            threadHoldCopy(snapHoldScratch.get(), RenderTargetKey(), overrideTarget, RenderTargetKey()) :
-                            threadHoldCopy(snapHoldScratch.get(), RenderTargetKey(), nullptr, interpolationTargetKey);
+                        bool delivered = false;
+                        bool heldIntoFirstTarget = false;
+                        if (overrideTarget != nullptr) {
+                            delivered = threadHoldCopy(snapHoldScratch.get(), RenderTargetKey(), overrideTarget, RenderTargetKey());
+                            // Under antialiasing the override of frame zero is
+                            // interpolated target 0, the resolve of the drawn
+                            // target; the present thread shows it for a tick of
+                            // more than one frame and must be told to for a
+                            // tick of one.
+                            heldIntoFirstTarget = delivered && usingMSAA;
+                        }
+                        else if (usingMSAA) {
+                            // The native rate under antialiasing: the drawn
+                            // target is multisampled and cannot take the copy,
+                            // so the held picture goes to interpolated target
+                            // 0 and the present thread is told to show it. The
+                            // previous tick may still be presenting from that
+                            // target; the interpolated path waits for that and
+                            // so does this.
+                            RenderTarget *firstTarget = interpolatedTargets.empty() ? nullptr : interpolatedTargets[0].get();
+                            if (firstTarget != nullptr) {
+                                if (useDifferentCounters && (prevFrameCounters.available > 0)) {
+                                    std::unique_lock<std::mutex> interpolatedLock(ext.sharedResources->interpolatedMutex);
+                                    ext.sharedResources->interpolatedCondition.wait(interpolatedLock, [&]() {
+                                        return prevFrameCounters.presented > 0;
+                                    });
+                                }
+                                delivered = threadHoldCopy(snapHoldScratch.get(), RenderTargetKey(), firstTarget, RenderTargetKey());
+                                heldIntoFirstTarget = delivered;
+                            }
+                        }
+                        else {
+                            delivered = threadHoldCopy(snapHoldScratch.get(), RenderTargetKey(), nullptr, interpolationTargetKey);
+                        }
+                        if (heldIntoFirstTarget) {
+                            // Written before the present thread is woken for
+                            // this workload (threadAdvanceWorkloadId below).
+                            // At the native rate nothing else counts the
+                            // target as available, and the next tick's hold
+                            // waits on that count before writing it again.
+                            std::scoped_lock<std::mutex> interpolatedLock(ext.sharedResources->interpolatedMutex);
+                            curFrameCounters.snapFirstFromInterpolated = true;
+                            if (!generateInterpolatedFrames) {
+                                curFrameCounters.available = std::max(curFrameCounters.available, 1u);
+                                snapHeldIntoFirstTarget = true;
+                            }
+                        }
                         if (!delivered) {
                             snapCutHold = false;
                             snapConsecutiveHolds = 0;
@@ -1932,6 +2005,12 @@ namespace RT64 {
                     // frame should keep showing.
                     if (!snapCutHold) {
                         snapPrevInterpolatedIndex = targetIndex;
+                    }
+                    else if (snapHeldIntoFirstTarget) {
+                        // The native rate under antialiasing: the screen
+                        // showed interpolated target 0, not the drawn target,
+                        // so a hold on the next tick copies from there.
+                        snapPrevInterpolatedIndex = 1;
                     }
                 }
 

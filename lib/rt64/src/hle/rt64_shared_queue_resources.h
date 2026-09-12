@@ -23,6 +23,13 @@ namespace RT64 {
         uint32_t available = 0;
         uint32_t count = 0;
         bool skipped = false;
+        // Pokemon Snap port: the first display frame of this tick is to be
+        // shown from interpolated colour target 0 rather than from the target
+        // it was drawn into. Set by the workload thread when a cut-transit
+        // hold was delivered there under antialiasing; read by the present
+        // thread for a tick of a single display frame, which otherwise shows
+        // the drawn target and never sees the held picture.
+        bool snapFirstFromInterpolated = false;
     };
 
     struct SharedQueueResources {
