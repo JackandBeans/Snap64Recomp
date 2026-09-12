@@ -420,6 +420,14 @@ files:
   through the same live path the Snap Station's restore uses. SDL's screen
   keyboard is turned off before init and text input stopped after the
   window exists, so Steam's on-screen keyboard does not open over the game.
+  Inside gamescope (`GAMESCOPE_WAYLAND_DISPLAY` set) the port asks for the
+  display's own size at window creation: it reads its X server's id from
+  the root window property `GAMESCOPE_XWAYLAND_SERVER_ID` and writes
+  `GAMESCOPE_XWAYLAND_MODE_CONTROL` (id, an oversized width and height,
+  and a zero that makes gamescope clamp both to the display), the request
+  Steam's Game Resolution "Native" makes; gamescope resizes the nested X
+  screen and the fullscreen that follows takes it (`snap::gamescope_request_output_size`,
+  libX11 through the copy SDL loaded).
 * On Windows under Wine (Proton), `SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD`
   is set before SDL initialises, so Steam's virtual controller is seen.
 * `lib/rt64/src/hle/rt64_snap_diag.h` and `rt64_application.cpp` carry the

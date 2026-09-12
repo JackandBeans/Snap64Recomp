@@ -50,8 +50,16 @@
   game thread with the queue it waits on. For the freeze aiming at Moltres
   on a Steam Deck (issue #11, leansteak096-blip), which has not reproduced
   on this Deck or on Windows: the next report's log will name the stuck
-  side. `[SNAP-OS]` reports a message the game sent without waiting that a
-  full queue dropped, twice per queue, for the same reason.
+  side; not after the machine was asleep or the process held, which the
+  clock behind it would otherwise count. `[SNAP-OS]` reports a message
+  the game sent without waiting that a full queue dropped, twice per
+  queue, for the same reason; the game's one- and two-slot flag queues,
+  which drop by design and appear in every log, are marked expected.
+* The gyro is no longer reported as "all zero for half a second" when no
+  readings arrived at all, as at the quit box, which holds the event loop:
+  the earlier build logged that twice at every quit, with the same count
+  both times. Readings that arrive and carry no turning are still
+  reported, and on a Deck still re-send the IMU switch.
 * The texture decode shader declares its output as 8-bit RGBA for Vulkan,
   the format the texture has, instead of the 32-bit float format the
   compiler inferred; the validation layer reported that mismatch seven
@@ -61,18 +69,51 @@
 * The 2D Detail help and the README say what Sharp for everything
   (`upscale_2d` 2) costs: a line under a logo and a fringe around a keyed
   sprite, seen on a Steam Deck.
-* On a Steam Deck in Gaming Mode the port drew into a 1280x720 surface,
-  which gamescope scaled onto the 1280x800 panel with bars top and bottom
-  and a softer, less even picture: gamescope gives a non-Steam shortcut a
-  16:9 screen unless its Game Resolution is set to Native, and the port
-  took the screen it was given (found in a 1.0.4 test log, where the view
-  widened by 16:9 in Gaming Mode and by 16:10 in Desktop Mode). The port
+* On a Steam Deck in Gaming Mode the port drew into a 16:9 surface, which
+  gamescope scaled onto the 1280x800 panel with bars top and bottom and
+  a softer, less even picture, and it stuttered: gamescope gives a
+  non-Steam shortcut a screen of Steam's choosing unless its Game
+  Resolution is set to Native -- 3840x2160 on the author's OLED Deck --
+  and the port took the screen it was given, so it was rendering at its
+  8x cap on a handheld (found in the 1.0.4 test logs: the view widened
+  by 16:9 in Gaming Mode and by 16:10 in Desktop Mode, and the screen
+  the port was asked to fill measured 3840x2160). The port
   now asks gamescope for the display's own size at every start, before
   its first fullscreen -- the request Steam's Native setting makes, a
   property on the X root window that gamescope clamps to the display --
-  and applies fullscreen once more if the screen changed size after it.
-  The log says what was asked, what the screen then is, and, if a surface
-  still is not the panel, that the Native setting is the fallback.
+  and, if the surface has not taken the screen's size three seconds
+  later, sizes the window by hand and applies fullscreen again. The log
+  says what was asked, what the screen then is, every change of the
+  surface's size, and, if a surface stays off the panel's size for three
+  seconds, that the Native setting is the fallback.
+* With anti-aliasing on, the frame after the HAL logo -- the intro's
+  scenery re-posed for one tick, a frame the console never displayed --
+  showed on a Steam Deck (the port's author, since before 1.0.0) and on
+  any 60 Hz monitor. The renderer holds the previous picture over that
+  tick, and with anti-aliasing the held picture has to go into a
+  single-sampled target of its own, the first interpolated target; the
+  present thread showed that target only for a tick of more than one
+  display frame. A 90 Hz Deck over the 60 fps logos alternates one- and
+  two-frame ticks, so the hold on a one-frame tick was counted as
+  delivered and never seen; at 60 Hz there is no interpolation and the
+  hold was refused outright. Reproduced on Windows under Vulkan with the
+  Deck's own settings paced at 90 Hz: the captured presents show the
+  re-posed scenery for exactly one display frame between two identical
+  ones, and not at all with anti-aliasing off. The hold is now delivered
+  through that target in every anti-aliased case, and the present thread
+  is told to show it.
+* The game's Options screen has an **Exit Game** row, under Return, in the
+  screen's own font and rhythm (the port's author, from Steam Deck play:
+  a pad had no way to close the program, and in Gaming Mode the quit
+  question of a held Esc needs a keyboard). Its help line says what it
+  does; A turns the help line into "Press A again to close the game, B to
+  stay", the second A closes the program the way the window's close
+  button does, and B or moving off the row withdraws the question. The
+  choice reaches the host through the settings mailbox and is logged as
+  `quit: Exit Game chosen on the Option screen`. Exercised by replay on
+  Windows: the confirmed row closed the program by itself, and the
+  withdrawn one left the player on the list and then, through Return, on
+  the title.
 
 ## 1.0.3 -- 2026-09-10
 

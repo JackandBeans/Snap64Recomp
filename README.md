@@ -78,8 +78,10 @@ installed. Then:
 The window's maximize button switches to fullscreen and F11 switches it
 back, in a course or anywhere else. **Esc is the pause menu** in a course
 (Continue, Retry, Quit course) and Start elsewhere. To quit the program,
-**hold Esc for a second and let go**: a box asks, and Enter or Esc keeps
-you playing, so a hand resting on the key cannot end a run. Keyboard and
+choose **Exit Game**, the last row of the game's Options screen (A asks,
+a second A closes, B stays), or **hold Esc for a second and let go**: a
+box asks, and Enter or Esc keeps you playing, so a hand resting on the key
+cannot end a run. Keyboard and
 controller mappings are under
 [Controls](#controls); the Graphics and Sound pages are on the game's own
 Options screen, reached from the title menu ([In-game
@@ -153,7 +155,10 @@ is the way out of fullscreen from anywhere. **A tap of Esc is Start** (the
 game's own pause menu in a course, Start on any other screen). **Holding
 Esc for a second and letting go asks whether to quit**; Keep playing is
 the answer to Enter and to Esc, and Quit takes a click or Tab and Enter.
-The window's close button and Alt+F4 quit at once, as any window's do.
+**Exit Game**, the last row of the game's Options screen, closes the
+program from a pad: A turns its help line into the question, a second A
+closes, B stays. The window's close button and Alt+F4 quit at once, as
+any window's do.
 
 Saves go to `saves/` and settings to `snapsettings.json`, both next to the
 executable. No console opens: the log is `snap64.log` next to the
@@ -373,13 +378,20 @@ Volume, Speaker Output (Stereo/Mono), Background Mute.
 
 Options > **Controls**: Z Button (Hold/Switch) and Control Stick
 (Normal/Reverse), the game's own two settings, moved here from the Options
-list so the list keeps its five rows; then Mouse Aim, Mouse Speed (25 to
+list so the list keeps the stock rhythm; then Mouse Aim, Mouse Speed (25 to
 400 percent of the shipped speed), Zoom Speed (the share of that speed
 used while zoomed in), Camera Tilt (Normal/Reverse, for the mouse and the
 gyro alike), Gyro Aim (Off, On, or Zoomed for only while zoomed in) and
 Gyro Speed (25 to 400 percent of natural). Eight rows, six on screen; the
 page scrolls for the last two, as the Graphics page does. Every change
 applies as it is made; B puts the page back as it was opened.
+
+Options > **Exit Game**: the list's sixth row, under Return, in the
+screen's own font and rhythm. Its help line says what it does; A turns the
+help line into "Press A again to close the game, B to stay", and the
+second A closes the program the way the window's close button does. B, or
+moving off the row, withdraws the question. It is the way to quit from a
+pad, on a Steam Deck in particular.
 
 ### Hotkeys
 
@@ -567,7 +579,7 @@ the defaults below are that file's.
 | `gyro_aim` | `0` | the pad's gyro aims the camera: 0 off, 1 in a course, 2 only while zoomed in (Gyro Aim) |
 | `gyro_sensitivity` | `1.0` | multiplies the gyro's natural scale; 0.25 to 4 (Gyro Speed) |
 | `keys` | the table under "Controls" | what presses each input: SDL key names, the mouse names, and `"Pad "` plus SDL's controller button or axis name; one or a list |
-| `graphics_api` | `0` | 0 Direct3D 12 (every run so far), 1 Vulkan (RT64's other backend, untried here; an escape hatch if D3D12 fails); restart |
+| `graphics_api` | `0` | 0 Direct3D 12, 1 Vulkan (RT64's other backend and the one the Linux build uses; run here on an AMD card through the replays, and an escape hatch if D3D12 fails); restart |
 | `downsample` | `1` | Super Sampling factor |
 | `resolution_scale` | `0` | 0 follows the window; 1-8 caps the render scale in multiples of 320x240 |
 | `present_filter` | `2` | 0 nearest, 1 linear, 2 RT64's anti-aliased pixel scaling |
@@ -653,7 +665,9 @@ launch said so, and that permission does not always cross into Wine), and
 the log says `host: Wine (Proton)` when it applies. Untested on a Deck by
 me. Every RT64-based recompilation on SteamOS, through Proton or native,
 is reported to hitch at exactly half the panel's refresh now and then;
-whether this port does is unmeasured.
+the native build stuttered in Gaming Mode on an OLED Deck in a 1.0.4
+test, part of it the 16:9 surface the Deck steps below explain, and what
+remains is unmeasured.
 
 ### The native Linux build
 
@@ -683,12 +697,15 @@ run the build yet. It is used like this:
    was started from; a terminal shows the lines as well.
 2. On a Deck, run it from Desktop Mode; or right-click `Snap64Recomp`,
    choose **Add to Steam**, and launch it from Gaming Mode. Steam gives a
-   non-Steam shortcut a 16:9 screen there, which gamescope would scale
-   onto the 16:10 panel with bars; the port asks gamescope for the
-   panel's own size itself at every start, the same request the
-   shortcut's Game Resolution set to Native makes, and the log says what
-   it asked and what the screen then is. If the picture still shows bars
-   top and bottom, set that Game Resolution to Native and send the log.
+   non-Steam shortcut a screen of its own choosing there (3840x2160 on an
+   OLED Deck in the port's tests), which gamescope scales onto the 16:10
+   panel with bars, and which the port would render at its full 8x cap;
+   the port asks gamescope for the panel's own size itself at every
+   start, the same request the shortcut's Game Resolution set to Native
+   makes, and the log says what it asked, what the screen then is, and
+   each size the surface takes. If the picture still shows bars top and
+   bottom after a few seconds, set that Game Resolution to Native and
+   send the log.
    In Gaming Mode Steam offers the game only its own virtual pad, so gyro
    aim has to come from Steam's layout ("Controls" above). The port boots
    fullscreen on a Deck (F11 or the maximize button leaves it); on any
@@ -743,8 +760,10 @@ fine.
   now sends the switch itself, and the second run's readings came alive
   within a dozen of it. Which of the two you are in shows in the log's
   controller line.
-* **Quitting.** A pad has no quit; use the Steam menu's **Exit Game** (or
-  hold Esc on a keyboard). The quit question and any start-up error appear
+* **Quitting.** **Exit Game**, the last row of the game's Options screen,
+  closes the port from the pad (A asks, a second A closes, B stays). The
+  Steam menu's Exit Game and a held Esc on a keyboard still work too. The
+  quit question of a held Esc and any start-up error appear
   as their own small windows in Gaming Mode; the right trackpad moves a
   pointer over them and clicks, and Keep playing is the highlighted
   default.
