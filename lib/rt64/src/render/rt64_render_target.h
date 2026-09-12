@@ -46,6 +46,11 @@ namespace RT64 {
         int32_t invMisalignX = 0;
         bool resolvedTextureDirty = false;
         bool usesHDR = false;
+        // Pokemon Snap port: the texture was just created and its memory is
+        // whatever the driver handed back; cleared at the first recorded use
+        // (setupColorFramebuffer / setupDepthFramebuffer), which is before
+        // the framebuffer's contents are read into it from RAM.
+        bool snapFreshMemory = false;
 
         RenderTarget(uint32_t addressForName, Framebuffer::Type type, const RenderMultisampling &multisampling, bool usesHDR);
         ~RenderTarget();

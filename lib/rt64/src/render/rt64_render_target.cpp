@@ -90,6 +90,7 @@ namespace RT64 {
         textureView = texture->createTextureView(RenderTextureViewDesc::Texture2D(format));
         texture->setName("Render Target Color #" + std::to_string(addressForName));
         textureRevision++;
+        snapFreshMemory = true;
 
         if (multisampling.sampleCount > 1) {
             resolvedTexture = worker->device->createTexture(RenderTextureDesc::ColorTarget(width, height, format, RenderMultisampling(), &clearValue));
@@ -114,6 +115,7 @@ namespace RT64 {
         textureView = texture->createTextureView(RenderTextureViewDesc::Texture2D(format));
         texture->setName("Render Target Depth #" + std::to_string(addressForName));
         textureRevision++;
+        snapFreshMemory = true;
     }
 
     void RenderTarget::setupDummy(RenderWorker *worker) {
@@ -131,6 +133,27 @@ namespace RT64 {
         if (textureFramebuffer == nullptr) {
             const RenderTexture *colorTexture = texture.get();
             textureFramebuffer = worker->device->createFramebuffer(RenderFramebufferDesc(&colorTexture, 1));
+        }
+
+        // Pokemon Snap port: a new texture's memory is whatever the driver
+        // handed back. Direct3D 12 on Windows gives zeroed pages; Vulkan on a
+        // Steam Deck (RADV) gives a previous owner's contents. The game's
+        // framebuffer is read into the target from RAM, but only over the
+        // framebuffer's own area: the margins the widescreen expansion adds
+        // are written by nothing until the picture reaches them, and a scene
+        // that scissors itself narrower than the frame -- a course's opening
+        // cinematic, its dead border included -- left them showing that
+        // stale memory, half black and half an earlier frame, on a Deck in
+        // Widescreen (the port's author, 2026-09-06 and 2026-09-12). This is
+        // the first recorded use of a fresh target, ahead of the RAM read,
+        // so the clear lands under it: black on every platform, as Windows
+        // already showed.
+        if (snapFreshMemory) {
+            snapFreshMemory = false;
+            worker->commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(texture.get(), RenderTextureLayout::COLOR_WRITE));
+            worker->commandList->setFramebuffer(textureFramebuffer.get());
+            worker->commandList->clearColor();
+            markForResolve();
         }
     }
 
@@ -152,6 +175,20 @@ namespace RT64 {
         if (textureFramebuffer == nullptr) {
             const RenderTexture *colorTexture = dummyTexture.get();
             textureFramebuffer = worker->device->createFramebuffer(RenderFramebufferDesc(&colorTexture, 1, texture.get()));
+        }
+
+        // Pokemon Snap port: the same first-use clear as the colour target's
+        // (setupColorFramebuffer): stale depth in the expansion's margins
+        // would reject geometry there at random.
+        if (snapFreshMemory) {
+            snapFreshMemory = false;
+            RenderTextureBarrier clearBarriers[] = {
+                RenderTextureBarrier(texture.get(), RenderTextureLayout::DEPTH_WRITE),
+                RenderTextureBarrier(dummyTexture.get(), RenderTextureLayout::COLOR_WRITE)
+            };
+            worker->commandList->barriers(RenderBarrierStage::GRAPHICS, clearBarriers, uint32_t(std::size(clearBarriers)));
+            worker->commandList->setFramebuffer(textureFramebuffer.get());
+            worker->commandList->clearDepth();
         }
     }
     

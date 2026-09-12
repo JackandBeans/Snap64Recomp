@@ -1339,7 +1339,18 @@ namespace RT64 {
                 while (pairCursor < maxFramebufferPair) {
                     const FramebufferPair &fbPair = workload.fbPairs[pairCursor];
                     if (getTargetsFromPair(pairCursor)) {
-                        RenderFramebufferStorage &fbStorage = renderFramebufferManager->get(fbKey, colorTarget, (depthTarget != nullptr) ? depthTarget : dummyDepthTarget.get());
+                        // Pokemon Snap port: a target created for this frame
+                        // is cleared before it is drawn into; the RAM read
+                        // above already cleared any it reached
+                        // (rt64_render_target.cpp, snapFreshMemory).
+                        if ((colorTarget != nullptr) && colorTarget->snapFreshMemory) {
+                            colorTarget->setupColorFramebuffer(ext.framebufferGraphicsWorker);
+                        }
+                        RenderTarget *passDepthTarget = (depthTarget != nullptr) ? depthTarget : dummyDepthTarget.get();
+                        if ((passDepthTarget != nullptr) && passDepthTarget->snapFreshMemory) {
+                            passDepthTarget->setupDepthFramebuffer(ext.framebufferGraphicsWorker);
+                        }
+                        RenderFramebufferStorage &fbStorage = renderFramebufferManager->get(fbKey, colorTarget, passDepthTarget);
                         FramebufferRenderer::DrawParams drawParams;
                         drawParams.worker = ext.framebufferGraphicsWorker;
                         drawParams.fbStorage = &fbStorage;

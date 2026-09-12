@@ -892,6 +892,19 @@ namespace RT64 {
 
             workerMutex.lock();
             ext.workloadGraphicsWorker->commandList->begin();
+
+            // Pokemon Snap port: a target created for this frame is cleared
+            // before anything is read or drawn into it -- first in this
+            // recording, ahead of the framebuffer's RAM read and the passes
+            // (rt64_render_target.cpp, snapFreshMemory).
+            for (auto colorDepthPair : colorDepthPairs) {
+                if ((colorDepthPair.first != nullptr) && colorDepthPair.first->snapFreshMemory) {
+                    colorDepthPair.first->setupColorFramebuffer(ext.workloadGraphicsWorker);
+                }
+                if ((colorDepthPair.second != nullptr) && colorDepthPair.second->snapFreshMemory) {
+                    colorDepthPair.second->setupDepthFramebuffer(ext.workloadGraphicsWorker);
+                }
+            }
             ext.workloadGraphicsWorker->commandList->resetQueryPool(queryPool.get(), 0, 2);
             ext.workloadGraphicsWorker->commandList->writeTimestamp(queryPool.get(), 0);
             framebufferRenderer->endFramebuffers(ext.workloadGraphicsWorker, &workload.drawBuffers, &workload.outputBuffers, workloadConfig.raytracingEnabled);

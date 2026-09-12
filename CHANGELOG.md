@@ -13,6 +13,20 @@
   the game has chosen one: a tick before the first mode dereferenced a
   null pointer. Found by appleforever11 on a macOS build (pull request
   #2); the guard is theirs.
+* On a Steam Deck in Widescreen, a course's opening cinematic showed a
+  block at the top-left that flickered between black and pieces of an
+  earlier picture, from the moment the first Pokémon appeared until the
+  viewfinder had been raised once (the port's author, on the Deck, since
+  1.0.1). The cinematic scissors the picture narrower than the frame, so
+  the margin Widescreen adds on the left is drawn by nothing until the
+  viewfinder's letterbox paints it, and a freshly created render target
+  holds whatever memory the driver handed back: zeroed on Windows, a
+  previous owner's contents under the Deck's Vulkan driver, and the
+  rotating targets each held something else. Every new render target
+  is now cleared at its first use, before the game's framebuffer is read
+  into it, so that margin is black on every platform, as it was on
+  Windows. Seen on Windows in Widescreen only as the black band it always
+  was; the Deck confirmation is the author's.
 
 ## 1.0.4 -- 2026-09-12
 
