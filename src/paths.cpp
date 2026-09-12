@@ -20,13 +20,13 @@ namespace snap {
 const std::filesystem::path& base_dir() {
     static const std::filesystem::path dir = [] {
         std::filesystem::path result;
-#if defined(__linux__)
-        // SNAP_DATA_DIR names the directory outright (a test rig, a launcher
-        // that keeps profiles apart). Otherwise the executable's own folder
-        // when it can be written, which is the unpacked tarball; when it
-        // cannot (a read-only mount, a system directory), the XDG config
-        // home, as the other N64 recompilations use, and the ROM is looked
-        // for there. The log's first line says which.
+        // SNAP_DATA_DIR names the directory outright, on every platform (a
+        // test rig, a launcher that keeps profiles apart: PortForge asked
+        // for it on Windows too, where until 1.0.4 everything stayed beside
+        // the executable). The ROM is looked for there, and the save, the
+        // settings, the log, the exported photos and the mods folders live
+        // there. The files the port ships beside the executable stay there
+        // (exe_path below).
         if (const char* forced = std::getenv("SNAP_DATA_DIR")) {
             result = std::filesystem::path(forced);
             if (result.is_absolute()) {
@@ -35,7 +35,14 @@ const std::filesystem::path& base_dir() {
                 return result / "";
             }
             fprintf(stderr, "[SNAP] SNAP_DATA_DIR is not an absolute path; ignored" "\n");
+            result.clear();
         }
+#if defined(__linux__)
+        // Otherwise the executable's own folder when it can be written,
+        // which is the unpacked tarball; when it cannot (a read-only mount,
+        // a system directory), the XDG config home, as the other N64
+        // recompilations use, and the ROM is looked for there. The log's
+        // first line says which.
         if (char* base = SDL_GetBasePath()) {
             std::filesystem::path exeDir(base);
             SDL_free(base);

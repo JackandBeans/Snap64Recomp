@@ -1,5 +1,19 @@
 # Changelog
 
+## 1.0.5 -- unreleased
+
+* `SNAP_DATA_DIR=<absolute path>` in the environment moves the data
+  directory on Windows as it already did on Linux: the ROM is looked for
+  there, and the save, the settings, the log, the exported photos and the
+  mods folders live there, while the files the port ships beside the
+  executable stay beside it. Asked for by PortForge's author (zamiba,
+  issue #8) so a launcher can keep profiles apart; a relative path is
+  ignored with a line in the log.
+* The runtime's video update no longer reads the game's video mode before
+  the game has chosen one: a tick before the first mode dereferenced a
+  null pointer. Found by appleforever11 on a macOS build (pull request
+  #2); the guard is theirs.
+
 ## 1.0.4 -- 2026-09-12
 
 * After a switch between a window and fullscreen on the Gallery or the

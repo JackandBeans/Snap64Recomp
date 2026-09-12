@@ -192,7 +192,12 @@ these; [CONTRIBUTING.md](CONTRIBUTING.md) has the ground rules for code.
 
 ### Where things live
 
-Everything is in the folder with the executable.
+Everything is in the folder with the executable. `SNAP_DATA_DIR=<absolute
+path>` in the environment moves that folder, on Windows and Linux alike,
+for a launcher that keeps profiles apart: the ROM is looked for there and
+the files below are written there, while the files the port ships beside
+the executable stay beside it. The log's first line names the folder in
+use.
 
 | File or folder | What it is |
 | --- | --- |

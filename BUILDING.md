@@ -409,8 +409,9 @@ files:
   so Steam keeps the game as running, and the sheet's folder opens with
   `xdg-open` (`src/main.cpp`, `src/snap_station.cpp`).
 * The data directory is the executable's when it can be written, else
-  `$XDG_CONFIG_HOME/Snap64Recomp` (`~/.config/Snap64Recomp`), and
-  `SNAP_DATA_DIR` names one outright (`src/paths.cpp`). The files the
+  `$XDG_CONFIG_HOME/Snap64Recomp` (`~/.config/Snap64Recomp`);
+  `SNAP_DATA_DIR` names one outright on every platform (`src/paths.cpp`,
+  the one part of this that Windows shares). The files the
   port ships and only reads (`gamecontrollerdb.txt`, `menu_text/`, the
   icons, the seed of the seen-shader list) are read from the executable's
   directory, `snap::exe_dir()`, whichever the data directory is.
