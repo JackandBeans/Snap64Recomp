@@ -73,10 +73,11 @@ is in the game's own backdrop picture; the console drew the same pixels.
 
 <a href="screenshots/08-options.png"><img src="screenshots/08-options.png" width="640" alt="The Options screen"></a>
 
-**Options.** The game's own Options screen, its five rows at the
-cartridge's own lines: Graphics and Controls are the port's entries, and
+**Options.** The game's own Options screen, its rows at the cartridge's
+own lines: Graphics, Controls and Exit Game are the port's entries, and
 Sound opens the port's Sound page. The Z Button and Control Stick rows the
-cartridge kept here live on the Controls page now.
+cartridge kept here live on the Controls page now. Exit Game asks once
+(A again closes the program, B stays) and is how a pad quits.
 
 <a href="screenshots/09-graphics.png"><img src="screenshots/09-graphics.png" width="640" alt="The Graphics page"></a>
 
