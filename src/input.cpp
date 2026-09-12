@@ -1110,6 +1110,7 @@ static void gyro_watch(bool justEnabled) {
     static int deadLogs = 0;
     static bool liveLogged = false;
     static bool deadLogged = false;
+    static uint32_t aliveReadings = 0;
     const int64_t t = now_us();
     if (justEnabled) {
         onAt = t;
@@ -1118,6 +1119,7 @@ static void gyro_watch(bool justEnabled) {
         deadLogs = 0;
         liveLogged = false;
         deadLogged = false;
+        aliveReadings = 0;
         g_gyro_readings.store(0, std::memory_order_relaxed);
         g_gyro_live_us.store(0, std::memory_order_relaxed);
         if (is_steam_deck_pad(game_controller)) {
@@ -1162,6 +1164,7 @@ static void gyro_watch(bool justEnabled) {
     const uint32_t readings = g_gyro_readings.load(std::memory_order_relaxed);
     const int64_t since = (live != 0) ? live : onAt;
     if (t - since < Dead) {
+        aliveReadings = readings;
         if ((live != 0) && !liveLogged) {
             printf("[SNAP-Input] gyro readings carry turning (%u readings since it was turned on)\n", readings);
             fflush(stdout);
@@ -1177,7 +1180,14 @@ static void gyro_watch(bool justEnabled) {
         }
         return;
     }
-    // Dead: no reading with any turning for half a second.
+    // Dead: no reading with any turning for half a second. Only readings that
+    // arrived and carried none count. With none arriving at all -- the quit
+    // box holding the event loop, the pad put down and asleep -- there is
+    // nothing to say and nothing to switch; the quit box used to be logged
+    // as "all zero" twice, with the same count both times.
+    if (readings == aliveReadings) {
+        return;
+    }
     if (deadSince == 0) deadSince = since;
     if (is_steam_deck_pad(game_controller)) {
         if (t - lastSend < Resend) return;

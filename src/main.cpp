@@ -51,6 +51,8 @@ extern "C" void snap_publish_ai_len(uint8_t* rdram);
 extern "C" std::atomic<uint32_t> snap_logic_steps_total;
 extern "C" int snap_render_queue_state(char* buf, size_t cap);
 extern "C" void snap_dump_game_threads(uint8_t* rdram);
+// The swap chain's size as the renderer last saw it (rt64_render_context.cpp).
+extern "C" void snap_render_surface_size(uint32_t* w, uint32_t* h);
 
 // Pull in the recompiled function declarations and overlay tables.
 #include "recomp_overlays.inl"
@@ -96,6 +98,10 @@ static constexpr const char* SNAP_INTERNAL_NAME  = "POKEMON SNAP";
 
 static SDL_Window* sdl_window = nullptr;
 static void snap_update_window_title();
+// The screen's size when the port asked gamescope for the display's own
+// (create_window), so update_gfx can tell whether the ask was answered.
+static int s_gamescope_ask_w = 0;
+static int s_gamescope_ask_h = 0;
 
 static void* create_gfx() {
 #if defined(__linux__)
@@ -195,6 +201,12 @@ static ultramodern::renderer::WindowHandle create_window(void* /*gfx_data*/) {
     // moment later takes the screen as it then is, and update_gfx looks
     // once more after it in case the screen changed size later.
     if ((sdl_window != nullptr) && snap::in_gamescope()) {
+        SDL_DisplayMode screen{};
+        const int display = SDL_GetWindowDisplayIndex(sdl_window);
+        if ((display >= 0) && (SDL_GetDesktopDisplayMode(display, &screen) == 0)) {
+            s_gamescope_ask_w = screen.w;
+            s_gamescope_ask_h = screen.h;
+        }
         char note[256];
         snap::gamescope_request_output_size(sdl_window, note, sizeof(note));
         printf("[SNAP] gamescope: %s\n", note);
@@ -321,22 +333,48 @@ static void update_gfx(void* /*gfx_data*/) {
             recheckAt = now + std::chrono::milliseconds(3000);
         }
         if (recheckPending && (sdl_window != nullptr) && (now >= recheckAt)) {
+            static int recheckAsks = 0;
+            static int recheckApplies = 0;
             recheckPending = false;
-            int windowW = 0;
-            int windowH = 0;
-            SDL_GetWindowSize(sdl_window, &windowW, &windowH);
+            // The swap chain's size is what is on screen; SDL's own idea of
+            // the window can be the size it asked for rather than the size
+            // gamescope gave it (gamescope resizes a fullscreen window to
+            // its screen itself, a moment after the request).
+            uint32_t surfaceW = 0;
+            uint32_t surfaceH = 0;
+            snap_render_surface_size(&surfaceW, &surfaceH);
             SDL_DisplayMode screen{};
             const int display = SDL_GetWindowDisplayIndex(sdl_window);
+            const bool haveScreen = (display >= 0) && (SDL_GetDesktopDisplayMode(display, &screen) == 0);
             const bool fullscreenDesktop = (SDL_GetWindowFlags(sdl_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) == SDL_WINDOW_FULLSCREEN_DESKTOP;
-            if (fullscreenDesktop && (display >= 0) && (SDL_GetDesktopDisplayMode(display, &screen) == 0) &&
-                ((windowW != screen.w) || (windowH != screen.h))) {
-                // The screen took the display's size after the window had
-                // gone fullscreen at the old one: once more, at the new.
+            if (haveScreen && fullscreenDesktop && (surfaceW > 0) && (surfaceH > 0) && (recheckApplies < 2) &&
+                ((surfaceW != uint32_t(screen.w)) || (surfaceH != uint32_t(screen.h)))) {
+                // The window did not take the screen's size: out of
+                // fullscreen, sized to the screen by hand, and back in, so
+                // whichever of the two resizes it the window already fits.
+                recheckApplies++;
                 SDL_SetWindowFullscreen(sdl_window, 0);
+                SDL_SetWindowSize(sdl_window, screen.w, screen.h);
+                SDL_SetWindowPosition(sdl_window, 0, 0);
                 SDL_SetWindowFullscreen(sdl_window, SDL_WINDOW_FULLSCREEN_DESKTOP);
-                printf("[SNAP] gamescope: the screen is %dx%d and the window was %dx%d; fullscreen applied again\n",
-                       screen.w, screen.h, windowW, windowH);
+                printf("[SNAP] gamescope: the screen is %dx%d and the surface was %ux%u; fullscreen applied again\n",
+                       screen.w, screen.h, surfaceW, surfaceH);
                 fflush(stdout);
+                recheckPending = true;
+                recheckAt = now + std::chrono::milliseconds(3000);
+            }
+            else if (haveScreen && snap::in_gamescope() && (recheckAsks < 1) &&
+                     (screen.w == s_gamescope_ask_w) && (screen.h == s_gamescope_ask_h)) {
+                // The screen is the size it was when the port asked: either
+                // it already had the display's size, or the ask went
+                // unanswered. Asked once more, and looked at once more.
+                recheckAsks++;
+                char note[256];
+                snap::gamescope_request_output_size(sdl_window, note, sizeof(note));
+                printf("[SNAP] gamescope: %s (asked again)\n", note);
+                fflush(stdout);
+                recheckPending = true;
+                recheckAt = now + std::chrono::milliseconds(3000);
             }
         }
     }
@@ -363,10 +401,16 @@ static void update_gfx(void* /*gfx_data*/) {
         static bool stallTimed = false;
         static bool stallReported = false;
         static std::chrono::steady_clock::time_point stallSince;
+        static std::chrono::steady_clock::time_point stallLastLook;
         const uint32_t steps = snap_logic_steps_total.load(std::memory_order_relaxed);
         const auto now = std::chrono::steady_clock::now();
         const bool minimised = (sdl_window != nullptr) && ((SDL_GetWindowFlags(sdl_window) & SDL_WINDOW_MINIMIZED) != 0);
-        if (!stallTimed || (steps != stallSteps) || minimised) {
+        // This runs every frame; a gap of seconds between two looks is the
+        // machine asleep or the process held, not the game stuck, and the
+        // clock behind it kept counting.
+        const bool wasAway = stallTimed && (now - stallLastLook > std::chrono::seconds(2));
+        stallLastLook = now;
+        if (!stallTimed || (steps != stallSteps) || minimised || wasAway) {
             // A minimised window may hold the game at its present; the
             // clock starts again when it comes back.
             stallTimed = true;

@@ -242,9 +242,13 @@ extern "C" s32 osSendMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags)
             // nothing and TO_PTR of a null offset is not null.
             const PTR(OSThread) self = ultramodern::this_thread();
             OSThread *t = (self != NULLPTR) ? TO_PTR(OSThread, self) : nullptr;
-            printf("[SNAP-OS] osSendMesg dropped a message: queue 0x%08X full (%d of %d), msg 0x%08X, from thread %d (pri %d)%s\n",
+            // A queue of one or two slots is a flag: full means already
+            // signalled, and the drop is the game's own design. Said so,
+            // since these two lines appear in every log.
+            printf("[SNAP-OS] osSendMesg dropped a message: queue 0x%08X full (%d of %d), msg 0x%08X, from thread %d (pri %d)%s%s\n",
                    (uint32_t)mq_, (int)mq->validCount, (int)mq->msgCount, (uint32_t)msg,
                    t ? (int)t->id : -1, t ? (int)t->priority : -1,
+                   (mq->msgCount <= 2) ? " -- a flag queue, expected" : "",
                    (seenDrops[slot] == 2) ? " -- this queue's further drops not reported" : "");
             fflush(stdout);
         }

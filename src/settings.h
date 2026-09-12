@@ -35,9 +35,10 @@ struct Settings {
     // re-measured since the port's focus-dot work; treat it as unverified.
     int   fps_mode          = 0;
     int   fps_manual_target = 120;
-    // Which of RT64's backends draws: 0 Direct3D 12, the one every run of
-    // this port has used; 1 Vulkan, compiled in and never run by the
-    // developer, kept as the escape hatch for a machine whose D3D12 path
+    // Which of RT64's backends draws: 0 Direct3D 12, the default on
+    // Windows; 1 Vulkan, the Linux build's only backend, run on Windows
+    // too through the replays on an AMD card (Sep 2026), and kept as the
+    // escape hatch for a machine whose D3D12 path
     // fails. Read once at start-up (rt64_render_context.cpp), so a change
     // takes effect at the next launch; no row on the Graphics page.
     int   graphics_api      = 0;

@@ -123,6 +123,13 @@ extern float g_world_rebase_delta[3];                        // matrix_tags.cpp
 // it is ending.
 static std::atomic<RT64::Application*> s_live_app{ nullptr };
 
+// The swap chain's size as last seen by send_dl (width in the high half),
+// for the window's thread (snap_render_surface_size), when it changed, and
+// whether the Deck warning about it has been given.
+static std::atomic<uint32_t> s_surface_size{ 0 };
+static std::chrono::steady_clock::time_point s_surface_since;
+static bool s_surface_warned = false;
+
 class RT64Context : public ultramodern::renderer::RendererContext {
 public:
     RT64Context(uint8_t* rdram, ultramodern::renderer::WindowHandle window_handle, bool developer_mode) {
@@ -530,20 +537,33 @@ public:
             }
             snap::set_view_wide_q8(q8);
 
-            // A Steam Deck in Gaming Mode draws into whatever size Steam gave
-            // the shortcut, and for a non-Steam shortcut that is a 16:9
-            // surface unless its Game Resolution is set to Native: gamescope
-            // then scales the picture onto the 16:10 panel, with bars and a
-            // second scaling pass. Found in a 1.0.4 test log, where the view
-            // widened by 16:9 in Gaming Mode and by 16:10 in Desktop Mode.
-            // Said once, with the setting that fixes it; the panel is
-            // 1280x800 on every Deck so far.
-            static bool surfaceSaid = false;
-            if (!surfaceSaid && (swapW > 0) && (swapH > 0) && snap::settings().fullscreen &&
-                snap::is_steam_deck() && snap::in_gamescope() && ((swapW != 1280) || (swapH != 800))) {
-                surfaceSaid = true;
-                printf("[SNAP] fullscreen surface is %ux%u, not the Deck's 1280x800 panel, although gamescope was asked for the display's size at start: it scales the picture with bars. The fallback is the shortcut's Game Resolution set to Native\n", swapW, swapH);
-                fflush(stdout);
+            // The surface's size, said whenever it changes, and kept for
+            // the window's thread (snap_render_surface_size). On a Steam Deck
+            // in Gaming Mode the port draws into whatever screen gamescope
+            // gave the shortcut -- a 3840x2160 one on the author's OLED Deck
+            // until the port asked for the display's own size (main.cpp,
+            // create_window), which gamescope answers by resizing the screen
+            // and then the fullscreen window, each a moment after the other.
+            // So a single early look lied (it saw the windowed 1280x960 in
+            // between); the sequence is logged instead, and the warning that
+            // names the fallback waits until a surface that is not the panel
+            // has stood for three seconds.
+            if ((swapW > 0) && (swapH > 0)) {
+                const uint32_t known = s_surface_size.load(std::memory_order_relaxed);
+                const uint32_t now = (swapW << 16) | (swapH & 0xFFFFu);
+                if (known != now) {
+                    s_surface_size.store(now, std::memory_order_relaxed);
+                    s_surface_since = std::chrono::steady_clock::now();
+                    printf("[SNAP] surface is %ux%u\n", swapW, swapH);
+                    fflush(stdout);
+                }
+                else if (!s_surface_warned && snap::settings().fullscreen && snap::is_steam_deck() && snap::in_gamescope() &&
+                         ((swapW != 1280) || (swapH != 800)) &&
+                         (std::chrono::steady_clock::now() - s_surface_since >= std::chrono::seconds(3))) {
+                    s_surface_warned = true;
+                    printf("[SNAP] the surface has been %ux%u for three seconds, not the Deck's 1280x800 panel, although gamescope was asked for the display's size at start: it scales the picture with bars. The fallback is the shortcut's Game Resolution set to Native\n", swapW, swapH);
+                    fflush(stdout);
+                }
             }
         }
 
@@ -874,6 +894,14 @@ std::unique_ptr<ultramodern::renderer::RendererContext> create_render_context(
 // figure is read under its own lock when the lock can be had at once, and
 // named as held when it cannot: a lock the stuck thread holds must not
 // stop the reporter as well.
+// The surface's size as the renderer last saw it, zero before the first
+// display list; for update_gfx's look at whether fullscreen took the screen.
+extern "C" void snap_render_surface_size(uint32_t* w, uint32_t* h) {
+    const uint32_t packed = snap::s_surface_size.load(std::memory_order_relaxed);
+    *w = packed >> 16;
+    *h = packed & 0xFFFFu;
+}
+
 extern "C" int snap_render_queue_state(char* buf, size_t cap) {
     RT64::Application* app = snap::s_live_app.load(std::memory_order_acquire);
     if ((app == nullptr) || (app->workloadQueue == nullptr) || (app->presentQueue == nullptr)) {
