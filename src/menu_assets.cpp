@@ -1019,6 +1019,7 @@ void seed_mailbox() {
     write_u8(MailboxAddr + 0x16, s.photo_detail ? 1 : 0);
     write_u8(MailboxAddr + 0x17, s.jynx_vc ? 1 : 0);
     write_u8(MailboxAddr + 0x38, 0);   // no title request pending
+    write_u8(MailboxAddr + 0x3A, 0);   // no Exit Game request pending
     write_u8(MailboxAddr + 0x3C, 0);   // the title menu has not been built yet
     // Host-owned: the renderer's horizontal widening for the culling patch
     // (settings.h, set_view_wide_q8); refreshed every tick below.
@@ -1229,7 +1230,10 @@ void stage_menu_strings(uint8_t* rdram) {
         { "Turn the pad to look around a course, on",  "pads with a gyro. Zoomed aims zoomed in." },
         { "How far turning the pad turns the camera.", "Lower is slower, higher is faster." },
     };
-    constexpr uint32_t StringCount = BaseCount + 96;
+    // Ids BaseCount+96..+98: the Option list's Exit Game item -- its label
+    // with the dot, its help line, and the question the help line becomes
+    // once it is chosen (graphics_menu_patch.c STR_EXIT_*).
+    constexpr uint32_t StringCount = BaseCount + 99;
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -1418,6 +1422,25 @@ void stage_menu_strings(uint8_t* rdram) {
         }
         else if (id == BaseCount + 63) {
             strip = compose_help("Mouse and controller settings.");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 96) {
+            // The Option list's sixth item. Every letter of "Exit Game" is
+            // in the body face; "Quit" is not (no Q).
+            strip = add_item_dot(compose("Exit Game"));
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 97) {
+            strip = compose_help("Closes the game.");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 98) {
+            // What the help line becomes once the item is chosen; the
+            // next A closes the program, B withdraws.
+            strip = compose_help("Press A again to close the game, B to stay.");
             w = strip.width;
             h = strip.height;
         }
@@ -1640,6 +1663,18 @@ void poll_menu_mailbox(uint8_t* rdram) {
     if (read_u8_mail(MailboxAddr + 0x38) != 0) {
         write_u8(MailboxAddr + 0x38, 0);
         station_request_from_title();
+    }
+    // The Option screen's Exit Game item, chosen and confirmed: the program
+    // closes the way the window's close button closes it. This runs on the
+    // game thread (gtlUpdate), so the quit is posted to the main thread's
+    // event loop rather than performed here.
+    if (read_u8_mail(MailboxAddr + 0x3A) != 0) {
+        write_u8(MailboxAddr + 0x3A, 0);
+        printf("[SNAP] quit: Exit Game chosen on the Option screen\n");
+        fflush(stdout);
+        SDL_Event quit{};
+        quit.type = SDL_QUIT;
+        SDL_PushEvent(&quit);
     }
     animate_credits();
 

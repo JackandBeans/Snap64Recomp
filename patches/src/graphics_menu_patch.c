@@ -125,10 +125,16 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *               readable from every coroutine
  *   +0x38  u8   MBOX_TITLE_REQ: the title's Snap Station item was chosen;
  *               the host reads it, clears it, attaches the station
+ *   +0x3A  u8   MBOX_QUIT_REQ: the Option screen's Exit Game item was
+ *               chosen and confirmed; the host reads it, clears it, and
+ *               closes the program the way the window's close button does
  *   +0x50  u32  SCRATCH_TITLE_GOBJ, the patch's own: the title's Snap
  *               Station label, between its creation and its deletion
  *   +0x54  u32  SCRATCH_CONTROLS_GOBJ, the patch's own: the CONTROLS item
  *   +0x58  u32  SCRATCH_HELP_CONTROLS, the patch's own: its help line
+ *   +0x70  u32  SCRATCH_EXIT_GOBJ, the patch's own: the EXIT GAME item
+ *   +0x74  u32  SCRATCH_HELP_EXIT, the patch's own: its help line
+ *   +0x78  u32  SCRATCH_HELP_EXIT2, the patch's own: its question line
  *   +0x60  u32  CONTROLS sequence word
  *   +0x64  u8   CONTROLS fields 0..5, through +0x69: mouse aim, the mouse
  *               speed's step, the zoom speed's step, the tilt, the gyro
@@ -229,6 +235,13 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_GYRO_LABEL    121  /* ..122: Gyro Aim, Gyro Speed */
 #define STR_ZOOMED        123
 #define STR_GYRO_DESC     124  /* ..125: their descriptions */
+/* The Option list's sixth item, Exit Game (menu_assets.cpp ids
+ * BaseCount+96..+98): the label with its dot, its help line, and the
+ * question the help line becomes once it is chosen. "Exit Game" because
+ * every letter of it is in the body face; "Quit" has no Q there. */
+#define STR_EXIT_ITEM     126
+#define STR_EXIT_HELP     127
+#define STR_EXIT_CONFIRM  128
 
 /* The SOUND bank of the mailbox: its own sequence word and value bytes
  * (percent volumes; stereo and background-mute booleans). The patched
@@ -237,14 +250,19 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define SND_SEQ      (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x20))
 #define SND_FIELD(i) (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x28 + (i)))
 
-/* The Option list: Screen, Graphics, Sound, Controls, Return. The stock Z
- * Button and Control Stick rows live on the CONTROLS page now, with the
- * mouse's settings, so the list is the stock five rows long and keeps the
- * stock rhythm; six rows was the most the help box left room for. */
-#define OPT_ITEMS      5
+/* The Option list: Screen, Graphics, Sound, Controls, Return, Exit Game.
+ * The stock Z Button and Control Stick rows live on the CONTROLS page now,
+ * with the mouse's settings, so the stock four and the port's two keep the
+ * stock rhythm; six rows is the most the help box leaves room for, and
+ * Exit Game is the sixth: a pad has no other way to close the program,
+ * which a handheld in Steam's Gaming Mode needs. It exists only when its
+ * label was staged (snap_option_labels says how many rows there are). */
+#define OPT_ITEMS      6
 #define OPT_GRAPHICS   1
 #define OPT_SOUND      2
 #define OPT_CONTROLS   3
+#define OPT_RETURN     4
+#define OPT_EXIT       5
 #define PAGE_ITEMS     16
 /* The stock Options list's own rhythm: first row at 73, sixteen rows of
  * pitch, six rows on screen -- the Graphics page reads as the same menu.
@@ -647,6 +665,10 @@ static void snap_tint(GObj* gobj, u8 r, u8 g, u8 b) {
  * (+0x50 is the title's, +0x60 the CONTROLS bank's sequence word). */
 #define SCRATCH_CONTROLS_GOBJ (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x54))
 #define SCRATCH_HELP_CONTROLS (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x58))
+#define SCRATCH_EXIT_GOBJ     (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x70))
+#define SCRATCH_HELP_EXIT     (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x74))
+#define SCRATCH_HELP_EXIT2    (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x78))
+#define MBOX_QUIT_REQ         (*(volatile u8*)  (SNAP_GFX_MAILBOX + 0x3A))
 /* The CONTROLS bank of the mailbox: its sequence word and four value bytes
  * (mouse aim, the speed index, the zoom index, the tilt), seeded and read
  * by the host (src/menu_assets.cpp). */
@@ -856,17 +878,19 @@ static void snap_page_layout(s32 top) {
     }
 }
 
-/* Fills LIST_LABEL() with the five item labels in display order: Screen,
- * Graphics, Sound, Controls, Return. The stock chain holds Screen, Sound,
- * Z Button, Control Stick and Return; the middle two are hidden (they are
- * rows of the CONTROLS page now) and the two staged strips take their
- * places. */
+/* Fills LIST_LABEL() with the item labels in display order: Screen,
+ * Graphics, Sound, Controls, Return, Exit Game, and returns how many there
+ * are: six with the Exit Game strip, five without it. The stock chain
+ * holds Screen, Sound, Z Button, Control Stick and Return; the middle two
+ * are hidden (they are rows of the CONTROLS page now) and the staged
+ * strips take their places. */
 static s32 snap_option_labels(void) {
     SObj* sobj = D_800E8340_A0F8D0->data.sobj;
     SObj* stock[5];
     s32 n = 0;
     GObj* graphics = (GObj*) SCRATCH_GRAPHICS_GOBJ;
     GObj* controls = (GObj*) SCRATCH_CONTROLS_GOBJ;
+    GObj* exitItem = (GObj*) SCRATCH_EXIT_GOBJ;
 
     while ((sobj != NULL) && (n < 5)) {
         stock[n] = sobj;
@@ -883,8 +907,13 @@ static s32 snap_option_labels(void) {
     LIST_LABEL(OPT_SOUND) = (u32) stock[1];
     LIST_LABEL(OPT_CONTROLS) =
         ((controls != NULL) && (controls->data.sobj != NULL)) ? (u32) controls->data.sobj : (u32) stock[0];
-    LIST_LABEL(OPT_ITEMS - 1) = (u32) stock[4];
-    return OPT_ITEMS;
+    LIST_LABEL(OPT_RETURN) = (u32) stock[4];
+    if ((exitItem != NULL) && (exitItem->data.sobj != NULL)) {
+        LIST_LABEL(OPT_EXIT) = (u32) exitItem->data.sobj;
+        return OPT_ITEMS;
+    }
+    LIST_LABEL(OPT_EXIT) = (u32) stock[4];
+    return OPT_ITEMS - 1;
 }
 
 /* The GRAPHICS page: the Option screen's own dress -- island background,
@@ -1284,14 +1313,19 @@ s8 func_800E7700_A0EC90(void) {
     SObj* sobj;
     GObj* helpItemObj;
     GObj* helpControlsObj;
+    GObj* helpExitObj;
+    GObj* helpExitAskObj;
     s32 helpCount;
+    s32 nItems;
+    s32 armed;
     s32 i;
     s8 sel;
     s8 shownHelp;
     u8 pulseState;
     u8 pulseCounter;
 
-    snap_option_labels();
+    nItems = snap_option_labels();
+    armed = 0;
 
     helpCount = 0;
     sobj = D_800E8344_A0F8D4->data.sobj;
@@ -1309,6 +1343,14 @@ s8 func_800E7700_A0EC90(void) {
     if ((helpControlsObj != NULL) && (helpControlsObj->data.sobj != NULL)) {
         helpControlsObj->data.sobj->sprite.attr |= SP_HIDDEN;
     }
+    helpExitObj = (GObj*) SCRATCH_HELP_EXIT;
+    if ((helpExitObj != NULL) && (helpExitObj->data.sobj != NULL)) {
+        helpExitObj->data.sobj->sprite.attr |= SP_HIDDEN;
+    }
+    helpExitAskObj = (GObj*) SCRATCH_HELP_EXIT2;
+    if ((helpExitAskObj != NULL) && (helpExitAskObj->data.sobj != NULL)) {
+        helpExitAskObj->data.sobj->sprite.attr |= SP_HIDDEN;
+    }
 
     pulseState = 0;
     pulseCounter = 0;
@@ -1319,10 +1361,25 @@ s8 func_800E7700_A0EC90(void) {
         temp_v0_2 = func_800AA38C(0);
         if (gContInputPressedButtons & A_BUTTON) {
             auPlaySoundWithParams(0x42, 0x7FFF, 0x40, 1.0f, 0);
+            if ((MBOX_SEL == OPT_EXIT) && !armed) {
+                /* Exit Game asks first: the help line becomes the question
+                 * and the next A answers it. B, or moving off the row,
+                 * withdraws it. One press must not close the program. */
+                armed = 1;
+                shownHelp = -1;
+                ohWait(1);
+                continue;
+            }
             pressedB = 0;
             break;
         } else if (gContInputPressedButtons & B_BUTTON) {
             auPlaySoundWithParams(0x43, 0x7FFF, 0x40, 1.0f, 0);
+            if (armed) {
+                armed = 0;
+                shownHelp = -1;
+                ohWait(1);
+                continue;
+            }
             pressedB = 1;
             break;
         } else {
@@ -1332,17 +1389,19 @@ s8 func_800E7700_A0EC90(void) {
                 func_800E6C00_A0E190((SObj*) LIST_LABEL(sel), 0xFF);
                 sel--;
                 if (sel < 0) {
-                    sel = OPT_ITEMS - 1;
+                    sel = nItems - 1;
                 }
                 MBOX_SEL = sel;
                 pulseState = 0;
+                armed = 0;
             } else if (temp_v0_2->pressedButtons & STICK_SLOW_DOWN) {
                 auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
                 func_800E6C00_A0E190((SObj*) LIST_LABEL(sel), 0xFF);
                 sel++;
-                sel %= OPT_ITEMS;
+                sel %= nItems;
                 MBOX_SEL = sel;
                 pulseState = 0;
+                armed = 0;
             }
 
             /* The help line follows the selection: the staged strips for
@@ -1360,6 +1419,12 @@ s8 func_800E7700_A0EC90(void) {
                 if ((helpControlsObj != NULL) && (helpControlsObj->data.sobj != NULL)) {
                     helpControlsObj->data.sobj->sprite.attr |= SP_HIDDEN;
                 }
+                if ((helpExitObj != NULL) && (helpExitObj->data.sobj != NULL)) {
+                    helpExitObj->data.sobj->sprite.attr |= SP_HIDDEN;
+                }
+                if ((helpExitAskObj != NULL) && (helpExitAskObj->data.sobj != NULL)) {
+                    helpExitAskObj->data.sobj->sprite.attr |= SP_HIDDEN;
+                }
                 if (sel == OPT_GRAPHICS) {
                     if ((helpItemObj != NULL) && (helpItemObj->data.sobj != NULL)) {
                         helpItemObj->data.sobj->sprite.attr &= ~SP_HIDDEN;
@@ -1368,6 +1433,12 @@ s8 func_800E7700_A0EC90(void) {
                 else if (sel == OPT_CONTROLS) {
                     if ((helpControlsObj != NULL) && (helpControlsObj->data.sobj != NULL)) {
                         helpControlsObj->data.sobj->sprite.attr &= ~SP_HIDDEN;
+                    }
+                }
+                else if (sel == OPT_EXIT) {
+                    GObj* line = armed ? helpExitAskObj : helpExitObj;
+                    if ((line != NULL) && (line->data.sobj != NULL)) {
+                        line->data.sobj->sprite.attr &= ~SP_HIDDEN;
                     }
                 }
                 else {
@@ -1424,6 +1495,12 @@ s8 func_800E7700_A0EC90(void) {
     if ((helpControlsObj != NULL) && (helpControlsObj->data.sobj != NULL)) {
         helpControlsObj->data.sobj->sprite.attr |= SP_HIDDEN;
     }
+    if ((helpExitObj != NULL) && (helpExitObj->data.sobj != NULL)) {
+        helpExitObj->data.sobj->sprite.attr |= SP_HIDDEN;
+    }
+    if ((helpExitAskObj != NULL) && (helpExitAskObj->data.sobj != NULL)) {
+        helpExitAskObj->data.sobj->sprite.attr |= SP_HIDDEN;
+    }
     func_800E6C00_A0E190((SObj*) LIST_LABEL(MBOX_SEL), 0xFF);
     ohWait(1);
     func_800E6C14_A0E1A4((SObj*) LIST_LABEL(MBOX_SEL), 0xFF, 0x82, 0x41);
@@ -1431,7 +1508,7 @@ s8 func_800E7700_A0EC90(void) {
     if (!pressedB) {
         return MBOX_SEL;
     }
-    return OPT_ITEMS - 1;   /* B backs out through Return */
+    return OPT_RETURN;   /* B backs out through Return */
 }
 
 /* ---------------------------------------------------------------------------
@@ -2339,7 +2416,23 @@ static void snap_controls_page(void) {
     ohWait(1);
 }
 
-/* Replaces the Option screen loop: makes room for the port's two items,
+/* Exit Game, chosen and confirmed: the host is asked to close the program
+ * and does so within a frame or two (src/menu_assets.cpp,
+ * poll_menu_mailbox, the same path as the window's close button). Waited
+ * for here rather than returned from -- the screen must not start its fade
+ * back to the title under a quit in progress -- but not forever: a host
+ * that has not answered in two seconds leaves the player on the list. */
+static void snap_exit_game(void) {
+    s32 i;
+
+    MBOX_QUIT_REQ = 1;
+    for (i = 0; i < 120; i++) {
+        ohWait(1);
+    }
+    MBOX_QUIT_REQ = 0;
+}
+
+/* Replaces the Option screen loop: makes room for the port's items,
  * creates their labels and help lines, retires the stock Z Button and
  * Control Stick rows to the CONTROLS page, and dispatches. */
 void func_800E7F98_A0F528(void) {
@@ -2350,6 +2443,9 @@ void func_800E7F98_A0F528(void) {
     GObj* itemHelp;
     GObj* controlsLabel;
     GObj* controlsHelp;
+    GObj* exitLabel;
+    GObj* exitHelp;
+    GObj* exitAsk;
 
     func_800E71DC_A0E76C();
 
@@ -2357,10 +2453,16 @@ void func_800E7F98_A0F528(void) {
     itemHelp = NULL;
     controlsLabel = NULL;
     controlsHelp = NULL;
+    exitLabel = NULL;
+    exitHelp = NULL;
+    exitAsk = NULL;
     SCRATCH_GRAPHICS_GOBJ = 0;
     SCRATCH_HELP_ITEM = 0;
     SCRATCH_CONTROLS_GOBJ = 0;
     SCRATCH_HELP_CONTROLS = 0;
+    SCRATCH_EXIT_GOBJ = 0;
+    SCRATCH_HELP_EXIT = 0;
+    SCRATCH_HELP_EXIT2 = 0;
     MBOX_SEL = 0;
 
     if (DIR_MAGIC == 0x53474130) {
@@ -2468,6 +2570,23 @@ void func_800E7F98_A0F528(void) {
         }
         SCRATCH_CONTROLS_GOBJ = (u32) controlsLabel;
         SCRATCH_HELP_CONTROLS = (u32) controlsHelp;
+
+        /* The sixth row, at the slot Return vacated: the list's own
+         * cadence puts it at 153, the last row the help box leaves room
+         * for. Its help line and the question it turns into share the
+         * help slot with the others and start hidden. */
+        exitLabel = snap_make_strip(STR_EXIT_ITEM, 43, 153);
+        exitHelp = snap_make_strip(STR_EXIT_HELP, 49, 171);
+        if (exitHelp != NULL) {
+            exitHelp->data.sobj->sprite.attr |= SP_HIDDEN;
+        }
+        exitAsk = snap_make_strip(STR_EXIT_CONFIRM, 49, 171);
+        if (exitAsk != NULL) {
+            exitAsk->data.sobj->sprite.attr |= SP_HIDDEN;
+        }
+        SCRATCH_EXIT_GOBJ = (u32) exitLabel;
+        SCRATCH_HELP_EXIT = (u32) exitHelp;
+        SCRATCH_HELP_EXIT2 = (u32) exitAsk;
     }
 
     func_800E7408_A0E998();
@@ -2508,6 +2627,9 @@ void func_800E7F98_A0F528(void) {
                 case OPT_CONTROLS:
                     snap_controls_page();
                     break;
+                case OPT_EXIT:
+                    snap_exit_game();
+                    break;
                 default:
                     func_800BFB90_5CA30(viEdgeOffsetLeft, viEdgeOffsetTop);
                     setPlayerFlag(PFID_9, D_800E8394_A0F924);
@@ -2537,10 +2659,22 @@ void func_800E7F98_A0F528(void) {
     if (controlsHelp != NULL) {
         omDeleteGObj(controlsHelp);
     }
+    if (exitLabel != NULL) {
+        omDeleteGObj(exitLabel);
+    }
+    if (exitHelp != NULL) {
+        omDeleteGObj(exitHelp);
+    }
+    if (exitAsk != NULL) {
+        omDeleteGObj(exitAsk);
+    }
     SCRATCH_GRAPHICS_GOBJ = 0;
     SCRATCH_HELP_ITEM = 0;
     SCRATCH_CONTROLS_GOBJ = 0;
     SCRATCH_HELP_CONTROLS = 0;
+    SCRATCH_EXIT_GOBJ = 0;
+    SCRATCH_HELP_EXIT = 0;
+    SCRATCH_HELP_EXIT2 = 0;
 }
 
 /* Replaces the title screen's background creation: everything the original
