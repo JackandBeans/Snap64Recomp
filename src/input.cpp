@@ -1539,6 +1539,30 @@ static void snap_input_tap(uint16_t* buttons, float* x, float* y) {
         fflush(record);
     }
 
+    // SNAP_PCAP_ONCOURSE: a burst of presents every sixty readings for the
+    // first forty seconds after the course code becomes resident -- the
+    // course's opening cinematic and the tutorial, photographed with no
+    // reading count to know. For the Deck's top-left block in Widescreen
+    // (2026-09-12).
+    {
+        static const bool pcapOnCourse = (getenv("SNAP_PCAP_ONCOURSE") != nullptr);
+        if (pcapOnCourse) {
+            static bool courseWas = false;
+            static uint32_t courseStart = 0;
+            const bool courseNow = g_app_level_resident.load(std::memory_order_relaxed);
+            if (courseNow && !courseWas) {
+                courseStart = readingIndex;
+            }
+            courseWas = courseNow;
+            if (courseNow && ((readingIndex - courseStart) < 2400) && (((readingIndex - courseStart) % 60) == 0)) {
+                snap_frame_dump_pending.store(int32_t(pcapBurst));
+                printf("[SNAP-PCAP] armed %u presents at reading %u: %u readings into the course\n",
+                       pcapBurst, readingIndex, readingIndex - courseStart);
+                fflush(stdout);
+            }
+        }
+    }
+
     // SNAP_PCAP_ONZOOM: a burst of presents every time Z changes state in a
     // course, the viewfinder going up or coming down. For the moment a
     // player can name but no reading count can: the Deck's top-left flash
