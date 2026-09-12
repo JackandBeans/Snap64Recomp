@@ -974,6 +974,16 @@ static void snap_graphics_page(void) {
             PAGE_HIDDEN(hiddenCount) = (u32) mine->data.sobj;
             hiddenCount++;
         }
+        /* And the sixth row, Exit Game, the patch's own as well: left
+         * behind, it stayed on screen under every page (a Deck found it
+         * on the Graphics page, 2026-09-11). */
+        mine = (GObj*) SCRATCH_EXIT_GOBJ;
+        if ((mine != NULL) && (mine->data.sobj != NULL) &&
+            !(mine->data.sobj->sprite.attr & SP_HIDDEN) && (hiddenCount < 64)) {
+            mine->data.sobj->sprite.attr |= SP_HIDDEN;
+            PAGE_HIDDEN(hiddenCount) = (u32) mine->data.sobj;
+            hiddenCount++;
+        }
     }
 
     /* The header hands over: the stock "Options" title (the y=40 sprite of
@@ -1755,6 +1765,16 @@ static void snap_sound_page(void) {
             PAGE_HIDDEN(hiddenCount) = (u32) mine->data.sobj;
             hiddenCount++;
         }
+        /* And the sixth row, Exit Game, the patch's own as well: left
+         * behind, it stayed on screen under every page (a Deck found it
+         * on the Graphics page, 2026-09-11). */
+        mine = (GObj*) SCRATCH_EXIT_GOBJ;
+        if ((mine != NULL) && (mine->data.sobj != NULL) &&
+            !(mine->data.sobj->sprite.attr & SP_HIDDEN) && (hiddenCount < 64)) {
+            mine->data.sobj->sprite.attr |= SP_HIDDEN;
+            PAGE_HIDDEN(hiddenCount) = (u32) mine->data.sobj;
+            hiddenCount++;
+        }
     }
     {
         GObj* chain = snap_chain(2);
@@ -2136,6 +2156,16 @@ static void snap_controls_page(void) {
             hiddenCount++;
         }
         mine = (GObj*) SCRATCH_CONTROLS_GOBJ;
+        if ((mine != NULL) && (mine->data.sobj != NULL) &&
+            !(mine->data.sobj->sprite.attr & SP_HIDDEN) && (hiddenCount < 64)) {
+            mine->data.sobj->sprite.attr |= SP_HIDDEN;
+            PAGE_HIDDEN(hiddenCount) = (u32) mine->data.sobj;
+            hiddenCount++;
+        }
+        /* And the sixth row, Exit Game, the patch's own as well: left
+         * behind, it stayed on screen under every page (a Deck found it
+         * on the Graphics page, 2026-09-11). */
+        mine = (GObj*) SCRATCH_EXIT_GOBJ;
         if ((mine != NULL) && (mine->data.sobj != NULL) &&
             !(mine->data.sobj->sprite.attr & SP_HIDDEN) && (hiddenCount < 64)) {
             mine->data.sobj->sprite.attr |= SP_HIDDEN;
