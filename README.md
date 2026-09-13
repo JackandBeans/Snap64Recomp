@@ -122,7 +122,13 @@ Beach in Widescreen and the Controls page's gyro rows), are in
   the GPU driver must provide Direct3D 12; `vulkan-1.dll` is loaded only if
   you switch the renderer to Vulkan (`graphics_api` in the settings file,
   "Settings file" below). The Visual C++ runtime is linked into the
-  executable; nothing else has to be installed.
+  executable; nothing else has to be installed. The renderer creates its
+  Direct3D 12 device at feature level 11_0 and needs shader model 6.0 (its
+  Vulkan path needs Vulkan 1.2), which GPU drivers have provided for years;
+  no slowest card has been measured. It has run on an AMD Radeon RX 9060 XT
+  (the port's author), an NVIDIA GeForce RTX 4070 Ti Super (a reporter,
+  issue #13), the Steam Deck's own GPU under Linux, and Mesa's software
+  Vulkan, which draws the game slowly but correctly.
 * **Your own dump of the US cartridge**, whose SHA-1 checksum (a fingerprint
   of the file's contents) is `edc7c49cc568c045fe48be0d18011c30f393cbaf`, the
   value the [decompilation project](https://github.com/ethteck/pokemonsnap)
@@ -751,7 +757,7 @@ this:
    other machine boots as its settings file says, windowed until the
    file says fullscreen.
 
-It needs the system's SDL2 (2.26 or newer), GTK 3 and a Vulkan driver,
+It needs the system's SDL2 (2.26 or newer), GTK 3 and a Vulkan 1.2 driver,
 and a glibc no older than the one it was built against (2.39; SteamOS 3.8
 ships 2.41). The C++ runtime is inside the binary. Rendering is Vulkan
 only, whatever `graphics_api` in the settings file says. If a Linux
