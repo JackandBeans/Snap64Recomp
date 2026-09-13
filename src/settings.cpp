@@ -99,6 +99,13 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         nlohmann::json j;
         f >> j;
         Settings s = out;
+        // Read so that load_settings can keep it aside for the restore after
+        // the window opens (s_boot_fullscreen); the struct's own field is
+        // cleared there, since the window is never created fullscreen. Until
+        // 1.0.6 this line was missing: the key was never read, the saved
+        // value was always false, and the restore 1.0.5 promised ran only on
+        // a Steam Deck, whose default is fullscreen.
+        s.fullscreen         = j.value("fullscreen", s.fullscreen);
         s.widescreen         = j.value("widescreen", s.widescreen);
         s.msaa               = j.value("msaa", s.msaa);
         s.fps_mode           = j.value("fps_mode", s.fps_mode);
