@@ -4,28 +4,26 @@
 
 * A page in the game for the bindings: the Controls page's new Button
   Setup row, third on the page, opens it (named as the game names such
-  screens, "Z Button Setup"). A row for each of the game's
-  eighteen inputs shows what presses it on the device picked at the top
-  (keyboard, mouse or controller; under the controller the C and stick
-  rows name the two sticks that always work them); A on a row listens for
-  the next press of that device and
-  binds it in place of the device's old one, Z clears the device's
-  binding of the row unless nothing else would press the input, and
-  Restore Defaults, asking for a second A, puts the shipped bindings of
-  the device shown back. Each row's help line says what the input does in
-  the game, and what no table changes is named on the rows: the stick
-  that aims and the one that works the C buttons, the mouse's motion
-  while Mouse Aim is on, Esc beside Start. The port hands the game no input while
-  it listens, and none until every key and button is let go after, so the
-  press cannot land as the button it was or as the one it now is. Every
-  change is in force at once and reaches the settings file by the usual
-  debounced write; the file's `keys` table is the same table and stays
-  editable. Asked for in Discussions #3, and the first of the things the
-  other recompilations have that this port did not. The page names any
-  key in the menu's own face, so that face gained the capitals I, K, Q,
-  U, X and Y, a q and the punctuation keys are named with, drawn in its
-  style, and the header face a B and an e for the page's heading (an M
-  and a g were drawn on the way and stay for a heading that needs them).
+  screens, "Z Button Setup"). A row for each of the game's eighteen
+  inputs shows what presses it on the device picked at the top (keyboard,
+  mouse or controller), and its help line says what the input does in the
+  game. A on a row listens for the next press of that device and binds it
+  in place of the device's old one; Z clears the device's binding of the
+  row unless nothing else would press the input; Restore Defaults, asking
+  for a second A, puts the shipped bindings of the device shown back. What
+  no table changes is named on the rows too: the stick that aims and the
+  one that works the C buttons, the mouse's motion while Mouse Aim is on,
+  Esc beside Start. The port hands the game no input while it listens, and
+  none until every key and button is let go after, so the press cannot
+  land as the button it was or as the one it now is. Every change is in
+  force at once and reaches the settings file by the usual debounced
+  write; the file's `keys` table is the same table and stays editable.
+  Asked for in Discussions #3, and the first of the things the other
+  recompilations have that this port did not. The page names any key in
+  the menu's own face, so that face gained the capitals I, K, Q, U, X and
+  Y, a q and the punctuation keys are named with, drawn in its style, and
+  the header face a B and an e for the page's heading (an M and a g were
+  drawn on the way and stay for a heading that needs them).
 * The Controls page has a Pad Sticks row: Swapped makes the right stick
   aim and the left work the C buttons, for a player who aims with the
   right thumb (`pad_sticks_swapped` in the settings file). The sticks were

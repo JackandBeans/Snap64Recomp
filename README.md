@@ -254,7 +254,7 @@ game, each pixel an angle added to the game's own view; everywhere else
 it does nothing. Zoomed in, the same motion turns half as far, since the
 view is narrower. The view moves no faster than you move the mouse and
 stops when your hand does; the stick's own turning speed does not apply. The Controls page on the
-game's Options screen holds the dials: Mouse Aim, Mouse Speed, Zoom Speed
+game's Options screen holds the mouse dials: Mouse Aim, Mouse Speed, Zoom Speed
 and Camera Tilt (they are `mouse_aim`, `mouse_sensitivity`,
 `mouse_zoom_speed` and `mouse_invert_y` in the settings file), and its
 Button Setup row opens the page where each key, mouse button and pad
