@@ -160,7 +160,7 @@ void input_bind_reset(int device);
 // begin arms it (game thread); the window's thread feeds it the events
 // (input_handle_sdl_event) -- a key or button of that device binds, Esc
 // cancels, a key the port answers to itself (the hotkeys, Esc) is refused,
-// and six seconds of nothing times it out; poll says how it stands and
+// and eight seconds of nothing times it out; poll says how it stands and
 // hands over the name; end disarms it. active is what the window's thread asks
 // before it treats a key as a hotkey or as Esc's Start.
 enum class CaptureState { Idle, Listening, Bound, Cancelled, RefusedJob, TimedOut };

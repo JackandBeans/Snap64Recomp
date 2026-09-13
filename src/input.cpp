@@ -803,7 +803,7 @@ std::atomic<bool> g_capture_active{false};
 // the key just bound may still be down, and the page would read it as a
 // press of the button it now is.
 std::atomic<bool> g_capture_settle{false};
-constexpr int64_t CaptureTimeoutUs = 6000000;
+constexpr int64_t CaptureTimeoutUs = 8000000;
 constexpr int64_t CaptureTestDelayUs = 300000;
 
 // SNAP_VPAD_TEST: a virtual game controller attached through SDL's own
@@ -1206,7 +1206,7 @@ CaptureState input_capture_poll(std::string* name) {
             fflush(stdout);
         } else if (t - g_capture.startedUs >= CaptureTimeoutUs) {
             g_capture.state = CaptureState::TimedOut;
-            printf("[SNAP-Input] Button Setup page: nothing pressed in six seconds; the row stays as it was\n");
+            printf("[SNAP-Input] Button Setup page: nothing pressed in eight seconds; the row stays as it was\n");
             fflush(stdout);
         }
     }

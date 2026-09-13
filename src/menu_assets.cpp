@@ -1373,11 +1373,31 @@ void stage_menu_strings(uint8_t* rdram) {
     // bank is never rewritten while the page draws it; their pixels sit
     // apart from the staged strings, at DynPixelsAddr.
     static_assert(BaseCount == kStringBaseCount, "kBindDynBase counts from the strings[] table");
+    // Each row names its button and what it does, so a player who never
+    // held an N64 finds "Zoom" without reading eighteen help lines, and a
+    // player the game has just told to "Press Z Button" finds Z. The colon
+    // is the port's own glyph; the widths were checked against the
+    // harvested font (the widest, "L Button: Unused", is 93 pixels of the
+    // 108 the label column has before the values at x=163).
     static const char* const bindLabels[BindInputCount] = {
-        "A Button", "B Button", "Z Button", "Start", "L Button", "R Button",
-        "C-Up", "C-Down", "C-Left", "C-Right",
-        "D-Pad Up", "D-Pad Down", "D-Pad Left", "D-Pad Right",
-        "Stick Up", "Stick Down", "Stick Left", "Stick Right",
+        "A Button: Photo",
+        "B Button: Ball",
+        "Z Button: Zoom",
+        "Start: Pause",
+        "L Button: Unused",
+        "R Button: Dash",
+        "C-Up: Look Back",
+        "C-Down: Flute",
+        "C-Left: Turn",
+        "C-Right: Turn",
+        "D-Pad Up",
+        "D-Pad Down",
+        "D-Pad Left",
+        "D-Pad Right",
+        "Stick Up: Aim",
+        "Stick Down: Aim",
+        "Stick Left: Aim",
+        "Stick Right: Aim",
     };
     // Within the help face's letters (no E F G I K Q U V X Y, no digits
     // but 2 3 4 6, no hyphen, apostrophe or colon), 41 characters a line.
@@ -1385,7 +1405,7 @@ void stage_menu_strings(uint8_t* rdram) {
     // Restore Defaults asking, the row while it listens, Restore Defaults
     // at rest, a refused key, a refused clear, a listen that timed out.
     static const char* const bindDescs[7][2] = {
-        { "Left and Right pick the device to set up.", "B goes back with every change kept." },
+        { "Left and Right pick what to set up.",      "B goes back with every change kept." },
         { "Press A again to put this device back", "the way it came, B to keep it as it is." },
         { "Press the key or button to use for this.", "Wait a few seconds to leave it as it was." },
         { "Puts back the keys and buttons the game", "came with, for this device. A asks first." },
@@ -1705,7 +1725,9 @@ void stage_menu_strings(uint8_t* rdram) {
             h = strip.height;
         }
         else if (id == BaseCount + 102) {
-            strip = compose("Device");
+            // The top row picks whose buttons the page sets up; "Set Up:"
+            // says what the row does where "Device" only said what it was.
+            strip = compose("Set Up:");
             w = strip.width;
             h = strip.height;
         }
