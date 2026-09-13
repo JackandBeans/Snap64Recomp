@@ -178,7 +178,7 @@ constexpr uint32_t STR_ITEM_LABEL_ID = 1;        // "Graphics", the Option item
 // The strips are exactly as tall as the original menu sprites: ten rows.
 constexpr int StripHeight = kMenuFontCellH;
 
-// The BUTTON MAPPING page's row values (ids kBindDynBase on, two banks of
+// The BUTTON SETUP page's row values (ids kBindDynBase on, two banks of
 // eighteen) are composed while the page is open, for the device it shows,
 // so their pixels have a fixed home of their own: well past the staged
 // strings, which end near 0x80CA0000, and below librecomp's mod space at
@@ -310,7 +310,7 @@ Strip compose(const char* text, bool lenient = false) {
         if (g == nullptr) {
             if (lenient) {
                 // A key named with a character no face carries (the
-                // Button Mapping page's live values): a dim block stands in, and
+                // Button Setup page's live values): a dim block stands in, and
                 // the directory is not withheld for it.
                 for (int gy = 4; gy < 9; gy++) {
                     for (int gx = 0; gx < 4; gx++) {
@@ -337,7 +337,7 @@ Strip compose(const char* text, bool lenient = false) {
     return strip;
 }
 
-// A row value of the Button Mapping page: any key's name, in the body face, cut
+// A row value of the Button Setup page: any key's name, in the body face, cut
 // to what three chunks hold.
 Strip compose_dyn(std::string text) {
     Strip strip = compose(text.c_str(), true);
@@ -940,7 +940,7 @@ uint32_t g_last_applied_snd_seq = 0;
 bool g_staged = false;
 bool g_mailbox_seeded = false;
 
-// The BUTTON MAPPING page's bank of the mailbox, at +0xA0 (the byte map is in the
+// The BUTTON SETUP page's bank of the mailbox, at +0xA0 (the byte map is in the
 // patch, SNAP_GFX_MAILBOX): the page writes a request word and the device
 // it shows; the host answers with an ack word, keeps the row values
 // composed for that device, and says whether a pad is attached.
@@ -1120,7 +1120,7 @@ void seed_mailbox() {
     // applies on each bump (poll_menu_mailbox).
     write_u32(MailboxAddr + 0x20, 0);
     write_u32(MailboxAddr + 0x60, 0);
-    // The BUTTON MAPPING page's bank: no request, no answer, bank zero, closed.
+    // The BUTTON SETUP page's bank: no request, no answer, bank zero, closed.
     write_u32(BindReqAddr, 0);
     write_u32(BindAckAddr, 0);
     write_u32(BindGenAddr, 0);
@@ -1321,7 +1321,7 @@ void stage_menu_strings(uint8_t* rdram) {
         "< Zoomed >",                          // +93
     };
     // The CONTROLS page's Pad Sticks row (id BaseCount+152).
-    static const char* const sticksDesc[2] = { "Normal aims with the left stick and puts", "C on the right stick. Swapped flips them." };
+    static const char* const sticksDesc[2] = { "Normal aims with the left stick, the", "right does the C buttons. Swapped flips." };
     static const char* const gyroDescs[2][2] = {
         { "Turn the pad to look around a course, on",  "pads with a gyro. Zoomed aims zoomed in." },
         { "How far turning the pad turns the camera.", "Lower is slower, higher is faster." },
@@ -1329,8 +1329,8 @@ void stage_menu_strings(uint8_t* rdram) {
     // Ids BaseCount+96..+98: the Option list's Exit Game item -- its label
     // with the dot, its help line, and the question the help line becomes
     // once it is chosen (graphics_menu_patch.c STR_EXIT_*).
-    // Ids BaseCount+99..+152: the BUTTON MAPPING page (graphics_menu_patch.c
-    // STR_BTN_* and STR_BIND_*). +99 the CONTROLS page's Button Mapping row
+    // Ids BaseCount+99..+152: the BUTTON SETUP page (graphics_menu_patch.c
+    // STR_BTN_* and STR_BIND_*). +99 the CONTROLS page's Button Setup row
     // label, +100 that row's description; +101 the page's heading (header
     // face, its B, M and g the port's), +102 the Device row's label,
     // +103..+120 the eighteen input rows' labels, +121 Restore Defaults,
@@ -1355,11 +1355,11 @@ void stage_menu_strings(uint8_t* rdram) {
     // Restore Defaults asking, the row while it listens, Restore Defaults
     // at rest, a refused key, a refused clear, a listen that timed out.
     static const char* const bindDescs[7][2] = {
-        { "Left and Right pick the device to set up.", "Mouse, keyboard and pad are set apart." },
-        { "Press A again to restore the shipped keys", "and buttons of this device, B keeps them." },
-        { "Press the key or button to use now.", "Wait a few seconds to leave it as it was." },
-        { "Puts back the shipped keys and buttons", "for the device shown. A asks first." },
-        { "That one has a job in the port already.", "Choose another key or button." },
+        { "Left and Right pick the device to set up.", "The mouse, keyboard and pad are separate." },
+        { "Press A again to put this device back", "the way it came, B to keep it as it is." },
+        { "Press the key or button to use for this.", "Wait a few seconds to leave it as it was." },
+        { "Puts back the keys and buttons the game", "came with, for this device. A asks first." },
+        { "That one already does something else.", "Choose another key or button." },
         { "Something must still press this button.", "Set another device before clearing this." },
         { "Nothing was pressed in time. The row", "stays as it was." },
     };
@@ -1368,24 +1368,24 @@ void stage_menu_strings(uint8_t* rdram) {
     // reads it (nothing in the decompilation tests L_TRIG outside the
     // crash screen); the dash needs the Dash Engine.
     static const char* const bindInputDescs[BindInputCount][2] = {
-        { "Takes the photo when zoomed in, throws an", "apple when not. A sets it, Z clears it." },
-        { "Throws a pester ball, to wake or move a", "Pokemon. A sets it, Z clears it." },
-        { "Zooms in to take a photo, held down or as", "a switch. A sets it, Z clears it." },
-        { "Pauses the ride, and starts the game from", "the title. A sets it, Z clears it." },
-        { "Does nothing here. The game never reads", "L. A sets it, Z clears it." },
-        { "Makes the cart dash while held, once you", "have the dash engine. A sets, Z clears." },
-        { "Turns around to face behind the cart.", "A sets it, Z clears it." },
-        { "Plays the flute, once you have it.", "A sets it, Z clears it." },
-        { "Turns the camera to face left.",         "A sets it, Z clears it." },
-        { "Turns the camera to face right.",        "A sets it, Z clears it." },
-        { "Walks the menus, and in a course aims", "up, like the stick. A sets, Z clears." },
-        { "Walks the menus, and in a course aims", "down, like the stick. A sets, Z clears." },
-        { "Walks the menus, and in a course aims", "left, like the stick. A sets, Z clears." },
-        { "Walks the menus, and in a course aims", "right, like the stick. A sets, Z clears." },
-        { "Aims the camera up in a course, and", "walks the menus. A sets it, Z clears it." },
-        { "Aims the camera down in a course, and", "walks the menus. A sets it, Z clears it." },
-        { "Aims the camera left in a course, and", "walks the menus. A sets it, Z clears it." },
-        { "Aims the camera right in a course, and", "walks the menus. A sets it, Z clears it." },
+        { "Zoomed in it takes the photo, zoomed out", "an apple. A changes it, Z clears it." },
+        { "Throws a pester ball to wake or move a", "Pokemon. A changes it, Z clears it." },
+        { "Zooms in for a photo, held down or as a", "switch. A changes it, Z clears it." },
+        { "Pauses the ride, and starts the game on", "the title. A changes it, Z clears it." },
+        { "Does nothing here, the game never reads", "L. A changes it, Z clears it." },
+        { "Makes the cart dash while held, once you", "own the dash engine. A changes, Z clears." },
+        { "Turns around to face behind the cart.", "A changes it, Z clears it." },
+        { "Plays the flute, once you have it.", "A changes it, Z clears it." },
+        { "Turns the camera to face left.", "A changes it, Z clears it." },
+        { "Turns the camera to face right.", "A changes it, Z clears it." },
+        { "Aims up in a course like the stick,", "and walks the menus. A changes, Z clears." },
+        { "Aims down in a course like the stick,", "and walks the menus. A changes, Z clears." },
+        { "Aims left in a course like the stick,", "and walks the menus. A changes, Z clears." },
+        { "Aims right in a course like the stick,", "and walks the menus. A changes, Z clears." },
+        { "Aims the camera up in a course, and", "walks the menus. A changes, Z clears." },
+        { "Aims the camera down in a course, and", "walks the menus. A changes, Z clears." },
+        { "Aims the camera left in a course, and", "walks the menus. A changes, Z clears." },
+        { "Aims the camera right in a course, and", "walks the menus. A changes, Z clears." },
     };
     constexpr uint32_t StringCount = BaseCount + 189;
 
@@ -1599,7 +1599,7 @@ void stage_menu_strings(uint8_t* rdram) {
             h = strip.height;
         }
         else if (id >= kBindDynBase) {
-            // A live row value of the Button Mapping page: a fixed home of
+            // A live row value of the Button Setup page: a fixed home of
             // its own, blank until the page opens (bind_compose writes it
             // and the directory entry's width then).
             const uint32_t addr = DynPixelsAddr + (id - kBindDynBase) * DynStripBytes;
@@ -1659,9 +1659,10 @@ void stage_menu_strings(uint8_t* rdram) {
             h = strip.height;
         }
         else if (id == BaseCount + 101) {
-            // The page's heading; its B, M and g are the port's
+            // The page's heading, in the game's own words for such a
+            // screen ("Z Button Setup"); its B and e are the port's
             // (menu_harvest.cpp kHeaderSynth).
-            strip = compose_hdr("Button Mapping");
+            strip = compose_hdr("Button Setup");
             w = strip.width;
             h = strip.height;
         }
@@ -1675,7 +1676,7 @@ void stage_menu_strings(uint8_t* rdram) {
             h = strip.height;
         }
         else if (id == BaseCount + 99) {
-            strip = compose("Button Mapping");
+            strip = compose("Button Setup");
             w = strip.width;
             h = strip.height;
         }
@@ -1895,7 +1896,7 @@ static void bind_compose(int device) {
     g_bind_shown_gen = input_bindings_generation();
 }
 
-// The BUTTON MAPPING page's bank, once a tick. A request is answered when it is
+// The BUTTON SETUP page's bank, once a tick. A request is answered when it is
 // done: a capture keeps listening across ticks until the input layer says
 // how it ended (input.h); a clear and the reset are immediate. The row
 // values follow the device shown and the table in force, recomposed ahead
@@ -2085,7 +2086,7 @@ void poll_menu_mailbox(uint8_t* rdram) {
         settings_mark_dirty();
     }
 
-    // The BUTTON MAPPING page's bank: its requests and its live row values.
+    // The BUTTON SETUP page's bank: its requests and its live row values.
     poll_bind_bank();
 
     const uint32_t seq = read_u32_mail(MailboxAddr + 0x4);

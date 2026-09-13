@@ -458,7 +458,7 @@ static void update_gfx(void* /*gfx_data*/) {
                 ultramodern::quit();
                 break;
             case SDL_KEYDOWN:
-                // The BUTTON MAPPING page is listening for a key: the input layer
+                // The BUTTON SETUP page is listening for a key: the input layer
                 // took this one as the binding (or refused it), and it is
                 // neither a hotkey nor Esc's Start here.
                 if (snap::input_capture_active()) {

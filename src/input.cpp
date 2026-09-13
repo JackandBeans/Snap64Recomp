@@ -588,7 +588,7 @@ static Bindings migrate_pad_bindings(const Bindings& in) {
 }
 
 // Puts a table in force. The migration is for a file written before the pad
-// joined the table (above); the BUTTON MAPPING page's tables are complete and skip
+// joined the table (above); the BUTTON SETUP page's tables are complete and skip
 // it, so clearing the last pad name from the page does not bring every pad
 // default back.
 static void set_bindings(const Bindings& given, bool migrate) {
@@ -661,7 +661,7 @@ uint32_t input_bindings_generation() {
 }
 
 // ---------------------------------------------------------------------------
-// The BUTTON MAPPING page (patches/src/graphics_menu_patch.c, snap_bind_page): the
+// The BUTTON SETUP page (patches/src/graphics_menu_patch.c, snap_bind_page): the
 // names its rows show, the edits it makes, and the capture of the next
 // press. The page runs on the game's thread and reaches this through the
 // mailbox (src/menu_assets.cpp, poll_bind_bank); the events that carry a
@@ -1025,7 +1025,7 @@ void input_bind_set(const char* input, int device, const std::string& source) {
     }
     kept.push_back(source);
     list = kept;
-    printf("[SNAP-Input] keys.%s: \"%s\" bound on the Button Mapping page (the %s)\n", input, source.c_str(), device_name(device));
+    printf("[SNAP-Input] keys.%s: \"%s\" bound on the Button Setup page (the %s)\n", input, source.c_str(), device_name(device));
     bind_publish(table);
 }
 
@@ -1039,7 +1039,7 @@ bool input_bind_clear(const char* input, int device) {
         }
     }
     if (kept.empty()) {
-        printf("[SNAP-Input] keys.%s: not cleared on the Button Mapping page; nothing else would press it\n", input);
+        printf("[SNAP-Input] keys.%s: not cleared on the Button Setup page; nothing else would press it\n", input);
         fflush(stdout);
         return false;
     }
@@ -1047,7 +1047,7 @@ bool input_bind_clear(const char* input, int device) {
         return true;   // nothing of that device to clear
     }
     list = kept;
-    printf("[SNAP-Input] keys.%s: the %s cleared on the Button Mapping page\n", input, device_name(device));
+    printf("[SNAP-Input] keys.%s: the %s cleared on the Button Setup page\n", input, device_name(device));
     bind_publish(table);
     return true;
 }
@@ -1069,7 +1069,7 @@ void input_bind_reset(int device) {
         }
         list = kept;
     }
-    printf("[SNAP-Input] the shipped %s bindings put back from the Button Mapping page\n", device_name(device));
+    printf("[SNAP-Input] the shipped %s bindings put back from the Button Setup page\n", device_name(device));
     bind_publish(table);
 }
 
@@ -1110,7 +1110,7 @@ void input_capture_begin(int device) {
         }
     }
     g_capture_active.store(true, std::memory_order_relaxed);
-    printf("[SNAP-Input] Button Mapping page: listening for a press on the %s\n", device_name(device));
+    printf("[SNAP-Input] Button Setup page: listening for a press on the %s\n", device_name(device));
     fflush(stdout);
 }
 
@@ -1130,7 +1130,7 @@ CaptureState input_capture_poll(std::string* name) {
             fflush(stdout);
         } else if (t - g_capture.startedUs >= CaptureTimeoutUs) {
             g_capture.state = CaptureState::TimedOut;
-            printf("[SNAP-Input] Button Mapping page: nothing pressed in six seconds; the row stays as it was\n");
+            printf("[SNAP-Input] Button Setup page: nothing pressed in six seconds; the row stays as it was\n");
             fflush(stdout);
         }
     }
@@ -1167,7 +1167,7 @@ void input_release_mouse() {
 }
 
 void input_handle_sdl_event(const SDL_Event& event) {
-    // The Button Mapping page is listening: a key, button or wheel tick is the
+    // The Button Setup page is listening: a key, button or wheel tick is the
     // capture's, and reaches neither the latches below nor the game.
     if (g_capture_active.load(std::memory_order_relaxed) && capture_event(event)) {
         return;
@@ -2293,7 +2293,7 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
     ax *= StickFullDeflection;
     ay *= StickFullDeflection;
 
-    // The Button Mapping page's capture: the press it is waiting for must not
+    // The Button Setup page's capture: the press it is waiting for must not
     // reach the game as the button it used to be, and once it has landed
     // the key may still be down as the button it now is. Nothing goes
     // through until the capture ends and everything is released.

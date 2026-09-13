@@ -68,8 +68,8 @@ static s32 snap_nav_dir_v = 0;
 static s32 snap_nav_dir_h = 0;
 static s32 snap_nav_repeat_v = 0;
 static s32 snap_nav_repeat_h = 0;
-/* The CONTROLS page reopens on this row when the BUTTON MAPPING page closes (its
- * Button Mapping row opened it), and the two hand the hidden Option list to each
+/* The CONTROLS page reopens on this row when the BUTTON SETUP page closes (its
+ * Button Setup row opened it), and the two hand the hidden Option list to each
  * other -- the count of PAGE_HIDDEN entries still hidden -- so the list
  * never shows for a frame between them. */
 static s32 snap_ctl_reopen_row;
@@ -148,7 +148,7 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *               sticks swapped
  *   +0x7C  u32  MBOX_POOL_FAIL, the patch's own: strips the pool refused
  *   +0x80  u32  MBOX_POOL_PEAK, the patch's own: the pool's high water
- *   +0xA0  u32  BIND_REQ, the BUTTON MAPPING page's request to the host: the
+ *   +0xA0  u32  BIND_REQ, the BUTTON SETUP page's request to the host: the
  *               operation in bits 16..23 (1 listen for a press, 2 clear,
  *               3 the shipped table back), the device in 8..15 (0
  *               keyboard, 1 mouse, 2 pad), the input row in 0..7 (1..18)
@@ -162,7 +162,7 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *   +0xAD  u8   BIND_OPEN, the page's: 1 while it is open
  *   +0xAE  u8   BIND_PAD, host-owned: 1 while a pad is attached
  *   +0x100      SCRATCH_ARRAYS, the page's pointer and snapshot arrays
- *               (the BUTTON MAPPING page's own twenty-row arrays sit at +0x300
+ *               (the BUTTON SETUP page's own twenty-row arrays sit at +0x300
  *               and +0x350 inside it)
  *
  * The host never touches anything the map calls the patch's own. */
@@ -266,10 +266,10 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_EXIT_ITEM     126
 #define STR_EXIT_HELP     127
 #define STR_EXIT_CONFIRM  128
-/* The BUTTON MAPPING page (menu_assets.cpp ids BaseCount+99..+188). */
-#define STR_BTN_LABEL        129  /* "Button Mapping", the CONTROLS page's third row */
+/* The BUTTON SETUP page (menu_assets.cpp ids BaseCount+99..+188). */
+#define STR_BTN_LABEL        129  /* "Button Setup", the CONTROLS page's third row */
 #define STR_BTN_DESC         130  /* its help line */
-#define STR_BIND_HDR         131  /* "Button Mapping" in the header face */
+#define STR_BIND_HDR         131  /* "Button Setup" in the header face */
 #define STR_BIND_DEVICE      132  /* the Device row's label */
 #define STR_BIND_INPUT       133  /* ..150: the eighteen input rows' labels */
 #define STR_BIND_RESET       151  /* Restore Defaults */
@@ -2060,8 +2060,8 @@ static void snap_sound_page(void) {
  * mouse's, in the mailbox's CONTROLS bank, applied live by the host. */
 /* Ten rows, six on screen at a time: the page scrolls for the last four
  * the way the Graphics page scrolls, with the same edge arrows. In order:
- * the game's own Z Button and Control Stick; Button Mapping, the row that
- * opens the BUTTON MAPPING page, put where a player who came to change
+ * the game's own Z Button and Control Stick; Button Setup, the row that
+ * opens the BUTTON SETUP page, put where a player who came to change
  * the buttons sees it without scrolling, with no value (the Option list's
  * own Screen row has none) and a help line that says what A does; Pad
  * Sticks, which stick aims and which works the C buttons; then the mouse
@@ -2077,7 +2077,7 @@ static void snap_sound_page(void) {
 
 /* A row's setting: 0 and 1 the game's own, 2..7 the six mouse and gyro
  * settings (CONTROLS bank fields 0..5), 8 Pad Sticks (field 6); -1 for
- * the Button Mapping row, which has none. */
+ * the Button Setup row, which has none. */
 static s32 snap_ctl_setting(s32 row) {
     if (row == CTL_ROW_BUTTONS) {
         return -1;
@@ -2213,7 +2213,7 @@ static void snap_ctl_set(s32 row, s32 v) {
 /* Hides the Option list's rows, the port's own items on it and the stock
  * title, remembering in PAGE_HIDDEN what was visible for a page's teardown
  * to restore, and hides the two item help lines (the selection loop shows
- * the right one again). The CONTROLS and BUTTON MAPPING pages take their list
+ * the right one again). The CONTROLS and BUTTON SETUP pages take their list
  * from here; the GRAPHICS and SOUND pages do the same inline. Returns how
  * many sprites were hidden. */
 static s32 snap_hide_option_list(void) {
@@ -2274,8 +2274,8 @@ static s32 snap_hide_option_list(void) {
     return hiddenCount;
 }
 
-/* Returns 1 when A was pressed on the Button Mapping row: the dispatcher opens
- * the BUTTON MAPPING page and comes back here. 0 when the page was left. */
+/* Returns 1 when A was pressed on the Button Setup row: the dispatcher opens
+ * the BUTTON SETUP page and comes back here. 0 when the page was left. */
 static s32 snap_controls_page(void) {
     UnkStruct800BEDF8* input;
     s32 navUp;
@@ -2307,7 +2307,7 @@ static s32 snap_controls_page(void) {
     }
 
     if (snap_list_hidden_carry > 0) {
-        /* Back from the BUTTON MAPPING page: the list is still hidden. */
+        /* Back from the BUTTON SETUP page: the list is still hidden. */
         hiddenCount = snap_list_hidden_carry;
         snap_list_hidden_carry = 0;
     } else {
@@ -2334,7 +2334,7 @@ static s32 snap_controls_page(void) {
     PAGE_ARROW_UP = (u32) snap_make_strip_fmt(STR_SCROLL_UP, ARROW_X, ARROW_UP_Y, G_IM_FMT_RGBA);
     PAGE_ARROW_DN = (u32) snap_make_strip_fmt(STR_SCROLL_DN, ARROW_X, ARROW_DN_Y, G_IM_FMT_RGBA);
 
-    /* On the Button Mapping row when the BUTTON MAPPING page has just
+    /* On the Button Setup row when the BUTTON SETUP page has just
      * closed; the help line is that row's, not the first row's the strip
      * was built for (a capture showed the Z Button's there, 2026-09-13). */
     sel = snap_ctl_reopen_row;
@@ -2378,7 +2378,7 @@ static s32 snap_controls_page(void) {
         if (gContInputPressedButtons & A_BUTTON) {
             auPlaySoundWithParams(0x42, 0x7FFF, 0x40, 1.0f, 0);
             if (sel == CTL_ROW_BUTTONS) {
-                /* Opens the BUTTON MAPPING page; the edits made here stand, as
+                /* Opens the BUTTON SETUP page; the edits made here stand, as
                  * A always keeps them. */
                 openButtons = 1;
                 snap_ctl_reopen_row = sel;
@@ -2581,7 +2581,7 @@ static s32 snap_controls_page(void) {
         omDeleteGObj(descStrip);
     }
     if (openButtons) {
-        /* Handed to the BUTTON MAPPING page hidden as they are, and back again
+        /* Handed to the BUTTON SETUP page hidden as they are, and back again
          * when it returns, so the list never shows between the two. */
         snap_list_hidden_carry = hiddenCount;
     } else {
@@ -2595,7 +2595,7 @@ static s32 snap_controls_page(void) {
 }
 
 /* =========================================================================
- * The BUTTON MAPPING page: what presses each of the game's inputs.
+ * The BUTTON SETUP page: what presses each of the game's inputs.
  *
  * Twenty rows in the CONTROLS page's dress, six on screen: a Device row
  * (Keyboard, Mouse, Controller; Left and Right pick it), Restore Defaults,
@@ -2636,6 +2636,7 @@ static s32 snap_controls_page(void) {
  * scratch block nothing else uses. */
 #define BIND_LABEL(i) (*(volatile u32*) (SCRATCH_ARRAYS + 0x200 + (i) * 4))   /* GObj*, 20 */
 #define BIND_VALUE(i) (*(volatile u32*) (SCRATCH_ARRAYS + 0x250 + (i) * 4))   /* GObj*, 20 */
+#define BIND_HINT(i)  (*(volatile u32*) (SCRATCH_ARRAYS + 0x2A0 + (i) * 4))   /* SObj*, 4: the header's hints */
 /* The host's answers (BIND_ACK bits 24..31). */
 #define BIND_DONE      1
 #define BIND_CANCELLED 2
@@ -2766,6 +2767,7 @@ static void snap_bind_page(void) {
     s32 result;
     s32 flash;
     s32 armed;
+    s32 hintCount;
     u32 gen;
     u8 pulseState, pulseCounter, bobTick;
     u8 nudgeUp, nudgeDn;
@@ -2782,6 +2784,24 @@ static void snap_bind_page(void) {
         hiddenCount = snap_hide_option_list();
     }
     hdrStrip = snap_make_strip(STR_BIND_HDR, 45, 41);
+
+    /* The header's A OK and B Cancel hints (the y=41 sprites) come down
+     * on this page: A changes a row here and B goes back with every change
+     * kept, and "Cancel" would promise an undo there is none of. Put back
+     * at the exit, ahead of the CONTROLS page, whose B does cancel. */
+    hintCount = 0;
+    for (i = 0; i < 12; i++) {
+        GObj* chain = snap_chain(i);
+        SObj* sobj = (chain != NULL) ? chain->data.sobj : NULL;
+        while (sobj != NULL) {
+            if ((sobj->sprite.y == 41) && !(sobj->sprite.attr & SP_HIDDEN) && (hintCount < 4)) {
+                sobj->sprite.attr |= SP_HIDDEN;
+                BIND_HINT(hintCount) = (u32) sobj;
+                hintCount++;
+            }
+            sobj = sobj->next;
+        }
+    }
 
     /* The device shown first: the pad when one is attached, else the
      * keyboard. The C and stick rows also name the sticks that always work
@@ -3089,6 +3109,10 @@ static void snap_bind_page(void) {
     if (descStrip != NULL) {
         omDeleteGObj(descStrip);
     }
+    for (i = 0; i < hintCount; i++) {
+        SObj* sobj = (SObj*) BIND_HINT(i);
+        sobj->sprite.attr &= ~SP_HIDDEN;
+    }
     /* Back to the CONTROLS page, which takes the list as it is. */
     snap_list_hidden_carry = hiddenCount;
     ohWait(1);
@@ -3303,7 +3327,7 @@ void func_800E7F98_A0F528(void) {
                     snap_sound_page();
                     break;
                 case OPT_CONTROLS:
-                    /* The Button Mapping row opens the BUTTON MAPPING page, and the
+                    /* The Button Setup row opens the BUTTON SETUP page, and the
                      * CONTROLS page comes back on that row when it closes. */
                     while (snap_controls_page()) {
                         snap_bind_page();

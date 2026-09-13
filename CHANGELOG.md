@@ -3,7 +3,8 @@
 ## 1.0.6 -- unreleased
 
 * A page in the game for the bindings: the Controls page's new Button
-  Mapping row, third on the page, opens it. A row for each of the game's
+  Setup row, third on the page, opens it (named as the game names such
+  screens, "Z Button Setup"). A row for each of the game's
   eighteen inputs shows what presses it on the device picked at the top
   (keyboard, mouse or controller; under the controller the C and stick
   rows name the two sticks that always work them); A on a row listens for
@@ -23,7 +24,8 @@
   other recompilations have that this port did not. The page names any
   key in the menu's own face, so that face gained the capitals I, K, Q,
   U, X and Y, a q and the punctuation keys are named with, drawn in its
-  style, and the header face a B, an M and a g for the page's heading.
+  style, and the header face a B and an e for the page's heading (an M
+  and a g were drawn on the way and stay for a heading that needs them).
 * The Controls page has a Pad Sticks row: Swapped makes the right stick
   aim and the left work the C buttons, for a player who aims with the
   right thumb (`pad_sticks_swapped` in the settings file). The sticks were

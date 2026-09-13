@@ -494,12 +494,14 @@ constexpr SynthGlyph kHeaderSynth[] = {
      * stem alone, the full cap height. */
     { 'C', { "........", ".+####+.", ".######+", "##+..+##", "##......", "#+......", "#+......", "##......", "##+..+##", ".######+", ".+####+.", "........" } },
     { 'l', { "....", ".##.", ".#+.", ".#+.", ".#+.", ".#+.", ".#+.", ".#+.", ".#+.", ".#+.", ".##.", "...." } },
-    /* For the BUTTON MAPPING page's heading: B is h's stem with two bowls
-     * at the S's stroke weight; M two of h's stems joined by the V of the
-     * face's diagonals; g the d's bowl with p's stem turned into a tail. */
+    /* For the BUTTON SETUP page's heading: B is h's stem with two bowls at
+     * the S's stroke weight; e the c with a bar across its middle; M and g
+     * (two of h's stems joined by a V, and the d's bowl with p's stem
+     * turned into a tail) stay for a heading that may need them. */
     { 'B', { "........", ".#####+.", ".##+++##", ".#+...##", ".#+..+#+", ".######.", ".#+..+##", ".#+...##", ".#+...##", ".##+++##", ".#####+.", "........" } },
     { 'M', { ".........", ".##...##.", ".##+.+##.", ".###.###.", ".#%#+#%#.", ".#+###+#.", ".#+.#.+#.", ".#+...+#.", ".#+...+#.", ".#+...+#.", ".##...##.", "........." } },
     { 'g', { ".......", ".......", ".......", ".......", ".+##+##", "+#+.+##", "##...##", "##...##", "##+.+##", ".#####+", "....+##", ".+####+" } },
+    { 'e', { ".......", ".......", ".......", ".......", ".+####.", "+#+.+#+", "##...##", "#######", "##.....", ".##++#.", ".+####.", "......." } },
 };
 
 // --- the four faces --------------------------------------------------------

@@ -119,11 +119,11 @@ void input_set_bindings(const Bindings& bindings);
 // back to the settings file so every name is there to edit.
 Bindings input_bindings();
 
-// Counts the tables put in force (load_settings, the BUTTON MAPPING page's edits),
+// Counts the tables put in force (load_settings, the BUTTON SETUP page's edits),
 // so a display built from one knows when it is stale.
 uint32_t input_bindings_generation();
 
-// --- The BUTTON MAPPING page (patches/src/graphics_menu_patch.c, snap_bind_page;
+// --- The BUTTON SETUP page (patches/src/graphics_menu_patch.c, snap_bind_page;
 // the host's side is src/menu_assets.cpp, poll_bind_bank). ----------------
 
 // The page's three devices, and the class of a source name.

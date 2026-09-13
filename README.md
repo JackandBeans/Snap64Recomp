@@ -251,7 +251,7 @@ stops when your hand does; the stick's own turning speed does not apply. The Con
 game's Options screen holds the dials: Mouse Aim, Mouse Speed, Zoom Speed
 and Camera Tilt (they are `mouse_aim`, `mouse_sensitivity`,
 `mouse_zoom_speed` and `mouse_invert_y` in the settings file), and its
-Button Mapping row opens the page where each key, mouse button and pad
+Button Setup row opens the page where each key, mouse button and pad
 button is set, described below.
 
 A pad with a gyro can aim the same way: turn the pad and the view turns
@@ -284,8 +284,9 @@ switched the sensor off again a minute later (Steam's client, when it is
 running) the port switched it back.
 
 Every keyboard, mouse and controller binding can be changed in the game.
-The Button Mapping row of the Controls page opens a page with a row for
-each of the game's inputs -- A, B, Z, Start, L, R, the four C buttons, the
+The Button Setup row of the Controls page (named as the game names such
+screens: "Z Button Setup") opens a page with a row for each of the game's
+inputs -- A, B, Z, Start, L, R, the four C buttons, the
 four D-pad directions and the four stick directions -- showing what
 presses it on the device picked at the top (Keyboard, Mouse or Controller;
 Left and Right switch), and the help line says what that input does in
@@ -330,7 +331,7 @@ so the right one aims and the left works the C buttons (`pad_sticks_swapped`
 in the settings file). The Back button (Select, View or Share on most pads) is not
 an N64 button: it saves the photo on screen, as P does on the keyboard (see
 "Photos"). The eight buttons -- A, B, Z, Start, the D-pad's four, L and R --
-are each a row of the Button Mapping page and of the settings file's `keys`
+are each a row of the Button Setup page and of the settings file's `keys`
 table and can be moved; the two sticks can only be swapped, and the Back
 button keeps its job.
 
