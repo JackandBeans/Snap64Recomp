@@ -259,7 +259,11 @@ follows your hands. **Gyro Aim** on the Controls page turns it on (On:
 whenever a course runs; Zoomed: only while zoomed in, the way a
 photographer raises the camera to aim), **Gyro Speed** scales it, and
 Camera Tilt flips the vertical for the gyro as it does for the mouse. It
-is off as shipped. The pads whose gyro reaches the port are the ones SDL
+is off as shipped. Looking around by mouse or gyro also counts as the
+Control Stick for the Beach tutorial's one check of it, so the game no
+longer asks for the stick from a player who is already looking around;
+with both off that check is the game's own. The pads whose gyro reaches
+the port are the ones SDL
 reads it from: DualSense, DualShock 4, Switch Pro and Joy-Cons, over USB
 or Bluetooth, and the Steam Deck's own controls when Steam's controller
 layer is not in between (see "Linux and Steam Deck"); an Xbox pad has no

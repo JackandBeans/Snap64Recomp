@@ -368,6 +368,13 @@ void write_f32(uint8_t* rdram, uint32_t addr, float f) {
 int32_t read_s32(uint8_t* rdram, uint32_t addr) {
     return static_cast<int32_t>(*word_at(rdram, addr));
 }
+// The Beach tutorial's watch for the Control Stick (patches/src/
+// tutorial_patch.c) reads this byte of the port's mailbox: one on a frame
+// the view was turned by mouse or gyro, zero otherwise.
+constexpr uint32_t ADDR_MailboxViewTurned       = 0x80C0003B;  // u8, written here every frame
+void write_u8(uint8_t* rdram, uint32_t addr, uint8_t v) {
+    rdram[(addr - 0x80000000u) ^ 3u] = v;
+}
 uint8_t read_u8(uint8_t* rdram, uint32_t addr) {
     return rdram[(addr - 0x80000000u) ^ 3u];
 }
@@ -449,6 +456,11 @@ void apply_mouse_look(uint8_t* rdram) {
         g_dbg_last_pitch = gpitch;
     }
 #define SNAP_GYRO_DROP(why) do { if (g_gyro_debug) g_dbg_stop = (why); return; } while (0)
+    if (rdram != nullptr) {
+        // Cleared first: a frame that turns nothing, or is dropped below,
+        // must not leave the previous frame's one behind.
+        write_u8(rdram, ADDR_MailboxViewTurned, 0);
+    }
     if (dx == 0.0f && dy == 0.0f && gyaw == 0.0f && gpitch == 0.0f) SNAP_GYRO_DROP("no angle arrived");
     if (rdram == nullptr) SNAP_GYRO_DROP("no rdram");
     if (!g_app_level_resident.load(std::memory_order_relaxed)) SNAP_GYRO_DROP("not in a course");
@@ -482,6 +494,16 @@ void apply_mouse_look(uint8_t* rdram) {
     if (pitch < lo) pitch = lo;
     if (pitch > hi) pitch = hi;
     write_f32(rdram, ADDR_ViewPitch, pitch);
+
+    // The Beach tutorial asks for the Control Stick after ten seconds
+    // without one, and a player looking around by mouse or gyro never
+    // touches it. Told here, for the tutorial's own check to take as the
+    // stick (patches/src/tutorial_patch.c). Two thousandths of a radian
+    // in a frame is a slow, deliberate look; the gyro's rest is far below.
+    const float turned = std::fabs(dx * k + gyaw * gs) + std::fabs(dpitch);
+    if (turned > 0.002f) {
+        write_u8(rdram, ADDR_MailboxViewTurned, 1);
+    }
     if (g_gyro_debug) g_dbg_stop = "applied to the view";
 }
 #undef SNAP_GYRO_DROP

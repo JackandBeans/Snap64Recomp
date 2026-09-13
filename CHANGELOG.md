@@ -42,6 +42,16 @@
   verified by presented-frame capture of the cut holds through the logos
   and the intro on Windows (Vulkan, anti-aliasing 4x at 90 Hz), each held
   frame equal to the one before it.
+* With Mouse Aim or Gyro Aim on, the Beach tutorial asked for the Control
+  Stick after ten seconds of looking around (the port's author, on a
+  Steam Deck with the gyro). The mouse and the gyro turn the view directly,
+  never through the stick, so the game's watch for the stick
+  (player.c, the check the tutorial runs for six hundred frames) saw
+  nothing. The port now reports a turn it applied, frame by frame, in a
+  byte of its mailbox, and the tutorial's check takes that as the stick
+  (patches/src/tutorial_patch.c). With both off the byte stays zero and
+  the check is the ROM's; the counts, the pause and the message are the
+  ROM's in every case.
 ## 1.0.4 -- 2026-09-12
 
 * After a switch between a window and fullscreen on the Gallery or the
