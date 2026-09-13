@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.5 -- unreleased
+## 1.0.5 -- 2026-09-13
 
 * `SNAP_DATA_DIR=<absolute path>` in the environment moves the data
   directory on Windows as it already did on Linux: the ROM is looked for

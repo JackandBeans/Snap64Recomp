@@ -58,10 +58,10 @@ You need a 64-bit Windows 10 or 11 PC whose graphics driver provides
 Direct3D 12, and your own dump of the US cartridge; nothing has to be
 installed. Then:
 
-1. Download `Snap64Recomp-1.0.4-win64.zip` from the
+1. Download `Snap64Recomp-1.0.5-win64.zip` from the
    [Releases](https://github.com/JackandBeans/Snap64Recomp/releases/latest)
    page and unpack it anywhere; it holds one folder,
-   `Snap64Recomp-1.0.4-win64`, with `Snap64Recomp.exe` inside.
+   `Snap64Recomp-1.0.5-win64`, with `Snap64Recomp.exe` inside.
 2. Put your own dump of the US cartridge (the ROM: the cartridge's contents
    read out into one file) next to `Snap64Recomp.exe`, named
    `pokemonsnap.z64`. You do not have to check the file yourself: a missing
@@ -148,7 +148,7 @@ Beach in Widescreen and the Controls page's gyro rows), are in
 Start `Snap64Recomp.exe`; a shortcut works from anywhere, because the port
 reads and writes the folder the executable is in, whatever the working
 directory (`src/paths.cpp`). It opens a 1280x960 window titled
-`Snap64 Recomp 1.0.4`; `SNAP_WINDOW=WxH` in the environment opens it at
+`Snap64 Recomp 1.0.5`; `SNAP_WINDOW=WxH` in the environment opens it at
 an exact size instead (at least 320x240). The window's maximize button is the
 fullscreen switch; the in-game Graphics page and F11 do the same, and F11
 is the way out of fullscreen from anywhere. **A tap of Esc is Start** (the
@@ -847,9 +847,10 @@ fine.
 In the order it will be worked on; nothing here is a promise until it runs.
 
 1. **Reports from machines other than mine.** The port was built and played
-   on one PC and, for 1.0.1, a Steam Deck; what other GPUs, drivers and
-   Windows 10 do with it is what 1.0.4 will be made of, as 1.0.1, 1.0.2 and
-   1.0.3 were made of the first reports. The issue form is the way to send them.
+   on one PC and, from 1.0.1, a Steam Deck; what other GPUs, drivers and
+   Windows 10 do with it is what the next release will be made of, as 1.0.1
+   to 1.0.5 were made of the first reports. The issue form is the way to
+   send them.
 2. **A page in the game for rebinding.** Since 1.0.1 every key, mouse button
    and pad button is a row in the settings file's table and an N64-shaped
    pad is recognised; what is left is changing them without editing the
@@ -889,7 +890,7 @@ The same list, with a place to reply, is pinned under
 * No CI and no installer. The release archive is the ZIP that `cpack`
   writes (`BUILDING.md`, step 13), after the headless suite in
   `tools/release_check.py` has passed on it ("What has been verified").
-* Version `1.0.4`, typed once in `CMakeLists.txt` and shown in the title
+* Version `1.0.5`, typed once in `CMakeLists.txt` and shown in the title
   bar, the log banner, the credits line, the executable's file properties and
   the ZIP's name. `CHANGELOG.md` says what each release changed.
 * Licensed under the GPLv3 (`LICENSE`); `NOTICE.md` lists every third-party
@@ -916,12 +917,12 @@ The same list, with a place to reply, is pinned under
   exports the photos it shows, the Options screen's Graphics and Sound rows
   stage from the harvested font with no character missing, the settings file
   is valid, and the archive carries everything it must; `--only station` puts the Snap Station print
-  through both relaunches and checks the sheets. On the 1.0.4 executable
-  (SHA-256 beginning `51b22641`), run without diagnostics in the
+  through both relaunches and checks the sheets. On the 1.0.5 executable
+  (SHA-256 beginning `0070b1b4`), run without diagnostics in the
   environment, the suite passed 22 of 22 checks in 781 seconds, and the
-  station's 5 of 5 in 487; the 1.0.3, 1.0.2 and 1.0.1 executables had
-  passed the same 22 and 5, in 781 and 491 each, and 1.0.0's in 781 and
-  489 on a cold shader cache. The
+  station's 5 of 5 in 489; the 1.0.4 executable had passed the same 22
+  and 5 in 781 and 487, 1.0.3, 1.0.2 and 1.0.1 in 781 and 491 each, and
+  1.0.0 in 781 and 489 on a cold shader cache. The
   suite opens the game window
   for each run and takes about
   thirteen minutes, plus eight for the station. There is no CI run, and no
@@ -943,7 +944,7 @@ WSL, N64Recomp for the game and the patches, CMake and MSVC on Windows, and a
 list of things git does not carry
 ([What a clean checkout is missing](BUILDING.md#what-a-clean-checkout-is-missing)).
 `cpack -C Release` in the build directory then writes
-`Snap64Recomp-1.0.4-win64.zip` ([step 13](BUILDING.md#13-package)).
+`Snap64Recomp-1.0.5-win64.zip` ([step 13](BUILDING.md#13-package)).
 
 ## The game, and its history
 
@@ -1189,8 +1190,8 @@ None of this would exist without:
   shown in the game's opening and at the head of its credits, gave the
   port's author a name.
 * Everyone who plays it and reports what they see: the first reports from
-  other machines are what 1.0.1, 1.0.2 and 1.0.3 were made of, and the next
-  ones are what 1.0.4 will be.
+  other machines are what 1.0.1 to 1.0.5 were made of, and the next ones
+  are what the release after will be.
 
 ## License
 
