@@ -392,6 +392,12 @@ public:
         // copy; new_config.ar_option carries the same bit.
         apply_aspect(wide_wanted());
 
+        // Read before the new setting lands below: 1.0.4 read it after,
+        // so the count never differed from itself and the rebuild never
+        // ran -- a change of anti-aliasing in the Graphics page was a
+        // no-op until the next launch (seen in a Steam Deck's log, the
+        // renderer at one sample with the setting at 8x, 2026-09-12).
+        const uint32_t prevSamples = app_->userConfig.msaaSampleCount();
         switch (new_config.msaa_option) {
             case ren::Antialiasing::MSAA8X: app_->userConfig.antialiasing = RT64::UserConfiguration::Antialiasing::MSAA8X; break;
             case ren::Antialiasing::MSAA4X: app_->userConfig.antialiasing = RT64::UserConfiguration::Antialiasing::MSAA4X; break;
@@ -437,12 +443,13 @@ public:
         // never consumed -- antialiasing has been a no-op switch since the
         // port began. Rebuilt only on an actual change: it is a full teardown
         // and costs a visible pause.
-        const uint32_t prevSamples = app_->userConfig.msaaSampleCount();
         app_->userConfig.validate();
         const bool msaaChanged = (app_->userConfig.msaaSampleCount() != prevSamples);
         app_->updateUserConfig(true);
         if (msaaChanged) {
             app_->updateMultisampling();
+            printf("[SNAP-CFG] anti-aliasing: %u sample(s), the render targets rebuilt\n", app_->userConfig.msaaSampleCount());
+            fflush(stdout);
         }
 
         // The console's own dither noise: a look choice, not a defect.

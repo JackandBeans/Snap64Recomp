@@ -33,6 +33,8 @@ extern std::atomic<bool> g_hold_in_course;
 
 static Settings s_settings;
 static std::mutex s_settings_mutex;
+// What the settings file said about fullscreen when it was read (load_settings).
+static bool s_boot_fullscreen = false;
 static const char* SETTINGS_FILE = "snapsettings.json";
 // The names recomp::write_file_with_backup derives from SETTINGS_FILE.
 static const char* SETTINGS_BACKUP_SUFFIX = ".bak";
@@ -226,11 +228,15 @@ void load_settings() {
     {
         std::lock_guard<std::mutex> lock(s_settings_mutex);
         s_settings = loaded;
-        // Fullscreen is a session choice, never a boot state: a window created
-        // fullscreen comes up with broken chrome -- no close, no minimize, no
-        // resize -- so every launch starts windowed and fullscreen is entered
-        // through the live path only (the GRAPHICS page, or the window's own
-        // maximize button).
+        // The window is never created fullscreen: one created that way comes
+        // up with broken chrome -- no close, no minimize, no resize -- so
+        // every launch starts windowed, and fullscreen is entered through
+        // the live path (the GRAPHICS page, F11, the window's own maximize
+        // button). A saved fullscreen is kept aside here and restored
+        // through that same path a moment after the window opens
+        // (main.cpp), as the Steam Deck's default already was: 1.0.4 forgot
+        // it on every launch (issue #13, dCo3lh0 on Linux).
+        s_boot_fullscreen = loaded.fullscreen;
         s_settings.fullscreen = false;
         // Render-to-RAM is a session-only diagnostic that the file never
         // decides: every boot starts with it on, because photo scoring reads
@@ -419,6 +425,7 @@ void apply_graphics_settings() {
            s_settings.fullscreen ? "fullscreen" : "windowed",
            s_settings.widescreen ? "widescreen" : "4:3",
            s_settings.msaa, s_settings.fps_mode);
+    menu_mailbox_sync();
 }
 
 void apply_game_settings(uint8_t* rdram) {
@@ -432,6 +439,10 @@ void apply_game_settings(uint8_t* rdram) {
 }
 
 // Flips one flag under the settings lock and returns its new value.
+bool settings_boot_fullscreen() {
+    return s_boot_fullscreen;
+}
+
 static bool toggle_locked(bool Settings::*flag) {
     std::lock_guard<std::mutex> lock(s_settings_mutex);
     s_settings.*flag = !(s_settings.*flag);
@@ -476,6 +487,7 @@ bool handle_settings_hotkey(int scancode) {
             // steps as the Controls page's Mouse Speed row.
             const int pct = step_mouse_speed((scancode == SDL_SCANCODE_RIGHTBRACKET) ? 1 : -1);
             settings_mark_dirty();
+            menu_mailbox_sync();
             printf("[SNAP-CFG] mouse speed: %d\n", pct);
             return true;
         }

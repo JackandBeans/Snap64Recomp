@@ -52,6 +52,23 @@
   (patches/src/tutorial_patch.c). With both off the byte stays zero and
   the check is the ROM's; the counts, the pause and the message are the
   ROM's in every case.
+* Fullscreen entered with the maximize button or F11 was dropped by the
+  next change of any setting on the Graphics page (issue #13, flamespeedy
+  on Windows and dCo3lh0 on Linux). The page reads its rows from the
+  port's mailbox and writes every one of them back on an edit, and the
+  mailbox's fullscreen byte was written only when the pages were seeded,
+  so a fullscreen entered anywhere else left it saying windowed and the
+  next edit made it so. Every setting change made outside the pages now
+  writes the current settings into the mailbox first. A saved fullscreen
+  is also restored a moment after the window opens, through the same
+  live path the Deck and the maximize button use, on every platform;
+  1.0.4 forgot it on every launch.
+* A change of anti-aliasing on the Graphics page or with F9 took effect
+  only at the next launch: the code that rebuilds the render targets
+  compared the new sample count with itself, so the rebuild never ran
+  (seen in a Steam Deck's log, the renderer at one sample with the setting
+  at 8x). The previous count is now read before the new setting lands,
+  and the log says when the targets were rebuilt.
 ## 1.0.4 -- 2026-09-12
 
 * After a switch between a window and fullscreen on the Gallery or the

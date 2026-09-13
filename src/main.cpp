@@ -290,7 +290,8 @@ static void update_gfx(void* /*gfx_data*/) {
     // fullscreen goes through the live path the maximize button uses,
     // once the window has been up for a moment. A Steam Deck boots into
     // fullscreen the same way: its panel is the whole screen, and the
-    // other recompilations' players filed a windowed boot as a bug.
+    // other recompilations' players filed a windowed boot as a bug. So
+    // does any machine whose settings file says fullscreen (issue #13).
     {
         static bool restoreChecked = false;
         static bool restorePending = false;
@@ -307,6 +308,9 @@ static void update_gfx(void* /*gfx_data*/) {
             } else if (snap::is_steam_deck()) {
                 restorePending = true;
                 restoreWhy = "the Steam Deck's default (F11 or the maximize button leaves it)";
+            } else if (snap::settings_boot_fullscreen()) {
+                restorePending = true;
+                restoreWhy = "the saved setting (F11 or the maximize button leaves it)";
             }
             restoreAt = now + std::chrono::milliseconds(1200);
         }

@@ -993,8 +993,15 @@ static int ctl_zoom_index(float share) {
     return best;
 }
 
-void seed_mailbox() {
-    const Settings &s = settings();
+// The setting bytes of the three banks, from the settings as they are now.
+// Seeded at every overlay load, and written again whenever a setting
+// changes outside the pages (menu_mailbox_sync): the pages read these
+// bytes as the truth and write every one of them back on any edit, so a
+// byte that lagged the setting undid it -- fullscreen entered from the
+// maximize button or F11 left byte 0xF at zero, and the next edit of any
+// row on the Graphics page dropped the window (issue #13, flamespeedy on
+// Windows and dCo3lh0 on Linux, 1.0.4).
+static void write_setting_bytes(const Settings &s) {
     write_u8(MailboxAddr + 0x8, uint8_t(s.resolution_scale));
     const uint8_t msaaIndex = (s.msaa >= 8) ? 3 : (s.msaa >= 4) ? 2 : (s.msaa >= 2) ? 1 : 0;
     write_u8(MailboxAddr + 0x9, msaaIndex);
@@ -1018,6 +1025,28 @@ void seed_mailbox() {
     // word (the byte map at SNAP_GFX_MAILBOX in the patch).
     write_u8(MailboxAddr + 0x16, s.photo_detail ? 1 : 0);
     write_u8(MailboxAddr + 0x17, s.jynx_vc ? 1 : 0);
+    // The SOUND bank's six value bytes, read live by the patched audio
+    // functions (volumes as straight percentages) and edited by the SOUND
+    // page.
+    write_u8(MailboxAddr + 0x28, uint8_t(std::clamp(s.master_volume, 0, 100)));
+    write_u8(MailboxAddr + 0x29, uint8_t(std::clamp(s.music_volume, 0, 100)));
+    write_u8(MailboxAddr + 0x2A, uint8_t(std::clamp(s.sfx_volume, 0, 100)));
+    write_u8(MailboxAddr + 0x2B, uint8_t(std::clamp(s.shutter_volume, 0, 100)));
+    write_u8(MailboxAddr + 0x2C, s.stereo ? 1 : 0);
+    write_u8(MailboxAddr + 0x2D, s.mute_unfocused ? 1 : 0);
+    // The CONTROLS bank's value bytes from +0x64: mouse aim, the mouse
+    // speed's index into the page's eleven steps, the zoom speed's index
+    // into its four, the tilt, gyro aim, the gyro speed's index.
+    write_u8(MailboxAddr + 0x64, s.mouse_aim ? 1 : 0);
+    write_u8(MailboxAddr + 0x65, uint8_t(ctl_speed_index(s.mouse_sensitivity)));
+    write_u8(MailboxAddr + 0x66, uint8_t(ctl_zoom_index(s.mouse_zoom_speed)));
+    write_u8(MailboxAddr + 0x67, s.mouse_invert_y ? 1 : 0);
+    write_u8(MailboxAddr + 0x68, uint8_t(std::clamp(s.gyro_aim, 0, 2)));
+    write_u8(MailboxAddr + 0x69, uint8_t(ctl_speed_index(s.gyro_sensitivity)));
+}
+
+void seed_mailbox() {
+    write_setting_bytes(settings());
     write_u8(MailboxAddr + 0x38, 0);   // no title request pending
     write_u8(MailboxAddr + 0x3A, 0);   // no Exit Game request pending
     write_u8(MailboxAddr + 0x3C, 0);   // the title menu has not been built yet
@@ -1026,26 +1055,10 @@ void seed_mailbox() {
     write_u32(MailboxAddr + 0x44, view_wide_q8());
     write_u32(MailboxAddr + 0x48, 0);
     write_u32(MailboxAddr + 0x4, 0);
-    // The SOUND bank: its own sequence word and six value bytes, read live
-    // by the patched audio functions (volumes as straight percentages) and
-    // edited by the SOUND page.
-    write_u8(MailboxAddr + 0x28, uint8_t(std::clamp(s.master_volume, 0, 100)));
-    write_u8(MailboxAddr + 0x29, uint8_t(std::clamp(s.music_volume, 0, 100)));
-    write_u8(MailboxAddr + 0x2A, uint8_t(std::clamp(s.sfx_volume, 0, 100)));
-    write_u8(MailboxAddr + 0x2B, uint8_t(std::clamp(s.shutter_volume, 0, 100)));
-    write_u8(MailboxAddr + 0x2C, s.stereo ? 1 : 0);
-    write_u8(MailboxAddr + 0x2D, s.mute_unfocused ? 1 : 0);
+    // The SOUND bank's sequence word (its value bytes are above), and the
+    // CONTROLS bank's at +0x60. The pages bump them on an edit; the host
+    // applies on each bump (poll_menu_mailbox).
     write_u32(MailboxAddr + 0x20, 0);
-    // The CONTROLS bank: its sequence word at +0x60 and four value bytes
-    // from +0x64: mouse aim, the mouse speed's index into the page's
-    // eleven steps, the zoom speed's index into its four, the tilt. The
-    // page edits them; the host applies on each bump (poll_menu_mailbox).
-    write_u8(MailboxAddr + 0x64, s.mouse_aim ? 1 : 0);
-    write_u8(MailboxAddr + 0x65, uint8_t(ctl_speed_index(s.mouse_sensitivity)));
-    write_u8(MailboxAddr + 0x66, uint8_t(ctl_zoom_index(s.mouse_zoom_speed)));
-    write_u8(MailboxAddr + 0x67, s.mouse_invert_y ? 1 : 0);
-    write_u8(MailboxAddr + 0x68, uint8_t(std::clamp(s.gyro_aim, 0, 2)));
-    write_u8(MailboxAddr + 0x69, uint8_t(ctl_speed_index(s.gyro_sensitivity)));
     write_u32(MailboxAddr + 0x60, 0);
     write_u32(MailboxAddr + 0x0, MailboxMagic);
     g_last_applied_seq = 0;
@@ -1054,6 +1067,19 @@ void seed_mailbox() {
 }
 
 } // namespace
+
+// A setting changed outside the pages (a hotkey, the maximize button, the
+// fullscreen restored after the window opened): the pages' bytes are made
+// to say so, or their next edit would write the old value back.
+void menu_mailbox_sync() {
+    if ((g_menu_rdram == nullptr) || !g_mailbox_seeded) {
+        return;
+    }
+    if (read_u32_mail(MailboxAddr) != MailboxMagic) {
+        return;
+    }
+    write_setting_bytes(settings());
+}
 
 // Seeds the settings mailbox. Called on every overlay load
 // (src/overlay_hook.cpp): the menu cannot be open while code is being

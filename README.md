@@ -563,7 +563,7 @@ the defaults below are that file's.
 
 | Key | Default | Meaning |
 | --- | --- | --- |
-| `fullscreen` | `false` | not persisted across runs: every boot starts windowed, except that the Snap Station's own relaunches return in the state the print started in |
+| `fullscreen` | `false` | saved as set; the window opens windowed and goes fullscreen a moment later when the file says so (a window created fullscreen comes up with broken chrome), and the Snap Station's own relaunches return in the state the print started in |
 | `widescreen` | `false` | RT64 Expand: a true 16:9 field of view, not a stretch, in a course; the title, the lab and the other 4:3 screens sit in black bars. Pokémon and effect sprites at the edges are kept ("Known limitations") |
 | `msaa` | `0` | 0, 2, 4 or 8 |
 | `fps_mode` | `0` | 0 Original, 1 Display refresh, 2 Manual (`fps_manual_target`) |
@@ -719,8 +719,9 @@ this:
    send the log.
    In Gaming Mode Steam offers the game only its own virtual pad, so gyro
    aim has to come from Steam's layout ("Controls" above). The port boots
-   fullscreen on a Deck (F11 or the maximize button leaves it); on any
-   other Linux machine it boots windowed, as on Windows.
+   fullscreen on a Deck (F11 or the maximize button leaves it); any
+   other machine boots as its settings file says, windowed until the
+   file says fullscreen.
 
 It needs the system's SDL2 (2.26 or newer), GTK 3 and a Vulkan driver,
 and a glibc no older than the one it was built against (2.39; SteamOS 3.8

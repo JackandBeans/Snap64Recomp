@@ -304,14 +304,25 @@ void settings_mark_dirty();
 bool settings_dirty();
 bool settings_flush_if_due(std::chrono::steady_clock::time_point now);
 
-// Pushes the current settings into ultramodern's GraphicsConfig.
+// Pushes the current settings into ultramodern's GraphicsConfig, and tells
+// the in-game pages' mailbox what the settings now are (menu_mailbox_sync).
 void apply_graphics_settings();
+
+// Writes the current settings into the pages' mailbox bytes (menu_assets.cpp):
+// the pages read those bytes as the truth and write every one back on an
+// edit, so a change made anywhere else must reach them first.
+void menu_mailbox_sync();
 
 // Pokes game-side options into N64 memory. Safe to call repeatedly.
 void apply_game_settings(uint8_t* rdram);
 
 // Hotkey handler; returns true if the key was consumed.
 bool handle_settings_hotkey(int scancode);
+
+// Whether the settings file said fullscreen when it was read. The window is
+// never created fullscreen (load_settings says why); main.cpp restores
+// this through the live path a moment after the window opens.
+bool settings_boot_fullscreen();
 
 // The in-game GRAPHICS page (patches/src/graphics_menu_patch.c). All three
 // live in src/menu_assets.cpp. stage_menu_assets seeds the settings mailbox
