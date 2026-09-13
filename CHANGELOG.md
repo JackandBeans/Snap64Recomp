@@ -13,21 +13,35 @@
   the game has chosen one: a tick before the first mode dereferenced a
   null pointer. Found by appleforever11 on a macOS build (pull request
   #2); the guard is theirs.
-* On a Steam Deck in Widescreen, a course's opening cinematic showed a
-  block at the top-left that flickered between black and pieces of an
-  earlier picture, from the moment the first Pokémon appeared until the
-  viewfinder had been raised once (the port's author, on the Deck, since
-  1.0.1). The cinematic scissors the picture narrower than the frame, so
-  the margin Widescreen adds on the left is drawn by nothing until the
-  viewfinder's letterbox paints it, and a freshly created render target
-  holds whatever memory the driver handed back: zeroed on Windows, a
-  previous owner's contents under the Deck's Vulkan driver, and the
-  rotating targets each held something else. Every new render target
-  is now cleared at its first use, before the game's framebuffer is read
-  into it, so that margin is black on every platform, as it was on
-  Windows. Seen on Windows in Widescreen only as the black band it always
-  was; the Deck confirmation is the author's.
-
+* On a Steam Deck in Widescreen, a course's first frames after its
+  opening cinematic showed a chunk at the top-left -- black bands and a
+  piece of an earlier picture -- until the next camera cut, the
+  viewfinder's first raise, repainted it (the port's author, on the Deck,
+  from 1.0.1 to 1.0.4). One triangle of the course's sky dome has a vertex
+  on the camera plane there; the renderer nudges such a vertex a hair in
+  front of the camera, which makes its projected coordinate enormous. The
+  Deck's Mesa driver (RADV) culls that triangle in its NGG stage, in
+  software, ahead of the hardware clipper that copes with it, so the
+  corner kept whatever the colour buffer held before. Settled with the
+  driver's own switches on the author's Deck: `RADV_DEBUG=nonggc` (that
+  culling alone off) draws the frame whole, while its synchronisation,
+  memory-zeroing, compression and shader-compiler switches change nothing;
+  Windows (Direct3D 12 and Vulkan) and Mesa's software renderer always
+  drew it. The port now sets `RADV_DEBUG=nonggc` before it creates its
+  Vulkan instance on Linux, keeping and extending a value the player set;
+  other drivers ignore the variable, and the log says what was set.
+* A freshly created render target is cleared before its first use, ahead
+  of the game's framebuffer being read into it. The memory a driver hands
+  a new texture is zeroed on Windows and a previous owner's under the
+  Deck's, and the margins Widescreen adds are drawn by nothing until the
+  picture reaches them. A hardening, first taken for the fix of the chunk
+  above, which it is not.
+* The one-tick hold at a camera cut delivers the held picture into the
+  renderer's target by a drawn copy instead of a transfer command, which
+  RT64 itself keeps away from its render targets. Nothing shown changes:
+  verified by presented-frame capture of the cut holds through the logos
+  and the intro on Windows (Vulkan, anti-aliasing 4x at 90 Hz), each held
+  frame equal to the one before it.
 ## 1.0.4 -- 2026-09-12
 
 * After a switch between a window and fullscreen on the Gallery or the

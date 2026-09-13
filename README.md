@@ -680,12 +680,14 @@ The same source builds on Linux with Clang or GCC, rendering through
 Vulkan, and packs as `Snap64Recomp-<version>-linux-x86_64.tar.gz`
 ([BUILDING, step 14](BUILDING.md#14-linux-build-experimental)). It has
 played the Beach replay under WSL and, on 2026-09-06, a Steam Deck in
-Desktop Mode. One blemish is known there and not yet understood: at the
-start of the Beach, when the tutorial asks for Z and the camera is raised
-and lowered, something flickers in the top-left corner for a moment and is
-gone. It does not happen on Windows, so it lies in the Vulkan side of the
-renderer or the Deck's driver, and it is on the list. No Linux desktop has
-run the build yet. It is used like this:
+Desktop Mode. The blemish known there since 1.0.1 -- a chunk in the
+top-left corner during a course's first seconds in Widescreen -- was the
+Deck's Mesa driver culling one triangle of the sky in its NGG stage;
+from 1.0.5 the port asks the driver to leave that culling off
+(`RADV_DEBUG=nonggc`, set before it starts Vulkan and kept alongside
+anything you set yourself), which the author's Deck confirmed draws the
+corner whole. No Linux desktop has run the build yet. It is used like
+this:
 
 1. Unpack the tarball under your home folder and put `pokemonsnap.z64`
    beside `Snap64Recomp`. That folder is where everything lives, as on

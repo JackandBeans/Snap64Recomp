@@ -1098,6 +1098,40 @@ static bool snap_take_instance_lock(std::string& note) {
 }
 #endif
 
+#if defined(__linux__)
+// On a Steam Deck the Mesa driver (RADV) drops one triangle of a course's
+// sky dome at the ride's first frames in Widescreen: a chunk at the top-left
+// showing the previous picture, black bands and all, until the next camera
+// cut repaints it (the port's author, from 1.0.1 to 1.0.4, 2026-09-06 to
+// 2026-09-12). The triangle has a vertex on the camera plane, which the
+// port's vertex shader nudges a hair in front of it (RT64, RSPProcessCS);
+// the hardware clipper handles the enormous projected coordinate that makes,
+// the driver's own NGG culling stage does not and throws the triangle away.
+// Proved on the Deck with the driver's switches: RADV_DEBUG=nonggc (that
+// culling alone off) draws the frame whole, and so does nongg, while
+// syncshaders, zerovram, nodcc and llvm change nothing; Windows (Direct3D 12
+// and Vulkan) and Mesa's software renderer always drew it. RADV reads the
+// variable when the Vulkan instance is created, so it is set here, before
+// SDL and the renderer start. Other drivers ignore it; a value the player
+// set is kept and extended.
+static void snap_radv_debug_nonggc() {
+    const char* existing = std::getenv("RADV_DEBUG");
+    std::string value = (existing != nullptr) ? existing : "";
+    if (value.find("nongg") != std::string::npos) {
+        printf("[SNAP] RADV_DEBUG=%s (the player's; NGG culling already off)\n", value.c_str());
+        fflush(stdout);
+        return;
+    }
+    if (!value.empty()) {
+        value += ",";
+    }
+    value += "nonggc";
+    setenv("RADV_DEBUG", value.c_str(), 1);
+    printf("[SNAP] RADV_DEBUG=%s: the Mesa driver's NGG culling is left off (it drops a sky triangle at a course's start on a Steam Deck)\n", value.c_str());
+    fflush(stdout);
+}
+#endif
+
 int main(int argc, char* argv[]) {
     (void)argc;
     (void)argv;
@@ -1115,6 +1149,7 @@ int main(int argc, char* argv[]) {
         fputs(lock_note.c_str(), stdout);
         fflush(stdout);
     }
+    snap_radv_debug_nonggc();
     if (snap::base_dir() != snap::exe_dir()) {
         // paths.cpp said why on stderr when it decided (the executable's
         // folder cannot be written, or SNAP_DATA_DIR), before the log was
