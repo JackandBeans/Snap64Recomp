@@ -1050,12 +1050,15 @@ std::string input_bind_display(const char* input, int device) {
     else if ((device == kBindMouse) && stickRow && cfg.mouse_aim) {
         out = "Motion";
     }
+    // Two names on a row are joined with "or": "B or X" says that either
+    // presses the button, where "B, X" read as a puzzle (the author, on the
+    // release's own screenshot, 2026-09-13).
     for (const std::string& s : it->second) {
         if (source_device(s) != device) {
             continue;
         }
         if (!out.empty()) {
-            out += ", ";
+            out += " or ";
         }
         out += display_name(s, n64);
     }
@@ -1063,7 +1066,7 @@ std::string input_bind_display(const char* input, int device) {
     // row says so last; it cannot be bound or cleared.
     if ((device == kBindKeyboard) && (std::strcmp(input, "start") == 0)) {
         if (!out.empty()) {
-            out += ", ";
+            out += " or ";
         }
         out += "Esc";
     }
