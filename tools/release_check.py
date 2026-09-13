@@ -22,6 +22,10 @@ that a release build can be put through all of them in one go:
               stage from the harvested font with no character missing, so the
               page opens instead of falling back to the stock menu
   settings    snapsettings.json is valid JSON and carries the port's fields
+  rompick     a data directory with no ROM: the first run's chooser, answered
+              by SNAP_ROM_PICK, copies the dump in byte-identical, copies a
+              byte-swapped dump in big-endian order, and a Cancel starts
+              nothing and exits
   package     (with --zip) the release archive carries the executable, the
               three DLLs, the licences and the documents
     station     (only with --only station: it takes eight minutes and rewrites the
@@ -446,6 +450,45 @@ def check_station(c, exe_dir):
             (exe_dir / 'snapstation.job').unlink()
 
 
+def check_rompick(c, exe_dir):
+    """The first run's ROM chooser (src/rom_picker.cpp), answered by SNAP_ROM_PICK
+    so no dialog opens: each case in a fresh data directory with no ROM."""
+    src = exe_dir / 'pokemonsnap.z64'
+    if not src.is_file():
+        c.add('rompick', False, 'pokemonsnap.z64 is not beside the executable')
+        return
+    z64 = src.read_bytes()
+    want = hashlib.sha256(z64).hexdigest()
+    work = exe_dir / 'suite_rompick'
+    shutil.rmtree(work, ignore_errors=True)
+    work.mkdir()
+    v64 = bytearray(z64)
+    for i in range(0, len(v64) - 1, 2):
+        v64[i], v64[i + 1] = v64[i + 1], v64[i]
+    (work / 'dump.v64').write_bytes(bytes(v64))
+    cases = [('z64', str(src), 20), ('v64', str(work / 'dump.v64'), 20), ('cancel', 'cancel', 8)]
+    for name, pick, seconds in cases:
+        rig = work / ('rig_' + name)
+        rig.mkdir()
+        (rig / 'snapsettings.json').write_text('{"fullscreen": false}\n', encoding='utf-8')
+        out = run_game(exe_dir, {'SNAP_DATA_DIR': str(rig), 'SNAP_ROM_PICK': pick, 'SNAP_MUTE': '1',
+                                 'SNAP_WINDOW': '960x600'}, seconds)
+        asked = '[SNAP] ROM: none at' in out
+        dest = rig / 'pokemonsnap.z64'
+        if name == 'cancel':
+            ok = asked and ('the chooser was cancelled' in out) and not dest.exists() and ('[SNAP] surface' not in out)
+            c.add('rompick', ok, 'cancel: asked %s, no file %s, no window %s'
+                  % (asked, not dest.exists(), '[SNAP] surface' not in out))
+        else:
+            copied = dest.is_file() and hashlib.sha256(dest.read_bytes()).hexdigest() == want
+            booted = '[SNAP] surface' in out
+            order = 'byte-swapped' if name == 'v64' else 'big-endian'
+            ok = asked and copied and booted and (('(%s' % order) in out)
+            c.add('rompick', ok, '%s: asked %s, copied byte-identical %s (%s named), booted %s'
+                  % (name, asked, copied, order, booted))
+    shutil.rmtree(work, ignore_errors=True)
+
+
 def check_package(c, zip_path):
     z = zipfile.ZipFile(zip_path)
     names = z.namelist()
@@ -496,7 +539,7 @@ def main():
         return 2
     checks = [('subsystem', check_subsystem), ('stdio', check_stdio), ('attract', check_attract),
               ('stats', check_stats), ('score', check_score), ('settings', check_settings),
-              ('menu', check_menu), ('station', check_station)]
+              ('rompick', check_rompick), ('menu', check_menu), ('station', check_station)]
     c = Check()
     t0 = time.time()
     for name, fn in checks:

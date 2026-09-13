@@ -62,12 +62,14 @@ installed. Then:
    [Releases](https://github.com/JackandBeans/Snap64Recomp/releases/latest)
    page and unpack it anywhere; it holds one folder,
    `Snap64Recomp-1.0.6-win64`, with `Snap64Recomp.exe` inside.
-2. Put your own dump of the US cartridge (the ROM: the cartridge's contents
-   read out into one file) next to `Snap64Recomp.exe`, named
-   `pokemonsnap.z64`. You do not have to check the file yourself: a missing
-   or wrong one is reported in a dialog before the window opens, with the
-      expected and the actual checksum (a 64-bit hash of the file, not the SHA-1
-   under "What you need").
+2. Have your own dump of the US cartridge to hand (the ROM: the cartridge's
+   contents read out into one file). Either put it next to
+   `Snap64Recomp.exe` named `pokemonsnap.z64`, or just start the program:
+   with no ROM beside it, it asks for the file, checks it, copies it there
+   under that name, and never asks again. You do not have to check the file
+   yourself: a wrong one is refused with the expected and the actual
+   checksum (a 64-bit hash of the file, not the SHA-1 under "What you
+   need").
 3. Start `Snap64Recomp.exe`. Because the executable is not signed, Windows
    may first show a "Windows protected your PC" box (SmartScreen): click
    "More info", then "Run anyway", and it will not ask again. The first start
@@ -132,17 +134,18 @@ Beach in Widescreen and the Controls page's gyro rows), are in
 * **Your own dump of the US cartridge**, whose SHA-1 checksum (a fingerprint
   of the file's contents) is `edc7c49cc568c045fe48be0d18011c30f393cbaf`, the
   value the [decompilation project](https://github.com/ethteck/pokemonsnap)
-  publishes. Name it `pokemonsnap.z64` and put it next to `Snap64Recomp.exe`
+  publishes. Put it next to `Snap64Recomp.exe` named `pokemonsnap.z64`
   (the port reads its own folder, not the working directory; see "Where
-  things live"). A dump saved as `.v64` or `.n64` (the same data in another
-  byte order) works too: the port detects the order from the file's header
-  and corrects it in memory without touching the file. The file name is
-  fixed, though, so rename such a dump to `pokemonsnap.z64`. A file that is
-  missing, cannot be read or is another revision of the game produces a
-  dialog before the window opens; a wrong dump shows both the expected and
-  the actual hash (a 64-bit hash of the whole file, not the SHA-1 above), so
-  you need not compute anything yourself. The ROM is never
-  included with this project.
+  things live"), or start the program without it: it asks for the file,
+  checks it, and copies it there under that name in big-endian order,
+  whatever order the dump was saved in (`.z64`, `.v64` and `.n64` all
+  serve). A dump placed by hand in `.v64` or `.n64` order works too: the
+  order is read from the file's header and corrected in memory without
+  touching the file, though the name must still be `pokemonsnap.z64`. A file
+  that cannot be read or is another revision of the game is refused with
+  both the expected and the actual hash (a 64-bit hash of the whole file,
+  not the SHA-1 above), so you need not compute anything yourself. The ROM
+  is never included with this project.
 * Beside `Snap64Recomp.exe`: `SDL2.dll`, `dxcompiler.dll` and `dxil.dll`,
   and optionally `menu_text/recomp_logo.png` for the "Recomp" badge under the
   title logo (no file, no badge). The release ZIP already holds all of them;
@@ -937,7 +940,9 @@ The same list, with a place to reply, is pinned under
   Oak's evaluation scores every photo with the scorer's healthy signature and
   exports the photos it shows, the Options screen's Graphics and Sound rows
   stage from the harvested font with no character missing, the settings file
-  is valid, and the archive carries everything it must; `--only station` puts the Snap Station print
+  is valid, a first start with no ROM copies the chosen dump in (byte-swapped
+  or not) and a Cancel starts nothing, and the archive carries everything it
+  must; `--only station` puts the Snap Station print
   through both relaunches and checks the sheets. On the 1.0.6 executable
   (SHA-256 beginning `9682a2d1`), run without diagnostics in the
   environment, the suite passed 22 of 22 checks in 781 seconds, and the

@@ -9,9 +9,11 @@ Snap64Recomp, named exactly:
 
     pokemonsnap.z64
 
-.z64, .v64 and .n64 dumps are all accepted under that name. No ROM is
-included and none ever will be. If the file is missing or is the wrong dump,
-the game says so at start-up and names the exact path it looked at.
+or simply start the program: with no ROM here, it asks for the file, checks
+it, and copies it in under that name, once. .z64, .v64 and .n64 dumps are all
+accepted. No ROM is included and none ever will be. A wrong dump is refused
+at start-up with both checksums shown, and a file put here by hand under
+another name is reported with the exact path the game looked at.
 
 
 2. START IT

@@ -243,6 +243,7 @@ set(SNAP_SOURCES
     ${SNAP_PATCH_SOURCES}
     src/main.cpp
     src/paths.cpp
+    src/rom_picker.cpp
     src/steam_deck.cpp
     src/rt64_render_context.cpp
     src/rsp_microcode.cpp
@@ -361,6 +362,11 @@ endif()
 
 if (BUILD_RT64)
     target_link_libraries(Snap64Recomp PRIVATE rt64)
+    # The first run's file chooser (src/rom_picker.cpp) is RT64's own copy of
+    # nativefiledialog-extended, already built for RT64's use.
+    target_link_libraries(Snap64Recomp PRIVATE nfd)
+    target_include_directories(Snap64Recomp PRIVATE
+        "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/nativefiledialog-extended/src/include")
 endif()
 
 # Platform-specific link flags

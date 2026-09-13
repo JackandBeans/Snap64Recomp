@@ -12,6 +12,17 @@
   the top, which is off screen from down there; the second A it asks for
   is unchanged. Raised by the port's author on 2026-09-13, the day 1.0.6
   shipped.
+* A first start with no ROM asks for it. Until now a missing
+  `pokemonsnap.z64` produced a dialog naming the path and nothing more, and a
+  read-only Linux install needed the file placed in the config home by hand.
+  Now the port says what it needs, opens the system's own file chooser,
+  checks the chosen file the way the runtime does (the byte order from the
+  header, the 64-bit hash of the big-endian image against the expected
+  one), refuses a wrong one with both hashes and asks again, and copies a
+  right one into the data folder as `pokemonsnap.z64` in big-endian order,
+  so it is never asked again. The chooser is RT64's own copy of
+  nativefiledialog-extended, which the build already carried. `SNAP_ROM_PICK`
+  answers the chooser for the release suite.
 * The README no longer lists Widescreen as untested beyond the Beach: the
   port's author has since played every course with the option on and seen
   nothing wrong, and says so in the verified list, as play, not proof.

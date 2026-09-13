@@ -41,6 +41,7 @@
 #include "settings.h"
 #include "version.h"
 #include "paths.h"
+#include "rom_picker.h"
 #include "snap_station.h"
 #include "steam_deck.h"
 namespace snap { extern uint8_t* g_rdram; }
@@ -1323,6 +1324,12 @@ int main(int argc, char* argv[]) {
     // executable's directory, never the working directory: a shortcut with a
     // different "Start in" used to lose all of them.
     recomp::register_config_path(snap::base_dir());
+    // A first start with no ROM in the data directory: ask for the file and
+    // copy it there (rom_picker.cpp), before recomp::start reads it. A No
+    // means no game; the log says so.
+    if (!snap::ensure_rom(SNAP_ROM_HASH)) {
+        return 0;
+    }
     try {
         recomp::start(config);
     }
