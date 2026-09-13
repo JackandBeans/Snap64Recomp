@@ -2233,7 +2233,10 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
         // diagonal whose smaller axis sat under the threshold lost that axis
         // completely, so fine aim on the diagonal did not exist -- a square
         // gate on a round stick, in a game that is entirely aiming.
-        constexpr float DEADZONE = 0.15f;
+        //
+        // Its size is the Controls page's Dead Zone row (pad_deadzone),
+        // fifteen percent as shipped, up to forty for a pad that drifts.
+        const float DEADZONE = float(std::clamp(settings().pad_deadzone, 0, 40)) / 100.0f;
         const float rawMagnitude = std::sqrt((gc_x * gc_x) + (gc_y * gc_y));
         if (rawMagnitude > DEADZONE) {
             const float scaled = (rawMagnitude - DEADZONE) / (1.0f - DEADZONE);

@@ -142,10 +142,10 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *   +0x74  u32  SCRATCH_HELP_EXIT, the patch's own: its help line
  *   +0x78  u32  SCRATCH_HELP_EXIT2, the patch's own: its question line
  *   +0x60  u32  CONTROLS sequence word
- *   +0x64  u8   CONTROLS fields 0..6, through +0x6A: mouse aim, the mouse
+ *   +0x64  u8   CONTROLS fields 0..7, through +0x6B: mouse aim, the mouse
  *               speed's step, the zoom speed's step, the tilt, the gyro
  *               mode (off, on, zoomed), the gyro speed's step, the pad
- *               sticks swapped
+ *               sticks swapped, the stick dead zone's step (fives)
  *   +0x7C  u32  MBOX_POOL_FAIL, the patch's own: strips the pool refused
  *   +0x80  u32  MBOX_POOL_PEAK, the patch's own: the pool's high water
  *   +0xA0  u32  BIND_REQ, the BUTTON SETUP page's request to the host: the
@@ -287,9 +287,16 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_STICKS_LABEL     180
 #define STR_SWAPPED          181
 #define STR_STICKS_DESC      182
-/* ..218: the input rows' values, two banks of eighteen, composed live by
+/* The CONTROLS page's Dead Zone row: its label, its description, and the
+ * three values the volume and speed steps do not already carry. */
+#define STR_DZ_LABEL         183
+#define STR_DZ_DESC          184
+#define STR_DZ5              185
+#define STR_DZ15             186
+#define STR_DZ35             187
+/* ..223: the input rows' values, two banks of eighteen, composed live by
  * the host for the device shown (BIND_GEN's low bit names the bank). */
-#define STR_BIND_DYN         183
+#define STR_BIND_DYN         188
 
 /* The SOUND bank of the mailbox: its own sequence word and value bytes
  * (percent volumes; stereo and background-mute booleans). The patched
@@ -2058,26 +2065,29 @@ static void snap_sound_page(void) {
  * screen's own variables exactly as the stock rows edited them (the
  * screen's exit writes them to the player flags); the other four are the
  * mouse's, in the mailbox's CONTROLS bank, applied live by the host. */
-/* Ten rows, six on screen at a time: the page scrolls for the last four
- * the way the Graphics page scrolls, with the same edge arrows. In order:
- * the game's own Z Button and Control Stick; Button Setup, the row that
- * opens the BUTTON SETUP page, put where a player who came to change
+/* Eleven rows, six on screen at a time: the page scrolls for the last
+ * five the way the Graphics page scrolls, with the same edge arrows. In
+ * order: the game's own Z Button and Control Stick; Button Setup, the row
+ * that opens the BUTTON SETUP page, put where a player who came to change
  * the buttons sees it without scrolling, with no value (the Option list's
  * own Screen row has none) and a help line that says what A does; Pad
- * Sticks, which stick aims and which works the C buttons; then the mouse
- * and gyro dials. The settings are numbered in the order the strings and
- * the CONTROLS bank were laid out in (the six mouse and gyro settings
- * first, Pad Sticks last as the seventh field), and snap_ctl_setting maps
- * a row to its setting. */
-#define CTL_ROWS 10
+ * Sticks, which stick aims and which works the C buttons; Dead Zone, how
+ * far the aiming stick moves before the game sees it; then the mouse and
+ * gyro dials. The settings are numbered in the order the strings and the
+ * CONTROLS bank were laid out in (the six mouse and gyro settings first,
+ * Pad Sticks and Dead Zone last as the seventh and eighth fields), and
+ * snap_ctl_setting maps a row to its setting. */
+#define CTL_ROWS 11
 #define CTL_VISIBLE 6
 #define CTL_ROW_BUTTONS 2
 #define CTL_ROW_STICKS 3
+#define CTL_ROW_DEADZONE 4
 #define CTL_SETTING_STICKS 8
+#define CTL_SETTING_DEADZONE 9
 
 /* A row's setting: 0 and 1 the game's own, 2..7 the six mouse and gyro
- * settings (CONTROLS bank fields 0..5), 8 Pad Sticks (field 6); -1 for
- * the Button Setup row, which has none. */
+ * settings (CONTROLS bank fields 0..5), 8 Pad Sticks (field 6), 9 Dead
+ * Zone (field 7); -1 for the Button Setup row, which has none. */
 static s32 snap_ctl_setting(s32 row) {
     if (row == CTL_ROW_BUTTONS) {
         return -1;
@@ -2085,7 +2095,10 @@ static s32 snap_ctl_setting(s32 row) {
     if (row == CTL_ROW_STICKS) {
         return CTL_SETTING_STICKS;
     }
-    return (row > CTL_ROW_STICKS) ? (row - 2) : row;
+    if (row == CTL_ROW_DEADZONE) {
+        return CTL_SETTING_DEADZONE;
+    }
+    return (row > CTL_ROW_DEADZONE) ? (row - 3) : row;
 }
 
 static s32 snap_ctl_value_count(s32 row) {
@@ -2097,6 +2110,7 @@ static s32 snap_ctl_value_count(s32 row) {
         case 4:  return 4;    /* Zoom Speed */
         case 6:  return 3;    /* Gyro Aim: off, on, zoomed */
         case 7:  return 11;   /* Gyro Speed */
+        case CTL_SETTING_DEADZONE: return 9;   /* 0, 5, 10 .. 40 */
         default: return 2;    /* the on/off pairs, Pad Sticks among them */
     }
 }
@@ -2110,6 +2124,9 @@ static s32 snap_ctl_label_str(s32 row) {
     if (setting == CTL_SETTING_STICKS) {
         return STR_STICKS_LABEL;
     }
+    if (setting == CTL_SETTING_DEADZONE) {
+        return STR_DZ_LABEL;
+    }
     return (setting < 6) ? (STR_CTL_LABEL + setting) : (STR_GYRO_LABEL + (setting - 6));
 }
 
@@ -2121,6 +2138,9 @@ static s32 snap_ctl_desc_str(s32 row) {
     setting = snap_ctl_setting(row);
     if (setting == CTL_SETTING_STICKS) {
         return STR_STICKS_DESC;
+    }
+    if (setting == CTL_SETTING_DEADZONE) {
+        return STR_DZ_DESC;
     }
     return (setting < 6) ? (STR_CTL_DESC + setting) : (STR_GYRO_DESC + (setting - 6));
 }
@@ -2177,6 +2197,19 @@ static s32 snap_ctl_value_str(s32 row, s32 v) {
     }
     switch (snap_ctl_setting(row)) {
         case CTL_SETTING_STICKS: return v ? STR_SWAPPED : STR_NORMAL;
+        case CTL_SETTING_DEADZONE:
+            /* 0, 10, 20, 30 and 40 are the volume steps; 25 a mouse speed. */
+            switch (v) {
+                case 0:  return STR_VOL0;
+                case 1:  return STR_DZ5;
+                case 2:  return STR_VOL0 + 1;
+                case 3:  return STR_DZ15;
+                case 4:  return STR_VOL0 + 2;
+                case 5:  return STR_CTL_SPEED;
+                case 6:  return STR_VOL0 + 3;
+                case 7:  return STR_DZ35;
+                default: return STR_VOL0 + 4;
+            }
         case 0:  return v ? STR_SWITCH : STR_HOLD;
         case 1:  return v ? STR_REVERSE : STR_NORMAL;
         case 2:  return v ? STR_ON : STR_OFF;
@@ -2195,7 +2228,7 @@ static s32 snap_ctl_get(s32 row) {
     switch (snap_ctl_setting(row)) {
         case 0:  return D_800E8395_A0F925 ? 1 : 0;
         case 1:  return D_800E8396_A0F926 ? 1 : 0;
-        default: return CTL_FIELD(snap_ctl_setting(row) - 2);   /* Pad Sticks is field 6 */
+        default: return CTL_FIELD(snap_ctl_setting(row) - 2);   /* Pad Sticks is field 6, Dead Zone 7 */
     }
 }
 

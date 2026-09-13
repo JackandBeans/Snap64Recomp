@@ -175,6 +175,13 @@ struct Settings {
     // byte 0x80C0006A) and the file both set it; input_get reads it on
     // every pad reading, and the Button Setup page names the sticks by it.
     bool  pad_sticks_swapped = false;
+    // The pad's stick dead zone, in percent of full travel (0 to 40, 15 as
+    // shipped): a stick at rest on a worn pad drifts a little, and this
+    // game turns any deflection into a rate, so the rest must read as
+    // nothing. Radial, and rescaled past it so the first movement is the
+    // smallest (input_get). The Controls page's Dead Zone row (mailbox
+    // byte 0x80C0006B, in steps of five) and the file both set it.
+    int   pad_deadzone      = 15;
     // Multiplies the angle per pixel: 1 is a full turn in about 2500
     // pixels, 2 twice as quick, 0.5 half. Bounded to 0.1 .. 10 where read.
     float mouse_sensitivity = 1.0f;

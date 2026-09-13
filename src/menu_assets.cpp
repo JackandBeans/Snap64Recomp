@@ -187,7 +187,7 @@ constexpr uint32_t DynPixelsAddr = 0x80D00000u;
 constexpr int DynChunks = 3;
 constexpr uint32_t DynStripBytes = uint32_t(DynChunks * 64 * StripHeight * 2);
 constexpr uint32_t kStringBaseCount = 30;   // the strings[] table below, asserted there
-constexpr uint32_t kBindDynBase = kStringBaseCount + 153;   // graphics_menu_patch.c STR_BIND_DYN
+constexpr uint32_t kBindDynBase = kStringBaseCount + 158;   // graphics_menu_patch.c STR_BIND_DYN
 constexpr int BindInputCount = 18;
 
 struct Strip {
@@ -1103,6 +1103,8 @@ static void write_setting_bytes(const Settings &s) {
     write_u8(MailboxAddr + 0x68, uint8_t(std::clamp(s.gyro_aim, 0, 2)));
     write_u8(MailboxAddr + 0x69, uint8_t(ctl_speed_index(s.gyro_sensitivity)));
     write_u8(MailboxAddr + 0x6A, s.pad_sticks_swapped ? 1 : 0);
+    // The dead zone in steps of five: the page shows 0, 5, 10 .. 40.
+    write_u8(MailboxAddr + 0x6B, uint8_t(std::clamp((s.pad_deadzone + 2) / 5, 0, 8)));
 }
 
 void seed_mailbox() {
@@ -1320,7 +1322,9 @@ void stage_menu_strings(uint8_t* rdram) {
         "Gyro Speed",                          // +92
         "< Zoomed >",                          // +93
     };
-    // The CONTROLS page's Pad Sticks row (id BaseCount+152).
+    // The CONTROLS page's Dead Zone row (id BaseCount+154), then Pad
+    // Sticks (BaseCount+152).
+    static const char* const deadzoneDesc[2] = { "How far the stick moves before the game", "sees it. Raise it if the camera drifts." };
     static const char* const sticksDesc[2] = { "Normal aims with the left stick, the", "right does the C buttons. Swapped flips." };
     static const char* const gyroDescs[2][2] = {
         { "Turn the pad to look around a course, on",  "pads with a gyro. Zoomed aims zoomed in." },
@@ -1337,8 +1341,10 @@ void stage_menu_strings(uint8_t* rdram) {
     // +122..+124 the Device row's values, +125..+131 the page's seven help
     // lines (bindDescs), +132..+149 the input rows' own (bindInputDescs);
     // +150 the CONTROLS page's Pad Sticks label, +151 its Swapped value,
-    // +152 its description.
-    // Ids BaseCount+153..+188: the input rows' values, composed live for
+    // +152 its description; +153 its Dead Zone label, +154 its
+    // description, +155..+157 the values 5, 15 and 35 the volume and
+    // speed steps do not already carry.
+    // Ids BaseCount+158..+193: the input rows' values, composed live for
     // the device shown (bind_compose below), two banks of eighteen so a
     // bank is never rewritten while the page draws it; their pixels sit
     // apart from the staged strings, at DynPixelsAddr.
@@ -1355,7 +1361,7 @@ void stage_menu_strings(uint8_t* rdram) {
     // Restore Defaults asking, the row while it listens, Restore Defaults
     // at rest, a refused key, a refused clear, a listen that timed out.
     static const char* const bindDescs[7][2] = {
-        { "Left and Right pick the device to set up.", "The mouse, keyboard and pad are separate." },
+        { "Left and Right pick the device to set up.", "B goes back with every change kept." },
         { "Press A again to put this device back", "the way it came, B to keep it as it is." },
         { "Press the key or button to use for this.", "Wait a few seconds to leave it as it was." },
         { "Puts back the keys and buttons the game", "came with, for this device. A asks first." },
@@ -1387,7 +1393,7 @@ void stage_menu_strings(uint8_t* rdram) {
         { "Aims the camera left in a course, and", "walks the menus. A changes, Z clears." },
         { "Aims the camera right in a course, and", "walks the menus. A changes, Z clears." },
     };
-    constexpr uint32_t StringCount = BaseCount + 189;
+    constexpr uint32_t StringCount = BaseCount + 194;
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -1610,6 +1616,21 @@ void stage_menu_strings(uint8_t* rdram) {
                 write_u16(addr + k, 0);
             }
             continue;
+        }
+        else if (id >= BaseCount + 155) {
+            strip = compose((id == BaseCount + 155) ? "< 5 >" : (id == BaseCount + 156) ? "< 15 >" : "< 35 >");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 154) {
+            strip = compose_lines(deadzoneDesc[0], deadzoneDesc[1]);
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 153) {
+            strip = compose("Dead Zone");
+            w = strip.width;
+            h = strip.height;
         }
         else if (id == BaseCount + 152) {
             strip = compose_lines(sticksDesc[0], sticksDesc[1]);
@@ -2074,6 +2095,12 @@ void poll_menu_mailbox(uint8_t* rdram) {
             c.mouse_invert_y = read_u8_mail(MailboxAddr + 0x67) != 0;
             c.gyro_aim = std::min<int>(read_u8_mail(MailboxAddr + 0x68), 2);
             c.gyro_sensitivity = kCtlSpeeds[std::min<int>(read_u8_mail(MailboxAddr + 0x69), 10)] / 100.0f;
+            const int deadzone = std::min<int>(read_u8_mail(MailboxAddr + 0x6B), 8) * 5;
+            if (deadzone != c.pad_deadzone) {
+                c.pad_deadzone = deadzone;
+                printf("[SNAP-CFG] stick dead zone: %d%%\n", deadzone);
+                fflush(stdout);
+            }
             const bool swapped = read_u8_mail(MailboxAddr + 0x6A) != 0;
             if (swapped != c.pad_sticks_swapped) {
                 c.pad_sticks_swapped = swapped;

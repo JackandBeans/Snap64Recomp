@@ -328,7 +328,10 @@ the control stick, A is A, B or X is B, the left shoulder button is Z, Start
 is Start, the D-pad is the D-pad, the triggers are L and R, and the right stick
 is the C buttons. **Pad Sticks** on the Controls page swaps the two sticks,
 so the right one aims and the left works the C buttons (`pad_sticks_swapped`
-in the settings file). The Back button (Select, View or Share on most pads) is not
+in the settings file), and **Dead Zone** is how far the aiming stick moves
+before the game sees it, 15 percent as shipped and up to 40 for a pad whose
+stick drifts at rest (`pad_deadzone`); it is radial, and the travel past it
+is rescaled so the first movement the game sees is the smallest. The Back button (Select, View or Share on most pads) is not
 an N64 button: it saves the photo on screen, as P does on the keyboard (see
 "Photos"). The eight buttons -- A, B, Z, Start, the D-pad's four, L and R --
 are each a row of the Button Setup page and of the settings file's `keys`

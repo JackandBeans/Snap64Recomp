@@ -29,7 +29,10 @@
 * The Controls page has a Pad Sticks row: Swapped makes the right stick
   aim and the left work the C buttons, for a player who aims with the
   right thumb (`pad_sticks_swapped` in the settings file). The sticks were
-  the one part of a pad no setting could move.
+  the one part of a pad no setting could move. Beside it a Dead Zone row:
+  how far the aiming stick moves before the game sees it, 0 to 40 percent
+  in steps of five, 15 as shipped (`pad_deadzone`), for a pad whose stick
+  drifts at rest; the port's dead zone had been fixed at 15 since 1.0.0.
 * The menu strings' directory could hold 127 entries and 1.0.5 wrote 129:
   the last two landed in the pixels of the black tile nothing draws. It
   seats 255 now, and the strings sit after it.
