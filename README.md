@@ -303,8 +303,9 @@ Esc leaves the row as it was, and so does waiting eight seconds; a key the
 port answers to itself (the function keys, P, the brackets, Home, End,
 Esc) and the pad's Back and Guide are refused. Z clears the row on that
 device, unless nothing else would press the input. Restore Defaults, the
-row under Device, asks for a second A and then puts the shipped bindings
-of the device shown back. What no table changes is named on the rows too:
+last row (Up from the top row wraps to it), asks for a second A and then
+puts the shipped bindings of the device shown back. What no table changes
+is named on the rows too:
 under Controller the stick that aims and the one that works the C
 buttons, under Mouse the motion that aims while Mouse Aim is on, and Esc
 beside Start on the keyboard. Every change is in force at once and saved.
@@ -827,14 +828,6 @@ fine.
 
 ## Known limitations
 
-* **Widescreen is untested beyond the Beach.** The fault it had there,
-  Pokémon vanishing at the edges of the wider picture, is fixed in 1.0.1:
-  the game's own on-screen test projected each Pokémon at a fixed 4:3
-  focal length against fixed pixel bounds, and a patch now widens the
-  horizontal bound by the factor the renderer applies, and the effect
-  drawer's own test (sparkles, splashes, smoke, the leaves out of the
-  grass) is widened the same way. The rest of the game under Widescreen
-  has not been played through with the option on.
 * Some 2D content is drawn without a name the interpolation can pair
   (the photo panels, Oak's thumbnails and full-screen backgrounds while they
   slide during a transition) and steps at the game's rate when it moves;
@@ -885,10 +878,7 @@ In the order it will be worked on; nothing here is a promise until it runs.
    Windows 10 do with it is what the next release will be made of, as 1.0.1
    to 1.0.6 were made of the first reports. The issue form is the way to
    send them.
-2. **Widescreen beyond the Beach.** The missing Pokémon and effect
-   sprites are fixed; the other courses have not been played with the
-   option on.
-3. **Steam Deck.** The native Linux build has been played on a Deck in
+2. **Steam Deck.** The native Linux build has been played on a Deck in
    Desktop Mode through a day of testing -- the Beach with gyro aim, the
    menus, the settings, the Snap Station -- where it takes the Deck's
    defaults (fullscreen at the panel, Steam's keyboard kept down, Steam's
@@ -896,7 +886,7 @@ In the order it will be worked on; nothing here is a promise until it runs.
    offers only its own virtual pad and the gyro reaches the port as mouse
    look, and the top-left flicker at the Beach's start. The Windows build
    under Proton already has one good report.
-4. **VR.** An idea under investigation, not a plan: stereo rendering and
+3. **VR.** An idea under investigation, not a plan: stereo rendering and
    head tracking would have to be built into the renderer.
 
 The same list, with a place to reply, is pinned under
@@ -932,8 +922,10 @@ The same list, with a place to reply, is pinned under
 
 * Verified in the sense that the developer has play-tested the entire game
   on the one machine above: every course from the Beach to Rainbow Cloud,
-  Oak's evaluations, the report, the album, the Gallery and a Snap Station
-  print, with the port's own screens and hotkeys along the way; and the
+  and every course again with Widescreen on (the Beach also frame by
+  frame, for the edge fault 1.0.1 fixed), Oak's evaluations, the report,
+  the album, the Gallery and a Snap Station print, with the port's own
+  screens and hotkeys along the way; and the
   renderer, audio, saving, the Graphics and Sound pages and the hotkeys
   listed here all come from the code as it stands
   (`src/settings.cpp`, `src/settings.h`, `src/input.cpp`, `src/main.cpp`).

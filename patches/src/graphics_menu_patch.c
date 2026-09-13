@@ -2645,9 +2645,10 @@ static s32 snap_controls_page(void) {
  * The BUTTON SETUP page: what presses each of the game's inputs.
  *
  * Twenty rows in the CONTROLS page's dress, six on screen: a Device row
- * (Keyboard, Mouse, Controller; Left and Right pick it), Restore Defaults,
- * and the eighteen inputs -- the fourteen buttons and the four stick
- * directions -- each with a help line saying what it does in the game. An input row's value is what presses it on the device shown,
+ * (Keyboard, Mouse, Controller; Left and Right pick it), the eighteen
+ * inputs -- the fourteen buttons and the four stick directions -- each
+ * with a help line saying what it does in the game, and Restore Defaults
+ * last. An input row's value is what presses it on the device shown,
  * composed live by the host from the binding table (src/input.cpp,
  * input_bind_display) into a bank of staged ids; the host turns the bank
  * with BIND_GEN and the page swaps its strips to the bank named, never
@@ -2667,11 +2668,17 @@ static s32 snap_controls_page(void) {
 #define BIND_ROWS      20
 #define BIND_VISIBLE   6
 #define BIND_INPUTS    18
-/* Device, then Restore Defaults where it is seen without scrolling (a
- * stray A cannot fire it: it asks first), then the eighteen inputs. */
-#define BIND_ROW_RESET 1
-#define BIND_ROW_FIRST 2
+/* Device, the eighteen inputs, then Restore Defaults last (1.0.7; 1.0.6
+ * had it second, seen without scrolling). Last is where every list a
+ * player knows keeps its reset, after what it resets; the row under the
+ * device is the page's most looked-at slot and belongs to the first
+ * binding; a quick Down-and-A no longer lands on it; and the first
+ * screen shows five inputs, not four. Up from the top row wraps to it. A
+ * stray A cannot fire it either way: it asks first. */
+#define BIND_ROW_FIRST 1
+#define BIND_ROW_RESET (BIND_ROW_FIRST + BIND_INPUTS)
 #define BIND_INPUT(row) ((row) - BIND_ROW_FIRST)
+#define BIND_IS_INPUT(row) (((row) >= BIND_ROW_FIRST) && ((row) < BIND_ROW_RESET))
 #define BIND_REQ     (*(volatile u32*) (SNAP_GFX_MAILBOX + 0xA0))
 #define BIND_ACK     (*(volatile u32*) (SNAP_GFX_MAILBOX + 0xA4))
 #define BIND_GEN     (*(volatile u32*) (SNAP_GFX_MAILBOX + 0xA8))
@@ -2894,7 +2901,7 @@ static void snap_bind_page(void) {
         /* The host turned the bank: the row values are new. */
         if (BIND_GEN != gen) {
             gen = BIND_GEN;
-            for (i = BIND_ROW_FIRST; i < BIND_ROWS; i++) {
+            for (i = BIND_ROW_FIRST; i < BIND_ROW_RESET; i++) {
                 snap_swap_strip((GObj*) BIND_VALUE(i), snap_bind_value_str(i, device, gen));
             }
         }
@@ -2912,7 +2919,7 @@ static void snap_bind_page(void) {
         }
 
         if (gContInputPressedButtons & A_BUTTON) {
-            if (sel >= BIND_ROW_FIRST) {
+            if (BIND_IS_INPUT(sel)) {
                 auPlaySoundWithParams(0x42, 0x7FFF, 0x40, 1.0f, 0);
                 snap_swap_strip(descStrip, STR_BIND_DESC_LISTEN);
                 result = snap_bind_request((1u << 16) | (((u32) device) << 8) | (u32) (BIND_INPUT(sel) + 1),
@@ -2952,7 +2959,7 @@ static void snap_bind_page(void) {
             }
         }
 
-        if ((gContInputPressedButtons & Z_TRIG) && (sel >= BIND_ROW_FIRST)) {
+        if ((gContInputPressedButtons & Z_TRIG) && BIND_IS_INPUT(sel)) {
             result = snap_bind_request((2u << 16) | (((u32) device) << 8) | (u32) (BIND_INPUT(sel) + 1), NULL);
             flash = 0;
             if (result == BIND_KEEP) {

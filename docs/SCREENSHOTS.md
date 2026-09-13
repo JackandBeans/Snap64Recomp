@@ -1,6 +1,6 @@
 # Screenshots
 
-All twenty-seven, in the order a session meets them. Every one was taken from
+All twenty-eight, in the order a session meets them. Every one was taken from
 the 1.0.0 build, or a later one where it says so, at 1440p with Render
 Scale and Anti-Aliasing both at 8x on the game's Graphics page, then cropped
 to the game's picture. They are frames of
@@ -119,15 +119,23 @@ Stick comes **Button Setup**, the row that opens the page below and carries
 no value of its own, then **Pad Sticks** (Normal or Swapped) and **Dead
 Zone** (0 to 40 in fives), then the mouse and gyro dials as before.
 
-<a href="screenshots/10e-button-setup.png"><img src="screenshots/10e-button-setup.png" width="640" alt="The Button Setup page, on a controller"></a>
+<a href="screenshots/10g-button-setup-107.png"><img src="screenshots/10g-button-setup-107.png" width="640" alt="The Button Setup page, on a controller"></a>
 
 **Button Setup, on a controller.** The page opens on the device attached,
-here an Xbox pad: a row for each of the game's inputs, named by its button
-and what it does, and what presses it on that pad; Restore Defaults under
-the Set Up row; the help box saying more about the row under the cursor.
-A on a row listens for the next press; Z clears it.
+here an Xbox pad: Set Up on the first row, then a row for each of the
+game's inputs, named by its button and what it does, and what presses it
+on that pad, five to a screen; the help box saying more about the row
+under the cursor. A on a row listens for the next press; Z clears it.
+(1.0.6's picture of this page, `10e-button-setup.png`, had Restore
+Defaults second.)
 
-<a href="screenshots/10f-button-setup-keyboard.png"><img src="screenshots/10f-button-setup-keyboard.png" width="640" alt="The Button Setup page, on the keyboard"></a>
+<a href="screenshots/10i-button-setup-restore-107.png"><img src="screenshots/10i-button-setup-restore-107.png" width="640" alt="The Button Setup page, its last rows"></a>
+
+**Button Setup, the last rows.** The page scrolled to its end, one Up from
+the top row: the stick's four directions, then Restore Defaults, which asks
+for a second A before it puts the device at the top back the way it came.
+
+<a href="screenshots/10h-button-setup-keyboard-107.png"><img src="screenshots/10h-button-setup-keyboard-107.png" width="640" alt="The Button Setup page, on the keyboard"></a>
 
 **Button Setup, on the keyboard.** The same page with Set Up turned to
 Keyboard: the shipped keys, and Esc beside Return on the Start row, since a

@@ -1408,7 +1408,7 @@ void stage_menu_strings(uint8_t* rdram) {
         { "Left and Right pick what to set up.",      "B goes back with every change kept." },
         { "Press A again to put this device back", "the way it came, B to keep it as it is." },
         { "Press the key or button to use for this.", "Wait a few seconds to leave it as it was." },
-        { "Puts back the keys and buttons the game", "came with, for this device. A asks first." },
+        { "Puts every row back the way the game came", "for the device at the top. A asks first." },
         { "That one already does something else.", "Choose another key or button." },
         { "Something must still press this button.", "Set another device before clearing this." },
         { "Nothing was pressed in time. The row", "stays as it was." },

@@ -1,5 +1,21 @@
 # Changelog
 
+## 1.0.7 -- unreleased
+
+* Restore Defaults is the last row of the Button Setup page, after Stick
+  Right, where 1.0.6 had it second, under Set Up. Second put the page's
+  least-used row in its most looked-at slot and in the path of a quick
+  Down and A, and cost the first screen a binding: the page now opens on
+  Set Up and five inputs, A Button to L Button, and ends the way every
+  such list ends, with its reset after what it resets. Up from the top
+  row wraps to it, as it always did; its help line names the device at
+  the top, which is off screen from down there; the second A it asks for
+  is unchanged. Raised by the port's author on 2026-09-13, the day 1.0.6
+  shipped.
+* The README no longer lists Widescreen as untested beyond the Beach: the
+  port's author has since played every course with the option on and seen
+  nothing wrong, and says so in the verified list, as play, not proof.
+
 ## 1.0.6 -- 2026-09-13
 
 * A page in the game for the bindings: the Controls page's new Button
