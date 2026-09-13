@@ -1,6 +1,6 @@
 # Screenshots
 
-All twenty-two, in the order a session meets them. Every one was taken from
+All twenty-seven, in the order a session meets them. Every one was taken from
 the 1.0.0 build, or a later one where it says so, at 1440p with Render
 Scale and Anti-Aliasing both at 8x on the game's Graphics page, then cropped
 to the game's picture. They are frames of
@@ -25,9 +25,15 @@ report holds more than three species.
 
 <a href="screenshots/01f-title-105.png"><img src="screenshots/01f-title-105.png" width="640" alt="The title screen, 1.0.5"></a>
 
-**The title screen, 1.0.5.** The same title from the current build, with the
+**The title screen, 1.0.5.** The same title from that build, with the
 credits line the port adds reading v1.0.5. (The 1.0.4 picture,
 `01e-title-104.png`, stays for that release's page.)
+
+<a href="screenshots/01g-title-106.png"><img src="screenshots/01g-title-106.png" width="640" alt="The title screen, 1.0.6"></a>
+
+**The title screen, 1.0.6.** The same title from the current build, the
+credits line reading v1.0.6, taken with PRESS START at its brightest and no
+sprite crossing the water.
 
 ## A course
 
@@ -105,6 +111,27 @@ at a time, the arrows swaying as the Graphics page's do.
 **The Controls page, the gyro rows.** The same page scrolled to its lower
 half: Mouse Aim and Mouse Speed, Zoom Speed, Camera Tilt, and Gyro Aim with
 Gyro Speed, the help box explaining the row under the cursor.
+
+<a href="screenshots/10d-controls-106.png"><img src="screenshots/10d-controls-106.png" width="640" alt="The Controls page, 1.0.6"></a>
+
+**The Controls page, 1.0.6.** Eleven rows now: after Z Button and Control
+Stick comes **Button Setup**, the row that opens the page below and carries
+no value of its own, then **Pad Sticks** (Normal or Swapped) and **Dead
+Zone** (0 to 40 in fives), then the mouse and gyro dials as before.
+
+<a href="screenshots/10e-button-setup.png"><img src="screenshots/10e-button-setup.png" width="640" alt="The Button Setup page, on a controller"></a>
+
+**Button Setup, on a controller.** The page opens on the device attached,
+here an Xbox pad: a row for each of the game's inputs, named by its button
+and what it does, and what presses it on that pad; Restore Defaults under
+the Set Up row; the help box saying more about the row under the cursor.
+A on a row listens for the next press; Z clears it.
+
+<a href="screenshots/10f-button-setup-keyboard.png"><img src="screenshots/10f-button-setup-keyboard.png" width="640" alt="The Button Setup page, on the keyboard"></a>
+
+**Button Setup, on the keyboard.** The same page with Set Up turned to
+Keyboard: the shipped keys, and Esc beside Return on the Start row, since a
+tap of Esc is Start whatever the table says.
 
 ## The Snap Station
 

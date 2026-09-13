@@ -1,13 +1,14 @@
 # Changelog
 
-## 1.0.6 -- unreleased
+## 1.0.6 -- 2026-09-13
 
 * A page in the game for the bindings: the Controls page's new Button
   Setup row, third on the page, opens it (named as the game names such
   screens, "Z Button Setup"). A row for each of the game's eighteen
-  inputs shows what presses it on the device picked at the top (keyboard,
-  mouse or controller), and its help line says what the input does in the
-  game. A on a row listens for the next press of that device and binds it
+  inputs, named by its button and what it does ("Z Button: Zoom", "C-Up:
+  Look Back"), shows what presses it on the device picked at the top
+  ("Set Up: Keyboard", Mouse or Controller), two names joined with "or",
+  and its help line says more about what the input does in the game. A on a row listens for the next press of that device and binds it
   in place of the device's old one; Z clears the device's binding of the
   row unless nothing else would press the input; Restore Defaults, asking
   for a second A, puts the shipped bindings of the device shown back. What
@@ -35,6 +36,14 @@
   144, 165 and 240, each the Manual mode held at that rate by
   interpolation; until now Manual was reachable only with F8 or the file,
   and the page's own row could not show it. F8 still cycles the modes.
+* A saved fullscreen is restored after the window opens, as 1.0.5 said it
+  was. That release kept aside what the settings file said about
+  fullscreen for a restore a moment after the window opened, but the
+  reader of the file had no line for that key (fullscreen had been a
+  session-only field until then), so the saved value was always false and
+  the restore ran only on a Steam Deck, whose default is fullscreen. Found
+  by this release's own screenshot run, which asked for fullscreen and
+  got a window.
 * The menu strings' directory could hold 127 entries and 1.0.5 wrote 129:
   the last two landed in the pixels of the black tile nothing draws. It
   seats 255 now, and the strings sit after it.

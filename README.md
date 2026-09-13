@@ -292,11 +292,11 @@ running) the port switched it back.
 Every keyboard, mouse and controller binding can be changed in the game.
 The Button Setup row of the Controls page (named as the game names such
 screens: "Z Button Setup") opens a page with a row for each of the game's
-inputs -- A, B, Z, Start, L, R, the four C buttons, the
-four D-pad directions and the four stick directions -- showing what
-presses it on the device picked at the top (Keyboard, Mouse or Controller;
-Left and Right switch), and the help line says what that input does in
-the game. A on a row makes the port listen: the next key, mouse button,
+inputs, each row named by its button and what it does ("Z Button: Zoom",
+"C-Up: Look Back", "A Button: Photo"), showing what presses it on the
+device picked at the top ("Set Up: Keyboard", Mouse or Controller; Left
+and Right switch), and the help line says more about what that input does
+in the game. A on a row makes the port listen: the next key, mouse button,
 wheel tick or pad button pressed on that device becomes the row's
 binding, in place of what the device had there (the other devices' stay).
 Esc leaves the row as it was, and so does waiting eight seconds; a key the
@@ -946,12 +946,12 @@ The same list, with a place to reply, is pinned under
   exports the photos it shows, the Options screen's Graphics and Sound rows
   stage from the harvested font with no character missing, the settings file
   is valid, and the archive carries everything it must; `--only station` puts the Snap Station print
-  through both relaunches and checks the sheets. On the 1.0.5 executable
-  (SHA-256 beginning `0070b1b4`), run without diagnostics in the
+  through both relaunches and checks the sheets. On the 1.0.6 executable
+  (SHA-256 beginning `9682a2d1`), run without diagnostics in the
   environment, the suite passed 22 of 22 checks in 781 seconds, and the
-  station's 5 of 5 in 489; the 1.0.4 executable had passed the same 22
-  and 5 in 781 and 487, 1.0.3, 1.0.2 and 1.0.1 in 781 and 491 each, and
-  1.0.0 in 781 and 489 on a cold shader cache. The
+  station's 5 of 5 in 487; the 1.0.5 executable had passed the same 22
+  and 5 in 781 and 489, 1.0.4 in 781 and 487, 1.0.3, 1.0.2 and 1.0.1 in
+  781 and 491 each, and 1.0.0 in 781 and 489 on a cold shader cache. The
   suite opens the game window
   for each run and takes about
   thirteen minutes, plus eight for the station. There is no CI run, and no
