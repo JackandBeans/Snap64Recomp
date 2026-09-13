@@ -1996,12 +1996,16 @@ static void poll_bind_bank() {
                 }
                 else if (st == CaptureState::Cancelled) {
                     result = 2;
+                    printf("[SNAP-Input] Button Setup page: the listen was cancelled with Esc; the row stays as it was\n");
+                    fflush(stdout);
                 }
                 else if (st == CaptureState::TimedOut) {
                     result = 5;
                 }
                 else {
                     result = 3;
+                    printf("[SNAP-Input] Button Setup page: \"%s\" refused, it has a job of its own; the row stays as it was\n", name.c_str());
+                    fflush(stdout);
                 }
             }
         }

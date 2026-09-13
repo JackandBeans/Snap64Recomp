@@ -806,6 +806,62 @@ std::atomic<bool> g_capture_settle{false};
 constexpr int64_t CaptureTimeoutUs = 6000000;
 constexpr int64_t CaptureTestDelayUs = 300000;
 
+// SNAP_VPAD_TEST: a virtual game controller attached through SDL's own
+// joystick layer and opened in place of any real pad, whose parts the
+// captures on the controller press on a schedule: a comma-separated list
+// of SDL's names ("y", "lefttrigger", "dpup"), one per capture, each
+// pressed three tenths of a second in and released a little later. Every
+// piece of the port's pad path -- SDL's mapping and event queue, the pad
+// thread's poll and snapshot, the capture's decode, the settle after --
+// runs as for a real pad; only the driver beneath SDL is not there. For
+// the replay that proves the Button Setup page (2026-09-13).
+const bool g_vpad_test = (getenv("SNAP_VPAD_TEST") != nullptr);
+SDL_Joystick* g_vpad = nullptr;          // opened by the pad thread; pressed from the game thread
+std::vector<std::string> g_vpad_names;   // parsed once, under g_capture.mutex
+size_t g_vpad_next = 0;
+int64_t g_vpad_due_us = 0;               // when the next scripted press lands (0: none)
+int64_t g_vpad_release_us = 0;           // when the pressed part is let go (0: none)
+int g_vpad_button = -1;
+int g_vpad_axis = -1;
+
+// The scripted press and its release, on the game thread: input_get calls
+// this every reading, so the release lands whether or not a capture is
+// still polling, and the settle after the capture sees the part let go.
+void vpad_tick() {
+    if (g_vpad == nullptr) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(g_capture.mutex);
+    const int64_t t = now_us();
+    if ((g_vpad_due_us != 0) && (t >= g_vpad_due_us)) {
+        g_vpad_due_us = 0;
+        const std::string n = g_vpad_names[g_vpad_next++];
+        const SDL_GameControllerButton b = SDL_GameControllerGetButtonFromString(n.c_str());
+        const SDL_GameControllerAxis a = SDL_GameControllerGetAxisFromString(n.c_str());
+        if (b != SDL_CONTROLLER_BUTTON_INVALID) {
+            g_vpad_button = int(b);
+            SDL_JoystickSetVirtualButton(g_vpad, int(b), SDL_PRESSED);
+        } else if (a != SDL_CONTROLLER_AXIS_INVALID) {
+            g_vpad_axis = int(a);
+            SDL_JoystickSetVirtualAxis(g_vpad, int(a), 32767);
+        }
+        g_vpad_release_us = t + 150000;
+        printf("[SNAP-Input] SNAP_VPAD_TEST: \"%s\" pressed on the virtual pad\n", n.c_str());
+        fflush(stdout);
+    }
+    if ((g_vpad_release_us != 0) && (t >= g_vpad_release_us)) {
+        g_vpad_release_us = 0;
+        if (g_vpad_button >= 0) {
+            SDL_JoystickSetVirtualButton(g_vpad, g_vpad_button, SDL_RELEASED);
+        }
+        if (g_vpad_axis >= 0) {
+            SDL_JoystickSetVirtualAxis(g_vpad, g_vpad_axis, 0);
+        }
+        g_vpad_button = -1;
+        g_vpad_axis = -1;
+    }
+}
+
 // Keys the port answers to itself (src/settings.cpp handle_settings_hotkey,
 // main.cpp's Esc): a game button cannot be one of them.
 bool key_has_job(int sc) {
@@ -1107,6 +1163,23 @@ void input_capture_begin(int device) {
         if (testNext < testNames.size()) {
             g_capture.testName = testNames[testNext++];
             g_capture.testDueUs = g_capture.startedUs + CaptureTestDelayUs;
+        }
+        if (g_vpad_test && (device == kBindPad)) {
+            if (g_vpad_names.empty()) {
+                std::string cur;
+                for (const char* p = getenv("SNAP_VPAD_TEST"); ; p++) {
+                    if ((*p == ',') || (*p == '\0')) {
+                        if (!cur.empty()) g_vpad_names.push_back(cur);
+                        cur.clear();
+                        if (*p == '\0') break;
+                    } else {
+                        cur.push_back(*p);
+                    }
+                }
+            }
+            if (g_vpad_next < g_vpad_names.size()) {
+                g_vpad_due_us = g_capture.startedUs + CaptureTestDelayUs;
+            }
         }
     }
     g_capture_active.store(true, std::memory_order_relaxed);
@@ -1457,6 +1530,9 @@ static void try_open_controller() {
 
     int num_joysticks = SDL_NumJoysticks();
     for (int i = 0; i < num_joysticks; i++) {
+        if (g_vpad_test && !SDL_JoystickIsVirtual(i)) {
+            continue;   // the virtual test pad is the only pad this run opens
+        }
         if (SDL_IsGameController(i)) {
             game_controller = SDL_GameControllerOpen(i);
             if (game_controller) {
@@ -1868,6 +1944,20 @@ static void pad_thread_main() {
     // Any extra mappings first, so a pad this file teaches SDL about is
     // recognised by the first open rather than on some later poll.
     load_controller_mappings();
+    if (g_vpad_test) {
+        SDL_VirtualJoystickDesc desc;
+        SDL_zero(desc);
+        desc.version = SDL_VIRTUAL_JOYSTICK_DESC_VERSION;
+        desc.type = SDL_JOYSTICK_TYPE_GAMECONTROLLER;
+        desc.naxes = SDL_CONTROLLER_AXIS_MAX;
+        desc.nbuttons = SDL_CONTROLLER_BUTTON_MAX;
+        desc.name = "Snap64 virtual test pad";
+        const int idx = SDL_JoystickAttachVirtualEx(&desc);
+        g_vpad = (idx >= 0) ? SDL_JoystickOpen(idx) : nullptr;
+        printf("[SNAP-Input] SNAP_VPAD_TEST: virtual pad %s\n",
+               (g_vpad != nullptr) ? "attached; it is the pad this run opens, any real one is left alone" : "could not be attached");
+        fflush(stdout);
+    }
     // Registered once, for the life of the process; the watch runs on the
     // thread that queues the event, which is this one.
     SDL_AddEventWatch(photo_button_watch, nullptr);
@@ -2120,6 +2210,7 @@ static void snap_input_tap(uint16_t* buttons, float* x, float* y) {
 }
 
 bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
+    vpad_tick();
     // Port 4 is the Snap Station when it is present: a controller nobody
     // holds, so its pad reads succeed with nothing pressed (snap_station.h).
     if (controller_num == 3 && snap::station_port4_present()) {
