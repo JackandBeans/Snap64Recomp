@@ -168,6 +168,13 @@ struct Settings {
     // shaped like the N64's (the Switch Online N64 controller), whose L and
     // R arrive as SDL's shoulders and whose Z arrives as the left trigger.
     int   pad_layout        = 0;
+    // The pad's two sticks as the game reads them. False: the left stick is
+    // the Control Stick and the right one works the C buttons, the mapping
+    // every pad has had here. True swaps the two, for a player who aims
+    // with the right thumb. The Controls page's Pad Sticks row (mailbox
+    // byte 0x80C0006A) and the file both set it; input_get reads it on
+    // every pad reading, and the Button Mapping page names the sticks by it.
+    bool  pad_sticks_swapped = false;
     // Multiplies the angle per pixel: 1 is a full turn in about 2500
     // pixels, 2 twice as quick, 0.5 half. Bounded to 0.1 .. 10 where read.
     float mouse_sensitivity = 1.0f;

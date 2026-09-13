@@ -187,7 +187,7 @@ constexpr uint32_t DynPixelsAddr = 0x80D00000u;
 constexpr int DynChunks = 3;
 constexpr uint32_t DynStripBytes = uint32_t(DynChunks * 64 * StripHeight * 2);
 constexpr uint32_t kStringBaseCount = 30;   // the strings[] table below, asserted there
-constexpr uint32_t kBindDynBase = kStringBaseCount + 131;   // graphics_menu_patch.c STR_BIND_DYN
+constexpr uint32_t kBindDynBase = kStringBaseCount + 153;   // graphics_menu_patch.c STR_BIND_DYN
 constexpr int BindInputCount = 18;
 
 struct Strip {
@@ -1102,6 +1102,7 @@ static void write_setting_bytes(const Settings &s) {
     write_u8(MailboxAddr + 0x67, s.mouse_invert_y ? 1 : 0);
     write_u8(MailboxAddr + 0x68, uint8_t(std::clamp(s.gyro_aim, 0, 2)));
     write_u8(MailboxAddr + 0x69, uint8_t(ctl_speed_index(s.gyro_sensitivity)));
+    write_u8(MailboxAddr + 0x6A, s.pad_sticks_swapped ? 1 : 0);
 }
 
 void seed_mailbox() {
@@ -1319,6 +1320,8 @@ void stage_menu_strings(uint8_t* rdram) {
         "Gyro Speed",                          // +92
         "< Zoomed >",                          // +93
     };
+    // The CONTROLS page's Pad Sticks row (id BaseCount+152).
+    static const char* const sticksDesc[2] = { "Normal aims with the left stick and puts", "C on the right stick. Swapped flips them." };
     static const char* const gyroDescs[2][2] = {
         { "Turn the pad to look around a course, on",  "pads with a gyro. Zoomed aims zoomed in." },
         { "How far turning the pad turns the camera.", "Lower is slower, higher is faster." },
@@ -1326,15 +1329,16 @@ void stage_menu_strings(uint8_t* rdram) {
     // Ids BaseCount+96..+98: the Option list's Exit Game item -- its label
     // with the dot, its help line, and the question the help line becomes
     // once it is chosen (graphics_menu_patch.c STR_EXIT_*).
-    // Ids BaseCount+99..+130: the BUTTON MAPPING page (graphics_menu_patch.c
+    // Ids BaseCount+99..+152: the BUTTON MAPPING page (graphics_menu_patch.c
     // STR_BTN_* and STR_BIND_*). +99 the CONTROLS page's Button Mapping row
     // label, +100 that row's description; +101 the page's heading (header
     // face, its B, M and g the port's), +102 the Device row's label,
-    // +103..+120 the eighteen input rows' labels, +121 Reset All,
-    // +122..+124 the Device row's values, +125..+130 the descriptions: the
-    // Device row, an input row, the row while it listens, Reset All, a
-    // refused key, a refused clear.
-    // Ids BaseCount+131..+166: the input rows' values, composed live for
+    // +103..+120 the eighteen input rows' labels, +121 Restore Defaults,
+    // +122..+124 the Device row's values, +125..+131 the page's seven help
+    // lines (bindDescs), +132..+149 the input rows' own (bindInputDescs);
+    // +150 the CONTROLS page's Pad Sticks label, +151 its Swapped value,
+    // +152 its description.
+    // Ids BaseCount+153..+188: the input rows' values, composed live for
     // the device shown (bind_compose below), two banks of eighteen so a
     // bank is never rewritten while the page draws it; their pixels sit
     // apart from the staged strings, at DynPixelsAddr.
@@ -1347,15 +1351,43 @@ void stage_menu_strings(uint8_t* rdram) {
     };
     // Within the help face's letters (no E F G I K Q U V X Y, no digits
     // but 2 3 4 6, no hyphen, apostrophe or colon), 41 characters a line.
-    static const char* const bindDescs[6][2] = {
+    // Seven lines for the page itself (ids +125..+131): the Device row,
+    // Restore Defaults asking, the row while it listens, Restore Defaults
+    // at rest, a refused key, a refused clear, a listen that timed out.
+    static const char* const bindDescs[7][2] = {
         { "Left and Right pick the device to set up.", "Mouse, keyboard and pad are set apart." },
-        { "A sets a new key or button for this row.",  "Z clears the row on this device." },
-        { "Press the key or button to use now.",       "Wait a few seconds to leave it as it was." },
-        { "A puts every key and button back to the",   "ones the port ships with." },
-        { "That one has a job in the port already.",   "Choose another key or button." },
-        { "Something must still press this button.",   "Set another device before clearing this." },
+        { "Press A again to restore the shipped keys", "and buttons of this device, B keeps them." },
+        { "Press the key or button to use now.", "Wait a few seconds to leave it as it was." },
+        { "Puts back the shipped keys and buttons", "for the device shown. A asks first." },
+        { "That one has a job in the port already.", "Choose another key or button." },
+        { "Something must still press this button.", "Set another device before clearing this." },
+        { "Nothing was pressed in time. The row", "stays as it was." },
     };
-    constexpr uint32_t StringCount = BaseCount + 167;
+    // What each input does in the game, one line per row (ids +132..+149),
+    // with what A and Z do on the second. L is honest: the cartridge never
+    // reads it (nothing in the decompilation tests L_TRIG outside the
+    // crash screen); the dash needs the Dash Engine.
+    static const char* const bindInputDescs[BindInputCount][2] = {
+        { "Takes the photo when zoomed in, throws an", "apple when not. A sets it, Z clears it." },
+        { "Throws a pester ball, to wake or move a", "Pokemon. A sets it, Z clears it." },
+        { "Zooms in to take a photo, held down or as", "a switch. A sets it, Z clears it." },
+        { "Pauses the ride, and starts the game from", "the title. A sets it, Z clears it." },
+        { "Does nothing here. The game never reads", "L. A sets it, Z clears it." },
+        { "Makes the cart dash while held, once you", "have the dash engine. A sets, Z clears." },
+        { "Turns around to face behind the cart.", "A sets it, Z clears it." },
+        { "Plays the flute, once you have it.", "A sets it, Z clears it." },
+        { "Turns the camera to face left.",         "A sets it, Z clears it." },
+        { "Turns the camera to face right.",        "A sets it, Z clears it." },
+        { "Walks the menus, and in a course aims", "up, like the stick. A sets, Z clears." },
+        { "Walks the menus, and in a course aims", "down, like the stick. A sets, Z clears." },
+        { "Walks the menus, and in a course aims", "left, like the stick. A sets, Z clears." },
+        { "Walks the menus, and in a course aims", "right, like the stick. A sets, Z clears." },
+        { "Aims the camera up in a course, and", "walks the menus. A sets it, Z clears it." },
+        { "Aims the camera down in a course, and", "walks the menus. A sets it, Z clears it." },
+        { "Aims the camera left in a course, and", "walks the menus. A sets it, Z clears it." },
+        { "Aims the camera right in a course, and", "walks the menus. A sets it, Z clears it." },
+    };
+    constexpr uint32_t StringCount = BaseCount + 189;
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -1567,9 +1599,9 @@ void stage_menu_strings(uint8_t* rdram) {
             h = strip.height;
         }
         else if (id >= kBindDynBase) {
-            // A live row value of the Button Mapping page: a fixed home of its
-            // own, blank until the page opens (bind_compose writes it and
-            // the directory entry's width then).
+            // A live row value of the Button Mapping page: a fixed home of
+            // its own, blank until the page opens (bind_compose writes it
+            // and the directory entry's width then).
             const uint32_t addr = DynPixelsAddr + (id - kBindDynBase) * DynStripBytes;
             write_u32(DirectoryAddr + 0x8 + id * 8, addr);
             write_u16(DirectoryAddr + 0xC + id * 8, 64);
@@ -1578,6 +1610,26 @@ void stage_menu_strings(uint8_t* rdram) {
                 write_u16(addr + k, 0);
             }
             continue;
+        }
+        else if (id == BaseCount + 152) {
+            strip = compose_lines(sticksDesc[0], sticksDesc[1]);
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 151) {
+            strip = compose("< Swapped >");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 150) {
+            strip = compose("Pad Sticks");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id >= BaseCount + 132) {
+            strip = compose_lines(bindInputDescs[id - BaseCount - 132][0], bindInputDescs[id - BaseCount - 132][1]);
+            w = strip.width;
+            h = strip.height;
         }
         else if (id >= BaseCount + 125) {
             strip = compose_lines(bindDescs[id - BaseCount - 125][0], bindDescs[id - BaseCount - 125][1]);
@@ -1592,7 +1644,7 @@ void stage_menu_strings(uint8_t* rdram) {
             h = strip.height;
         }
         else if (id == BaseCount + 121) {
-            strip = compose("Reset All");
+            strip = compose("Restore Defaults");
             w = strip.width;
             h = strip.height;
         }
@@ -1893,6 +1945,9 @@ static void poll_bind_bank() {
                 else if (st == CaptureState::Cancelled) {
                     result = 2;
                 }
+                else if (st == CaptureState::TimedOut) {
+                    result = 5;
+                }
                 else {
                     result = 3;
                 }
@@ -1901,8 +1956,8 @@ static void poll_bind_bank() {
         else if ((op == 2) && (input != nullptr) && (reqDevice <= 2)) {
             result = input_bind_clear(input, reqDevice) ? 1 : 4;
         }
-        else if (op == 3) {
-            input_bind_reset();
+        else if ((op == 3) && (reqDevice <= 2)) {
+            input_bind_reset(reqDevice);
             result = 1;
         }
         else {
@@ -2018,6 +2073,14 @@ void poll_menu_mailbox(uint8_t* rdram) {
             c.mouse_invert_y = read_u8_mail(MailboxAddr + 0x67) != 0;
             c.gyro_aim = std::min<int>(read_u8_mail(MailboxAddr + 0x68), 2);
             c.gyro_sensitivity = kCtlSpeeds[std::min<int>(read_u8_mail(MailboxAddr + 0x69), 10)] / 100.0f;
+            const bool swapped = read_u8_mail(MailboxAddr + 0x6A) != 0;
+            if (swapped != c.pad_sticks_swapped) {
+                c.pad_sticks_swapped = swapped;
+                printf("[SNAP-CFG] pad sticks: %s\n",
+                       swapped ? "swapped (the right stick aims, the left works the C buttons)"
+                               : "normal (the left stick aims, the right works the C buttons)");
+                fflush(stdout);
+            }
         }
         settings_mark_dirty();
     }

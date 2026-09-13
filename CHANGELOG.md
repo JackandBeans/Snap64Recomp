@@ -9,8 +9,12 @@
   rows name the two sticks that always work them); A on a row listens for
   the next press of that device and
   binds it in place of the device's old one, Z clears the device's
-  binding of the row unless nothing else would press the input, and Reset
-  All puts the shipped table back. The port hands the game no input while
+  binding of the row unless nothing else would press the input, and
+  Restore Defaults, asking for a second A, puts the shipped bindings of
+  the device shown back. Each row's help line says what the input does in
+  the game, and what no table changes is named on the rows: the stick
+  that aims and the one that works the C buttons, the mouse's motion
+  while Mouse Aim is on, Esc beside Start. The port hands the game no input while
   it listens, and none until every key and button is let go after, so the
   press cannot land as the button it was or as the one it now is. Every
   change is in force at once and reaches the settings file by the usual
@@ -20,6 +24,10 @@
   key in the menu's own face, so that face gained the capitals I, K, Q,
   U, X and Y, a q and the punctuation keys are named with, drawn in its
   style, and the header face a B, an M and a g for the page's heading.
+* The Controls page has a Pad Sticks row: Swapped makes the right stick
+  aim and the left work the C buttons, for a player who aims with the
+  right thumb (`pad_sticks_swapped` in the settings file). The sticks were
+  the one part of a pad no setting could move.
 * The menu strings' directory could hold 127 entries and 1.0.5 wrote 129:
   the last two landed in the pixels of the black tile nothing draws. It
   seats 255 now, and the strings sit after it.

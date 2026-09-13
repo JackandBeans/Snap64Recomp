@@ -143,6 +143,7 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         // before, and the key is not written back.
         s.pad_enabled        = j.value("pad_enabled", s.pad_enabled);
         s.pad_layout         = std::clamp(j.value("pad_layout", s.pad_layout), 0, 2);
+        s.pad_sticks_swapped = j.value("pad_sticks_swapped", s.pad_sticks_swapped);
         s.mouse_sensitivity  = std::clamp(j.value("mouse_sensitivity", s.mouse_sensitivity), 0.1f, 10.0f);
         s.mouse_invert_y     = j.value("mouse_invert_y", s.mouse_invert_y);
         s.mouse_zoom_speed   = std::clamp(j.value("mouse_zoom_speed", s.mouse_zoom_speed), 0.25f, 1.0f);
@@ -172,7 +173,8 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         // upgraded file gains the new keys (and keys_help) on the next flush
         // rather than staying silent about them.
         s_fields_missing = !j.contains("gyro_aim") || !j.contains("pad_enabled") ||
-                           !j.contains("keys_help") || !j.contains("pad_layout");
+                           !j.contains("keys_help") || !j.contains("pad_layout") ||
+                           !j.contains("pad_sticks_swapped");
         out = s;
         return SettingsRead::Ok;
     } catch (const std::exception& e) {
@@ -346,6 +348,7 @@ bool save_settings() {
         {"mouse_aim",             copy.mouse_aim},
         {"pad_enabled",           copy.pad_enabled},
         {"pad_layout",            copy.pad_layout},
+        {"pad_sticks_swapped",    copy.pad_sticks_swapped},
         {"mouse_sensitivity",     copy.mouse_sensitivity},
         {"mouse_invert_y",        copy.mouse_invert_y},
         {"mouse_zoom_speed",      copy.mouse_zoom_speed},

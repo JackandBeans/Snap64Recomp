@@ -974,17 +974,25 @@ std::string input_bind_display(const char* input, int device) {
         return "None";
     }
     const bool n64 = pad_snapshot().n64_layout;
+    const Settings& cfg = settings();
     std::string out;
-    // The two sticks are not in the table (input_get reads them as the
-    // stick and the C buttons whatever it says), so the rows they work
-    // name them first under the controller.
+    // What no table changes, named first so a row never says "None" of a
+    // thing that works it: the two sticks under the controller (input_get
+    // reads one as the stick and the other as the C buttons, swapped by
+    // Pad Sticks), and the mouse's motion under the mouse while Mouse Aim
+    // is on (apply_mouse_look turns the view with it).
+    const bool cRow = std::strncmp(input, "c_", 2) == 0;
+    const bool stickRow = std::strncmp(input, "stick_", 6) == 0;
     if (device == kBindPad) {
-        if (std::strncmp(input, "c_", 2) == 0) {
-            out = "R Stick";
+        if (cRow) {
+            out = cfg.pad_sticks_swapped ? "L Stick" : "R Stick";
         }
-        else if (std::strncmp(input, "stick_", 6) == 0) {
-            out = "L Stick";
+        else if (stickRow) {
+            out = cfg.pad_sticks_swapped ? "R Stick" : "L Stick";
         }
+    }
+    else if ((device == kBindMouse) && stickRow && cfg.mouse_aim) {
+        out = "Motion";
     }
     for (const std::string& s : it->second) {
         if (source_device(s) != device) {
@@ -994,6 +1002,14 @@ std::string input_bind_display(const char* input, int device) {
             out += ", ";
         }
         out += display_name(s, n64);
+    }
+    // Esc's tap is Start whatever the table says (input_tap_start), so the
+    // row says so last; it cannot be bound or cleared.
+    if ((device == kBindKeyboard) && (std::strcmp(input, "start") == 0)) {
+        if (!out.empty()) {
+            out += ", ";
+        }
+        out += "Esc";
     }
     return out.empty() ? std::string("None") : out;
 }
@@ -1036,9 +1052,25 @@ bool input_bind_clear(const char* input, int device) {
     return true;
 }
 
-void input_bind_reset() {
-    printf("[SNAP-Input] the shipped bindings put back from the Button Mapping page\n");
-    bind_publish(defaults());
+void input_bind_reset(int device) {
+    Bindings table = input_bindings();
+    for (const auto& def : defaults()) {
+        std::vector<std::string>& list = table[def.first];
+        std::vector<std::string> kept;
+        for (const std::string& s : list) {
+            if (source_device(s) != device) {
+                kept.push_back(s);
+            }
+        }
+        for (const std::string& s : def.second) {
+            if (source_device(s) == device) {
+                kept.push_back(s);
+            }
+        }
+        list = kept;
+    }
+    printf("[SNAP-Input] the shipped %s bindings put back from the Button Mapping page\n", device_name(device));
+    bind_publish(table);
 }
 
 void input_capture_begin(int device) {
@@ -1097,7 +1129,7 @@ CaptureState input_capture_poll(std::string* name) {
                    g_capture.testName.c_str(), usable ? "usable" : "not a name of this device; refused");
             fflush(stdout);
         } else if (t - g_capture.startedUs >= CaptureTimeoutUs) {
-            g_capture.state = CaptureState::Cancelled;
+            g_capture.state = CaptureState::TimedOut;
             printf("[SNAP-Input] Button Mapping page: nothing pressed in six seconds; the row stays as it was\n");
             fflush(stdout);
         }
@@ -2165,18 +2197,22 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
         // What stays is the analogue: a stick is a direction and a magnitude,
         // not a button, and neither of the two below is expressible as one.
 
-        // Right stick → C buttons (threshold-based)
-        int16_t rx = snapshot_axis(pad, SDL_CONTROLLER_AXIS_RIGHTX);
-        int16_t ry = snapshot_axis(pad, SDL_CONTROLLER_AXIS_RIGHTY);
+        // Which stick is which: the left aims and the right works the C
+        // buttons unless the Controls page's Pad Sticks row swapped them.
+        const bool swapped = settings().pad_sticks_swapped;
+
+        // The C stick → C buttons (threshold-based)
+        int16_t rx = snapshot_axis(pad, swapped ? SDL_CONTROLLER_AXIS_LEFTX : SDL_CONTROLLER_AXIS_RIGHTX);
+        int16_t ry = snapshot_axis(pad, swapped ? SDL_CONTROLLER_AXIS_LEFTY : SDL_CONTROLLER_AXIS_RIGHTY);
         constexpr int16_t C_THRESHOLD = 16000;
         if (ry < -C_THRESHOLD) btn |= N64_BTN_CU;
         if (ry >  C_THRESHOLD) btn |= N64_BTN_CD;
         if (rx < -C_THRESHOLD) btn |= N64_BTN_CL;
         if (rx >  C_THRESHOLD) btn |= N64_BTN_CR;
 
-        // Left stick → analog
-        int16_t lx = snapshot_axis(pad, SDL_CONTROLLER_AXIS_LEFTX);
-        int16_t ly = snapshot_axis(pad, SDL_CONTROLLER_AXIS_LEFTY);
+        // The aiming stick → analog
+        int16_t lx = snapshot_axis(pad, swapped ? SDL_CONTROLLER_AXIS_RIGHTX : SDL_CONTROLLER_AXIS_LEFTX);
+        int16_t ly = snapshot_axis(pad, swapped ? SDL_CONTROLLER_AXIS_RIGHTY : SDL_CONTROLLER_AXIS_LEFTY);
 
         // Normalize to -1.0..1.0 range.
         float gc_x = static_cast<float>(lx) / 32767.0f;

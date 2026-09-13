@@ -142,9 +142,10 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *   +0x74  u32  SCRATCH_HELP_EXIT, the patch's own: its help line
  *   +0x78  u32  SCRATCH_HELP_EXIT2, the patch's own: its question line
  *   +0x60  u32  CONTROLS sequence word
- *   +0x64  u8   CONTROLS fields 0..5, through +0x69: mouse aim, the mouse
+ *   +0x64  u8   CONTROLS fields 0..6, through +0x6A: mouse aim, the mouse
  *               speed's step, the zoom speed's step, the tilt, the gyro
- *               mode (off, on, zoomed), the gyro speed's step
+ *               mode (off, on, zoomed), the gyro speed's step, the pad
+ *               sticks swapped
  *   +0x7C  u32  MBOX_POOL_FAIL, the patch's own: strips the pool refused
  *   +0x80  u32  MBOX_POOL_PEAK, the patch's own: the pool's high water
  *   +0xA0  u32  BIND_REQ, the BUTTON MAPPING page's request to the host: the
@@ -154,7 +155,7 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *   +0xA4  u32  BIND_ACK, the host's answer: the request in the low 24
  *               bits, the result above them (1 done, 2 cancelled, 3
  *               refused, a key with a job of its own, 4 refused, nothing
- *               else would press the input)
+ *               else would press the input, 5 nothing pressed in time)
  *   +0xA8  u32  BIND_GEN, host-owned: bumped when the page's row values
  *               were recomposed; its low bit is the bank of ids to show
  *   +0xAC  u8   BIND_DEVICE, the page's: the device it shows
@@ -265,23 +266,30 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_EXIT_ITEM     126
 #define STR_EXIT_HELP     127
 #define STR_EXIT_CONFIRM  128
-/* The BUTTON MAPPING page (menu_assets.cpp ids BaseCount+99..+166). */
+/* The BUTTON MAPPING page (menu_assets.cpp ids BaseCount+99..+188). */
 #define STR_BTN_LABEL        129  /* "Button Mapping", the CONTROLS page's third row */
 #define STR_BTN_DESC         130  /* its help line */
 #define STR_BIND_HDR         131  /* "Button Mapping" in the header face */
 #define STR_BIND_DEVICE      132  /* the Device row's label */
 #define STR_BIND_INPUT       133  /* ..150: the eighteen input rows' labels */
-#define STR_BIND_RESET       151  /* Reset All */
+#define STR_BIND_RESET       151  /* Restore Defaults */
 #define STR_BIND_KEYBOARD    152  /* ..154: Keyboard, Mouse, Controller */
 #define STR_BIND_DESC_DEVICE 155
-#define STR_BIND_DESC_ROW    156
+#define STR_BIND_DESC_CONFIRM 156 /* Restore Defaults, asking */
 #define STR_BIND_DESC_LISTEN 157
-#define STR_BIND_DESC_RESET  158
+#define STR_BIND_DESC_RESET  158  /* Restore Defaults, at rest */
 #define STR_BIND_DESC_JOB    159
 #define STR_BIND_DESC_KEEP   160
-/* ..196: the input rows' values, two banks of eighteen, composed live by
+#define STR_BIND_DESC_TIMEOUT 161
+#define STR_BIND_DESC_INPUT  162  /* ..179: what each input does, per row */
+/* The CONTROLS page's Pad Sticks row: its label, its Swapped value (Normal
+ * is the Camera Tilt row's), its description. */
+#define STR_STICKS_LABEL     180
+#define STR_SWAPPED          181
+#define STR_STICKS_DESC      182
+/* ..218: the input rows' values, two banks of eighteen, composed live by
  * the host for the device shown (BIND_GEN's low bit names the bank). */
-#define STR_BIND_DYN         161
+#define STR_BIND_DYN         183
 
 /* The SOUND bank of the mailbox: its own sequence word and value bytes
  * (percent volumes; stereo and background-mute booleans). The patched
@@ -2050,22 +2058,34 @@ static void snap_sound_page(void) {
  * screen's own variables exactly as the stock rows edited them (the
  * screen's exit writes them to the player flags); the other four are the
  * mouse's, in the mailbox's CONTROLS bank, applied live by the host. */
-/* Nine rows, six on screen at a time: the page scrolls for the last three
- * the way the Graphics page scrolls, with the same edge arrows. The third,
- * Button Mapping, is the row that opens the BUTTON MAPPING page: after the
- * game's own two settings and before the aiming dials, so a player who
- * came to change the buttons sees it without scrolling. It has no value,
- * as the Option list's own Screen row has none; its help line says what A
- * does. The settings rows keep their old order below it, so the maps to
- * the strings and the mailbox fields take the row's index without it. */
-#define CTL_ROWS 9
+/* Ten rows, six on screen at a time: the page scrolls for the last four
+ * the way the Graphics page scrolls, with the same edge arrows. In order:
+ * the game's own Z Button and Control Stick; Button Mapping, the row that
+ * opens the BUTTON MAPPING page, put where a player who came to change
+ * the buttons sees it without scrolling, with no value (the Option list's
+ * own Screen row has none) and a help line that says what A does; Pad
+ * Sticks, which stick aims and which works the C buttons; then the mouse
+ * and gyro dials. The settings are numbered in the order the strings and
+ * the CONTROLS bank were laid out in (the six mouse and gyro settings
+ * first, Pad Sticks last as the seventh field), and snap_ctl_setting maps
+ * a row to its setting. */
+#define CTL_ROWS 10
 #define CTL_VISIBLE 6
 #define CTL_ROW_BUTTONS 2
+#define CTL_ROW_STICKS 3
+#define CTL_SETTING_STICKS 8
 
-/* A settings row's index in the eight-row order the strings and the
- * CONTROLS bank are laid out in. */
+/* A row's setting: 0 and 1 the game's own, 2..7 the six mouse and gyro
+ * settings (CONTROLS bank fields 0..5), 8 Pad Sticks (field 6); -1 for
+ * the Button Mapping row, which has none. */
 static s32 snap_ctl_setting(s32 row) {
-    return (row > CTL_ROW_BUTTONS) ? (row - 1) : row;
+    if (row == CTL_ROW_BUTTONS) {
+        return -1;
+    }
+    if (row == CTL_ROW_STICKS) {
+        return CTL_SETTING_STICKS;
+    }
+    return (row > CTL_ROW_STICKS) ? (row - 2) : row;
 }
 
 static s32 snap_ctl_value_count(s32 row) {
@@ -2077,7 +2097,7 @@ static s32 snap_ctl_value_count(s32 row) {
         case 4:  return 4;    /* Zoom Speed */
         case 6:  return 3;    /* Gyro Aim: off, on, zoomed */
         case 7:  return 11;   /* Gyro Speed */
-        default: return 2;
+        default: return 2;    /* the on/off pairs, Pad Sticks among them */
     }
 }
 
@@ -2087,6 +2107,9 @@ static s32 snap_ctl_label_str(s32 row) {
         return STR_BTN_LABEL;
     }
     setting = snap_ctl_setting(row);
+    if (setting == CTL_SETTING_STICKS) {
+        return STR_STICKS_LABEL;
+    }
     return (setting < 6) ? (STR_CTL_LABEL + setting) : (STR_GYRO_LABEL + (setting - 6));
 }
 
@@ -2096,6 +2119,9 @@ static s32 snap_ctl_desc_str(s32 row) {
         return STR_BTN_DESC;
     }
     setting = snap_ctl_setting(row);
+    if (setting == CTL_SETTING_STICKS) {
+        return STR_STICKS_DESC;
+    }
     return (setting < 6) ? (STR_CTL_DESC + setting) : (STR_GYRO_DESC + (setting - 6));
 }
 
@@ -2150,6 +2176,7 @@ static s32 snap_ctl_value_str(s32 row, s32 v) {
         return -1;   /* no value: snap_make_strip makes nothing of it */
     }
     switch (snap_ctl_setting(row)) {
+        case CTL_SETTING_STICKS: return v ? STR_SWAPPED : STR_NORMAL;
         case 0:  return v ? STR_SWITCH : STR_HOLD;
         case 1:  return v ? STR_REVERSE : STR_NORMAL;
         case 2:  return v ? STR_ON : STR_OFF;
@@ -2168,7 +2195,7 @@ static s32 snap_ctl_get(s32 row) {
     switch (snap_ctl_setting(row)) {
         case 0:  return D_800E8395_A0F925 ? 1 : 0;
         case 1:  return D_800E8396_A0F926 ? 1 : 0;
-        default: return CTL_FIELD(snap_ctl_setting(row) - 2);
+        default: return CTL_FIELD(snap_ctl_setting(row) - 2);   /* Pad Sticks is field 6 */
     }
 }
 
@@ -2571,9 +2598,9 @@ static s32 snap_controls_page(void) {
  * The BUTTON MAPPING page: what presses each of the game's inputs.
  *
  * Twenty rows in the CONTROLS page's dress, six on screen: a Device row
- * (Keyboard, Mouse, Controller; Left and Right pick it), the eighteen
- * inputs -- the fourteen buttons and the four stick directions -- and
- * Reset All. An input row's value is what presses it on the device shown,
+ * (Keyboard, Mouse, Controller; Left and Right pick it), Restore Defaults,
+ * and the eighteen inputs -- the fourteen buttons and the four stick
+ * directions -- each with a help line saying what it does in the game. An input row's value is what presses it on the device shown,
  * composed live by the host from the binding table (src/input.cpp,
  * input_bind_display) into a bank of staged ids; the host turns the bank
  * with BIND_GEN and the page swaps its strips to the bank named, never
@@ -2584,7 +2611,8 @@ static s32 snap_controls_page(void) {
  * until every key and button is let go after, so neither the press nor the
  * key just bound can reach this loop as a button. Z clears the row on the
  * device shown (operation 2), refused when nothing else would press the
- * input. A on Reset All puts the shipped table back (operation 3). Every
+ * input. A on Restore Defaults asks, and a second A puts the shipped
+ * sources of the device shown back on every input (operation 3). Every
  * change is in force at once and reaches the settings file by the host's
  * debounced write; B leaves. There is no Cancel: what is on screen is what
  * is bound, as on the other recompilations' binding pages.
@@ -2592,7 +2620,11 @@ static s32 snap_controls_page(void) {
 #define BIND_ROWS      20
 #define BIND_VISIBLE   6
 #define BIND_INPUTS    18
-#define BIND_ROW_RESET 19
+/* Device, then Restore Defaults where it is seen without scrolling (a
+ * stray A cannot fire it: it asks first), then the eighteen inputs. */
+#define BIND_ROW_RESET 1
+#define BIND_ROW_FIRST 2
+#define BIND_INPUT(row) ((row) - BIND_ROW_FIRST)
 #define BIND_REQ     (*(volatile u32*) (SNAP_GFX_MAILBOX + 0xA0))
 #define BIND_ACK     (*(volatile u32*) (SNAP_GFX_MAILBOX + 0xA4))
 #define BIND_GEN     (*(volatile u32*) (SNAP_GFX_MAILBOX + 0xA8))
@@ -2609,35 +2641,37 @@ static s32 snap_controls_page(void) {
 #define BIND_CANCELLED 2
 #define BIND_JOB       3
 #define BIND_KEEP      4
+#define BIND_TIMEOUT   5
 
 static s32 snap_bind_label_str(s32 row) {
     if (row == 0) {
         return STR_BIND_DEVICE;
     }
-    if (row <= BIND_INPUTS) {
-        return STR_BIND_INPUT + (row - 1);
+    if (row == BIND_ROW_RESET) {
+        return STR_BIND_RESET;
     }
-    return STR_BIND_RESET;
+    return STR_BIND_INPUT + BIND_INPUT(row);
 }
 
 static s32 snap_bind_value_str(s32 row, s32 device, u32 gen) {
     if (row == 0) {
         return STR_BIND_KEYBOARD + device;
     }
-    if (row <= BIND_INPUTS) {
-        return STR_BIND_DYN + ((s32) (gen & 1)) * BIND_INPUTS + (row - 1);
+    if (row == BIND_ROW_RESET) {
+        return -1;   /* no value; its help line says what A does */
     }
-    return -1;   /* Reset All: no value; its help line says what A does */
+    return STR_BIND_DYN + ((s32) (gen & 1)) * BIND_INPUTS + BIND_INPUT(row);
 }
 
+/* Each input row's line says what that input does in the game. */
 static s32 snap_bind_desc_str(s32 row) {
     if (row == 0) {
         return STR_BIND_DESC_DEVICE;
     }
-    if (row <= BIND_INPUTS) {
-        return STR_BIND_DESC_ROW;
+    if (row == BIND_ROW_RESET) {
+        return STR_BIND_DESC_RESET;
     }
-    return STR_BIND_DESC_RESET;
+    return STR_BIND_DESC_INPUT + BIND_INPUT(row);
 }
 
 /* Rows [top, top+BIND_VISIBLE) sit at the fixed slots, the rest hide; the
@@ -2731,6 +2765,7 @@ static void snap_bind_page(void) {
     s32 device;
     s32 result;
     s32 flash;
+    s32 armed;
     u32 gen;
     u8 pulseState, pulseCounter, bobTick;
     u8 nudgeUp, nudgeDn;
@@ -2782,6 +2817,7 @@ static void snap_bind_page(void) {
     nudgeUp = 0;
     nudgeDn = 0;
     flash = 0;
+    armed = 0;
 
     ohWait(2);
 
@@ -2791,27 +2827,37 @@ static void snap_bind_page(void) {
         /* The host turned the bank: the row values are new. */
         if (BIND_GEN != gen) {
             gen = BIND_GEN;
-            for (i = 1; i <= BIND_INPUTS; i++) {
+            for (i = BIND_ROW_FIRST; i < BIND_ROWS; i++) {
                 snap_swap_strip((GObj*) BIND_VALUE(i), snap_bind_value_str(i, device, gen));
             }
         }
 
         if (gContInputPressedButtons & B_BUTTON) {
             auPlaySoundWithParams(0x43, 0x7FFF, 0x40, 1.0f, 0);
+            if (armed) {
+                /* Restore Defaults withdrawn, the page stays. */
+                armed = 0;
+                snap_swap_strip(descStrip, snap_bind_desc_str(sel));
+                ohWait(1);
+                continue;
+            }
             break;
         }
 
         if (gContInputPressedButtons & A_BUTTON) {
-            if ((sel >= 1) && (sel <= BIND_INPUTS)) {
+            if (sel >= BIND_ROW_FIRST) {
                 auPlaySoundWithParams(0x42, 0x7FFF, 0x40, 1.0f, 0);
                 snap_swap_strip(descStrip, STR_BIND_DESC_LISTEN);
-                result = snap_bind_request((1u << 16) | (((u32) device) << 8) | (u32) sel,
+                result = snap_bind_request((1u << 16) | (((u32) device) << 8) | (u32) (BIND_INPUT(sel) + 1),
                                            (GObj*) BIND_VALUE(sel));
                 flash = 0;
                 if (result == BIND_JOB) {
                     auPlaySoundWithParams(0x43, 0x7FFF, 0x40, 1.0f, 0);
                     snap_swap_strip(descStrip, STR_BIND_DESC_JOB);
-                    flash = 90;
+                    flash = 180;
+                } else if (result == BIND_TIMEOUT) {
+                    snap_swap_strip(descStrip, STR_BIND_DESC_TIMEOUT);
+                    flash = 180;
                 } else {
                     if (result == BIND_DONE) {
                         auPlaySoundWithParams(0x42, 0x7FFF, 0x40, 1.0f, 0);
@@ -2822,20 +2868,30 @@ static void snap_bind_page(void) {
                 continue;
             }
             if (sel == BIND_ROW_RESET) {
+                /* Asks first, the way Exit Game asks: the help line becomes
+                 * the question and the next A answers it; B or moving off
+                 * the row withdraws it. Restores the device shown. */
                 auPlaySoundWithParams(0x42, 0x7FFF, 0x40, 1.0f, 0);
-                snap_bind_request(3u << 16, (GObj*) BIND_VALUE(sel));
+                if (!armed) {
+                    armed = 1;
+                    snap_swap_strip(descStrip, STR_BIND_DESC_CONFIRM);
+                } else {
+                    armed = 0;
+                    snap_bind_request((3u << 16) | (((u32) device) << 8), NULL);
+                    snap_swap_strip(descStrip, STR_BIND_DESC_RESET);
+                }
                 ohWait(1);
                 continue;
             }
         }
 
-        if ((gContInputPressedButtons & Z_TRIG) && (sel >= 1) && (sel <= BIND_INPUTS)) {
-            result = snap_bind_request((2u << 16) | (((u32) device) << 8) | (u32) sel, NULL);
+        if ((gContInputPressedButtons & Z_TRIG) && (sel >= BIND_ROW_FIRST)) {
+            result = snap_bind_request((2u << 16) | (((u32) device) << 8) | (u32) (BIND_INPUT(sel) + 1), NULL);
             flash = 0;
             if (result == BIND_KEEP) {
                 auPlaySoundWithParams(0x43, 0x7FFF, 0x40, 1.0f, 0);
                 snap_swap_strip(descStrip, STR_BIND_DESC_KEEP);
-                flash = 90;
+                flash = 180;
             } else {
                 auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
             }
@@ -2901,6 +2957,7 @@ static void snap_bind_page(void) {
             snap_tint((GObj*) BIND_LABEL(sel), 0xFF, 0xFF, 0xFF);
             sel = (sel == 0) ? (BIND_ROWS - 1) : (sel - 1);
             pulseState = 0;
+            armed = 0;
             if (sel < top) {
                 top = sel;
                 snap_bind_layout(top);
@@ -2918,6 +2975,7 @@ static void snap_bind_page(void) {
             snap_tint((GObj*) BIND_LABEL(sel), 0xFF, 0xFF, 0xFF);
             sel = (sel + 1) % BIND_ROWS;
             pulseState = 0;
+            armed = 0;
             if (sel < top) {
                 top = sel;
                 snap_bind_layout(top);
@@ -2940,7 +2998,8 @@ static void snap_bind_page(void) {
             auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
         }
 
-        /* A refusal's line stays three seconds, then the row's returns. */
+        /* A refusal's or a time-out's line stays three seconds (the Option
+         * screen runs at sixty frames), then the row's returns. */
         if (flash > 0) {
             flash--;
             if (flash == 0) {

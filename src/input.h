@@ -137,29 +137,33 @@ bool input_pad_attached();
 // What presses an input on one device, as the page's row shows it: "X",
 // "Left Shift, Space", "L Bumper", or "None". The pad's names follow the
 // layout in force: the shoulder read as Z on an N64-shaped pad is "Z" there
-// and "L Bumper" on the rest. Under the controller the C rows start with
-// "R Stick" and the stick rows with "L Stick", the two sticks no table
-// changes (input_get).
+// and "L Bumper" on the rest. What no table changes is named too: under the
+// controller the C rows start with the stick that works them and the stick
+// rows with the one that aims (the two swap with pad_sticks_swapped); under
+// the mouse the stick rows start with "Motion" while Mouse Aim is on; under
+// the keyboard Start ends with "Esc", whose tap is Start whatever the table
+// says.
 std::string input_bind_display(const char* input, int device);
 
 // The page's edits, each put in force at once and marked for the settings
 // file (the main thread's debounced write): replaces the device's sources of
 // an input with one name; removes them (false, and nothing changes, when the
-// input would be left with no source on any device); puts the shipped table
-// back for every device. Game thread.
+// input would be left with no source on any device); puts the shipped
+// sources of one device back on every input, the other devices' untouched.
+// Game thread.
 void input_bind_set(const char* input, int device, const std::string& source);
 bool input_bind_clear(const char* input, int device);
-void input_bind_reset();
+void input_bind_reset(int device);
 
 // The capture: the page asks for the next press on one device, and the game
 // is handed no input until the capture ends and every source is let go.
 // begin arms it (game thread); the window's thread feeds it the events
 // (input_handle_sdl_event) -- a key or button of that device binds, Esc
 // cancels, a key the port answers to itself (the hotkeys, Esc) is refused,
-// and six seconds of nothing cancels; poll says how it stands and hands
-// over the name; end disarms it. active is what the window's thread asks
+// and six seconds of nothing times it out; poll says how it stands and
+// hands over the name; end disarms it. active is what the window's thread asks
 // before it treats a key as a hotkey or as Esc's Start.
-enum class CaptureState { Idle, Listening, Bound, Cancelled, RefusedJob };
+enum class CaptureState { Idle, Listening, Bound, Cancelled, RefusedJob, TimedOut };
 void input_capture_begin(int device);
 CaptureState input_capture_poll(std::string* name);
 void input_capture_end();

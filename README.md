@@ -288,15 +288,19 @@ The Button Mapping row of the Controls page opens a page with a row for
 each of the game's inputs -- A, B, Z, Start, L, R, the four C buttons, the
 four D-pad directions and the four stick directions -- showing what
 presses it on the device picked at the top (Keyboard, Mouse or Controller;
-Left and Right switch; under Controller the C and stick rows name the two
-sticks that always work them). A on a row makes the port listen: the next key, mouse
-button, wheel tick or pad button pressed on that device becomes the row's
+Left and Right switch), and the help line says what that input does in
+the game. A on a row makes the port listen: the next key, mouse button,
+wheel tick or pad button pressed on that device becomes the row's
 binding, in place of what the device had there (the other devices' stay).
 Esc leaves the row as it was, and so does waiting six seconds; a key the
 port answers to itself (the function keys, P, the brackets, Home, End,
 Esc) and the pad's Back and Guide are refused. Z clears the row on that
-device, unless nothing else would press the input. Reset All puts the
-shipped table back. Every change is in force at once and saved.
+device, unless nothing else would press the input. Restore Defaults, the
+row under Device, asks for a second A and then puts the shipped bindings
+of the device shown back. What no table changes is named on the rows too:
+under Controller the stick that aims and the one that works the C
+buttons, under Mouse the motion that aims while Mouse Aim is on, and Esc
+beside Start on the keyboard. Every change is in force at once and saved.
 
 The same bindings are in the settings file, where a text editor changes
 them too. Its `keys` table names each input (`a`, `b`, `z`, `start`, `l`, `r`, `c_up`,
@@ -321,12 +325,14 @@ layout `"X"` is the key in X's place, not the letter printed on it.
 Any SDL game controller overrides the keyboard while attached: left stick is
 the control stick, A is A, B or X is B, the left shoulder button is Z, Start
 is Start, the D-pad is the D-pad, the triggers are L and R, and the right stick
-is the C buttons. The Back button (Select, View or Share on most pads) is not
+is the C buttons. **Pad Sticks** on the Controls page swaps the two sticks,
+so the right one aims and the left works the C buttons (`pad_sticks_swapped`
+in the settings file). The Back button (Select, View or Share on most pads) is not
 an N64 button: it saves the photo on screen, as P does on the keyboard (see
 "Photos"). The eight buttons -- A, B, Z, Start, the D-pad's four, L and R --
 are each a row of the Button Mapping page and of the settings file's `keys`
-table and can be moved; the two sticks and the Back button are not, and
-keep the mapping above.
+table and can be moved; the two sticks can only be swapped, and the Back
+button keeps its job.
 
 **Which controllers work.** Anything SDL2 has a mapping for, which is most of
 what is sold: Xbox pads (360, One, Series) over USB or Bluetooth, PlayStation
