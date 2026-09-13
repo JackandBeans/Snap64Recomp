@@ -380,17 +380,10 @@ namespace RT64 {
             worker->commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(dstTarget->texture.get(), RenderTextureLayout::SHADER_READ));
         }
         else {
-            RenderTextureBarrier copyBarriers[] = {
-                RenderTextureBarrier(src.texture.get(), RenderTextureLayout::COPY_SOURCE),
-                RenderTextureBarrier(dstTarget->texture.get(), RenderTextureLayout::COPY_DEST),
-            };
-            worker->commandList->barriers(RenderBarrierStage::COPY, copyBarriers, uint32_t(std::size(copyBarriers)));
-
-            const RenderBox srcBox(0, 0, int32_t(src.width), int32_t(src.height));
-            worker->commandList->copyTextureRegion(
-                RenderTextureCopyLocation::Subresource(dstTarget->texture.get()),
-                RenderTextureCopyLocation::Subresource(src.texture.get()),
-                0, 0, 0, &srcBox);
+            // Drawn, not transferred: RT64 keeps transfer commands away from
+            // its render targets (render/rt64_render_target.cpp,
+            // snapCopyFromTargetRaster, which says what this was and was not).
+            dstTarget->snapCopyFromTargetRaster(worker, &src, ext.shaderLibrary);
             worker->commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(dstTarget->texture.get(), RenderTextureLayout::SHADER_READ));
         }
         worker->commandList->end();
@@ -815,6 +808,41 @@ namespace RT64 {
                     drawParams.fbPairIndex = f;
                     drawParams.fbWidth = nativeColorWidth;
                     drawParams.fbHeight = nativeColorHeight;
+                    // Pokemon Snap port, diagnostic (SNAP_PASS_TRACE): every
+                    // pass of a workload that contains a pass with a colour
+                    // image at most sixteen pixels wide, with the target it
+                    // was given. For the Deck's top-left box (2026-09-12).
+                    {
+                        static const bool passTrace = (std::getenv("SNAP_PASS_TRACE") != nullptr);
+                        static uint32_t tracedWorkloads = 0;
+                        static uint32_t tracedWorkloadId = UINT32_MAX;
+                        static bool traceThis = false;
+                        if (passTrace) {
+                            if (tracedWorkloadId != workload.workloadId) {
+                                tracedWorkloadId = workload.workloadId;
+                                bool tiny = false;
+                                for (uint32_t t = 0; t < fbPairCount; t++) {
+                                    tiny = tiny || (workload.fbPairs[t].colorImage.width <= 16);
+                                }
+                                traceThis = tiny && (tracedWorkloads < 40);
+                                if (traceThis) {
+                                    tracedWorkloads++;
+                                    fprintf(stdout, "[SNAP-PASS] workload %u: %u pairs, presented pair %d, msaa %d, interpolated %d\n",
+                                        workload.workloadId, fbPairCount, overrideTargetFbPairIndex, usingMSAA ? 1 : 0, interpolationSubFrame ? 1 : 0);
+                                }
+                            }
+                            if (traceThis) {
+                                fprintf(stdout, "[SNAP-PASS]   pair %u: color %08X w %u (native %u) draw h %d, target %ux%u rev %llu, depth %s target %ux%u, dummy %d\n",
+                                    f, fbPair.colorImage.address, fbPair.colorImage.width, nativeColorWidth, fbPair.drawColorRect.bottom(true),
+                                    (colorTarget != nullptr) ? colorTarget->width : 0, (colorTarget != nullptr) ? colorTarget->height : 0,
+                                    (unsigned long long)((colorTarget != nullptr) ? colorTarget->textureRevision : 0),
+                                    (fbPair.depthRead || fbPair.depthWrite) ? "yes" : "no",
+                                    (depthTarget != nullptr) ? depthTarget->width : 0, (depthTarget != nullptr) ? depthTarget->height : 0,
+                                    (depthTarget == nullptr) ? 1 : 0);
+                                fflush(stdout);
+                            }
+                        }
+                    }
                     drawParams.targetWidth = targetWidth;
                     drawParams.targetHeight = targetHeight;
                     drawParams.rasterShaderCache = ext.rasterShaderCache;
@@ -892,6 +920,23 @@ namespace RT64 {
 
             workerMutex.lock();
             ext.workloadGraphicsWorker->commandList->begin();
+
+            // Pokemon Snap port, diagnostic (SNAP_OP_TRACE): the frame's
+            // marker; the trace arms itself at the first workload that has a
+            // pass with a colour image at most sixteen pixels wide.
+            if (snapdiag::opTraceEnabled()) {
+                static bool snapOpTraceArmed = false;
+                bool tiny = false;
+                for (uint32_t t = 0; t < fbPairCount; t++) {
+                    tiny = tiny || (workload.fbPairs[t].colorImage.width <= 16);
+                }
+                if (tiny && !snapOpTraceArmed) {
+                    snapOpTraceArmed = true;
+                    snapdiag::opTraceArm(12000);
+                }
+                snapdiag::opTrace("Workload", "workload %u begin: %u pairs, presented pair %d, msaa %d, subframe %d, tiny %d",
+                    workload.workloadId, fbPairCount, overrideTargetFbPairIndex, usingMSAA ? 1 : 0, interpolationSubFrame ? 1 : 0, tiny ? 1 : 0);
+            }
 
             // Pokemon Snap port: a target created for this frame is cleared
             // before anything is read or drawn into it -- first in this
@@ -1725,8 +1770,13 @@ namespace RT64 {
                         snapdiag::holdFromStepCounter().fetch_add(1, std::memory_order_relaxed);
                     }
                 }
-                if (snapCutHold && snapdiag::diagEnabled()) {
-                    fprintf(stdout, "[SNAP-HOLD] cut transit: presenting previous frame for one tick\n");
+                // Printed in every log: a hold is rare (a camera cut) and is
+                // the one event that writes an interpolated target outside
+                // the resolves, so a report's log says when it happened.
+                if (snapCutHold) {
+                    fprintf(stdout, "[SNAP-HOLD] g%u cut transit: presenting the previous frame for one tick (%s)\n",
+                        snapdiag::gameFrameCounter().load(std::memory_order_relaxed),
+                        workload.snapCutHold ? (snapSteppedFrame ? "camera cut and authored step" : "camera cut") : "authored step");
                     fflush(stdout);
                 }
 
@@ -1941,6 +1991,14 @@ namespace RT64 {
                                 fprintf(stdout, "[SNAP-HOLDFAIL] a held frame could not be delivered; showing the frame as rendered\n");
                                 fflush(stdout);
                             }
+                        }
+                        else {
+                            fprintf(stdout, "[SNAP-HOLD] g%u delivered into %s (texture %p)\n",
+                                snapdiag::gameFrameCounter().load(std::memory_order_relaxed),
+                                heldIntoFirstTarget ? "interpolated target 0" : ((overrideTarget != nullptr) ? "the override target" : "the drawn target"),
+                                heldIntoFirstTarget ? (const void *)(interpolatedTargets.empty() ? nullptr : interpolatedTargets[0]->texture.get()) :
+                                    ((overrideTarget != nullptr) ? (const void *)overrideTarget->texture.get() : nullptr));
+                            fflush(stdout);
                         }
                     }
 

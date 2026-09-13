@@ -1424,6 +1424,9 @@ namespace RT64 {
                 pairCursor = framebufferPairCursor;
                 while (pairCursor < maxFramebufferPair) {
                     FramebufferPair &fbPair = workload.fbPairs[pairCursor];
+                    if (snapdiag::opTraceEnabled()) {
+                        snapdiag::opTrace("Framebuffer", "native pass pair %u: color %08X w %u, workload %u", pairCursor, fbPair.colorImage.address, fbPair.colorImage.width, workload.workloadId);
+                    }
                     framebufferManager.recordOperations(ext.framebufferGraphicsWorker, &workload.fbChangePool, &workload.fbStorage, ext.shaderLibrary, ext.textureCache,
                         fbPair.startFbOperations, renderTargetManager, resolutionScale, pairCursor, workload.submissionFrame);
 

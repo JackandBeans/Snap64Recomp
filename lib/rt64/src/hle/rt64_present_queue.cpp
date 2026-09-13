@@ -129,6 +129,9 @@ namespace {
         bool sourceIsBGRA = false;
         uint32_t index = 0;
         uint32_t gameFrame = 0;
+        // Names the file: "present" for the picture shown, "depthXXXXXXXX"
+        // for a depth target's conversion (SNAP_PCAP_DEPTH).
+        char tag[16] = "present";
     };
 
     struct SnapPresentCapture {
@@ -148,6 +151,14 @@ namespace {
         std::deque<SnapCaptureJob> jobs;
     };
     SnapPresentCapture &snapCapture() {
+        static SnapPresentCapture *capture = new SnapPresentCapture();
+        return *capture;
+    }
+
+    // Pokemon Snap port, diagnostic (SNAP_PCAP_DEPTH): the readback of the
+    // depth target photographed beside each present. Its jobs go through the
+    // present capture's worker; only the readback buffer is its own.
+    SnapPresentCapture &snapDepthCapture() {
         static SnapPresentCapture *capture = new SnapPresentCapture();
         return *capture;
     }
@@ -207,10 +218,10 @@ namespace {
         // replay's clock: the schedule arms in readings, the log reports
         // readings against game frames, and the files sort into bursts.
         char path[160];
-        snprintf(path, sizeof(path), "snap_frame_dumps/r%05u_present_%05u_g%06u.bmp", snapdiag::runToken(), job.index, job.gameFrame);
+        snprintf(path, sizeof(path), "snap_frame_dumps/r%05u_%s_%05u_g%06u.bmp", snapdiag::runToken(), job.tag, job.index, job.gameFrame);
         if (snapdiag::writeBMP24(path, outWidth, outHeight, bgr.data())) {
             snapCapture().filesWritten.fetch_add(1);
-            fprintf(stdout, "[SNAP-PCAP] wrote present %u (game frame %u)\n", job.index, job.gameFrame);
+            fprintf(stdout, "[SNAP-PCAP] wrote %s %u (game frame %u)\n", job.tag, job.index, job.gameFrame);
             fflush(stdout);
         }
     }
@@ -247,9 +258,8 @@ namespace {
     // Records a copy of the texture the VI is about to draw into a readback
     // buffer on the open command list. The caller's existing execute + wait
     // makes the buffer safe to map afterwards.
-    void snapCaptureRecord(RenderDevice *device, RenderCommandList *commandList, const RenderTexture *texture, RenderFormat format, uint32_t width, uint32_t height) {
-        SnapPresentCapture &capture = snapCapture();
-        if (capture.warned || (capture.filesWritten.load() >= snapCaptureMaxFiles())) {
+    void snapCaptureRecordTo(SnapPresentCapture &capture, RenderDevice *device, RenderCommandList *commandList, const RenderTexture *texture, RenderFormat format, uint32_t width, uint32_t height) {
+        if (capture.warned || (snapCapture().filesWritten.load() >= snapCaptureMaxFiles())) {
             return;
         }
 
@@ -297,11 +307,14 @@ namespace {
         capture.pending = true;
     }
 
+    void snapCaptureRecord(RenderDevice *device, RenderCommandList *commandList, const RenderTexture *texture, RenderFormat format, uint32_t width, uint32_t height) {
+        snapCaptureRecordTo(snapCapture(), device, commandList, texture, format, width, height);
+    }
+
     // Maps the readback, hands the pixels to the worker, and returns. Only
     // called after the present worker's fence wait, which is what makes the
     // map safe; everything slow happens off this thread.
-    void snapCaptureFinish(RenderFormat format) {
-        SnapPresentCapture &capture = snapCapture();
+    void snapCaptureFinishFrom(SnapPresentCapture &capture, RenderFormat format, const char *tag, int32_t indexOverride) {
         if (!capture.pending) {
             return;
         }
@@ -319,12 +332,17 @@ namespace {
         job.rowPitchBytes = capture.rowPitchBytes;
         job.bytesPerPixel = capture.bytesPerPixel;
         job.sourceIsBGRA = (format == RenderFormat::B8G8R8A8_UNORM);
-        job.index = capture.counter++;
+        job.index = (indexOverride >= 0) ? uint32_t(indexOverride) : capture.counter++;
+        snprintf(job.tag, sizeof(job.tag), "%s", tag);
         job.gameFrame = snapdiag::gameFrameCounter().load(std::memory_order_relaxed);
         job.pixels.assign(pixels, pixels + capture.bufferSize);
         capture.buffer->unmap();
 
         snapCaptureEnqueue(std::move(job));
+    }
+
+    void snapCaptureFinish(RenderFormat format) {
+        snapCaptureFinishFrom(snapCapture(), format, "present", -1);
     }
 }
 
@@ -716,6 +734,13 @@ namespace {
                 RenderCommandList *commandList = ext.presentGraphicsWorker->commandList.get();
                 commandList->begin();
                 commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(swapChainTexture, RenderTextureLayout::COLOR_WRITE));
+                if (snapdiag::opTraceEnabled()) {
+                    snapdiag::opTrace("Present", "present %d of %d: target %08X %ux%u rev %llu tex %p, firstFromInterpolated %d",
+                        i, framesToPresent, (colorTarget != nullptr) ? colorTarget->addressForName : 0,
+                        (colorTarget != nullptr) ? colorTarget->width : 0, (colorTarget != nullptr) ? colorTarget->height : 0,
+                        (unsigned long long)((colorTarget != nullptr) ? colorTarget->textureRevision : 0),
+                        (const void *)((colorTarget != nullptr) ? colorTarget->texture.get() : nullptr), snapFirstFromInterpolated ? 1 : 0);
+                }
                 
                 VIRenderer::RenderParams renderParams;
                 if (colorTarget != nullptr) {
@@ -805,6 +830,44 @@ namespace {
                     }
                 }
 
+                // Pokemon Snap port, diagnostic (SNAP_PCAP_DEPTH): beside each
+                // photographed present, the frame's largest depth target,
+                // converted to colour the way RT64 converts depth for the
+                // game (RtCopyDepthToColor: the sixteen-bit depth packed as
+                // RGBA 5551), read back and written as r*_depthXXXXXXXX_*.bmp.
+                // For the Deck's top-left box (2026-09-12): whether stale
+                // depth in that region rejects the scene.
+                static const bool snapDepthCaptureEnabled = (std::getenv("SNAP_PCAP_DEPTH") != nullptr);
+                bool snapDepthRecorded = false;
+                RenderFormat snapDepthFormat = RenderFormat::UNKNOWN;
+                uint32_t snapDepthAddress = 0;
+                if (snapDepthCaptureEnabled && !overlayShown && (renderParams.texture != nullptr) &&
+                    (snapdiag::captureEnabled() || snapPcapScheduled() || (snap_frame_dump_station.load() > 0)) &&
+                    (snap_frame_dump_pending.load() > 0)) {
+                    RenderTarget *depthTarget = nullptr;
+                    for (auto &it : targetManager.targetMap) {
+                        RenderTarget *candidate = it.second.get();
+                        if ((candidate->type == Framebuffer::Type::Depth) && !candidate->isEmpty() &&
+                            ((depthTarget == nullptr) || (uint64_t(candidate->width) * candidate->height > uint64_t(depthTarget->width) * depthTarget->height))) {
+                            depthTarget = candidate;
+                        }
+                    }
+
+                    if (depthTarget != nullptr) {
+                        static std::unique_ptr<RenderTarget> snapDepthScratch;
+                        if ((snapDepthScratch == nullptr) || (snapDepthScratch->width != depthTarget->width) || (snapDepthScratch->height != depthTarget->height)) {
+                            snapDepthScratch = std::make_unique<RenderTarget>(0, Framebuffer::Type::Color, RenderMultisampling(), targetManager.usesHDR);
+                            snapDepthScratch->setupColor(ext.presentGraphicsWorker, depthTarget->width, depthTarget->height);
+                        }
+
+                        snapDepthScratch->copyFromTarget(ext.presentGraphicsWorker, depthTarget, 0, 0, depthTarget->width, depthTarget->height, ext.shaderLibrary);
+                        snapCaptureRecordTo(snapDepthCapture(), ext.device, commandList, snapDepthScratch->texture.get(), snapDepthScratch->format, snapDepthScratch->width, snapDepthScratch->height);
+                        snapDepthRecorded = true;
+                        snapDepthFormat = snapDepthScratch->format;
+                        snapDepthAddress = depthTarget->addressForName;
+                    }
+                }
+
                 commandList->setFramebuffer(swapChainFramebuffer);
                 commandList->clearColor();
 
@@ -856,6 +919,11 @@ namespace {
                 // readback is safe to map and write out here.
                 if (snapdiag::captureEnabled() || snapPcapScheduled() || (snap_frame_dump_station.load() > 0)) {
                     snapCaptureFinish(renderParams.textureFormat);
+                }
+                if (snapDepthRecorded) {
+                    char depthTag[16];
+                    snprintf(depthTag, sizeof(depthTag), "depth%08X", snapDepthAddress);
+                    snapCaptureFinishFrom(snapDepthCapture(), snapDepthFormat, depthTag, int32_t(snapCapture().counter) - 1);
                 }
             }
 

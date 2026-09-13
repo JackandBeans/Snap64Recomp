@@ -64,6 +64,7 @@ namespace RT64 {
         void setupDepthFramebuffer(RenderWorker *worker);
         void copyFromTarget(RenderWorker *worker, RenderTarget *src, uint32_t x, uint32_t y, uint32_t width, uint32_t height, const ShaderLibrary *shaderLibrary);
         void resolveFromTarget(RenderWorker *worker, RenderTarget *src, const ShaderLibrary *shaderLibrary);
+        void snapCopyFromTargetRaster(RenderWorker *worker, RenderTarget *src, const ShaderLibrary *shaderLibrary);
         void copyFromChanges(RenderWorker *worker, const FramebufferChange &fbChange, uint32_t fbWidth, uint32_t fbHeight, uint32_t rowStart, const ShaderLibrary *shaderLibrary);
         void clearColorTarget(RenderWorker *worker);
         void clearDepthTarget(RenderWorker *worker);

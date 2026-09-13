@@ -29,6 +29,10 @@
 #include <cstdio>
 #include <cstdlib>
 #include <ctime>
+#include <cstdarg>
+#include <deque>
+#include <mutex>
+#include <string>
 #if defined(_WIN32)
 #include <direct.h>
 #else
@@ -549,6 +553,74 @@ inline std::atomic<uint32_t> &skippedDrawCounter() {
 inline std::atomic<uint32_t> &gameFrameCounter() {
     static std::atomic<uint32_t> counter{0};
     return counter;
+}
+
+// Pokemon Snap port, diagnostic (SNAP_OP_TRACE): one line for every
+// operation the renderer records against a render target -- copies, clears,
+// resolves, RAM reads, tile copies -- with the recording thread, the game
+// frame and the target's identity, from the three render threads at once.
+// The lines are held in a ring until a caller arms the trace (the workload
+// thread does, at the first pass whose colour image is at most sixteen
+// pixels wide: the Pokemon detector's first pass, where the Deck's top-left
+// box appears, 2026-09-12); arming flushes the ring and lets the next lines
+// print live until the budget is spent.
+inline bool opTraceEnabled() {
+    static const bool enabled = (std::getenv("SNAP_OP_TRACE") != nullptr);
+    return enabled;
+}
+
+struct OpTraceState {
+    std::mutex mutex;
+    std::deque<std::string> ring;
+    uint32_t budget = 0;
+    uint32_t armedTimes = 0;
+};
+
+inline OpTraceState &opTraceState() {
+    static OpTraceState *state = new OpTraceState();
+    return *state;
+}
+
+inline void opTraceArm(uint32_t lines) {
+    OpTraceState &s = opTraceState();
+    std::lock_guard<std::mutex> lock(s.mutex);
+    s.armedTimes++;
+    fprintf(stdout, "[SNAP-OP] === armed (%u), %u lines held ===\n", s.armedTimes, uint32_t(s.ring.size()));
+    for (const std::string &line : s.ring) {
+        fputs(line.c_str(), stdout);
+    }
+    s.ring.clear();
+    s.budget += lines;
+    fflush(stdout);
+}
+
+inline void opTrace(const char *thread, const char *fmt, ...) {
+    OpTraceState &s = opTraceState();
+    char text[640];
+    int n = snprintf(text, sizeof(text), "[SNAP-OP] g%u %s: ", gameFrameCounter().load(std::memory_order_relaxed), thread);
+    if ((n < 0) || (size_t(n) >= sizeof(text))) {
+        return;
+    }
+    va_list args;
+    va_start(args, fmt);
+    vsnprintf(text + n, sizeof(text) - size_t(n), fmt, args);
+    va_end(args);
+    std::lock_guard<std::mutex> lock(s.mutex);
+    if (s.budget > 0) {
+        s.budget--;
+        fputs(text, stdout);
+        fputc('\n', stdout);
+        if ((s.budget % 64) == 0) {
+            fflush(stdout);
+        }
+    }
+    else {
+        s.ring.emplace_back(text);
+        s.ring.back().push_back('\n');
+        if (s.ring.size() > 600) {
+            s.ring.pop_front();
+        }
+    }
 }
 
 // What each verdict ASKED for, before the never-consecutive rule and the

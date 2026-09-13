@@ -4,6 +4,8 @@
 
 #include "rt64_framebuffer_manager.h"
 
+#include "rt64_snap_diag.h"
+
 #include <cassert>
 #include <algorithm>
 
@@ -282,6 +284,13 @@ namespace RT64 {
         copyRegion.descriptorSet = colorTarget.textureCopyDescSet->get();
         copyRegion.pushConstants.uvScroll = { float(tileCopy.left), float(tileCopy.top) };
         copyRegion.pushConstants.uvScale = { float(srcRight - tileCopy.left), float(srcBottom - tileCopy.top) };
+        if (snapdiag::opTraceEnabled()) {
+            snapdiag::opTrace(renderWorker->name.c_str(), "tileCopy %llu: fb %08X from target %08X %ux%u rev %llu tex %p at (%u,%u) %ux%u -> dst %ux%u of texture %ux%u tex %p, fromStorage %d",
+                (unsigned long long)tileCopy.id, op.createTileCopy.address, colorTarget.addressForName, colorTarget.width, colorTarget.height,
+                (unsigned long long)colorTarget.textureRevision, (const void *)colorTarget.texture.get(), tileCopy.left, tileCopy.top,
+                srcRight - tileCopy.left, srcBottom - tileCopy.top, copyRegion.dstWidth, copyRegion.dstHeight, tileCopy.textureWidth, tileCopy.textureHeight,
+                (const void *)tileCopy.texture.get(), tileCopy.readColorFromStorage ? 1 : 0);
+        }
         cmdListCopies.cmdListCopyRegions.push_back(copyRegion);
     }
 

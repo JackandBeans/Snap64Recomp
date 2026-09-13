@@ -4,6 +4,9 @@
 
 #include "rt64_framebuffer_renderer.h"
 
+#include <atomic>
+#include <cstdarg>
+
 #include <cstdlib>
 #include <cstring>
 
@@ -151,6 +154,36 @@ namespace RT64 {
 
     RenderColor toRenderColor(hlslpp::float4 v) {
         return { v.x, v.y, v.z, v.w };
+    }
+
+    // Pokemon Snap port, diagnostic (SNAP_DRAW_TRACE): see the projection loop.
+    static bool snapDrawTraceActive() {
+        static const long traceFrame = []() {
+            const char *env = std::getenv("SNAP_DRAW_TRACE");
+            return (env != nullptr) ? std::atol(env) : -1L;
+        }();
+        if (traceFrame < 0) {
+            return false;
+        }
+
+        const long g = long(snapdiag::gameFrameCounter().load(std::memory_order_relaxed));
+        return (g >= traceFrame - 2) && (g <= traceFrame + 2);
+    }
+
+    static void snapDrawTraceLine(const char *fmt, ...) {
+        static std::atomic<uint32_t> lines{0};
+        if (lines.fetch_add(1) >= 6000) {
+            return;
+        }
+
+        char text[512];
+        const int n = snprintf(text, sizeof(text), "[SNAP-DRAW] g%u ", snapdiag::gameFrameCounter().load(std::memory_order_relaxed));
+        va_list args;
+        va_start(args, fmt);
+        vsnprintf(text + n, sizeof(text) - size_t(n), fmt, args);
+        va_end(args);
+        fputs(text, stdout);
+        fputc('\n', stdout);
     }
 
     static RenderRect viewportScissorIntersection(const RenderViewport &viewport, const RenderRect &scissor) {
@@ -1653,6 +1686,24 @@ namespace RT64 {
             }
             const float snapCropInvRatioScale = (p.aspectRatioTarget > 0.0f) ? (p.aspectRatioSource / p.aspectRatioTarget) : 1.0f;
 
+            // Pokemon Snap port, diagnostic (SNAP_DRAW_TRACE=<game frame>): the
+            // projections and draw calls of the frames around that one, with
+            // the scissor and viewport clip this renderer computed for each,
+            // on whichever thread renders them (the resolution scale tells
+            // the native pass from the scaled one). Two machines running the
+            // same replay print the same frames; a diff of the lines names
+            // the draw that differs. For the Deck's top-left chunk
+            // (2026-09-12).
+            const bool snapDrawTrace = snapDrawTraceActive();
+            if (snapDrawTrace) {
+                snapDrawTraceLine("proj %u pair %u type %d calls %u scissor (%d,%d)-(%d,%d) usesViewport %d viewportClip (%.1f,%.1f %.1fx%.1f) projInvRatioScale %.4f cropScissor %d res %.3fx%.3f fb %ux%u",
+                    pr, p.fbPairIndex, int(proj.type), proj.gameCallCount,
+                    proj.scissorRect.isNull() ? -1 : (proj.scissorRect.ulx >> 2), proj.scissorRect.isNull() ? -1 : (proj.scissorRect.uly >> 2),
+                    proj.scissorRect.isNull() ? -1 : (proj.scissorRect.lrx >> 2), proj.scissorRect.isNull() ? -1 : (proj.scissorRect.lry >> 2),
+                    proj.usesViewport() ? 1 : 0, viewportClip.x, viewportClip.y, viewportClip.width, viewportClip.height,
+                    projInvRatioScale, snapCropScissor ? 1 : 0, float(p.resolutionScale.x), float(p.resolutionScale.y), p.fbWidth, p.fbHeight);
+            }
+
             for (uint32_t d = 0; (d < proj.gameCallCount) && (globalCallIndex < p.maxGameCall); d++) {
                 const GameCall &call = proj.gameCalls[d];
                 renderIndices.instanceIndex = call.callDesc.callIndex;
@@ -2003,6 +2054,25 @@ namespace RT64 {
                             }
 
                             RenderViewport viewportRect = convertViewportRect(drawnRect, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, horizontalMisalignment, call.callDesc.rectLeftOrigin, call.callDesc.rectRightOrigin);
+                            // Pokemon Snap port, diagnostic (SNAP_PASS_TRACE): every
+                            // rectangle drawn by a pass whose colour image is at
+                            // most sixteen pixels wide -- the game's photo
+                            // detector copies a 7x7 tile into 8-wide buffers --
+                            // with the numbers that place it, for the Deck's
+                            // top-left box (2026-09-12).
+                            {
+                                static const bool passTrace = (std::getenv("SNAP_PASS_TRACE") != nullptr);
+                                static uint32_t passTraceLines = 0;
+                                if (passTrace && (p.fbWidth <= 16) && (passTraceLines < 400)) {
+                                    passTraceLines++;
+                                    fprintf(stdout, "[SNAP-PASS] rect: pair %u fbWidth %u fbHeight %u target %ux%u res %.2f ext %.3f misalign %.1f rect (%d,%d %dx%d) -> viewport (%.1f,%.1f %.1fx%.1f) pass viewport (%.1f,%.1f %.1fx%.1f)\n",
+                                        p.fbPairIndex, p.fbWidth, p.fbHeight, p.targetWidth, p.targetHeight, float(p.resolutionScale.x), extOriginPercentage, horizontalMisalignment,
+                                        drawnRect.ulx >> 2, drawnRect.uly >> 2, (drawnRect.lrx - drawnRect.ulx) >> 2, (drawnRect.lry - drawnRect.uly) >> 2,
+                                        viewportRect.x, viewportRect.y, viewportRect.width, viewportRect.height,
+                                        framebuffer.viewport.x, framebuffer.viewport.y, framebuffer.viewport.width, framebuffer.viewport.height);
+                                    fflush(stdout);
+                                }
+                            }
                             triangles.screenScale = { viewportRect.width / framebuffer.viewport.width, viewportRect.height / framebuffer.viewport.height };
                             triangles.screenOffset.x = halfPixelOffset.x + ((viewportRect.x + viewportRect.width / 2.0f) - halfViewportSize.x) / halfViewportSize.x;
                             triangles.screenOffset.y = halfPixelOffset.y + (halfViewportSize.y - (viewportRect.y + viewportRect.height / 2.0f)) / halfViewportSize.y;
@@ -2070,6 +2140,15 @@ namespace RT64 {
                         bool usesViewport = (proj.type == Projection::Type::Perspective) || (proj.type == Projection::Type::Orthographic);
                         if (usesViewport) {
                             triangles.scissor = viewportScissorIntersection(viewportClip, triangles.scissor);
+                        }
+                        if (snapDrawTrace) {
+                            snapDrawTraceLine("  call %u type %d tris %u scissor (%d,%d)-(%d,%d) callRect (%d,%d)-(%d,%d) origins %u/%u testZ %d indexStart %u rect (%d,%d)-(%d,%d)",
+                                d, int(instanceDrawCall.type), call.callDesc.triangleCount,
+                                triangles.scissor.left, triangles.scissor.top, triangles.scissor.right, triangles.scissor.bottom,
+                                callScissor.isNull() ? -1 : (callScissor.ulx >> 2), callScissor.isNull() ? -1 : (callScissor.uly >> 2),
+                                callScissor.isNull() ? -1 : (callScissor.lrx >> 2), callScissor.isNull() ? -1 : (callScissor.lry >> 2),
+                                call.callDesc.scissorLeftOrigin, call.callDesc.scissorRightOrigin, triangles.vertexTestZ ? 1 : 0, triangles.indexStart,
+                                call.callDesc.rect.ulx >> 2, call.callDesc.rect.uly >> 2, call.callDesc.rect.lrx >> 2, call.callDesc.rect.lry >> 2);
                         }
                         
                         if (triangles.vertexTestZ && usesViewport) {
