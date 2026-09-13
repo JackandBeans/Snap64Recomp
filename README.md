@@ -250,9 +250,9 @@ view is narrower. The view moves no faster than you move the mouse and
 stops when your hand does; the stick's own turning speed does not apply. The Controls page on the
 game's Options screen holds the dials: Mouse Aim, Mouse Speed, Zoom Speed
 and Camera Tilt (they are `mouse_aim`, `mouse_sensitivity`,
-`mouse_zoom_speed` and `mouse_invert_y` in the settings file). Its
-Buttons row opens the page where each key, mouse button and pad button
-is set, described below.
+`mouse_zoom_speed` and `mouse_invert_y` in the settings file), and its
+Button Mapping row opens the page where each key, mouse button and pad
+button is set, described below.
 
 A pad with a gyro can aim the same way: turn the pad and the view turns
 with it, at natural scale, so a ten-degree turn of the pad is a
@@ -284,11 +284,12 @@ switched the sensor off again a minute later (Steam's client, when it is
 running) the port switched it back.
 
 Every keyboard, mouse and controller binding can be changed in the game.
-The Buttons row of the Controls page opens a page with a row for each of
-the game's inputs -- A, B, Z, Start, L, R, the four C buttons, the four
-D-pad directions and the four stick directions -- showing what presses it
-on the device picked at the top (Keyboard, Mouse or Controller; Left and
-Right switch). A on a row makes the port listen: the next key, mouse
+The Button Mapping row of the Controls page opens a page with a row for
+each of the game's inputs -- A, B, Z, Start, L, R, the four C buttons, the
+four D-pad directions and the four stick directions -- showing what
+presses it on the device picked at the top (Keyboard, Mouse or Controller;
+Left and Right switch; under Controller the C and stick rows name the two
+sticks that always work them). A on a row makes the port listen: the next key, mouse
 button, wheel tick or pad button pressed on that device becomes the row's
 binding, in place of what the device had there (the other devices' stay).
 Esc leaves the row as it was, and so does waiting six seconds; a key the
@@ -323,9 +324,9 @@ is Start, the D-pad is the D-pad, the triggers are L and R, and the right stick
 is the C buttons. The Back button (Select, View or Share on most pads) is not
 an N64 button: it saves the photo on screen, as P does on the keyboard (see
 "Photos"). The eight buttons -- A, B, Z, Start, the D-pad's four, L and R --
-are each a row of the Buttons page and of the settings file's `keys` table
-and can be moved; the two sticks and the Back button are not, and keep the
-mapping above.
+are each a row of the Button Mapping page and of the settings file's `keys`
+table and can be moved; the two sticks and the Back button are not, and
+keep the mapping above.
 
 **Which controllers work.** Anything SDL2 has a mapping for, which is most of
 what is sold: Xbox pads (360, One, Series) over USB or Bluetooth, PlayStation

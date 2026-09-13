@@ -2,10 +2,12 @@
 
 ## 1.0.6 -- unreleased
 
-* A page in the game for the bindings: the Controls page's new Buttons row
-  opens it. A row for each of the game's eighteen inputs shows what
-  presses it on the device picked at the top (keyboard, mouse or
-  controller); A on a row listens for the next press of that device and
+* A page in the game for the bindings: the Controls page's new Button
+  Mapping row, third on the page, opens it. A row for each of the game's
+  eighteen inputs shows what presses it on the device picked at the top
+  (keyboard, mouse or controller; under the controller the C and stick
+  rows name the two sticks that always work them); A on a row listens for
+  the next press of that device and
   binds it in place of the device's old one, Z clears the device's
   binding of the row unless nothing else would press the input, and Reset
   All puts the shipped table back. The port hands the game no input while
@@ -17,7 +19,7 @@
   other recompilations have that this port did not. The page names any
   key in the menu's own face, so that face gained the capitals I, K, Q,
   U, X and Y, a q and the punctuation keys are named with, drawn in its
-  style, and the header face a B.
+  style, and the header face a B, an M and a g for the page's heading.
 * The menu strings' directory could hold 127 entries and 1.0.5 wrote 129:
   the last two landed in the pixels of the black tile nothing draws. It
   seats 255 now, and the strings sit after it.

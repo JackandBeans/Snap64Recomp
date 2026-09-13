@@ -68,8 +68,8 @@ static s32 snap_nav_dir_v = 0;
 static s32 snap_nav_dir_h = 0;
 static s32 snap_nav_repeat_v = 0;
 static s32 snap_nav_repeat_h = 0;
-/* The CONTROLS page reopens on this row when the BUTTONS page closes (its
- * Buttons row opened it), and the two hand the hidden Option list to each
+/* The CONTROLS page reopens on this row when the BUTTON MAPPING page closes (its
+ * Button Mapping row opened it), and the two hand the hidden Option list to each
  * other -- the count of PAGE_HIDDEN entries still hidden -- so the list
  * never shows for a frame between them. */
 static s32 snap_ctl_reopen_row;
@@ -147,7 +147,7 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *               mode (off, on, zoomed), the gyro speed's step
  *   +0x7C  u32  MBOX_POOL_FAIL, the patch's own: strips the pool refused
  *   +0x80  u32  MBOX_POOL_PEAK, the patch's own: the pool's high water
- *   +0xA0  u32  BIND_REQ, the BUTTONS page's request to the host: the
+ *   +0xA0  u32  BIND_REQ, the BUTTON MAPPING page's request to the host: the
  *               operation in bits 16..23 (1 listen for a press, 2 clear,
  *               3 the shipped table back), the device in 8..15 (0
  *               keyboard, 1 mouse, 2 pad), the input row in 0..7 (1..18)
@@ -161,7 +161,7 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *   +0xAD  u8   BIND_OPEN, the page's: 1 while it is open
  *   +0xAE  u8   BIND_PAD, host-owned: 1 while a pad is attached
  *   +0x100      SCRATCH_ARRAYS, the page's pointer and snapshot arrays
- *               (the BUTTONS page's own twenty-row arrays sit at +0x300
+ *               (the BUTTON MAPPING page's own twenty-row arrays sit at +0x300
  *               and +0x350 inside it)
  *
  * The host never touches anything the map calls the patch's own. */
@@ -265,24 +265,23 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_EXIT_ITEM     126
 #define STR_EXIT_HELP     127
 #define STR_EXIT_CONFIRM  128
-/* The BUTTONS page (menu_assets.cpp ids BaseCount+99..+167). */
-#define STR_BTN_LABEL        129  /* "Buttons", the CONTROLS page's ninth row */
-#define STR_PRESS_A          130  /* the value of a row that opens something */
-#define STR_BTN_DESC         131
-#define STR_BIND_HDR         132  /* "Buttons" in the header face */
-#define STR_BIND_DEVICE      133  /* the Device row's label */
-#define STR_BIND_INPUT       134  /* ..151: the eighteen input rows' labels */
-#define STR_BIND_RESET       152  /* Reset All */
-#define STR_BIND_KEYBOARD    153  /* ..155: Keyboard, Mouse, Controller */
-#define STR_BIND_DESC_DEVICE 156
-#define STR_BIND_DESC_ROW    157
-#define STR_BIND_DESC_LISTEN 158
-#define STR_BIND_DESC_RESET  159
-#define STR_BIND_DESC_JOB    160
-#define STR_BIND_DESC_KEEP   161
-/* ..197: the input rows' values, two banks of eighteen, composed live by
+/* The BUTTON MAPPING page (menu_assets.cpp ids BaseCount+99..+166). */
+#define STR_BTN_LABEL        129  /* "Button Mapping", the CONTROLS page's third row */
+#define STR_BTN_DESC         130  /* its help line */
+#define STR_BIND_HDR         131  /* "Button Mapping" in the header face */
+#define STR_BIND_DEVICE      132  /* the Device row's label */
+#define STR_BIND_INPUT       133  /* ..150: the eighteen input rows' labels */
+#define STR_BIND_RESET       151  /* Reset All */
+#define STR_BIND_KEYBOARD    152  /* ..154: Keyboard, Mouse, Controller */
+#define STR_BIND_DESC_DEVICE 155
+#define STR_BIND_DESC_ROW    156
+#define STR_BIND_DESC_LISTEN 157
+#define STR_BIND_DESC_RESET  158
+#define STR_BIND_DESC_JOB    159
+#define STR_BIND_DESC_KEEP   160
+/* ..196: the input rows' values, two banks of eighteen, composed live by
  * the host for the device shown (BIND_GEN's low bit names the bank). */
-#define STR_BIND_DYN         162
+#define STR_BIND_DYN         161
 
 /* The SOUND bank of the mailbox: its own sequence word and value bytes
  * (percent volumes; stereo and background-mute booleans). The patched
@@ -2052,35 +2051,52 @@ static void snap_sound_page(void) {
  * screen's exit writes them to the player flags); the other four are the
  * mouse's, in the mailbox's CONTROLS bank, applied live by the host. */
 /* Nine rows, six on screen at a time: the page scrolls for the last three
- * the way the Graphics page scrolls, with the same edge arrows. The ninth,
- * Buttons, has no value to cycle: A on it opens the BUTTONS page. */
+ * the way the Graphics page scrolls, with the same edge arrows. The third,
+ * Button Mapping, is the row that opens the BUTTON MAPPING page: after the
+ * game's own two settings and before the aiming dials, so a player who
+ * came to change the buttons sees it without scrolling. It has no value,
+ * as the Option list's own Screen row has none; its help line says what A
+ * does. The settings rows keep their old order below it, so the maps to
+ * the strings and the mailbox fields take the row's index without it. */
 #define CTL_ROWS 9
 #define CTL_VISIBLE 6
-#define CTL_ROW_BUTTONS 8
+#define CTL_ROW_BUTTONS 2
+
+/* A settings row's index in the eight-row order the strings and the
+ * CONTROLS bank are laid out in. */
+static s32 snap_ctl_setting(s32 row) {
+    return (row > CTL_ROW_BUTTONS) ? (row - 1) : row;
+}
 
 static s32 snap_ctl_value_count(s32 row) {
-    switch (row) {
+    if (row == CTL_ROW_BUTTONS) {
+        return 1;
+    }
+    switch (snap_ctl_setting(row)) {
         case 3:  return 11;   /* Mouse Speed */
         case 4:  return 4;    /* Zoom Speed */
         case 6:  return 3;    /* Gyro Aim: off, on, zoomed */
         case 7:  return 11;   /* Gyro Speed */
-        case CTL_ROW_BUTTONS: return 1;
         default: return 2;
     }
 }
 
 static s32 snap_ctl_label_str(s32 row) {
+    s32 setting;
     if (row == CTL_ROW_BUTTONS) {
         return STR_BTN_LABEL;
     }
-    return (row < 6) ? (STR_CTL_LABEL + row) : (STR_GYRO_LABEL + (row - 6));
+    setting = snap_ctl_setting(row);
+    return (setting < 6) ? (STR_CTL_LABEL + setting) : (STR_GYRO_LABEL + (setting - 6));
 }
 
 static s32 snap_ctl_desc_str(s32 row) {
+    s32 setting;
     if (row == CTL_ROW_BUTTONS) {
         return STR_BTN_DESC;
     }
-    return (row < 6) ? (STR_CTL_DESC + row) : (STR_GYRO_DESC + (row - 6));
+    setting = snap_ctl_setting(row);
+    return (setting < 6) ? (STR_CTL_DESC + setting) : (STR_GYRO_DESC + (setting - 6));
 }
 
 /* Rows [top, top+CTL_VISIBLE) sit at the fixed slots, the rest hide; the
@@ -2130,8 +2146,10 @@ static void snap_ctl_layout(s32 top) {
 }
 
 static s32 snap_ctl_value_str(s32 row, s32 v) {
-    switch (row) {
-        case CTL_ROW_BUTTONS: return STR_PRESS_A;
+    if (row == CTL_ROW_BUTTONS) {
+        return -1;   /* no value: snap_make_strip makes nothing of it */
+    }
+    switch (snap_ctl_setting(row)) {
         case 0:  return v ? STR_SWITCH : STR_HOLD;
         case 1:  return v ? STR_REVERSE : STR_NORMAL;
         case 2:  return v ? STR_ON : STR_OFF;
@@ -2144,27 +2162,31 @@ static s32 snap_ctl_value_str(s32 row, s32 v) {
 }
 
 static s32 snap_ctl_get(s32 row) {
-    switch (row) {
+    if (row == CTL_ROW_BUTTONS) {
+        return 0;
+    }
+    switch (snap_ctl_setting(row)) {
         case 0:  return D_800E8395_A0F925 ? 1 : 0;
         case 1:  return D_800E8396_A0F926 ? 1 : 0;
-        case CTL_ROW_BUTTONS: return 0;
-        default: return CTL_FIELD(row - 2);
+        default: return CTL_FIELD(snap_ctl_setting(row) - 2);
     }
 }
 
 static void snap_ctl_set(s32 row, s32 v) {
-    switch (row) {
+    if (row == CTL_ROW_BUTTONS) {
+        return;
+    }
+    switch (snap_ctl_setting(row)) {
         case 0:  D_800E8395_A0F925 = (s8) v; break;
         case 1:  D_800E8396_A0F926 = (s8) v; break;
-        case CTL_ROW_BUTTONS: break;
-        default: CTL_FIELD(row - 2) = (u8) v; break;
+        default: CTL_FIELD(snap_ctl_setting(row) - 2) = (u8) v; break;
     }
 }
 
 /* Hides the Option list's rows, the port's own items on it and the stock
  * title, remembering in PAGE_HIDDEN what was visible for a page's teardown
  * to restore, and hides the two item help lines (the selection loop shows
- * the right one again). The CONTROLS and BUTTONS pages take their list
+ * the right one again). The CONTROLS and BUTTON MAPPING pages take their list
  * from here; the GRAPHICS and SOUND pages do the same inline. Returns how
  * many sprites were hidden. */
 static s32 snap_hide_option_list(void) {
@@ -2225,8 +2247,8 @@ static s32 snap_hide_option_list(void) {
     return hiddenCount;
 }
 
-/* Returns 1 when A was pressed on the Buttons row: the dispatcher opens
- * the BUTTONS page and comes back here. 0 when the page was left. */
+/* Returns 1 when A was pressed on the Button Mapping row: the dispatcher opens
+ * the BUTTON MAPPING page and comes back here. 0 when the page was left. */
 static s32 snap_controls_page(void) {
     UnkStruct800BEDF8* input;
     s32 navUp;
@@ -2258,7 +2280,7 @@ static s32 snap_controls_page(void) {
     }
 
     if (snap_list_hidden_carry > 0) {
-        /* Back from the BUTTONS page: the list is still hidden. */
+        /* Back from the BUTTON MAPPING page: the list is still hidden. */
         hiddenCount = snap_list_hidden_carry;
         snap_list_hidden_carry = 0;
     } else {
@@ -2285,12 +2307,15 @@ static s32 snap_controls_page(void) {
     PAGE_ARROW_UP = (u32) snap_make_strip_fmt(STR_SCROLL_UP, ARROW_X, ARROW_UP_Y, G_IM_FMT_RGBA);
     PAGE_ARROW_DN = (u32) snap_make_strip_fmt(STR_SCROLL_DN, ARROW_X, ARROW_DN_Y, G_IM_FMT_RGBA);
 
-    /* On the Buttons row when the BUTTONS page has just closed. */
+    /* On the Button Mapping row when the BUTTON MAPPING page has just
+     * closed; the help line is that row's, not the first row's the strip
+     * was built for (a capture showed the Z Button's there, 2026-09-13). */
     sel = snap_ctl_reopen_row;
     snap_ctl_reopen_row = 0;
     if ((sel < 0) || (sel >= CTL_ROWS)) {
         sel = 0;
     }
+    snap_swap_strip(descStrip, snap_ctl_desc_str(sel));
     top = (sel >= CTL_VISIBLE) ? (sel - (CTL_VISIBLE - 1)) : 0;
     snap_ctl_layout(top);
     pulseState = 0;
@@ -2312,7 +2337,7 @@ static s32 snap_controls_page(void) {
             for (i = 0; i < CTL_ROWS; i++) {
                 if (snap_ctl_get(i) != entry[i]) {
                     snap_ctl_set(i, entry[i]);
-                    if (i >= 2) {
+                    if (snap_ctl_setting(i) >= 2) {
                         moved = 1;
                     }
                 }
@@ -2326,7 +2351,7 @@ static s32 snap_controls_page(void) {
         if (gContInputPressedButtons & A_BUTTON) {
             auPlaySoundWithParams(0x42, 0x7FFF, 0x40, 1.0f, 0);
             if (sel == CTL_ROW_BUTTONS) {
-                /* Opens the BUTTONS page; the edits made here stand, as
+                /* Opens the BUTTON MAPPING page; the edits made here stand, as
                  * A always keeps them. */
                 openButtons = 1;
                 snap_ctl_reopen_row = sel;
@@ -2440,7 +2465,7 @@ static s32 snap_controls_page(void) {
         if (moved) {
             auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
             snap_swap_strip((GObj*) PAGE_VALUE(sel), snap_ctl_value_str(sel, snap_ctl_get(sel)));
-            if (sel >= 2) {
+            if (snap_ctl_setting(sel) >= 2) {
                 CTL_SEQ = CTL_SEQ + 1;
             }
         }
@@ -2529,7 +2554,7 @@ static s32 snap_controls_page(void) {
         omDeleteGObj(descStrip);
     }
     if (openButtons) {
-        /* Handed to the BUTTONS page hidden as they are, and back again
+        /* Handed to the BUTTON MAPPING page hidden as they are, and back again
          * when it returns, so the list never shows between the two. */
         snap_list_hidden_carry = hiddenCount;
     } else {
@@ -2543,7 +2568,7 @@ static s32 snap_controls_page(void) {
 }
 
 /* =========================================================================
- * The BUTTONS page: what presses each of the game's inputs.
+ * The BUTTON MAPPING page: what presses each of the game's inputs.
  *
  * Twenty rows in the CONTROLS page's dress, six on screen: a Device row
  * (Keyboard, Mouse, Controller; Left and Right pick it), the eighteen
@@ -2602,7 +2627,7 @@ static s32 snap_bind_value_str(s32 row, s32 device, u32 gen) {
     if (row <= BIND_INPUTS) {
         return STR_BIND_DYN + ((s32) (gen & 1)) * BIND_INPUTS + (row - 1);
     }
-    return STR_PRESS_A;
+    return -1;   /* Reset All: no value; its help line says what A does */
 }
 
 static s32 snap_bind_desc_str(s32 row) {
@@ -2724,7 +2749,8 @@ static void snap_bind_page(void) {
     hdrStrip = snap_make_strip(STR_BIND_HDR, 45, 41);
 
     /* The device shown first: the pad when one is attached, else the
-     * keyboard. The host composes the row values for it once it sees the
+     * keyboard. The C and stick rows also name the sticks that always work
+     * them under Controller (src/input.cpp, input_bind_display). The host composes the row values for it once it sees the
      * page open, and the strips are built from the bank it then names --
      * after a short wait for that turn (one tick, in practice), so the
      * first frame shows this visit's values and not the last one's. */
@@ -3218,7 +3244,7 @@ void func_800E7F98_A0F528(void) {
                     snap_sound_page();
                     break;
                 case OPT_CONTROLS:
-                    /* The Buttons row opens the BUTTONS page, and the
+                    /* The Button Mapping row opens the BUTTON MAPPING page, and the
                      * CONTROLS page comes back on that row when it closes. */
                     while (snap_controls_page()) {
                         snap_bind_page();

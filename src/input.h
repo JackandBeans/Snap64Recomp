@@ -119,11 +119,11 @@ void input_set_bindings(const Bindings& bindings);
 // back to the settings file so every name is there to edit.
 Bindings input_bindings();
 
-// Counts the tables put in force (load_settings, the BUTTONS page's edits),
+// Counts the tables put in force (load_settings, the BUTTON MAPPING page's edits),
 // so a display built from one knows when it is stale.
 uint32_t input_bindings_generation();
 
-// --- The BUTTONS page (patches/src/graphics_menu_patch.c, snap_bind_page;
+// --- The BUTTON MAPPING page (patches/src/graphics_menu_patch.c, snap_bind_page;
 // the host's side is src/menu_assets.cpp, poll_bind_bank). ----------------
 
 // The page's three devices, and the class of a source name.
@@ -137,7 +137,9 @@ bool input_pad_attached();
 // What presses an input on one device, as the page's row shows it: "X",
 // "Left Shift, Space", "L Bumper", or "None". The pad's names follow the
 // layout in force: the shoulder read as Z on an N64-shaped pad is "Z" there
-// and "L Bumper" on the rest.
+// and "L Bumper" on the rest. Under the controller the C rows start with
+// "R Stick" and the stick rows with "L Stick", the two sticks no table
+// changes (input_get).
 std::string input_bind_display(const char* input, int device);
 
 // The page's edits, each put in force at once and marked for the settings

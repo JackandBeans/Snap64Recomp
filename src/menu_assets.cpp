@@ -178,7 +178,7 @@ constexpr uint32_t STR_ITEM_LABEL_ID = 1;        // "Graphics", the Option item
 // The strips are exactly as tall as the original menu sprites: ten rows.
 constexpr int StripHeight = kMenuFontCellH;
 
-// The BUTTONS page's row values (ids kBindDynBase on, two banks of
+// The BUTTON MAPPING page's row values (ids kBindDynBase on, two banks of
 // eighteen) are composed while the page is open, for the device it shows,
 // so their pixels have a fixed home of their own: well past the staged
 // strings, which end near 0x80CA0000, and below librecomp's mod space at
@@ -187,7 +187,7 @@ constexpr uint32_t DynPixelsAddr = 0x80D00000u;
 constexpr int DynChunks = 3;
 constexpr uint32_t DynStripBytes = uint32_t(DynChunks * 64 * StripHeight * 2);
 constexpr uint32_t kStringBaseCount = 30;   // the strings[] table below, asserted there
-constexpr uint32_t kBindDynBase = kStringBaseCount + 132;   // graphics_menu_patch.c STR_BIND_DYN
+constexpr uint32_t kBindDynBase = kStringBaseCount + 131;   // graphics_menu_patch.c STR_BIND_DYN
 constexpr int BindInputCount = 18;
 
 struct Strip {
@@ -310,7 +310,7 @@ Strip compose(const char* text, bool lenient = false) {
         if (g == nullptr) {
             if (lenient) {
                 // A key named with a character no face carries (the
-                // Buttons page's live values): a dim block stands in, and
+                // Button Mapping page's live values): a dim block stands in, and
                 // the directory is not withheld for it.
                 for (int gy = 4; gy < 9; gy++) {
                     for (int gx = 0; gx < 4; gx++) {
@@ -337,7 +337,7 @@ Strip compose(const char* text, bool lenient = false) {
     return strip;
 }
 
-// A row value of the Buttons page: any key's name, in the body face, cut
+// A row value of the Button Mapping page: any key's name, in the body face, cut
 // to what three chunks hold.
 Strip compose_dyn(std::string text) {
     Strip strip = compose(text.c_str(), true);
@@ -940,7 +940,7 @@ uint32_t g_last_applied_snd_seq = 0;
 bool g_staged = false;
 bool g_mailbox_seeded = false;
 
-// The BUTTONS page's bank of the mailbox, at +0xA0 (the byte map is in the
+// The BUTTON MAPPING page's bank of the mailbox, at +0xA0 (the byte map is in the
 // patch, SNAP_GFX_MAILBOX): the page writes a request word and the device
 // it shows; the host answers with an ack word, keeps the row values
 // composed for that device, and says whether a pad is attached.
@@ -1119,7 +1119,7 @@ void seed_mailbox() {
     // applies on each bump (poll_menu_mailbox).
     write_u32(MailboxAddr + 0x20, 0);
     write_u32(MailboxAddr + 0x60, 0);
-    // The BUTTONS page's bank: no request, no answer, bank zero, closed.
+    // The BUTTON MAPPING page's bank: no request, no answer, bank zero, closed.
     write_u32(BindReqAddr, 0);
     write_u32(BindAckAddr, 0);
     write_u32(BindGenAddr, 0);
@@ -1326,23 +1326,23 @@ void stage_menu_strings(uint8_t* rdram) {
     // Ids BaseCount+96..+98: the Option list's Exit Game item -- its label
     // with the dot, its help line, and the question the help line becomes
     // once it is chosen (graphics_menu_patch.c STR_EXIT_*).
-    // Ids BaseCount+99..+131: the BUTTONS page (graphics_menu_patch.c
-    // STR_BTN_* and STR_BIND_*). +99 the CONTROLS page's Buttons row label,
-    // +100 the "Press A" value of a row that opens something, +101 that
-    // row's description; +102 the page's heading (header face, its B the
-    // port's), +103 the Device row's label, +104..+121 the eighteen input
-    // rows' labels, +122 Reset All, +123..+125 the Device row's values,
-    // +126..+131 the descriptions: the Device row, an input row, the row
-    // while it listens, Reset All, a refused key, a refused clear.
-    // Ids BaseCount+132..+167: the input rows' values, composed live for
+    // Ids BaseCount+99..+130: the BUTTON MAPPING page (graphics_menu_patch.c
+    // STR_BTN_* and STR_BIND_*). +99 the CONTROLS page's Button Mapping row
+    // label, +100 that row's description; +101 the page's heading (header
+    // face, its B, M and g the port's), +102 the Device row's label,
+    // +103..+120 the eighteen input rows' labels, +121 Reset All,
+    // +122..+124 the Device row's values, +125..+130 the descriptions: the
+    // Device row, an input row, the row while it listens, Reset All, a
+    // refused key, a refused clear.
+    // Ids BaseCount+131..+166: the input rows' values, composed live for
     // the device shown (bind_compose below), two banks of eighteen so a
     // bank is never rewritten while the page draws it; their pixels sit
     // apart from the staged strings, at DynPixelsAddr.
     static_assert(BaseCount == kStringBaseCount, "kBindDynBase counts from the strings[] table");
     static const char* const bindLabels[BindInputCount] = {
         "A Button", "B Button", "Z Button", "Start", "L Button", "R Button",
-        "C Up", "C Down", "C Left", "C Right",
-        "D Pad Up", "D Pad Down", "D Pad Left", "D Pad Right",
+        "C-Up", "C-Down", "C-Left", "C-Right",
+        "D-Pad Up", "D-Pad Down", "D-Pad Left", "D-Pad Right",
         "Stick Up", "Stick Down", "Stick Left", "Stick Right",
     };
     // Within the help face's letters (no E F G I K Q U V X Y, no digits
@@ -1355,7 +1355,7 @@ void stage_menu_strings(uint8_t* rdram) {
         { "That one has a job in the port already.",   "Choose another key or button." },
         { "Something must still press this button.",   "Set another device before clearing this." },
     };
-    constexpr uint32_t StringCount = BaseCount + 168;
+    constexpr uint32_t StringCount = BaseCount + 167;
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -1543,7 +1543,7 @@ void stage_menu_strings(uint8_t* rdram) {
             h = strip.height;
         }
         else if (id == BaseCount + 63) {
-            strip = compose_help("Mouse and controller settings.");
+            strip = compose_help("Mouse, controller and button settings.");
             w = strip.width;
             h = strip.height;
         }
@@ -1567,7 +1567,7 @@ void stage_menu_strings(uint8_t* rdram) {
             h = strip.height;
         }
         else if (id >= kBindDynBase) {
-            // A live row value of the Buttons page: a fixed home of its
+            // A live row value of the Button Mapping page: a fixed home of its
             // own, blank until the page opens (bind_compose writes it and
             // the directory entry's width then).
             const uint32_t addr = DynPixelsAddr + (id - kBindDynBase) * DynStripBytes;
@@ -1579,53 +1579,51 @@ void stage_menu_strings(uint8_t* rdram) {
             }
             continue;
         }
-        else if (id >= BaseCount + 126) {
-            strip = compose_lines(bindDescs[id - BaseCount - 126][0], bindDescs[id - BaseCount - 126][1]);
+        else if (id >= BaseCount + 125) {
+            strip = compose_lines(bindDescs[id - BaseCount - 125][0], bindDescs[id - BaseCount - 125][1]);
             w = strip.width;
             h = strip.height;
         }
-        else if (id >= BaseCount + 123) {
+        else if (id >= BaseCount + 122) {
             // The Device row's values; the K is one of the port's own glyphs.
-            strip = compose((id == BaseCount + 123) ? "< Keyboard >"
-                          : (id == BaseCount + 124) ? "< Mouse >" : "< Controller >");
+            strip = compose((id == BaseCount + 122) ? "< Keyboard >"
+                          : (id == BaseCount + 123) ? "< Mouse >" : "< Controller >");
             w = strip.width;
             h = strip.height;
         }
-        else if (id == BaseCount + 122) {
+        else if (id == BaseCount + 121) {
             strip = compose("Reset All");
             w = strip.width;
             h = strip.height;
         }
-        else if (id >= BaseCount + 104) {
-            strip = compose(bindLabels[id - BaseCount - 104]);
-            w = strip.width;
-            h = strip.height;
-        }
-        else if (id == BaseCount + 103) {
-            strip = compose("Device");
+        else if (id >= BaseCount + 103) {
+            strip = compose(bindLabels[id - BaseCount - 103]);
             w = strip.width;
             h = strip.height;
         }
         else if (id == BaseCount + 102) {
-            // The page's heading; its B is the port's (menu_harvest.cpp
-            // kHeaderSynth).
-            strip = compose_hdr("Buttons");
+            strip = compose("Device");
             w = strip.width;
             h = strip.height;
         }
         else if (id == BaseCount + 101) {
-            strip = compose_lines("Sets what each key, mouse button and pad",
-                                  "button does. Press A to open the page.");
+            // The page's heading; its B, M and g are the port's
+            // (menu_harvest.cpp kHeaderSynth).
+            strip = compose_hdr("Button Mapping");
             w = strip.width;
             h = strip.height;
         }
         else if (id == BaseCount + 100) {
-            strip = compose("Press A");
+            // The CONTROLS page's row that opens the page: no value, as the
+            // Option list's own Screen row has none, and the help line
+            // says what A does.
+            strip = compose_lines("Press A to choose what each key, mouse",
+                                  "button and pad button does.");
             w = strip.width;
             h = strip.height;
         }
         else if (id == BaseCount + 99) {
-            strip = compose("Buttons");
+            strip = compose("Button Mapping");
             w = strip.width;
             h = strip.height;
         }
@@ -1845,7 +1843,7 @@ static void bind_compose(int device) {
     g_bind_shown_gen = input_bindings_generation();
 }
 
-// The BUTTONS page's bank, once a tick. A request is answered when it is
+// The BUTTON MAPPING page's bank, once a tick. A request is answered when it is
 // done: a capture keeps listening across ticks until the input layer says
 // how it ended (input.h); a clear and the reset are immediate. The row
 // values follow the device shown and the table in force, recomposed ahead
@@ -2024,7 +2022,7 @@ void poll_menu_mailbox(uint8_t* rdram) {
         settings_mark_dirty();
     }
 
-    // The BUTTONS page's bank: its requests and its live row values.
+    // The BUTTON MAPPING page's bank: its requests and its live row values.
     poll_bind_bank();
 
     const uint32_t seq = read_u32_mail(MailboxAddr + 0x4);
