@@ -3,13 +3,13 @@
 <p align="center">
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License: GPLv3"></a>
 <a href="https://github.com/JackandBeans/Snap64Recomp/releases/latest"><img src="https://img.shields.io/github/v/release/JackandBeans/Snap64Recomp?label=release" alt="Latest release"></a>
-<img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64-lightgrey" alt="Platform: Windows 10 or 11, x64">
+<img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64%20%7C%20Linux%20x86__64-lightgrey" alt="Platform: Windows 10 or 11 x64, or Linux x86_64">
 </p>
 
 # Snap64 Recomp
 
-By JackandBeans. A native Windows port of the Nintendo 64 game *Pokémon Snap*
-(US release), made by static recompilation.
+By JackandBeans. A native port of the Nintendo 64 game *Pokémon Snap* (US
+release) for Windows and Linux, made by static recompilation.
 [N64Recomp](https://github.com/N64Recomp/N64Recomp)
 translates the game's MIPS code into C, [N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime)
 (`librecomp` + `ultramodern`) stands in for the console's operating system,
