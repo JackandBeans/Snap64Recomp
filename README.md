@@ -406,9 +406,9 @@ Super Sampling, Anti-Aliasing, Widescreen, Frame Rate, 2D Detail, Filter,
 Texture Filter, Color Depth, Buffering, Dither, Fullscreen, Overscan Crop,
 Cutscene Fix, Photo Detail, Jynx Recolor. Color Depth and Buffering take
 effect after a restart; everything else applies while the page is open. The
-page's Frame Rate row switches between Original and Display; the Manual
-mode (`fps_mode` 2) is reached with F8 or the settings file, and the page
-leaves it alone.
+page's Frame Rate row runs Original, Display, then 60, 90, 120, 144, 165
+and 240: a number is the Manual mode (`fps_mode` 2) held at that rate by
+interpolation, and F8 still cycles the three modes.
 
 Options > **Sound**: Master Volume, Music Volume, Sound Effects, Shutter
 Volume, Speaker Output (Stereo/Mono), Background Mute.
@@ -595,7 +595,7 @@ the defaults below are that file's.
 | `widescreen` | `false` | RT64 Expand: a true 16:9 field of view, not a stretch, in a course; the title, the lab and the other 4:3 screens sit in black bars. Pokémon and effect sprites at the edges are kept ("Known limitations") |
 | `msaa` | `0` | 0, 2, 4 or 8 |
 | `fps_mode` | `0` | 0 Original, 1 Display refresh, 2 Manual (`fps_manual_target`) |
-| `fps_manual_target` | `120` | |
+| `fps_manual_target` | `120` | the rate a number on the Frame Rate row holds; a value not on the row shows as the nearest of its eight and becomes it once the page is edited |
 | `stereo` | `true` | the game's own Stereo/Mono flag (`hq_sound` is read as a legacy name) |
 | `master_volume`, `music_volume`, `sfx_volume`, `shutter_volume` | `100` | percent, in steps of ten |
 | `mute_unfocused` | `false` | silence while another window has focus |

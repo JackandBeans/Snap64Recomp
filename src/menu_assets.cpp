@@ -187,7 +187,7 @@ constexpr uint32_t DynPixelsAddr = 0x80D00000u;
 constexpr int DynChunks = 3;
 constexpr uint32_t DynStripBytes = uint32_t(DynChunks * 64 * StripHeight * 2);
 constexpr uint32_t kStringBaseCount = 30;   // the strings[] table below, asserted there
-constexpr uint32_t kBindDynBase = kStringBaseCount + 158;   // graphics_menu_patch.c STR_BIND_DYN
+constexpr uint32_t kBindDynBase = kStringBaseCount + 162;   // graphics_menu_patch.c STR_BIND_DYN
 constexpr int BindInputCount = 18;
 
 struct Strip {
@@ -1034,6 +1034,20 @@ static const int* const kCtlSpeeds = kMouseSpeedSteps;
 static const int kCtlZoomShares[4] = { 25, 50, 75, 100 };
 static uint32_t g_last_applied_ctl_seq = 0;
 
+// The Frame Rate row's rates: its values past Original and Display are
+// these, the Manual mode held at that rate by interpolation. A file may
+// carry any rate; the row shows the nearest of these, and that becomes
+// the rate once the page is edited.
+static const int kFpsTargets[6] = { 60, 90, 120, 144, 165, 240 };
+
+static int fps_target_index(int hz) {
+    int best = 2;
+    for (int i = 0; i < 6; i++) {
+        if (std::abs(kFpsTargets[i] - hz) < std::abs(kFpsTargets[best] - hz)) best = i;
+    }
+    return best;
+}
+
 static int ctl_speed_index(float sensitivity) {
     const int pct = int(std::lround(sensitivity * 100.0f));
     int best = 3;
@@ -1065,7 +1079,16 @@ static void write_setting_bytes(const Settings &s) {
     const uint8_t msaaIndex = (s.msaa >= 8) ? 3 : (s.msaa >= 4) ? 2 : (s.msaa >= 2) ? 1 : 0;
     write_u8(MailboxAddr + 0x9, msaaIndex);
     write_u8(MailboxAddr + 0xA, s.widescreen ? 1 : 0);
-    write_u8(MailboxAddr + 0xB, (s.fps_mode != 0) ? 1 : 0);
+    // Frame Rate: 0 Original, 1 Display, 2 on a held rate (kFpsTargets).
+    {
+        uint8_t fps = 0;
+        if (s.fps_mode == 1) {
+            fps = 1;
+        } else if (s.fps_mode == 2) {
+            fps = uint8_t(2 + fps_target_index(s.fps_manual_target));
+        }
+        write_u8(MailboxAddr + 0xB, fps);
+    }
     write_u8(MailboxAddr + 0xC, uint8_t(s.upscale_2d));
     write_u8(MailboxAddr + 0xD, uint8_t(s.present_filter));
     write_u8(MailboxAddr + 0xE, s.dither_noise ? 1 : 0);
@@ -1221,7 +1244,7 @@ void stage_menu_strings(uint8_t* rdram) {
         { "Sets the 3D rendering resolution.",         "Auto follows the window size." },
         { "Smooths jagged edges on 3D models.",        "Higher levels cost more performance." },
         { "Widens the view for widescreen displays.",  "The picture stays undistorted." },
-        { "Original keeps the native frame pace.",     "Display interpolates to your monitor." },
+        { "Original is the console pace. Display",        "or a number smooths to that rate." },
         { "Classic keeps 2D art at its original size.","Sharp redraws all, and may fringe logos." },
         { "How the picture is scaled to the window.",  "Crisp keeps pixels sharp and smooth." },
         { "The original console dither pattern.",      "Adds fine noise to smooth gradients." },
@@ -1343,8 +1366,9 @@ void stage_menu_strings(uint8_t* rdram) {
     // +150 the CONTROLS page's Pad Sticks label, +151 its Swapped value,
     // +152 its description; +153 its Dead Zone label, +154 its
     // description, +155..+157 the values 5, 15 and 35 the volume and
-    // speed steps do not already carry.
-    // Ids BaseCount+158..+193: the input rows' values, composed live for
+    // speed steps do not already carry; +158..+161 the Frame Rate row's
+    // 120, 144, 165 and 240 (its 60 and 90 are volume steps).
+    // Ids BaseCount+162..+197: the input rows' values, composed live for
     // the device shown (bind_compose below), two banks of eighteen so a
     // bank is never rewritten while the page draws it; their pixels sit
     // apart from the staged strings, at DynPixelsAddr.
@@ -1393,7 +1417,7 @@ void stage_menu_strings(uint8_t* rdram) {
         { "Aims the camera left in a course, and", "walks the menus. A changes, Z clears." },
         { "Aims the camera right in a course, and", "walks the menus. A changes, Z clears." },
     };
-    constexpr uint32_t StringCount = BaseCount + 194;
+    constexpr uint32_t StringCount = BaseCount + 198;
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -1616,6 +1640,12 @@ void stage_menu_strings(uint8_t* rdram) {
                 write_u16(addr + k, 0);
             }
             continue;
+        }
+        else if (id >= BaseCount + 158) {
+            strip = compose((id == BaseCount + 158) ? "< 120 >" : (id == BaseCount + 159) ? "< 144 >"
+                          : (id == BaseCount + 160) ? "< 165 >" : "< 240 >");
+            w = strip.width;
+            h = strip.height;
         }
         else if (id >= BaseCount + 155) {
             strip = compose((id == BaseCount + 155) ? "< 5 >" : (id == BaseCount + 156) ? "< 15 >" : "< 35 >");
@@ -2130,12 +2160,16 @@ void poll_menu_mailbox(uint8_t* rdram) {
         s.msaa = (msaaIndex >= 3) ? 8 : (msaaIndex == 2) ? 4 : (msaaIndex == 1) ? 2 : 0;
         s.widescreen = read_u8_mail(MailboxAddr + 0xA) != 0;
         {
-            // The row has two states, Original and Display; Manual (2) is
-            // set by F8 or the file. A page edit used to write the row's
-            // boolean back over it, so editing any other row silently
-            // dropped Manual to Display. On stays whatever "on" was.
-            const bool on = read_u8_mail(MailboxAddr + 0xB) != 0;
-            s.fps_mode = on ? ((s.fps_mode == 2) ? 2 : 1) : 0;
+            // Original, Display, or one of the held rates: the Manual
+            // mode with that target. (Until 1.0.6 the row had two states
+            // and Manual lived in F8 and the file alone.)
+            const uint8_t fi = read_u8_mail(MailboxAddr + 0xB);
+            if (fi <= 1) {
+                s.fps_mode = fi;
+            } else {
+                s.fps_mode = 2;
+                s.fps_manual_target = kFpsTargets[std::min<int>(fi - 2, 5)];
+            }
         }
         s.upscale_2d = std::min<int>(read_u8_mail(MailboxAddr + 0xC), 2);
         s.present_filter = std::min<int>(read_u8_mail(MailboxAddr + 0xD), 2);

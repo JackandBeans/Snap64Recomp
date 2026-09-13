@@ -33,6 +33,10 @@
   how far the aiming stick moves before the game sees it, 0 to 40 percent
   in steps of five, 15 as shipped (`pad_deadzone`), for a pad whose stick
   drifts at rest; the port's dead zone had been fixed at 15 since 1.0.0.
+* The Graphics page's Frame Rate row runs past Display to 60, 90, 120,
+  144, 165 and 240, each the Manual mode held at that rate by
+  interpolation; until now Manual was reachable only with F8 or the file,
+  and the page's own row could not show it. F8 still cycles the modes.
 * The menu strings' directory could hold 127 entries and 1.0.5 wrote 129:
   the last two landed in the pixels of the black tile nothing draws. It
   seats 255 now, and the strings sit after it.

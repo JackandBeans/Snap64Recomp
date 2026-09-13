@@ -106,7 +106,8 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *   +0x04  u32  GRAPHICS sequence word: the page bumps it, the host applies
  *   +0x08  u8   GRAPHICS fields 0..15, one setting apiece, through +0x17:
  *                0 Render Scale, 1 Anti-Aliasing, 2 Widescreen, 3 Frame
- *                Rate, 4 2D Detail, 5 Filter, 6 Dither, 7 Fullscreen,
+ *                Rate (0 Original, 1 Display, 2.. a held rate), 4 2D
+ *                Detail, 5 Filter, 6 Dither, 7 Fullscreen,
  *                8 Super Sampling, 9 Texture Filter, 10 Color Depth,
  *                11 Buffering, 12 Overscan Crop, 13 Cutscene Fix (also
  *                read by the intro patches), 14 Photo Detail, 15 VC
@@ -294,9 +295,15 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_DZ5              185
 #define STR_DZ15             186
 #define STR_DZ35             187
-/* ..223: the input rows' values, two banks of eighteen, composed live by
+/* The Frame Rate row's held rates past 90 (60 and 90 are STR_VOL0+6 and
+ * +9): 120, 144, 165, 240. */
+#define STR_FPS120           188
+#define STR_FPS144           189
+#define STR_FPS165           190
+#define STR_FPS240           191
+/* ..227: the input rows' values, two banks of eighteen, composed live by
  * the host for the device shown (BIND_GEN's low bit names the bank). */
-#define STR_BIND_DYN         188
+#define STR_BIND_DYN         192
 
 /* The SOUND bank of the mailbox: its own sequence word and value bytes
  * (percent volumes; stereo and background-mute booleans). The patched
@@ -862,6 +869,9 @@ static s32 snap_value_count(s32 row) {
                               * enables the hardware's texture LOD, and the one
                               * every other N64 project leans on for it. */
         case 2:  return 4;   /* Anti-Aliasing: Off, 2x, 4x, 8x */
+        case 4:  return 8;   /* Frame Rate: Original, Display, then 60, 90,
+                              * 120, 144, 165 and 240 held by interpolation
+                              * (the Manual mode with that target) */
         case 5:  return 3;   /* 2D Detail */
         case 6:  return 3;   /* Filter */
         case 8:  return 3;   /* Color Depth: Auto, Standard, High */
@@ -878,7 +888,11 @@ static s32 snap_value_str(s32 row, s32 v) {
         case 2: return (v == 0) ? STR_OFF
                      : (v == 1) ? (STR_1X + 1)
                      : (v == 2) ? (STR_1X + 3) : (STR_1X + 7);
-        case 4: return v ? STR_DISPLAY : STR_ORIGINAL;
+        case 4: return (v == 0) ? STR_ORIGINAL
+                     : (v == 1) ? STR_DISPLAY
+                     : (v == 2) ? (STR_VOL0 + 6)      /* 60 */
+                     : (v == 3) ? (STR_VOL0 + 9)      /* 90 */
+                     : (STR_FPS120 + (v - 4));         /* 120, 144, 165, 240 */
         case 5: return (v == 0) ? STR_CLASSIC : (v == 1) ? STR_AUTO : STR_SHARP;
         case 6: return (v == 0) ? STR_POINT : (v == 1) ? STR_SMOOTH : STR_CRISP;
         case 7: return (v == 0) ? STR_AUTHENTIC : STR_SMOOTH;
