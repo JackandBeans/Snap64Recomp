@@ -302,6 +302,7 @@ bool save_settings() {
     // to learn how to write the button they want. Written, never read back.
     const nlohmann::json keys_help{
         {"note", "Each input lists what presses it: one name or several. Remove a name to unbind it."},
+        {"page", "the Buttons row of the Controls page, on the game's Option screen, sets all of this without editing the file"},
         {"keyboard", "any SDL key name, for example: X, Z, Left Shift, Return, Space, Up, F1, Keypad 5"},
         {"mouse", "Mouse Left, Mouse Right, Mouse Middle, Mouse X1, Mouse X2, Wheel Up, Wheel Down"},
         {"controller", "the word Pad and one of: A, B, X, Y, Back, Guide, Start, LeftStick, RightStick, "

@@ -1,5 +1,32 @@
 # Changelog
 
+## 1.0.6 -- unreleased
+
+* A page in the game for the bindings: the Controls page's new Buttons row
+  opens it. A row for each of the game's eighteen inputs shows what
+  presses it on the device picked at the top (keyboard, mouse or
+  controller); A on a row listens for the next press of that device and
+  binds it in place of the device's old one, Z clears the device's
+  binding of the row unless nothing else would press the input, and Reset
+  All puts the shipped table back. The port hands the game no input while
+  it listens, and none until every key and button is let go after, so the
+  press cannot land as the button it was or as the one it now is. Every
+  change is in force at once and reaches the settings file by the usual
+  debounced write; the file's `keys` table is the same table and stays
+  editable. Asked for in Discussions #3, and the first of the things the
+  other recompilations have that this port did not. The page names any
+  key in the menu's own face, so that face gained the capitals I, K, Q,
+  U, X and Y, a q and the punctuation keys are named with, drawn in its
+  style, and the header face a B.
+* The menu strings' directory could hold 127 entries and 1.0.5 wrote 129:
+  the last two landed in the pixels of the black tile nothing draws. It
+  seats 255 now, and the strings sit after it.
+* The strip pool's two counters shared their mailbox words with the Exit
+  Game item's pointers since 1.0.4. Nothing read the counters and a
+  pointer is larger than any count, so the peak never overwrote one; a
+  refused strip, never seen, would have moved the item's pointer by one.
+  Moved.
+
 ## 1.0.5 -- 2026-09-13
 
 * `SNAP_DATA_DIR=<absolute path>` in the environment moves the data

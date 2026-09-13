@@ -827,8 +827,8 @@ namespace RT64 {
                                 traceThis = tiny && (tracedWorkloads < 40);
                                 if (traceThis) {
                                     tracedWorkloads++;
-                                    fprintf(stdout, "[SNAP-PASS] workload %u: %u pairs, presented pair %d, msaa %d, interpolated %d\n",
-                                        workload.workloadId, fbPairCount, overrideTargetFbPairIndex, usingMSAA ? 1 : 0, interpolationSubFrame ? 1 : 0);
+                                    fprintf(stdout, "[SNAP-PASS] workload %llu: %u pairs, presented pair %d, msaa %d, interpolated %d\n",
+                                        (unsigned long long) workload.workloadId, fbPairCount, overrideTargetFbPairIndex, usingMSAA ? 1 : 0, interpolationSubFrame ? 1 : 0);
                                 }
                             }
                             if (traceThis) {

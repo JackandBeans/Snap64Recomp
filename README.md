@@ -250,7 +250,9 @@ view is narrower. The view moves no faster than you move the mouse and
 stops when your hand does; the stick's own turning speed does not apply. The Controls page on the
 game's Options screen holds the dials: Mouse Aim, Mouse Speed, Zoom Speed
 and Camera Tilt (they are `mouse_aim`, `mouse_sensitivity`,
-`mouse_zoom_speed` and `mouse_invert_y` in the settings file).
+`mouse_zoom_speed` and `mouse_invert_y` in the settings file). Its
+Buttons row opens the page where each key, mouse button and pad button
+is set, described below.
 
 A pad with a gyro can aim the same way: turn the pad and the view turns
 with it, at natural scale, so a ten-degree turn of the pad is a
@@ -281,8 +283,22 @@ readings came alive within a dozen of the setting, and when something
 switched the sensor off again a minute later (Steam's client, when it is
 running) the port switched it back.
 
-Every keyboard, mouse and controller binding can be changed. The settings
-file's `keys` table names each input (`a`, `b`, `z`, `start`, `l`, `r`, `c_up`,
+Every keyboard, mouse and controller binding can be changed in the game.
+The Buttons row of the Controls page opens a page with a row for each of
+the game's inputs -- A, B, Z, Start, L, R, the four C buttons, the four
+D-pad directions and the four stick directions -- showing what presses it
+on the device picked at the top (Keyboard, Mouse or Controller; Left and
+Right switch). A on a row makes the port listen: the next key, mouse
+button, wheel tick or pad button pressed on that device becomes the row's
+binding, in place of what the device had there (the other devices' stay).
+Esc leaves the row as it was, and so does waiting six seconds; a key the
+port answers to itself (the function keys, P, the brackets, Home, End,
+Esc) and the pad's Back and Guide are refused. Z clears the row on that
+device, unless nothing else would press the input. Reset All puts the
+shipped table back. Every change is in force at once and saved.
+
+The same bindings are in the settings file, where a text editor changes
+them too. Its `keys` table names each input (`a`, `b`, `z`, `start`, `l`, `r`, `c_up`,
 `c_down`, `c_left`, `c_right`, `d_up`, `d_down`, `d_left`, `d_right`,
 `stick_up`, `stick_down`, `stick_left`, `stick_right`) and lists what
 presses it: SDL key names such as `"X"`, `"Left Shift"`, `"Return"`,
@@ -307,8 +323,9 @@ is Start, the D-pad is the D-pad, the triggers are L and R, and the right stick
 is the C buttons. The Back button (Select, View or Share on most pads) is not
 an N64 button: it saves the photo on screen, as P does on the keyboard (see
 "Photos"). The eight buttons -- A, B, Z, Start, the D-pad's four, L and R --
-are each a row in the settings file's `keys` table and can be moved; the two
-sticks and the Back button are not, and keep the mapping above.
+are each a row of the Buttons page and of the settings file's `keys` table
+and can be moved; the two sticks and the Back button are not, and keep the
+mapping above.
 
 **Which controllers work.** Anything SDL2 has a mapping for, which is most of
 what is sold: Xbox pads (360, One, Series) over USB or Bluetooth, PlayStation
@@ -851,15 +868,10 @@ In the order it will be worked on; nothing here is a promise until it runs.
    Windows 10 do with it is what the next release will be made of, as 1.0.1
    to 1.0.5 were made of the first reports. The issue form is the way to
    send them.
-2. **A page in the game for rebinding.** Since 1.0.1 every key, mouse button
-   and pad button is a row in the settings file's table and an N64-shaped
-   pad is recognised; what is left is changing them without editing the
-   file, and binding the sticks themselves. Asked for in
-   [Discussions](https://github.com/JackandBeans/Snap64Recomp/discussions/3).
-3. **Widescreen beyond the Beach.** The missing Pokémon and effect
+2. **Widescreen beyond the Beach.** The missing Pokémon and effect
    sprites are fixed; the other courses have not been played with the
    option on.
-4. **Steam Deck.** The native Linux build has been played on a Deck in
+3. **Steam Deck.** The native Linux build has been played on a Deck in
    Desktop Mode through a day of testing -- the Beach with gyro aim, the
    menus, the settings, the Snap Station -- where it takes the Deck's
    defaults (fullscreen at the panel, Steam's keyboard kept down, Steam's
@@ -867,7 +879,7 @@ In the order it will be worked on; nothing here is a promise until it runs.
    offers only its own virtual pad and the gyro reaches the port as mouse
    look, and the top-left flicker at the Beach's start. The Windows build
    under Proton already has one good report.
-5. **VR.** An idea under investigation, not a plan: stereo rendering and
+4. **VR.** An idea under investigation, not a plan: stereo rendering and
    head tracking would have to be built into the renderer.
 
 The same list, with a place to reply, is pinned under

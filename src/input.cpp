@@ -303,6 +303,7 @@ bool resolve_source(const std::string& name, Source& out) {
 std::mutex g_bindings_mutex;
 std::shared_ptr<const Resolved> g_resolved;   // read by the game's thread
 Bindings g_bindings_in_force;                 // the names, for the file
+std::atomic<uint32_t> g_bindings_gen{0};      // bumped by every table put in force
 
 std::shared_ptr<const Resolved> resolved() {
     std::lock_guard<std::mutex> lock(g_bindings_mutex);
@@ -586,8 +587,12 @@ static Bindings migrate_pad_bindings(const Bindings& in) {
     return out;
 }
 
-void input_set_bindings(const Bindings& given) {
-    const Bindings bindings = migrate_pad_bindings(given);
+// Puts a table in force. The migration is for a file written before the pad
+// joined the table (above); the BUTTONS page's tables are complete and skip
+// it, so clearing the last pad name from the page does not bring every pad
+// default back.
+static void set_bindings(const Bindings& given, bool migrate) {
+    const Bindings bindings = migrate ? migrate_pad_bindings(given) : given;
     auto r = std::make_shared<Resolved>();
     Bindings in_force = defaults();
     for (int i = 0; i < IN_COUNT; i++) {
@@ -636,6 +641,11 @@ void input_set_bindings(const Bindings& given) {
     std::lock_guard<std::mutex> lock(g_bindings_mutex);
     g_resolved = std::move(r);
     g_bindings_in_force = std::move(in_force);
+    g_bindings_gen.fetch_add(1, std::memory_order_release);
+}
+
+void input_set_bindings(const Bindings& given) {
+    set_bindings(given, true);
 }
 
 Bindings input_bindings() {
@@ -644,6 +654,461 @@ Bindings input_bindings() {
         return defaults();
     }
     return g_bindings_in_force;
+}
+
+uint32_t input_bindings_generation() {
+    return g_bindings_gen.load(std::memory_order_acquire);
+}
+
+// ---------------------------------------------------------------------------
+// The BUTTONS page (patches/src/graphics_menu_patch.c, snap_bind_page): the
+// names its rows show, the edits it makes, and the capture of the next
+// press. The page runs on the game's thread and reaches this through the
+// mailbox (src/menu_assets.cpp, poll_bind_bank); the events that carry a
+// press arrive on the window's thread (input_handle_sdl_event).
+// ---------------------------------------------------------------------------
+
+namespace {
+
+// The page's device a source name belongs to.
+int source_device(const std::string& name) {
+    if (is_pad_name(name)) {
+        return kBindPad;
+    }
+    Source src{};
+    if (resolve_source(name, src) &&
+        ((src.kind == SourceKind::MouseButton) || (src.kind == SourceKind::WheelUp) ||
+         (src.kind == SourceKind::WheelDown))) {
+        return kBindMouse;
+    }
+    return kBindKeyboard;
+}
+
+const char* device_name(int device) {
+    return (device == kBindPad) ? "controller" : (device == kBindMouse) ? "mouse" : "keyboard";
+}
+
+// The name the settings file and the README spell a pad part with, for a
+// captured press: SDL's own spelling is lowercase ("leftshoulder"), which
+// resolve_source reads just as well, but the file should carry the
+// documented one.
+std::string pad_source_name(SDL_GameControllerButton b) {
+    switch (b) {
+        case SDL_CONTROLLER_BUTTON_A: return "Pad A";
+        case SDL_CONTROLLER_BUTTON_B: return "Pad B";
+        case SDL_CONTROLLER_BUTTON_X: return "Pad X";
+        case SDL_CONTROLLER_BUTTON_Y: return "Pad Y";
+        case SDL_CONTROLLER_BUTTON_BACK: return "Pad Back";
+        case SDL_CONTROLLER_BUTTON_GUIDE: return "Pad Guide";
+        case SDL_CONTROLLER_BUTTON_START: return "Pad Start";
+        case SDL_CONTROLLER_BUTTON_LEFTSTICK: return "Pad LeftStick";
+        case SDL_CONTROLLER_BUTTON_RIGHTSTICK: return "Pad RightStick";
+        case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: return "Pad LeftShoulder";
+        case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: return "Pad RightShoulder";
+        case SDL_CONTROLLER_BUTTON_DPAD_UP: return "Pad DPUp";
+        case SDL_CONTROLLER_BUTTON_DPAD_DOWN: return "Pad DPDown";
+        case SDL_CONTROLLER_BUTTON_DPAD_LEFT: return "Pad DPLeft";
+        case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: return "Pad DPRight";
+        default: {
+            const char* s = SDL_GameControllerGetStringForButton(b);
+            return (s != nullptr) ? (std::string("Pad ") + s) : std::string();
+        }
+    }
+}
+
+// The name a row shows for one source. The pad's parts are named as the
+// layout in force reads them: "Pad LeftShoulder" is read from the left
+// trigger's travel on an N64-shaped pad, which is that pad's Z, and from
+// the shoulder button on the rest, a bumper (pad_button_held).
+std::string display_name(const std::string& name, bool n64) {
+    Source src{};
+    if (!resolve_source(name, src)) {
+        return name;
+    }
+    switch (src.kind) {
+        case SourceKind::Key: {
+            const char* n = SDL_GetScancodeName(SDL_Scancode(src.code));
+            std::string s = ((n != nullptr) && (n[0] != '\0')) ? n : name;
+            // SDL's GUI is the Windows or Command key.
+            if (s == "Left GUI") s = "Left Win";
+            if (s == "Right GUI") s = "Right Win";
+            return s;
+        }
+        case SourceKind::MouseButton:
+            switch (src.code) {
+                case SDL_BUTTON_LEFT: return "Left";
+                case SDL_BUTTON_RIGHT: return "Right";
+                case SDL_BUTTON_MIDDLE: return "Middle";
+                case SDL_BUTTON_X1: return "Back";
+                default: return "Forward";
+            }
+        case SourceKind::WheelUp: return "Wheel Up";
+        case SourceKind::WheelDown: return "Wheel Down";
+        case SourceKind::PadButton:
+            switch (src.code) {
+                case SDL_CONTROLLER_BUTTON_A: return "A";
+                case SDL_CONTROLLER_BUTTON_B: return "B";
+                case SDL_CONTROLLER_BUTTON_X: return "X";
+                case SDL_CONTROLLER_BUTTON_Y: return "Y";
+                case SDL_CONTROLLER_BUTTON_BACK: return "Back";
+                case SDL_CONTROLLER_BUTTON_GUIDE: return "Guide";
+                case SDL_CONTROLLER_BUTTON_START: return "Start";
+                case SDL_CONTROLLER_BUTTON_LEFTSTICK: return "L Stick";
+                case SDL_CONTROLLER_BUTTON_RIGHTSTICK: return "R Stick";
+                case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: return n64 ? "Z" : "L Bumper";
+                case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: return n64 ? "ZR" : "R Bumper";
+                case SDL_CONTROLLER_BUTTON_DPAD_UP: return "D Up";
+                case SDL_CONTROLLER_BUTTON_DPAD_DOWN: return "D Down";
+                case SDL_CONTROLLER_BUTTON_DPAD_LEFT: return "D Left";
+                case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: return "D Right";
+                default: {
+                    const char* n = SDL_GameControllerGetStringForButton(SDL_GameControllerButton(src.code));
+                    return (n != nullptr) ? n : name;
+                }
+            }
+        case SourceKind::PadAxis:
+            switch (src.code) {
+                case SDL_CONTROLLER_AXIS_TRIGGERLEFT: return n64 ? "L" : "L Trigger";
+                case SDL_CONTROLLER_AXIS_TRIGGERRIGHT: return n64 ? "R" : "R Trigger";
+                default: {
+                    const char* n = SDL_GameControllerGetStringForAxis(SDL_GameControllerAxis(src.code));
+                    return (n != nullptr) ? n : name;
+                }
+            }
+    }
+    return name;
+}
+
+void bind_publish(const Bindings& table) {
+    set_bindings(table, false);
+    settings_mark_dirty();
+}
+
+// The capture. One at a time, owned by the page; the state is read and
+// written under the mutex on both threads, the two flags are the fast
+// checks the input path and the window's loop make on every event.
+struct Capture {
+    std::mutex mutex;
+    int device = kBindKeyboard;
+    int64_t startedUs = 0;
+    CaptureState state = CaptureState::Idle;
+    std::string name;
+    bool triggerAbove[2] = {false, false};   // the triggers at arming, for a rising edge
+    int64_t testDueUs = 0;                   // SNAP_BIND_TEST: when the scripted press lands
+    std::string testName;
+};
+Capture g_capture;
+std::atomic<bool> g_capture_active{false};
+// After a capture nothing reaches the game until every source is let go:
+// the key just bound may still be down, and the page would read it as a
+// press of the button it now is.
+std::atomic<bool> g_capture_settle{false};
+constexpr int64_t CaptureTimeoutUs = 6000000;
+constexpr int64_t CaptureTestDelayUs = 300000;
+
+// Keys the port answers to itself (src/settings.cpp handle_settings_hotkey,
+// main.cpp's Esc): a game button cannot be one of them.
+bool key_has_job(int sc) {
+    switch (sc) {
+        case SDL_SCANCODE_F1: case SDL_SCANCODE_F2: case SDL_SCANCODE_F3: case SDL_SCANCODE_F4:
+        case SDL_SCANCODE_F5: case SDL_SCANCODE_F6: case SDL_SCANCODE_F7: case SDL_SCANCODE_F8:
+        case SDL_SCANCODE_F9: case SDL_SCANCODE_F10: case SDL_SCANCODE_F11: case SDL_SCANCODE_F12:
+        case SDL_SCANCODE_P: case SDL_SCANCODE_LEFTBRACKET: case SDL_SCANCODE_RIGHTBRACKET:
+        case SDL_SCANCODE_HOME: case SDL_SCANCODE_END: case SDL_SCANCODE_ESCAPE:
+            return true;
+        default:
+            return false;
+    }
+}
+
+void capture_end_with(CaptureState state, const std::string& name) {
+    std::lock_guard<std::mutex> lock(g_capture.mutex);
+    if (g_capture.state != CaptureState::Listening) {
+        return;
+    }
+    g_capture.state = state;
+    g_capture.name = name;
+}
+
+// The window's thread: an event while the capture listens. True when the
+// event was the capture's to take, whatever it made of it; a press on a
+// device other than the one the page shows is taken and ignored, and no
+// press reaches the game either way.
+bool capture_event(const SDL_Event& event) {
+    int device;
+    {
+        std::lock_guard<std::mutex> lock(g_capture.mutex);
+        if (g_capture.state != CaptureState::Listening) {
+            return false;
+        }
+        device = g_capture.device;
+    }
+    const bool n64 = pad_snapshot().n64_layout;
+    switch (event.type) {
+        case SDL_KEYDOWN: {
+            if (event.key.repeat) {
+                return true;
+            }
+            const int sc = event.key.keysym.scancode;
+            // The Deck's desktop layout sends these for the pad's A and B.
+            if (g_deck_pad_keys_ignored.load(std::memory_order_relaxed) &&
+                ((sc == SDL_SCANCODE_RETURN) || (sc == SDL_SCANCODE_ESCAPE))) {
+                return true;
+            }
+            if (sc == SDL_SCANCODE_ESCAPE) {
+                capture_end_with(CaptureState::Cancelled, "");
+                return true;
+            }
+            if (device != kBindKeyboard) {
+                return true;
+            }
+            const char* n = SDL_GetScancodeName(SDL_Scancode(sc));
+            if ((n == nullptr) || (n[0] == '\0')) {
+                return true;
+            }
+            capture_end_with(key_has_job(sc) ? CaptureState::RefusedJob : CaptureState::Bound, n);
+            return true;
+        }
+        case SDL_MOUSEBUTTONDOWN: {
+            if ((event.button.which == SDL_TOUCH_MOUSEID) || (device != kBindMouse)) {
+                return true;
+            }
+            const char* n = nullptr;
+            switch (event.button.button) {
+                case SDL_BUTTON_LEFT: n = "Mouse Left"; break;
+                case SDL_BUTTON_RIGHT: n = "Mouse Right"; break;
+                case SDL_BUTTON_MIDDLE: n = "Mouse Middle"; break;
+                case SDL_BUTTON_X1: n = "Mouse X1"; break;
+                case SDL_BUTTON_X2: n = "Mouse X2"; break;
+                default: break;
+            }
+            if (n != nullptr) {
+                capture_end_with(CaptureState::Bound, n);
+            }
+            return true;
+        }
+        case SDL_MOUSEWHEEL: {
+            if (device != kBindMouse) {
+                return true;
+            }
+            const int y = (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) ? -event.wheel.y : event.wheel.y;
+            if (y > 0) {
+                capture_end_with(CaptureState::Bound, "Wheel Up");
+            } else if (y < 0) {
+                capture_end_with(CaptureState::Bound, "Wheel Down");
+            }
+            return true;
+        }
+        case SDL_CONTROLLERBUTTONDOWN: {
+            if (device != kBindPad) {
+                return true;
+            }
+            const SDL_GameControllerButton b = SDL_GameControllerButton(event.cbutton.button);
+            // Back saves the photo on screen and Guide is the platform's
+            // own; neither can be a game button.
+            if ((b == SDL_CONTROLLER_BUTTON_BACK) || (b == SDL_CONTROLLER_BUTTON_GUIDE)) {
+                capture_end_with(CaptureState::RefusedJob, pad_source_name(b));
+                return true;
+            }
+            // The name that reads this part under the layout in force: an
+            // N64-shaped pad's shoulder buttons are read through the
+            // trigger names (pad_axis_held).
+            std::string n;
+            if (n64 && (b == SDL_CONTROLLER_BUTTON_LEFTSHOULDER)) {
+                n = "Pad LeftTrigger";
+            } else if (n64 && (b == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)) {
+                n = "Pad RightTrigger";
+            } else {
+                n = pad_source_name(b);
+            }
+            if (!n.empty()) {
+                capture_end_with(CaptureState::Bound, n);
+            }
+            return true;
+        }
+        case SDL_CONTROLLERAXISMOTION: {
+            if (device != kBindPad) {
+                return true;
+            }
+            // Only the triggers, and only as they cross the eighth of their
+            // travel a held one counts from: a stick's rest would bind at
+            // once, and a trigger already held when the capture began is
+            // not a press.
+            int idx;
+            if (event.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT) {
+                idx = 0;
+            } else if (event.caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT) {
+                idx = 1;
+            } else {
+                return true;
+            }
+            const bool above = event.caxis.value > 8000;
+            bool rose;
+            {
+                std::lock_guard<std::mutex> lock(g_capture.mutex);
+                rose = above && !g_capture.triggerAbove[idx];
+                g_capture.triggerAbove[idx] = above;
+            }
+            if (rose) {
+                capture_end_with(CaptureState::Bound,
+                                 (idx == 0) ? (n64 ? "Pad LeftShoulder" : "Pad LeftTrigger")
+                                            : (n64 ? "Pad RightShoulder" : "Pad RightTrigger"));
+            }
+            return true;
+        }
+        default:
+            return false;
+    }
+}
+
+} // namespace
+
+bool input_pad_attached() {
+    return pad_snapshot().attached;
+}
+
+std::string input_bind_display(const char* input, int device) {
+    const Bindings table = input_bindings();
+    const auto it = table.find(input);
+    if (it == table.end()) {
+        return "None";
+    }
+    const bool n64 = pad_snapshot().n64_layout;
+    std::string out;
+    for (const std::string& s : it->second) {
+        if (source_device(s) != device) {
+            continue;
+        }
+        if (!out.empty()) {
+            out += ", ";
+        }
+        out += display_name(s, n64);
+    }
+    return out.empty() ? std::string("None") : out;
+}
+
+void input_bind_set(const char* input, int device, const std::string& source) {
+    Bindings table = input_bindings();
+    std::vector<std::string>& list = table[input];
+    std::vector<std::string> kept;
+    for (const std::string& s : list) {
+        if (source_device(s) != device) {
+            kept.push_back(s);
+        }
+    }
+    kept.push_back(source);
+    list = kept;
+    printf("[SNAP-Input] keys.%s: \"%s\" bound on the Buttons page (the %s)\n", input, source.c_str(), device_name(device));
+    bind_publish(table);
+}
+
+bool input_bind_clear(const char* input, int device) {
+    Bindings table = input_bindings();
+    std::vector<std::string>& list = table[input];
+    std::vector<std::string> kept;
+    for (const std::string& s : list) {
+        if (source_device(s) != device) {
+            kept.push_back(s);
+        }
+    }
+    if (kept.empty()) {
+        printf("[SNAP-Input] keys.%s: not cleared on the Buttons page; nothing else would press it\n", input);
+        fflush(stdout);
+        return false;
+    }
+    if (kept.size() == list.size()) {
+        return true;   // nothing of that device to clear
+    }
+    list = kept;
+    printf("[SNAP-Input] keys.%s: the %s cleared on the Buttons page\n", input, device_name(device));
+    bind_publish(table);
+    return true;
+}
+
+void input_bind_reset() {
+    printf("[SNAP-Input] the shipped bindings put back from the Buttons page\n");
+    bind_publish(defaults());
+}
+
+void input_capture_begin(int device) {
+    const PadSnapshot pad = pad_snapshot();
+    // SNAP_BIND_TEST: a comma-separated list of source names, each taken
+    // as the press of one capture three tenths of a second in, so a replay
+    // can exercise the page with nobody at the keys.
+    static const std::vector<std::string> testNames = [] {
+        std::vector<std::string> v;
+        if (const char* e = getenv("SNAP_BIND_TEST")) {
+            std::string cur;
+            for (const char* p = e; ; p++) {
+                if ((*p == ',') || (*p == '\0')) {
+                    if (!cur.empty()) v.push_back(cur);
+                    cur.clear();
+                    if (*p == '\0') break;
+                } else {
+                    cur.push_back(*p);
+                }
+            }
+        }
+        return v;
+    }();
+    static size_t testNext = 0;
+    {
+        std::lock_guard<std::mutex> lock(g_capture.mutex);
+        g_capture.device = device;
+        g_capture.startedUs = now_us();
+        g_capture.state = CaptureState::Listening;
+        g_capture.name.clear();
+        g_capture.triggerAbove[0] = snapshot_axis(pad, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 8000;
+        g_capture.triggerAbove[1] = snapshot_axis(pad, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 8000;
+        g_capture.testDueUs = 0;
+        if (testNext < testNames.size()) {
+            g_capture.testName = testNames[testNext++];
+            g_capture.testDueUs = g_capture.startedUs + CaptureTestDelayUs;
+        }
+    }
+    g_capture_active.store(true, std::memory_order_relaxed);
+    printf("[SNAP-Input] Buttons page: listening for a press on the %s\n", device_name(device));
+    fflush(stdout);
+}
+
+CaptureState input_capture_poll(std::string* name) {
+    std::lock_guard<std::mutex> lock(g_capture.mutex);
+    if (g_capture.state == CaptureState::Listening) {
+        const int64_t t = now_us();
+        if ((g_capture.testDueUs != 0) && (t >= g_capture.testDueUs)) {
+            g_capture.testDueUs = 0;
+            Source src{};
+            const bool usable = resolve_source(g_capture.testName, src) &&
+                                (source_device(g_capture.testName) == g_capture.device);
+            g_capture.state = usable ? CaptureState::Bound : CaptureState::RefusedJob;
+            g_capture.name = g_capture.testName;
+            printf("[SNAP-Input] SNAP_BIND_TEST: \"%s\" taken as the press (%s)\n",
+                   g_capture.testName.c_str(), usable ? "usable" : "not a name of this device; refused");
+            fflush(stdout);
+        } else if (t - g_capture.startedUs >= CaptureTimeoutUs) {
+            g_capture.state = CaptureState::Cancelled;
+            printf("[SNAP-Input] Buttons page: nothing pressed in six seconds; the row stays as it was\n");
+            fflush(stdout);
+        }
+    }
+    if (name != nullptr) {
+        *name = g_capture.name;
+    }
+    return g_capture.state;
+}
+
+void input_capture_end() {
+    {
+        std::lock_guard<std::mutex> lock(g_capture.mutex);
+        g_capture.state = CaptureState::Idle;
+        g_capture.name.clear();
+    }
+    g_capture_active.store(false, std::memory_order_relaxed);
+    g_capture_settle.store(true, std::memory_order_relaxed);
+}
+
+bool input_capture_active() {
+    return g_capture_active.load(std::memory_order_relaxed);
 }
 
 void input_tap_start() {
@@ -659,6 +1124,11 @@ void input_release_mouse() {
 }
 
 void input_handle_sdl_event(const SDL_Event& event) {
+    // The Buttons page is listening: a key, button or wheel tick is the
+    // capture's, and reaches neither the latches below nor the game.
+    if (g_capture_active.load(std::memory_order_relaxed) && capture_event(event)) {
+        return;
+    }
     const bool captured = g_captured.load(std::memory_order_relaxed);
     const bool buttons_live = g_focused.load(std::memory_order_relaxed) &&
                               (now_us() >= g_buttons_from.load(std::memory_order_relaxed));
@@ -1775,6 +2245,24 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
 
     ax *= StickFullDeflection;
     ay *= StickFullDeflection;
+
+    // The Buttons page's capture: the press it is waiting for must not
+    // reach the game as the button it used to be, and once it has landed
+    // the key may still be down as the button it now is. Nothing goes
+    // through until the capture ends and everything is released.
+    if (g_capture_active.load(std::memory_order_relaxed)) {
+        btn = 0;
+        ax = 0.0f;
+        ay = 0.0f;
+    } else if (g_capture_settle.load(std::memory_order_relaxed)) {
+        if ((btn != 0) || (ax != 0.0f) || (ay != 0.0f)) {
+            btn = 0;
+            ax = 0.0f;
+            ay = 0.0f;
+        } else {
+            g_capture_settle.store(false, std::memory_order_relaxed);
+        }
+    }
 
     *buttons = btn;
     *x = ax;

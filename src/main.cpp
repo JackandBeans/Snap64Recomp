@@ -458,6 +458,12 @@ static void update_gfx(void* /*gfx_data*/) {
                 ultramodern::quit();
                 break;
             case SDL_KEYDOWN:
+                // The BUTTONS page is listening for a key: the input layer
+                // took this one as the binding (or refused it), and it is
+                // neither a hotkey nor Esc's Start here.
+                if (snap::input_capture_active()) {
+                    break;
+                }
                 if (snap::handle_settings_hotkey(event.key.keysym.scancode)) {
                     snap_update_window_title();
                     break;

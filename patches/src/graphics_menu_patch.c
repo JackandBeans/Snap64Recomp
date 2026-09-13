@@ -68,6 +68,12 @@ static s32 snap_nav_dir_v = 0;
 static s32 snap_nav_dir_h = 0;
 static s32 snap_nav_repeat_v = 0;
 static s32 snap_nav_repeat_h = 0;
+/* The CONTROLS page reopens on this row when the BUTTONS page closes (its
+ * Buttons row opened it), and the two hand the hidden Option list to each
+ * other -- the count of PAGE_HIDDEN entries still hidden -- so the list
+ * never shows for a frame between them. */
+static s32 snap_ctl_reopen_row;
+static s32 snap_list_hidden_carry;
 
 void func_800E71DC_A0E76C(void);
 void func_800E7408_A0E998(void);
@@ -139,7 +145,24 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *   +0x64  u8   CONTROLS fields 0..5, through +0x69: mouse aim, the mouse
  *               speed's step, the zoom speed's step, the tilt, the gyro
  *               mode (off, on, zoomed), the gyro speed's step
+ *   +0x7C  u32  MBOX_POOL_FAIL, the patch's own: strips the pool refused
+ *   +0x80  u32  MBOX_POOL_PEAK, the patch's own: the pool's high water
+ *   +0xA0  u32  BIND_REQ, the BUTTONS page's request to the host: the
+ *               operation in bits 16..23 (1 listen for a press, 2 clear,
+ *               3 the shipped table back), the device in 8..15 (0
+ *               keyboard, 1 mouse, 2 pad), the input row in 0..7 (1..18)
+ *   +0xA4  u32  BIND_ACK, the host's answer: the request in the low 24
+ *               bits, the result above them (1 done, 2 cancelled, 3
+ *               refused, a key with a job of its own, 4 refused, nothing
+ *               else would press the input)
+ *   +0xA8  u32  BIND_GEN, host-owned: bumped when the page's row values
+ *               were recomposed; its low bit is the bank of ids to show
+ *   +0xAC  u8   BIND_DEVICE, the page's: the device it shows
+ *   +0xAD  u8   BIND_OPEN, the page's: 1 while it is open
+ *   +0xAE  u8   BIND_PAD, host-owned: 1 while a pad is attached
  *   +0x100      SCRATCH_ARRAYS, the page's pointer and snapshot arrays
+ *               (the BUTTONS page's own twenty-row arrays sit at +0x300
+ *               and +0x350 inside it)
  *
  * The host never touches anything the map calls the patch's own. */
 #define SNAP_GFX_MAILBOX   0x80C00000
@@ -242,6 +265,24 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_EXIT_ITEM     126
 #define STR_EXIT_HELP     127
 #define STR_EXIT_CONFIRM  128
+/* The BUTTONS page (menu_assets.cpp ids BaseCount+99..+167). */
+#define STR_BTN_LABEL        129  /* "Buttons", the CONTROLS page's ninth row */
+#define STR_PRESS_A          130  /* the value of a row that opens something */
+#define STR_BTN_DESC         131
+#define STR_BIND_HDR         132  /* "Buttons" in the header face */
+#define STR_BIND_DEVICE      133  /* the Device row's label */
+#define STR_BIND_INPUT       134  /* ..151: the eighteen input rows' labels */
+#define STR_BIND_RESET       152  /* Reset All */
+#define STR_BIND_KEYBOARD    153  /* ..155: Keyboard, Mouse, Controller */
+#define STR_BIND_DESC_DEVICE 156
+#define STR_BIND_DESC_ROW    157
+#define STR_BIND_DESC_LISTEN 158
+#define STR_BIND_DESC_RESET  159
+#define STR_BIND_DESC_JOB    160
+#define STR_BIND_DESC_KEEP   161
+/* ..197: the input rows' values, two banks of eighteen, composed live by
+ * the host for the device shown (BIND_GEN's low bit names the bank). */
+#define STR_BIND_DYN         162
 
 /* The SOUND bank of the mailbox: its own sequence word and value bytes
  * (percent volumes; stereo and background-mute booleans). The patched
@@ -401,11 +442,15 @@ static Bitmap* snap_strip_pending;
 /* Occupancy, for the peak the host prints. */
 static s32 snap_strip_live;
 
-/* Refused strips and the high-water occupancy, for the host to print
- * (src/menu_assets.cpp). In the mailbox hole above the CONTROLS bank
- * (+0x6A..+0xFF) and below SCRATCH_ARRAYS at +0x100. */
-#define MBOX_POOL_FAIL (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x70))
-#define MBOX_POOL_PEAK (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x74))
+/* Refused strips and the high-water occupancy, in the mailbox hole above
+ * the CONTROLS bank and below SCRATCH_ARRAYS at +0x100. Until 1.0.6 these
+ * sat on +0x70 and +0x74, the same words the Exit Game item's GObj and
+ * help-line pointers were later given (SCRATCH_EXIT_GOBJ, SCRATCH_HELP_EXIT
+ * below): the peak never overwrote a pointer only because a pointer is
+ * larger than any count, and a refused strip would have bumped the item's
+ * pointer by one. Nothing on the host reads them. */
+#define MBOX_POOL_FAIL (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x7C))
+#define MBOX_POOL_PEAK (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x80))
 
 /* Which slot a Bitmap array is the head of, or -1 for anything else.
  * The divide names a candidate; the compare against that slot's own address
@@ -2006,10 +2051,12 @@ static void snap_sound_page(void) {
  * screen's own variables exactly as the stock rows edited them (the
  * screen's exit writes them to the player flags); the other four are the
  * mouse's, in the mailbox's CONTROLS bank, applied live by the host. */
-/* Eight rows, six on screen at a time: the page scrolls for the last two
- * the way the Graphics page scrolls, with the same edge arrows. */
-#define CTL_ROWS 8
+/* Nine rows, six on screen at a time: the page scrolls for the last three
+ * the way the Graphics page scrolls, with the same edge arrows. The ninth,
+ * Buttons, has no value to cycle: A on it opens the BUTTONS page. */
+#define CTL_ROWS 9
 #define CTL_VISIBLE 6
+#define CTL_ROW_BUTTONS 8
 
 static s32 snap_ctl_value_count(s32 row) {
     switch (row) {
@@ -2017,15 +2064,22 @@ static s32 snap_ctl_value_count(s32 row) {
         case 4:  return 4;    /* Zoom Speed */
         case 6:  return 3;    /* Gyro Aim: off, on, zoomed */
         case 7:  return 11;   /* Gyro Speed */
+        case CTL_ROW_BUTTONS: return 1;
         default: return 2;
     }
 }
 
 static s32 snap_ctl_label_str(s32 row) {
+    if (row == CTL_ROW_BUTTONS) {
+        return STR_BTN_LABEL;
+    }
     return (row < 6) ? (STR_CTL_LABEL + row) : (STR_GYRO_LABEL + (row - 6));
 }
 
 static s32 snap_ctl_desc_str(s32 row) {
+    if (row == CTL_ROW_BUTTONS) {
+        return STR_BTN_DESC;
+    }
     return (row < 6) ? (STR_CTL_DESC + row) : (STR_GYRO_DESC + (row - 6));
 }
 
@@ -2077,6 +2131,7 @@ static void snap_ctl_layout(s32 top) {
 
 static s32 snap_ctl_value_str(s32 row, s32 v) {
     switch (row) {
+        case CTL_ROW_BUTTONS: return STR_PRESS_A;
         case 0:  return v ? STR_SWITCH : STR_HOLD;
         case 1:  return v ? STR_REVERSE : STR_NORMAL;
         case 2:  return v ? STR_ON : STR_OFF;
@@ -2092,6 +2147,7 @@ static s32 snap_ctl_get(s32 row) {
     switch (row) {
         case 0:  return D_800E8395_A0F925 ? 1 : 0;
         case 1:  return D_800E8396_A0F926 ? 1 : 0;
+        case CTL_ROW_BUTTONS: return 0;
         default: return CTL_FIELD(row - 2);
     }
 }
@@ -2100,42 +2156,27 @@ static void snap_ctl_set(s32 row, s32 v) {
     switch (row) {
         case 0:  D_800E8395_A0F925 = (s8) v; break;
         case 1:  D_800E8396_A0F926 = (s8) v; break;
+        case CTL_ROW_BUTTONS: break;
         default: CTL_FIELD(row - 2) = (u8) v; break;
     }
 }
 
-static void snap_controls_page(void) {
-    UnkStruct800BEDF8* input;
-    s32 navUp;
-    s32 navDown;
-    s32 navLeft;
-    s32 navRight;
-    GObj* hdrStrip;
-    GObj* descStrip;
-    s32 sel, i, moved, hiddenCount;
-    s32 v;
-    s32 top;
-    u8 pulseState, pulseCounter, bobTick;
-    u8 nudgeUp, nudgeDn;
-    u8 entry[CTL_ROWS];
+/* Hides the Option list's rows, the port's own items on it and the stock
+ * title, remembering in PAGE_HIDDEN what was visible for a page's teardown
+ * to restore, and hides the two item help lines (the selection loop shows
+ * the right one again). The CONTROLS and BUTTONS pages take their list
+ * from here; the GRAPHICS and SOUND pages do the same inline. Returns how
+ * many sprites were hidden. */
+static s32 snap_hide_option_list(void) {
+    s32 i;
+    s32 hiddenCount = 0;
+    GObj* mine;
+    GObj* chain;
+    SObj* sobj;
 
-    if (DIR_MAGIC != 0x53474130) {
-        return;
-    }
-
-    for (i = 0; i < CTL_ROWS; i++) {
-        v = snap_ctl_get(i);
-        if ((v < 0) || (v >= snap_ctl_value_count(i))) {
-            v = 0;
-            snap_ctl_set(i, 0);
-        }
-        entry[i] = (u8) v;
-    }
-
-    hiddenCount = 0;
     for (i = 0; i < 12; i++) {
-        GObj* chain = snap_chain(i);
-        SObj* sobj = (chain != NULL) ? chain->data.sobj : NULL;
+        chain = snap_chain(i);
+        sobj = (chain != NULL) ? chain->data.sobj : NULL;
         while (sobj != NULL) {
             const s32 y = sobj->sprite.y;
             if ((y >= 56) && (y < 164) && !(sobj->sprite.attr & SP_HIDDEN) &&
@@ -2147,25 +2188,12 @@ static void snap_controls_page(void) {
             sobj = sobj->next;
         }
     }
-    {
-        GObj* mine = (GObj*) SCRATCH_GRAPHICS_GOBJ;
-        if ((mine != NULL) && (mine->data.sobj != NULL) &&
-            !(mine->data.sobj->sprite.attr & SP_HIDDEN) && (hiddenCount < 64)) {
-            mine->data.sobj->sprite.attr |= SP_HIDDEN;
-            PAGE_HIDDEN(hiddenCount) = (u32) mine->data.sobj;
-            hiddenCount++;
-        }
-        mine = (GObj*) SCRATCH_CONTROLS_GOBJ;
-        if ((mine != NULL) && (mine->data.sobj != NULL) &&
-            !(mine->data.sobj->sprite.attr & SP_HIDDEN) && (hiddenCount < 64)) {
-            mine->data.sobj->sprite.attr |= SP_HIDDEN;
-            PAGE_HIDDEN(hiddenCount) = (u32) mine->data.sobj;
-            hiddenCount++;
-        }
-        /* And the sixth row, Exit Game, the patch's own as well: left
-         * behind, it stayed on screen under every page (a Deck found it
-         * on the Graphics page, 2026-09-11). */
-        mine = (GObj*) SCRATCH_EXIT_GOBJ;
+    /* The three staged items: none of them is in the chains above, and
+     * one left behind draws on top of a page's rows (a Deck found the
+     * CONTROLS and Exit Game items doing so, 2026-09-06 and 2026-09-11). */
+    for (i = 0; i < 3; i++) {
+        mine = (i == 0) ? (GObj*) SCRATCH_GRAPHICS_GOBJ
+             : (i == 1) ? (GObj*) SCRATCH_CONTROLS_GOBJ : (GObj*) SCRATCH_EXIT_GOBJ;
         if ((mine != NULL) && (mine->data.sobj != NULL) &&
             !(mine->data.sobj->sprite.attr & SP_HIDDEN) && (hiddenCount < 64)) {
             mine->data.sobj->sprite.attr |= SP_HIDDEN;
@@ -2173,18 +2201,68 @@ static void snap_controls_page(void) {
             hiddenCount++;
         }
     }
-    {
-        GObj* chain = snap_chain(2);
-        SObj* sobj = (chain != NULL) ? chain->data.sobj : NULL;
-        while (sobj != NULL) {
-            if ((sobj->sprite.y == 40) && !(sobj->sprite.attr & SP_HIDDEN) &&
-                (hiddenCount < 64)) {
-                sobj->sprite.attr |= SP_HIDDEN;
-                PAGE_HIDDEN(hiddenCount) = (u32) sobj;
-                hiddenCount++;
-            }
-            sobj = sobj->next;
+    /* The stock "Options" title (the y=40 sprite of its chain; the OK and
+     * Cancel hints at y=41 stay) gives way to the page's own heading. */
+    chain = snap_chain(2);
+    sobj = (chain != NULL) ? chain->data.sobj : NULL;
+    while (sobj != NULL) {
+        if ((sobj->sprite.y == 40) && !(sobj->sprite.attr & SP_HIDDEN) &&
+            (hiddenCount < 64)) {
+            sobj->sprite.attr |= SP_HIDDEN;
+            PAGE_HIDDEN(hiddenCount) = (u32) sobj;
+            hiddenCount++;
         }
+        sobj = sobj->next;
+    }
+    mine = (GObj*) SCRATCH_HELP_ITEM;
+    if ((mine != NULL) && (mine->data.sobj != NULL)) {
+        mine->data.sobj->sprite.attr |= SP_HIDDEN;
+    }
+    mine = (GObj*) SCRATCH_HELP_CONTROLS;
+    if ((mine != NULL) && (mine->data.sobj != NULL)) {
+        mine->data.sobj->sprite.attr |= SP_HIDDEN;
+    }
+    return hiddenCount;
+}
+
+/* Returns 1 when A was pressed on the Buttons row: the dispatcher opens
+ * the BUTTONS page and comes back here. 0 when the page was left. */
+static s32 snap_controls_page(void) {
+    UnkStruct800BEDF8* input;
+    s32 navUp;
+    s32 navDown;
+    s32 navLeft;
+    s32 navRight;
+    GObj* hdrStrip;
+    GObj* descStrip;
+    s32 sel, i, moved, hiddenCount;
+    s32 v;
+    s32 top;
+    s32 openButtons;
+    u8 pulseState, pulseCounter, bobTick;
+    u8 nudgeUp, nudgeDn;
+    u8 entry[CTL_ROWS];
+
+    if (DIR_MAGIC != 0x53474130) {
+        return 0;
+    }
+    openButtons = 0;
+
+    for (i = 0; i < CTL_ROWS; i++) {
+        v = snap_ctl_get(i);
+        if ((v < 0) || (v >= snap_ctl_value_count(i))) {
+            v = 0;
+            snap_ctl_set(i, 0);
+        }
+        entry[i] = (u8) v;
+    }
+
+    if (snap_list_hidden_carry > 0) {
+        /* Back from the BUTTONS page: the list is still hidden. */
+        hiddenCount = snap_list_hidden_carry;
+        snap_list_hidden_carry = 0;
+    } else {
+        hiddenCount = snap_hide_option_list();
     }
     hdrStrip = snap_make_strip(STR_CTL_HDR, 45, 41);
     {
@@ -2207,8 +2285,13 @@ static void snap_controls_page(void) {
     PAGE_ARROW_UP = (u32) snap_make_strip_fmt(STR_SCROLL_UP, ARROW_X, ARROW_UP_Y, G_IM_FMT_RGBA);
     PAGE_ARROW_DN = (u32) snap_make_strip_fmt(STR_SCROLL_DN, ARROW_X, ARROW_DN_Y, G_IM_FMT_RGBA);
 
-    sel = 0;
-    top = 0;
+    /* On the Buttons row when the BUTTONS page has just closed. */
+    sel = snap_ctl_reopen_row;
+    snap_ctl_reopen_row = 0;
+    if ((sel < 0) || (sel >= CTL_ROWS)) {
+        sel = 0;
+    }
+    top = (sel >= CTL_VISIBLE) ? (sel - (CTL_VISIBLE - 1)) : 0;
     snap_ctl_layout(top);
     pulseState = 0;
     pulseCounter = 0;
@@ -2242,6 +2325,12 @@ static void snap_controls_page(void) {
 
         if (gContInputPressedButtons & A_BUTTON) {
             auPlaySoundWithParams(0x42, 0x7FFF, 0x40, 1.0f, 0);
+            if (sel == CTL_ROW_BUTTONS) {
+                /* Opens the BUTTONS page; the edits made here stand, as
+                 * A always keeps them. */
+                openButtons = 1;
+                snap_ctl_reopen_row = sel;
+            }
             break;
         }
 
@@ -2331,7 +2420,7 @@ static void snap_controls_page(void) {
             snap_swap_strip(descStrip, snap_ctl_desc_str(sel));
             auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
         }
-        else if (navRight) {
+        else if (navRight && (snap_ctl_value_count(sel) > 1)) {
             v = snap_ctl_get(sel) + 1;
             if (v >= snap_ctl_value_count(sel)) {
                 v = 0;
@@ -2339,7 +2428,7 @@ static void snap_controls_page(void) {
             snap_ctl_set(sel, v);
             moved = 1;
         }
-        else if (navLeft) {
+        else if (navLeft && (snap_ctl_value_count(sel) > 1)) {
             v = snap_ctl_get(sel) - 1;
             if (v < 0) {
                 v = snap_ctl_value_count(sel) - 1;
@@ -2439,10 +2528,484 @@ static void snap_controls_page(void) {
     if (descStrip != NULL) {
         omDeleteGObj(descStrip);
     }
-    for (i = 0; i < hiddenCount; i++) {
-        SObj* sobj = (SObj*) PAGE_HIDDEN(i);
-        sobj->sprite.attr &= ~SP_HIDDEN;
+    if (openButtons) {
+        /* Handed to the BUTTONS page hidden as they are, and back again
+         * when it returns, so the list never shows between the two. */
+        snap_list_hidden_carry = hiddenCount;
+    } else {
+        for (i = 0; i < hiddenCount; i++) {
+            SObj* sobj = (SObj*) PAGE_HIDDEN(i);
+            sobj->sprite.attr &= ~SP_HIDDEN;
+        }
     }
+    ohWait(1);
+    return openButtons;
+}
+
+/* =========================================================================
+ * The BUTTONS page: what presses each of the game's inputs.
+ *
+ * Twenty rows in the CONTROLS page's dress, six on screen: a Device row
+ * (Keyboard, Mouse, Controller; Left and Right pick it), the eighteen
+ * inputs -- the fourteen buttons and the four stick directions -- and
+ * Reset All. An input row's value is what presses it on the device shown,
+ * composed live by the host from the binding table (src/input.cpp,
+ * input_bind_display) into a bank of staged ids; the host turns the bank
+ * with BIND_GEN and the page swaps its strips to the bank named, never
+ * reading a strip the host is writing. A on an input row asks the host to
+ * listen for the next press of that device (BIND_REQ, operation 1) and
+ * waits for the answer while the value blinks and the help line says
+ * what to do; the host hands the game no input while it listens, and none
+ * until every key and button is let go after, so neither the press nor the
+ * key just bound can reach this loop as a button. Z clears the row on the
+ * device shown (operation 2), refused when nothing else would press the
+ * input. A on Reset All puts the shipped table back (operation 3). Every
+ * change is in force at once and reaches the settings file by the host's
+ * debounced write; B leaves. There is no Cancel: what is on screen is what
+ * is bound, as on the other recompilations' binding pages.
+ * ========================================================================= */
+#define BIND_ROWS      20
+#define BIND_VISIBLE   6
+#define BIND_INPUTS    18
+#define BIND_ROW_RESET 19
+#define BIND_REQ     (*(volatile u32*) (SNAP_GFX_MAILBOX + 0xA0))
+#define BIND_ACK     (*(volatile u32*) (SNAP_GFX_MAILBOX + 0xA4))
+#define BIND_GEN     (*(volatile u32*) (SNAP_GFX_MAILBOX + 0xA8))
+#define BIND_DEVICE  (*(volatile u8*)  (SNAP_GFX_MAILBOX + 0xAC))
+#define BIND_OPEN    (*(volatile u8*)  (SNAP_GFX_MAILBOX + 0xAD))
+#define BIND_PAD     (*(volatile u8*)  (SNAP_GFX_MAILBOX + 0xAE))
+/* Twenty rows need arrays of their own: the shared PAGE_LABEL and
+ * PAGE_VALUE slots hold sixteen. Past PAGE_ENTRY (+0x1C8..+0x1D7), in the
+ * scratch block nothing else uses. */
+#define BIND_LABEL(i) (*(volatile u32*) (SCRATCH_ARRAYS + 0x200 + (i) * 4))   /* GObj*, 20 */
+#define BIND_VALUE(i) (*(volatile u32*) (SCRATCH_ARRAYS + 0x250 + (i) * 4))   /* GObj*, 20 */
+/* The host's answers (BIND_ACK bits 24..31). */
+#define BIND_DONE      1
+#define BIND_CANCELLED 2
+#define BIND_JOB       3
+#define BIND_KEEP      4
+
+static s32 snap_bind_label_str(s32 row) {
+    if (row == 0) {
+        return STR_BIND_DEVICE;
+    }
+    if (row <= BIND_INPUTS) {
+        return STR_BIND_INPUT + (row - 1);
+    }
+    return STR_BIND_RESET;
+}
+
+static s32 snap_bind_value_str(s32 row, s32 device, u32 gen) {
+    if (row == 0) {
+        return STR_BIND_KEYBOARD + device;
+    }
+    if (row <= BIND_INPUTS) {
+        return STR_BIND_DYN + ((s32) (gen & 1)) * BIND_INPUTS + (row - 1);
+    }
+    return STR_PRESS_A;
+}
+
+static s32 snap_bind_desc_str(s32 row) {
+    if (row == 0) {
+        return STR_BIND_DESC_DEVICE;
+    }
+    if (row <= BIND_INPUTS) {
+        return STR_BIND_DESC_ROW;
+    }
+    return STR_BIND_DESC_RESET;
+}
+
+/* Rows [top, top+BIND_VISIBLE) sit at the fixed slots, the rest hide; the
+ * edge arrows say which way the hidden rows lie. */
+static void snap_bind_layout(s32 top) {
+    s32 i;
+    for (i = 0; i < BIND_ROWS; i++) {
+        GObj* label = (GObj*) BIND_LABEL(i);
+        GObj* value = (GObj*) BIND_VALUE(i);
+        const s32 shown = (i >= top) && (i < top + BIND_VISIBLE);
+        const s16 y = PAGE_TOP_Y + (i - top) * PAGE_PITCH;
+        if ((label != NULL) && (label->data.sobj != NULL)) {
+            label->data.sobj->sprite.y = y;
+            if (shown) {
+                label->data.sobj->sprite.attr &= ~SP_HIDDEN;
+            } else {
+                label->data.sobj->sprite.attr |= SP_HIDDEN;
+            }
+        }
+        if ((value != NULL) && (value->data.sobj != NULL)) {
+            value->data.sobj->sprite.y = y;
+            if (shown) {
+                value->data.sobj->sprite.attr &= ~SP_HIDDEN;
+            } else {
+                value->data.sobj->sprite.attr |= SP_HIDDEN;
+            }
+        }
+    }
+    {
+        GObj* upArrow = (GObj*) PAGE_ARROW_UP;
+        GObj* dnArrow = (GObj*) PAGE_ARROW_DN;
+        if ((upArrow != NULL) && (upArrow->data.sobj != NULL)) {
+            if (top > 0) {
+                upArrow->data.sobj->sprite.attr &= ~SP_HIDDEN;
+            } else {
+                upArrow->data.sobj->sprite.attr |= SP_HIDDEN;
+            }
+        }
+        if ((dnArrow != NULL) && (dnArrow->data.sobj != NULL)) {
+            if (top + BIND_VISIBLE < BIND_ROWS) {
+                dnArrow->data.sobj->sprite.attr &= ~SP_HIDDEN;
+            } else {
+                dnArrow->data.sobj->sprite.attr |= SP_HIDDEN;
+            }
+        }
+    }
+}
+
+/* One request to the host, waited for; the value blinks while the host
+ * listens for a press. The host's answer, or BIND_CANCELLED after sixteen
+ * seconds of silence (the host itself stops listening after six). */
+static s32 snap_bind_request(u32 req, GObj* value) {
+    s32 frames;
+    s32 result = BIND_CANCELLED;
+    u32 ack;
+
+    BIND_ACK = 0;
+    BIND_REQ = req;
+    for (frames = 0; frames < 480; frames++) {
+        ack = BIND_ACK;
+        if ((ack & 0xFFFFFF) == req) {
+            result = (s32) (ack >> 24);
+            break;
+        }
+        if (value != NULL) {
+            if ((frames & 15) < 8) {
+                snap_tint(value, 0xFF, 0xFF, 0xFF);
+            } else {
+                snap_tint(value, SEL_R, SEL_G, SEL_B);
+            }
+        }
+        ohWait(1);
+    }
+    BIND_REQ = 0;
+    if (value != NULL) {
+        snap_tint(value, SEL_R, SEL_G, SEL_B);
+    }
+    return result;
+}
+
+static void snap_bind_page(void) {
+    UnkStruct800BEDF8* input;
+    s32 navUp;
+    s32 navDown;
+    s32 navLeft;
+    s32 navRight;
+    GObj* hdrStrip;
+    GObj* descStrip;
+    s32 sel, i, hiddenCount;
+    s32 top;
+    s32 device;
+    s32 result;
+    s32 flash;
+    u32 gen;
+    u8 pulseState, pulseCounter, bobTick;
+    u8 nudgeUp, nudgeDn;
+
+    if (DIR_MAGIC != 0x53474130) {
+        return;
+    }
+
+    if (snap_list_hidden_carry > 0) {
+        /* From the CONTROLS page: the list is still hidden. */
+        hiddenCount = snap_list_hidden_carry;
+        snap_list_hidden_carry = 0;
+    } else {
+        hiddenCount = snap_hide_option_list();
+    }
+    hdrStrip = snap_make_strip(STR_BIND_HDR, 45, 41);
+
+    /* The device shown first: the pad when one is attached, else the
+     * keyboard. The host composes the row values for it once it sees the
+     * page open, and the strips are built from the bank it then names --
+     * after a short wait for that turn (one tick, in practice), so the
+     * first frame shows this visit's values and not the last one's. */
+    device = BIND_PAD ? 2 : 0;
+    BIND_DEVICE = (u8) device;
+    BIND_REQ = 0;
+    gen = BIND_GEN;
+    BIND_OPEN = 1;
+    for (i = 0; (i < 10) && (BIND_GEN == gen); i++) {
+        ohWait(1);
+    }
+    gen = BIND_GEN;
+
+    descStrip = snap_make_strip(snap_bind_desc_str(0), 49, 171);
+    for (i = 0; i < BIND_ROWS; i++) {
+        BIND_LABEL(i) = (u32) snap_make_strip(snap_bind_label_str(i), 50, PAGE_TOP_Y);
+        BIND_VALUE(i) = (u32) snap_make_strip(snap_bind_value_str(i, device, gen), 163, PAGE_TOP_Y);
+        snap_tint((GObj*) BIND_VALUE(i), SEL_R, SEL_G, SEL_B);
+    }
+    PAGE_ARROW_UP = (u32) snap_make_strip_fmt(STR_SCROLL_UP, ARROW_X, ARROW_UP_Y, G_IM_FMT_RGBA);
+    PAGE_ARROW_DN = (u32) snap_make_strip_fmt(STR_SCROLL_DN, ARROW_X, ARROW_DN_Y, G_IM_FMT_RGBA);
+
+    sel = 0;
+    top = 0;
+    snap_bind_layout(top);
+    pulseState = 0;
+    pulseCounter = 0;
+    bobTick = 0;
+    nudgeUp = 0;
+    nudgeDn = 0;
+    flash = 0;
+
+    ohWait(2);
+
+    while (1) {
+        input = func_800AA38C(0);
+
+        /* The host turned the bank: the row values are new. */
+        if (BIND_GEN != gen) {
+            gen = BIND_GEN;
+            for (i = 1; i <= BIND_INPUTS; i++) {
+                snap_swap_strip((GObj*) BIND_VALUE(i), snap_bind_value_str(i, device, gen));
+            }
+        }
+
+        if (gContInputPressedButtons & B_BUTTON) {
+            auPlaySoundWithParams(0x43, 0x7FFF, 0x40, 1.0f, 0);
+            break;
+        }
+
+        if (gContInputPressedButtons & A_BUTTON) {
+            if ((sel >= 1) && (sel <= BIND_INPUTS)) {
+                auPlaySoundWithParams(0x42, 0x7FFF, 0x40, 1.0f, 0);
+                snap_swap_strip(descStrip, STR_BIND_DESC_LISTEN);
+                result = snap_bind_request((1u << 16) | (((u32) device) << 8) | (u32) sel,
+                                           (GObj*) BIND_VALUE(sel));
+                flash = 0;
+                if (result == BIND_JOB) {
+                    auPlaySoundWithParams(0x43, 0x7FFF, 0x40, 1.0f, 0);
+                    snap_swap_strip(descStrip, STR_BIND_DESC_JOB);
+                    flash = 90;
+                } else {
+                    if (result == BIND_DONE) {
+                        auPlaySoundWithParams(0x42, 0x7FFF, 0x40, 1.0f, 0);
+                    }
+                    snap_swap_strip(descStrip, snap_bind_desc_str(sel));
+                }
+                ohWait(1);
+                continue;
+            }
+            if (sel == BIND_ROW_RESET) {
+                auPlaySoundWithParams(0x42, 0x7FFF, 0x40, 1.0f, 0);
+                snap_bind_request(3u << 16, (GObj*) BIND_VALUE(sel));
+                ohWait(1);
+                continue;
+            }
+        }
+
+        if ((gContInputPressedButtons & Z_TRIG) && (sel >= 1) && (sel <= BIND_INPUTS)) {
+            result = snap_bind_request((2u << 16) | (((u32) device) << 8) | (u32) sel, NULL);
+            flash = 0;
+            if (result == BIND_KEEP) {
+                auPlaySoundWithParams(0x43, 0x7FFF, 0x40, 1.0f, 0);
+                snap_swap_strip(descStrip, STR_BIND_DESC_KEEP);
+                flash = 90;
+            } else {
+                auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
+            }
+            ohWait(1);
+            continue;
+        }
+
+        {
+            s32 sx = gContInputStickX;
+            s32 sy = gContInputStickY;
+            s32 mx = (sx < 0) ? -sx : sx;
+            s32 my = (sy < 0) ? -sy : sy;
+            s32 dirV = 0;
+            s32 dirH = 0;
+            navUp = navDown = navLeft = navRight = 0;
+            if ((my >= 24) && (my >= mx)) {
+                dirV = (sy > 0) ? 1 : -1;
+            }
+            else if ((mx >= 40) && (mx > 2 * my)) {
+                dirH = (sx > 0) ? 1 : -1;
+            }
+            if (dirV != snap_nav_dir_v) {
+                snap_nav_dir_v = dirV;
+                snap_nav_repeat_v = 15;
+                if (dirV > 0) {
+                    navUp = 1;
+                }
+                else if (dirV < 0) {
+                    navDown = 1;
+                }
+            }
+            else if ((dirV != 0) && (--snap_nav_repeat_v <= 0)) {
+                snap_nav_repeat_v = 6;
+                if (dirV > 0) {
+                    navUp = 1;
+                }
+                else {
+                    navDown = 1;
+                }
+            }
+            if (dirH != snap_nav_dir_h) {
+                snap_nav_dir_h = dirH;
+                snap_nav_repeat_h = 20;
+                if (dirH > 0) {
+                    navRight = 1;
+                }
+                else if (dirH < 0) {
+                    navLeft = 1;
+                }
+            }
+            else if ((dirH != 0) && (--snap_nav_repeat_h <= 0)) {
+                snap_nav_repeat_h = 12;
+                if (dirH > 0) {
+                    navRight = 1;
+                }
+                else {
+                    navLeft = 1;
+                }
+            }
+        }
+
+        if (navUp) {
+            snap_tint((GObj*) BIND_LABEL(sel), 0xFF, 0xFF, 0xFF);
+            sel = (sel == 0) ? (BIND_ROWS - 1) : (sel - 1);
+            pulseState = 0;
+            if (sel < top) {
+                top = sel;
+                snap_bind_layout(top);
+                nudgeUp = 12;
+            } else if (sel >= top + BIND_VISIBLE) {
+                top = sel - (BIND_VISIBLE - 1);
+                snap_bind_layout(top);
+                nudgeUp = 12;
+            }
+            flash = 0;
+            snap_swap_strip(descStrip, snap_bind_desc_str(sel));
+            auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
+        }
+        else if (navDown) {
+            snap_tint((GObj*) BIND_LABEL(sel), 0xFF, 0xFF, 0xFF);
+            sel = (sel + 1) % BIND_ROWS;
+            pulseState = 0;
+            if (sel < top) {
+                top = sel;
+                snap_bind_layout(top);
+                nudgeDn = 12;
+            } else if (sel >= top + BIND_VISIBLE) {
+                top = sel - (BIND_VISIBLE - 1);
+                snap_bind_layout(top);
+                nudgeDn = 12;
+            }
+            flash = 0;
+            snap_swap_strip(descStrip, snap_bind_desc_str(sel));
+            auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
+        }
+        else if ((navRight || navLeft) && (sel == 0)) {
+            /* The device: the host recomposes the values for it and turns
+             * the bank, which the swap at the top of the loop follows. */
+            device = navRight ? ((device + 1) % 3) : ((device + 2) % 3);
+            BIND_DEVICE = (u8) device;
+            snap_swap_strip((GObj*) BIND_VALUE(0), STR_BIND_KEYBOARD + device);
+            auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
+        }
+
+        /* A refusal's line stays three seconds, then the row's returns. */
+        if (flash > 0) {
+            flash--;
+            if (flash == 0) {
+                snap_swap_strip(descStrip, snap_bind_desc_str(sel));
+            }
+        }
+
+        if (BIND_LABEL(sel) != 0) {
+            SObj* sobj = ((GObj*) BIND_LABEL(sel))->data.sobj;
+            switch (pulseState) {
+                case 0:
+                    if (sobj->sprite.red >= 0x84) {
+                        sobj->sprite.red -= 4;
+                        func_800E6C00_A0E190(sobj, sobj->sprite.red);
+                    } else {
+                        func_800E6C00_A0E190(sobj, 0x80);
+                        pulseState = 1;
+                    }
+                    break;
+                case 1:
+                    if (sobj->sprite.red < 0xE2) {
+                        sobj->sprite.red += 0x1E;
+                        func_800E6C00_A0E190(sobj, sobj->sprite.red);
+                    } else {
+                        pulseCounter = 0;
+                        func_800E6C00_A0E190(sobj, 0xFF);
+                        pulseState = 2;
+                    }
+                    break;
+                case 2:
+                    if (pulseCounter++ > 30) {
+                        pulseState = 0;
+                    }
+                    break;
+            }
+        }
+
+        bobTick++;
+        if (nudgeUp > 0) {
+            nudgeUp--;
+        }
+        if (nudgeDn > 0) {
+            nudgeDn--;
+        }
+        {
+            const s32 phase = (bobTick >> 3) & 3;
+            const s16 sway = (s16) ((phase == 3) ? 1 : phase);
+            const s16 hopUp = (s16) ((nudgeUp >= 7) ? 4 : ((nudgeUp >= 3) ? 2 : 1));
+            const s16 hopDn = (s16) ((nudgeDn >= 7) ? 4 : ((nudgeDn >= 3) ? 2 : 1));
+            const s16 offUp = (nudgeUp > 0) ? hopUp : sway;
+            const s16 offDn = (nudgeDn > 0) ? hopDn : sway;
+            GObj* upArrow = (GObj*) PAGE_ARROW_UP;
+            GObj* dnArrow = (GObj*) PAGE_ARROW_DN;
+            if ((upArrow != NULL) && (upArrow->data.sobj != NULL)) {
+                upArrow->data.sobj->sprite.y = ARROW_UP_Y - offUp;
+            }
+            if ((dnArrow != NULL) && (dnArrow->data.sobj != NULL)) {
+                dnArrow->data.sobj->sprite.y = ARROW_DN_Y + offDn;
+            }
+        }
+        ohWait(1);
+    }
+
+    BIND_OPEN = 0;
+    BIND_REQ = 0;
+    for (i = 0; i < BIND_ROWS; i++) {
+        if (BIND_LABEL(i) != 0) {
+            omDeleteGObj((GObj*) BIND_LABEL(i));
+            BIND_LABEL(i) = 0;
+        }
+        if (BIND_VALUE(i) != 0) {
+            omDeleteGObj((GObj*) BIND_VALUE(i));
+            BIND_VALUE(i) = 0;
+        }
+    }
+    if (PAGE_ARROW_UP != 0) {
+        omDeleteGObj((GObj*) PAGE_ARROW_UP);
+        PAGE_ARROW_UP = 0;
+    }
+    if (PAGE_ARROW_DN != 0) {
+        omDeleteGObj((GObj*) PAGE_ARROW_DN);
+        PAGE_ARROW_DN = 0;
+    }
+    if (hdrStrip != NULL) {
+        omDeleteGObj(hdrStrip);
+    }
+    if (descStrip != NULL) {
+        omDeleteGObj(descStrip);
+    }
+    /* Back to the CONTROLS page, which takes the list as it is. */
+    snap_list_hidden_carry = hiddenCount;
     ohWait(1);
 }
 
@@ -2655,7 +3218,11 @@ void func_800E7F98_A0F528(void) {
                     snap_sound_page();
                     break;
                 case OPT_CONTROLS:
-                    snap_controls_page();
+                    /* The Buttons row opens the BUTTONS page, and the
+                     * CONTROLS page comes back on that row when it closes. */
+                    while (snap_controls_page()) {
+                        snap_bind_page();
+                    }
                     break;
                 case OPT_EXIT:
                     snap_exit_game();

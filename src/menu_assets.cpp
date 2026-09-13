@@ -42,6 +42,7 @@
 
 #include "audio.h"
 #include "hle/rt64_snap_diag.h"
+#include "input.h"
 #include "paths.h"
 #include "settings.h"
 #include "snap_station.h"
@@ -166,14 +167,28 @@ constexpr uint32_t DirectoryAddr = 0x80C01000u;
 // pixel cursor must start beyond the LAST entry, not at a round number.
 // At 0x...1100 the entries for ids 31+ silently overwrote the first
 // staged tile's pixels (invisibly -- address bytes decode as near-black
-// texels on the black backdrop). 0x400 of directory seats 126 ids.
-constexpr uint32_t PixelsAddr = 0x80C01400u;
+// texels on the black backdrop). 0x800 of directory seats 255 ids; the
+// 0x400 it had seated 127, and the 129 strings of 1.0.5 had already put
+// two entries into the black tile's pixels, which nothing drew.
+constexpr uint32_t PixelsAddr = 0x80C01800u;
 constexpr uint32_t MailboxMagic = 0x53474658u;   // 'SGFX'
 constexpr uint32_t DirectoryMagic = 0x53474130u; // 'SGA0'
 constexpr uint32_t STR_ITEM_LABEL_ID = 1;        // "Graphics", the Option item
 
 // The strips are exactly as tall as the original menu sprites: ten rows.
 constexpr int StripHeight = kMenuFontCellH;
+
+// The BUTTONS page's row values (ids kBindDynBase on, two banks of
+// eighteen) are composed while the page is open, for the device it shows,
+// so their pixels have a fixed home of their own: well past the staged
+// strings, which end near 0x80CA0000, and below librecomp's mod space at
+// 0x81000000. Three chunks a strip, 192 pixels, the widest a value gets.
+constexpr uint32_t DynPixelsAddr = 0x80D00000u;
+constexpr int DynChunks = 3;
+constexpr uint32_t DynStripBytes = uint32_t(DynChunks * 64 * StripHeight * 2);
+constexpr uint32_t kStringBaseCount = 30;   // the strings[] table below, asserted there
+constexpr uint32_t kBindDynBase = kStringBaseCount + 132;   // graphics_menu_patch.c STR_BIND_DYN
+constexpr int BindInputCount = 18;
 
 struct Strip {
     int width = 0;
@@ -227,7 +242,7 @@ const MenuGlyph* menu_glyph(char c) {
 // none), advanced by ink width plus the gap measured from the original
 // layouts. The cursor tracks ink columns; each cell carries one column of
 // antialiasing fringe on either side.
-Strip compose(const char* text) {
+Strip compose(const char* text, bool lenient = false) {
     Strip strip;
 
     int xc = 1;
@@ -293,6 +308,18 @@ Strip compose(const char* text) {
         }
         const MenuGlyph* g = menu_glyph(*c);
         if (g == nullptr) {
+            if (lenient) {
+                // A key named with a character no face carries (the
+                // Buttons page's live values): a dim block stands in, and
+                // the directory is not withheld for it.
+                for (int gy = 4; gy < 9; gy++) {
+                    for (int gx = 0; gx < 4; gx++) {
+                        blend(xc + gx, gy, 255, 96);
+                    }
+                }
+                xc += 6;
+                continue;
+            }
             note_missing(*c);
             xc += 6;
             continue;
@@ -307,6 +334,17 @@ Strip compose(const char* text) {
         xc += g->coreW + kMenuFontLetterGap;
     }
 
+    return strip;
+}
+
+// A row value of the Buttons page: any key's name, in the body face, cut
+// to what three chunks hold.
+Strip compose_dyn(std::string text) {
+    Strip strip = compose(text.c_str(), true);
+    while ((strip.width > DynChunks * 64) && !text.empty()) {
+        text.pop_back();
+        strip = compose(text.c_str(), true);
+    }
     return strip;
 }
 
@@ -902,6 +940,27 @@ uint32_t g_last_applied_snd_seq = 0;
 bool g_staged = false;
 bool g_mailbox_seeded = false;
 
+// The BUTTONS page's bank of the mailbox, at +0xA0 (the byte map is in the
+// patch, SNAP_GFX_MAILBOX): the page writes a request word and the device
+// it shows; the host answers with an ack word, keeps the row values
+// composed for that device, and says whether a pad is attached.
+constexpr uint32_t BindReqAddr    = MailboxAddr + 0xA0;
+constexpr uint32_t BindAckAddr    = MailboxAddr + 0xA4;
+constexpr uint32_t BindGenAddr    = MailboxAddr + 0xA8;
+constexpr uint32_t BindDeviceAddr = MailboxAddr + 0xAC;
+constexpr uint32_t BindOpenAddr   = MailboxAddr + 0xAD;
+constexpr uint32_t BindPadAddr    = MailboxAddr + 0xAE;
+// The page's eighteen input rows, in its order (graphics_menu_patch.c
+// STR_BIND_INPUT): the names input.h gives them.
+const char* const kBindInputs[BindInputCount] = {
+    "a", "b", "z", "start", "l", "r", "c_up", "c_down", "c_left", "c_right",
+    "d_up", "d_down", "d_left", "d_right", "stick_up", "stick_down", "stick_left", "stick_right",
+};
+uint32_t g_bind_handled = 0;      // the request last answered; 0 while none is pending
+bool g_bind_capturing = false;
+int g_bind_shown_device = -1;     // the device the composed bank is for
+uint32_t g_bind_shown_gen = 0;    // the binding table's generation it was composed from
+
 // The rainbow strips keep their alpha masks host-side so their staged
 // RGBA16 texels can be recoloured live -- exactly the kind of
 // colour-cycled flourish the era loved. The sprite reads RDRAM every
@@ -1060,6 +1119,14 @@ void seed_mailbox() {
     // applies on each bump (poll_menu_mailbox).
     write_u32(MailboxAddr + 0x20, 0);
     write_u32(MailboxAddr + 0x60, 0);
+    // The BUTTONS page's bank: no request, no answer, bank zero, closed.
+    write_u32(BindReqAddr, 0);
+    write_u32(BindAckAddr, 0);
+    write_u32(BindGenAddr, 0);
+    write_u32(MailboxAddr + 0xAC, 0);
+    g_bind_handled = 0;
+    g_bind_capturing = false;
+    g_bind_shown_device = -1;
     write_u32(MailboxAddr + 0x0, MailboxMagic);
     g_last_applied_seq = 0;
     g_last_applied_snd_seq = 0;
@@ -1259,7 +1326,36 @@ void stage_menu_strings(uint8_t* rdram) {
     // Ids BaseCount+96..+98: the Option list's Exit Game item -- its label
     // with the dot, its help line, and the question the help line becomes
     // once it is chosen (graphics_menu_patch.c STR_EXIT_*).
-    constexpr uint32_t StringCount = BaseCount + 99;
+    // Ids BaseCount+99..+131: the BUTTONS page (graphics_menu_patch.c
+    // STR_BTN_* and STR_BIND_*). +99 the CONTROLS page's Buttons row label,
+    // +100 the "Press A" value of a row that opens something, +101 that
+    // row's description; +102 the page's heading (header face, its B the
+    // port's), +103 the Device row's label, +104..+121 the eighteen input
+    // rows' labels, +122 Reset All, +123..+125 the Device row's values,
+    // +126..+131 the descriptions: the Device row, an input row, the row
+    // while it listens, Reset All, a refused key, a refused clear.
+    // Ids BaseCount+132..+167: the input rows' values, composed live for
+    // the device shown (bind_compose below), two banks of eighteen so a
+    // bank is never rewritten while the page draws it; their pixels sit
+    // apart from the staged strings, at DynPixelsAddr.
+    static_assert(BaseCount == kStringBaseCount, "kBindDynBase counts from the strings[] table");
+    static const char* const bindLabels[BindInputCount] = {
+        "A Button", "B Button", "Z Button", "Start", "L Button", "R Button",
+        "C Up", "C Down", "C Left", "C Right",
+        "D Pad Up", "D Pad Down", "D Pad Left", "D Pad Right",
+        "Stick Up", "Stick Down", "Stick Left", "Stick Right",
+    };
+    // Within the help face's letters (no E F G I K Q U V X Y, no digits
+    // but 2 3 4 6, no hyphen, apostrophe or colon), 41 characters a line.
+    static const char* const bindDescs[6][2] = {
+        { "Left and Right pick the device to set up.", "Mouse, keyboard and pad are set apart." },
+        { "A sets a new key or button for this row.",  "Z clears the row on this device." },
+        { "Press the key or button to use now.",       "Wait a few seconds to leave it as it was." },
+        { "A puts every key and button back to the",   "ones the port ships with." },
+        { "That one has a job in the port already.",   "Choose another key or button." },
+        { "Something must still press this button.",   "Set another device before clearing this." },
+    };
+    constexpr uint32_t StringCount = BaseCount + 168;
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -1470,6 +1566,69 @@ void stage_menu_strings(uint8_t* rdram) {
             w = strip.width;
             h = strip.height;
         }
+        else if (id >= kBindDynBase) {
+            // A live row value of the Buttons page: a fixed home of its
+            // own, blank until the page opens (bind_compose writes it and
+            // the directory entry's width then).
+            const uint32_t addr = DynPixelsAddr + (id - kBindDynBase) * DynStripBytes;
+            write_u32(DirectoryAddr + 0x8 + id * 8, addr);
+            write_u16(DirectoryAddr + 0xC + id * 8, 64);
+            write_u16(DirectoryAddr + 0xE + id * 8, uint16_t(StripHeight));
+            for (uint32_t k = 0; k < DynStripBytes; k += 2) {
+                write_u16(addr + k, 0);
+            }
+            continue;
+        }
+        else if (id >= BaseCount + 126) {
+            strip = compose_lines(bindDescs[id - BaseCount - 126][0], bindDescs[id - BaseCount - 126][1]);
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id >= BaseCount + 123) {
+            // The Device row's values; the K is one of the port's own glyphs.
+            strip = compose((id == BaseCount + 123) ? "< Keyboard >"
+                          : (id == BaseCount + 124) ? "< Mouse >" : "< Controller >");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 122) {
+            strip = compose("Reset All");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id >= BaseCount + 104) {
+            strip = compose(bindLabels[id - BaseCount - 104]);
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 103) {
+            strip = compose("Device");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 102) {
+            // The page's heading; its B is the port's (menu_harvest.cpp
+            // kHeaderSynth).
+            strip = compose_hdr("Buttons");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 101) {
+            strip = compose_lines("Sets what each key, mouse button and pad",
+                                  "button does. Press A to open the page.");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 100) {
+            strip = compose("Press A");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 99) {
+            strip = compose("Buttons");
+            w = strip.width;
+            h = strip.height;
+        }
         else if (id >= BaseCount + 94) {
             strip = compose_lines(gyroDescs[id - BaseCount - 94][0], gyroDescs[id - BaseCount - 94][1]);
             w = strip.width;
@@ -1647,6 +1806,123 @@ void stage_menu_strings(uint8_t* rdram) {
         StringCount, cursor - PixelsAddr);
 }
 
+// Writes a strip into a live row value's fixed pixels and its directory
+// entry (the address never moves; the width follows the text).
+static void stage_dynamic(uint32_t id, const Strip& strip) {
+    const uint32_t addr = DynPixelsAddr + (id - kBindDynBase) * DynStripBytes;
+    const int w = std::min(strip.width, DynChunks * 64);
+    const int h = strip.height;
+    uint32_t at = addr;
+    for (int k = 0; k < (w + 63) / 64; k++) {
+        const int cx = k * 64;
+        const int cw = std::min(64, w - cx);
+        for (int y = 0; y < h; y++) {
+            for (int x = 0; x < cw; x++) {
+                const size_t src = size_t(y) * strip.width + size_t(cx + x);
+                write_u16(at + uint32_t((y * cw + x) * 2),
+                          uint16_t((strip.intensity[src] << 8) | strip.alpha[src]));
+            }
+        }
+        at += uint32_t(cw * h * 2);
+    }
+    write_u32(DirectoryAddr + 0x8 + id * 8, addr);
+    write_u16(DirectoryAddr + 0xC + id * 8, uint16_t(w));
+    write_u16(DirectoryAddr + 0xE + id * 8, uint16_t(h));
+}
+
+// Composes the eighteen row values for a device into the bank the page is
+// not showing, then turns the page to it: the bank shown is BIND_GEN's low
+// bit, so the one written is always the other.
+static void bind_compose(int device) {
+    const uint32_t gen = read_u32_mail(BindGenAddr);
+    const uint32_t bank = (gen + 1) & 1;
+    for (int i = 0; i < BindInputCount; i++) {
+        stage_dynamic(kBindDynBase + bank * BindInputCount + uint32_t(i),
+                      compose_dyn(input_bind_display(kBindInputs[i], device)));
+    }
+    write_u32(BindGenAddr, gen + 1);
+    g_bind_shown_device = device;
+    g_bind_shown_gen = input_bindings_generation();
+}
+
+// The BUTTONS page's bank, once a tick. A request is answered when it is
+// done: a capture keeps listening across ticks until the input layer says
+// how it ended (input.h); a clear and the reset are immediate. The row
+// values follow the device shown and the table in force, recomposed ahead
+// of the answer so the page finds them there the frame it wakes.
+static void poll_bind_bank() {
+    write_u8(BindPadAddr, input_pad_attached() ? 1 : 0);
+    if (read_u8_mail(BindOpenAddr) == 0) {
+        if (g_bind_capturing) {
+            input_capture_end();
+            g_bind_capturing = false;
+        }
+        g_bind_handled = 0;
+        g_bind_shown_device = -1;
+        return;
+    }
+    const int device = std::min<int>(read_u8_mail(BindDeviceAddr), 2);
+    const uint32_t req = read_u32_mail(BindReqAddr);
+    uint32_t ack = 0;
+    if (req == 0) {
+        if (g_bind_capturing) {
+            // The page gave up waiting.
+            input_capture_end();
+            g_bind_capturing = false;
+        }
+        g_bind_handled = 0;
+    }
+    else if (req != g_bind_handled) {
+        const int op = int((req >> 16) & 0xFF);
+        const int reqDevice = int((req >> 8) & 0xFF);
+        const int row = int(req & 0xFF);
+        const char* input = ((row >= 1) && (row <= BindInputCount)) ? kBindInputs[row - 1] : nullptr;
+        uint32_t result = 0;
+        if ((op == 1) && (input != nullptr) && (reqDevice <= 2)) {
+            if (!g_bind_capturing) {
+                input_capture_begin(reqDevice);
+                g_bind_capturing = true;
+            }
+            std::string name;
+            const CaptureState st = input_capture_poll(&name);
+            if (st != CaptureState::Listening) {
+                input_capture_end();
+                g_bind_capturing = false;
+                if (st == CaptureState::Bound) {
+                    input_bind_set(input, reqDevice, name);
+                    result = 1;
+                }
+                else if (st == CaptureState::Cancelled) {
+                    result = 2;
+                }
+                else {
+                    result = 3;
+                }
+            }
+        }
+        else if ((op == 2) && (input != nullptr) && (reqDevice <= 2)) {
+            result = input_bind_clear(input, reqDevice) ? 1 : 4;
+        }
+        else if (op == 3) {
+            input_bind_reset();
+            result = 1;
+        }
+        else {
+            result = 2;
+        }
+        if (result != 0) {
+            ack = (result << 24) | req;
+            g_bind_handled = req;
+        }
+    }
+    if ((device != g_bind_shown_device) || (input_bindings_generation() != g_bind_shown_gen)) {
+        bind_compose(device);
+    }
+    if (ack != 0) {
+        write_u32(BindAckAddr, ack);
+    }
+}
+
 // Called every game tick. Applies whatever the GRAPHICS page published
 // since the last look -- the same live path the hotkeys use -- and marks
 // the settings dirty. The disk write is not this thread's: a stick held on
@@ -1747,6 +2023,9 @@ void poll_menu_mailbox(uint8_t* rdram) {
         }
         settings_mark_dirty();
     }
+
+    // The BUTTONS page's bank: its requests and its live row values.
+    poll_bind_bank();
 
     const uint32_t seq = read_u32_mail(MailboxAddr + 0x4);
     if (seq == g_last_applied_seq) {
