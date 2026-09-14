@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.7 -- unreleased
+## 1.0.7 -- 2026-09-13
 
 * Restore Defaults is the last row of the Button Setup page, after Stick
   Right, where 1.0.6 had it second, under Set Up. Second put the page's

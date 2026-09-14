@@ -1,6 +1,6 @@
 # Screenshots
 
-All twenty-eight, in the order a session meets them. Every one was taken from
+All twenty-nine, in the order a session meets them. Every one was taken from
 the 1.0.0 build, or a later one where it says so, at 1440p with Render
 Scale and Anti-Aliasing both at 8x on the game's Graphics page, then cropped
 to the game's picture. They are frames of
@@ -31,9 +31,15 @@ credits line the port adds reading v1.0.5. (The 1.0.4 picture,
 
 <a href="screenshots/01g-title-106.png"><img src="screenshots/01g-title-106.png" width="640" alt="The title screen, 1.0.6"></a>
 
-**The title screen, 1.0.6.** The same title from the current build, the
+**The title screen, 1.0.6.** The same title from the 1.0.6 build, the
 credits line reading v1.0.6, taken with PRESS START at its brightest and no
 sprite crossing the water.
+
+<a href="screenshots/01h-title-107.png"><img src="screenshots/01h-title-107.png" width="640" alt="The title screen, 1.0.7"></a>
+
+**The title screen, 1.0.7.** The same title from the current build, the
+credits line reading v1.0.7, taken with PRESS START at its brightest and no
+sprite crossing the picture.
 
 ## A course
 
