@@ -25,6 +25,9 @@ that a release build can be put through all of them in one go:
   speed       the scoring replay again at three times the console's speed
               (SNAP_SPEED=3, the fast-forward key held for a whole run): the
               same photos scored with the same numbers, in a third of the time
+  slow        the Beach replay at 1x and at half speed (SNAP_SPEED=1/2), each
+              timed to the same reading of the tape: the slow one takes twice
+              as long to get there
   rompick     a data directory with no ROM: the first run's chooser, answered
               by SNAP_ROM_PICK, copies the dump in byte-identical, copies a
               byte-swapped dump in big-endian order, and a Cancel starts
@@ -61,6 +64,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import threading
 import time
 import zipfile
 
@@ -291,6 +295,66 @@ def check_speed(c, exe_dir):
     else:
         c.add('speed', len(lines) >= 1, '%d scored photos at 3x in %d seconds (no 1x run in this invocation to compare)' % (len(lines), took))
     c.add('speed', '[SNAP-AV]' not in out, 'crash report %s' % ('present' if '[SNAP-AV]' in out else 'none'))
+
+
+def run_game_until(exe_dir, env_extra, marker, cap):
+    """Run the game until a line starting with `marker` appears on its stdout
+    (or `cap` seconds pass), then kill it. Returns (seconds from the start
+    to the marker, or None; the captured text)."""
+    env = dict(os.environ)
+    env.update(env_extra)
+    p = subprocess.Popen([str(exe_dir / EXE)], cwd=str(exe_dir), env=env,
+                         stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+                         text=True, encoding='utf-8', errors='replace')
+    t0 = time.time()
+    lines = []
+    found = []
+    done = threading.Event()
+
+    def reader():
+        for line in p.stdout:
+            lines.append(line)
+            if not found and line.startswith(marker):
+                found.append(time.time() - t0)
+                done.set()
+        done.set()
+
+    th = threading.Thread(target=reader, daemon=True)
+    th.start()
+    done.wait(timeout=cap)
+    p.kill()
+    p.wait(timeout=30)
+    th.join(timeout=10)
+    return (found[0] if found else None), ''.join(lines)
+
+
+def check_slow(c, exe_dir):
+    """Slow motion: the Beach replay at 1x and again with the whole run held at
+    half the console's speed (SNAP_SPEED=1/2, what the held key does for a
+    moment), each timed to the same reading of the tape -- the 2400th, forty
+    seconds of game time in -- with the frame capture's own line as the
+    stopwatch. The game's clocks run at the ratio and nothing else changes,
+    so the slow run takes twice as long to get there."""
+    if not ensure_replay(exe_dir, 'beach.inputs'):
+        c.add('slow', False, 'beach.inputs is not beside the executable')
+        return
+    marker = '[SNAP-PCAP] armed 1 presents at reading 2400'
+    base = {'SNAP_REPLAY': 'beach.inputs', 'SNAP_MUTE': '1', 'SNAP_PCAP_AT': '2400', 'SNAP_PCAP_BURST': '1'}
+    t1, out1 = run_game_until(exe_dir, base, marker, 90)
+    slow_env = dict(base)
+    slow_env['SNAP_SPEED'] = '1/2'
+    t2, out2 = run_game_until(exe_dir, slow_env, marker, 150)
+    applied = '[SNAP] slow motion: 2x slower for the whole run' in out2
+    c.add('slow', applied, 'the ratio was %s' % ('applied at the first frame' if applied else 'NOT applied'))
+    if (t1 is None) or (t2 is None):
+        c.add('slow', False, 'reading 2400 reached at 1x in %s s, at 1/2 in %s s'
+              % ('-' if t1 is None else '%.1f' % t1, '-' if t2 is None else '%.1f' % t2))
+    else:
+        ratio = t2 / t1
+        c.add('slow', 1.6 <= ratio <= 2.3, 'reading 2400 reached at 1x in %.1f s, at 1/2 in %.1f s: %.2f times as long'
+              % (t1, t2, ratio))
+    crashed = ('[SNAP-AV]' in out1) or ('[SNAP-AV]' in out2)
+    c.add('slow', not crashed, 'crash report %s' % ('present' if crashed else 'none'))
 
 
 def ensure_replay(exe_dir, name):
@@ -572,8 +636,8 @@ def main():
         return 2
     checks = [('subsystem', check_subsystem), ('stdio', check_stdio), ('attract', check_attract),
               ('stats', check_stats), ('score', check_score), ('settings', check_settings),
-              ('speed', check_speed), ('rompick', check_rompick), ('menu', check_menu),
-              ('station', check_station)]
+              ('speed', check_speed), ('slow', check_slow), ('rompick', check_rompick),
+              ('menu', check_menu), ('station', check_station)]
     c = Check()
     t0 = time.time()
     for name, fn in checks:

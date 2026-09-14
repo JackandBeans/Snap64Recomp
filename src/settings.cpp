@@ -153,6 +153,10 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         s.pad_sticks_swapped = j.value("pad_sticks_swapped", s.pad_sticks_swapped);
         s.pad_deadzone       = std::clamp(j.value("pad_deadzone", s.pad_deadzone), 0, 40);
         s.fast_forward_speed = std::clamp(j.value("fast_forward_speed", s.fast_forward_speed), 1, 4);
+        {
+            const int slow = j.value("slow_motion_speed", s.slow_motion_speed);
+            s.slow_motion_speed = (slow < 2) ? 1 : ((slow < 4) ? 2 : 4);
+        }
         s.mouse_sensitivity  = std::clamp(j.value("mouse_sensitivity", s.mouse_sensitivity), 0.1f, 10.0f);
         s.mouse_invert_y     = j.value("mouse_invert_y", s.mouse_invert_y);
         s.mouse_zoom_speed   = std::clamp(j.value("mouse_zoom_speed", s.mouse_zoom_speed), 0.25f, 1.0f);
@@ -184,7 +188,7 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         s_fields_missing = !j.contains("gyro_aim") || !j.contains("pad_enabled") ||
                            !j.contains("keys_help") || !j.contains("pad_layout") ||
                            !j.contains("pad_sticks_swapped") || !j.contains("pad_deadzone") ||
-                           !j.contains("fast_forward_speed");
+                           !j.contains("fast_forward_speed") || !j.contains("slow_motion_speed");
         out = s;
         return SettingsRead::Ok;
     } catch (const std::exception& e) {
@@ -321,6 +325,8 @@ bool save_settings() {
                        "LeftShoulder, RightShoulder, DPUp, DPDown, DPLeft, DPRight, LeftTrigger, RightTrigger"},
         {"fast_forward", "not an N64 input: the port's own key, held to run the game at the Controls page's "
                          "Fast Forward speed; Tab and Pad RightShoulder as shipped"},
+        {"slow_motion", "not an N64 input: the port's own key, held to run the game at the Controls page's "
+                        "Slow Motion speed; Space and Pad LeftStick (the left stick pressed in) as shipped"},
         {"example", "\"z\": [\"Left Shift\", \"Pad LeftTrigger\"] puts Z on the left trigger"},
         {"unknown_names", "reported in snap64.log and skipped; an input left with nothing keeps its default"},
         {"not_bindable", "the sticks themselves: the left stick aims and the right stick works the C buttons"},
@@ -363,6 +369,7 @@ bool save_settings() {
         {"pad_sticks_swapped",    copy.pad_sticks_swapped},
         {"pad_deadzone",          copy.pad_deadzone},
         {"fast_forward_speed",    copy.fast_forward_speed},
+        {"slow_motion_speed",     copy.slow_motion_speed},
         {"mouse_sensitivity",     copy.mouse_sensitivity},
         {"mouse_invert_y",        copy.mouse_invert_y},
         {"mouse_zoom_speed",      copy.mouse_zoom_speed},

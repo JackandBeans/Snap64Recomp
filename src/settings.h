@@ -192,6 +192,16 @@ struct Settings {
     // Fast Forward row (mailbox byte 0x80C0006C: 0 Off, then 2x, 3x, 4x as
     // 1..3) and the file both set it.
     int   fast_forward_speed = 3;
+    // Slow motion: how much slower the game runs while the slow-motion key
+    // is held (the keys table's slow_motion entry; Space or the left stick
+    // pressed in as shipped): 1 is Off, 2 half speed, 4 a quarter. The same
+    // clocks run that much slower (src/fast_forward.cpp); the renderer keeps
+    // interpolating, each game frame stretched over the longer time it
+    // stands for, and the sound plays slower and lower. Off as shipped: a
+    // shot lined up at half speed is an easier shot than the cartridge
+    // offered. The Controls page's Slow Motion row (mailbox byte 0x80C0006D:
+    // 0 Off, 1 half, 2 quarter) and the file both set it.
+    int   slow_motion_speed = 1;
     // Multiplies the angle per pixel: 1 is a full turn in about 2500
     // pixels, 2 twice as quick, 0.5 half. Bounded to 0.1 .. 10 where read.
     float mouse_sensitivity = 1.0f;

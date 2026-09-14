@@ -101,7 +101,8 @@ void input_release_mouse();
 // The binding table: an N64 input's name ("a", "b", "z", "start", "l", "r",
 // "c_up", "c_down", "c_left", "c_right", "d_up", "d_down", "d_left",
 // "d_right", "stick_up", "stick_down", "stick_left", "stick_right"), or the
-// port's own "fast_forward" (below), to the sources that press it. A source is an SDL key name ("X", "Left Shift",
+// port's own "fast_forward" and "slow_motion" (below), to the sources that
+// press it. A source is an SDL key name ("X", "Left Shift",
 // "Return", "Up"; positional scancodes, as SDL_GetScancodeFromName reads
 // them) or one of the mouse names "Mouse Left", "Mouse Right",
 // "Mouse Middle", "Mouse X1", "Mouse X2", "Wheel Up", "Wheel Down".
@@ -123,12 +124,15 @@ Bindings input_bindings();
 // so a display built from one knows when it is stale.
 uint32_t input_bindings_generation();
 
-// The fast-forward key (src/fast_forward.cpp): the table's nineteenth name,
-// "fast_forward", which is not an N64 input and has no row on the Button
-// Setup page -- the file carries it, "Tab" and "Pad RightShoulder" as
-// shipped, and the page refuses its sources as it refuses Back. True while
-// one of them is down, as of the game's last controller reading (input_get).
+// The port's own keys (src/fast_forward.cpp): the table's nineteenth and
+// twentieth names, "fast_forward" and "slow_motion", which are not N64
+// inputs and have no row on the Button Setup page -- the file carries them,
+// "Tab" and "Pad RightShoulder", "Space" and "Pad LeftStick" as shipped,
+// and the page refuses their sources as it refuses Back. True while one of
+// the entry's sources is down, as of the game's last controller reading
+// (input_get).
 bool input_fast_forward_held();
+bool input_slow_motion_held();
 
 // --- The BUTTON SETUP page (patches/src/graphics_menu_patch.c, snap_bind_page;
 // the host's side is src/menu_assets.cpp, poll_bind_bank). ----------------

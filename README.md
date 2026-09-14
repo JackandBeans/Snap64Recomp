@@ -346,6 +346,15 @@ any other; it has no row on the Button Setup page, which refuses its sources
 as it refuses Back. On an N64-shaped pad, which has no shoulder button of that
 kind, only the key works until the file names another button.
 
+**Slow motion** is the same thing run the other way. Hold Space, or press the
+left stick in on a pad, and the game runs at half or a quarter of its speed,
+the Controls page's Slow Motion row (Off as shipped, since a shot lined up at
+half speed is an easier shot than the cartridge offered). The picture stays
+smooth: frame interpolation keeps running, each game frame stretched over the
+longer time it stands for. The sound plays slower and lower. The key is the
+`slow_motion` entry of the `keys` table, on the left hand on purpose, so the
+right thumb stays free for A; when both keys are down, slow motion wins.
+
 Any SDL game controller overrides the keyboard while attached: left stick is
 the control stick, A is A, B or X is B, the left shoulder button is Z, Start
 is Start, the D-pad is the D-pad, the triggers are L and R, and the right stick
@@ -440,13 +449,14 @@ Options > **Controls**: Z Button (Hold/Switch) and Control Stick
 (Normal/Reverse), the game's own two settings, moved here from the Options
 list so the list keeps the stock rhythm; then Button Setup, the row that
 opens the Button Setup page; Pad Sticks; Dead Zone; Fast Forward (Off, 2x,
-3x or 4x: the speed the held key runs the game at); Mouse Aim, Mouse Speed
-(25 to 400 percent of the shipped speed), Zoom Speed (the share of that
-speed used while zoomed in), Camera Tilt (Normal/Reverse, for the mouse and
-the gyro alike), Gyro Aim (Off, On, or Zoomed for only while zoomed in) and
-Gyro Speed (25 to 400 percent of natural). Twelve rows, six on screen; the
-page scrolls for the last six, as the Graphics page does. Every change
-applies as it is made; B puts the page back as it was opened.
+3x or 4x: the speed the held key runs the game at); Slow Motion (Off, 2x or
+4x slower, the same way); Mouse Aim, Mouse Speed (25 to 400 percent of the
+shipped speed), Zoom Speed (the share of that speed used while zoomed in),
+Camera Tilt (Normal/Reverse, for the mouse and the gyro alike), Gyro Aim
+(Off, On, or Zoomed for only while zoomed in) and Gyro Speed (25 to 400
+percent of natural). Thirteen rows, six on screen; the page scrolls for the
+last seven, as the Graphics page does. Every change applies as it is made;
+B puts the page back as it was opened.
 
 Options > **Exit Game**: the list's sixth row, under Return, in the
 screen's own font and rhythm. Its help line says what it does; A turns the
@@ -482,6 +492,7 @@ investigating the renderer and are not features.
 | P | Save the photo on screen as a PNG in `photos/` (see "Photos") |
 | Esc | Tap: Start (the pause menu in a course). Held a second and released: the quit question |
 | Tab (held) | Fast forward, at the Controls page's Fast Forward speed; the `fast_forward` entry of `keys` moves it, and names a pad button too (the right shoulder as shipped) |
+| Space (held) | Slow motion, at the Controls page's Slow Motion speed, Off as shipped; the `slow_motion` entry of `keys` moves it (the left stick pressed in, on a pad) |
 
 ### Photos
 
@@ -638,6 +649,7 @@ the defaults below are that file's.
 | `pad_sticks_swapped` | `false` | the right stick aims and the left works the C buttons (Pad Sticks) |
 | `pad_deadzone` | `15` | the aiming stick's dead zone in percent of full travel, 0 to 40 in steps of five (Dead Zone) |
 | `fast_forward_speed` | `3` | the speed the held fast-forward key runs the game at: 1 Off, 2, 3 or 4 (Fast Forward) |
+| `slow_motion_speed` | `1` | how much slower the held slow-motion key runs the game: 1 Off, 2 half speed, 4 a quarter (Slow Motion) |
 | `mouse_aim` | `true` | the mouse aims while a course runs and the window has focus ("Controls"); its buttons work whenever the window has focus, through `keys` |
 | `mouse_sensitivity` | `1.0` | angle per pixel of mouse: 1 is a full turn in about 2500 pixels, 2 twice as quick, 0.5 half; 0.1 to 10 |
 | `mouse_invert_y` | `false` | mouse forward, or the pad's front rising, tilts the view down (Camera Tilt: Reverse) |

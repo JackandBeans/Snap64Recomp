@@ -1298,19 +1298,30 @@ namespace RT64 {
                     // snap through their matrix group, and the pose guard
                     // keeps shown pairs from blending across a re-pose.
                     // Pokemon Snap port: no interpolation while the game is
-                    // fast-forwarded (rt64_snap_diag.h speedMultiplier): its
+                    // fast-forwarded (rt64_snap_diag.h speedPermille): its
                     // frames come faster than the display and the latest raw
                     // one is shown; the tick accounting starts over from the
-                    // rate when the key is released (resetTicks below).
+                    // rate when the key is released (resetTicks below). Slow
+                    // motion keeps interpolating, over a stretched span.
+                    const uint32_t snapSpeedNow = std::max<uint32_t>(snapdiag::speedPermille().load(std::memory_order_relaxed), 1);
                     generateInterpolatedFrames = !workload.paused && displayRateAboveOriginal && !interpolationTargetKey.isEmpty() &&
-                        (snapdiag::speedMultiplier().load(std::memory_order_relaxed) == 1);
+                        (snapSpeedNow <= 1000);
 
-                    const bool resetTicks = !generateInterpolatedFrames || (originalRateForTicks != workload.viOriginalRate) || (displayRateForTicks != workloadConfig.targetRate) || !displayRateAboveOriginal;
+                    // Pokemon Snap port: a speed change restarts the tick
+                    // accounting as a rate change does. The span a frame is
+                    // counted in follows the speed (below), and a gap built
+                    // at one span would be paid off unevenly at the other:
+                    // fifteen seconds of uneven pairs after a slow-motion
+                    // release, measured 2026-09-14.
+                    static uint32_t snapSpeedForTicks = 1000;
+                    const bool resetTicks = !generateInterpolatedFrames || (originalRateForTicks != workload.viOriginalRate) || (displayRateForTicks != workloadConfig.targetRate) || !displayRateAboveOriginal ||
+                                            (snapSpeedForTicks != snapSpeedNow);
                     if (resetTicks) {
                         logicalTicks = 0;
                         displayTicks = 0;
                         originalRateForTicks = workload.viOriginalRate;
                         displayRateForTicks = workloadConfig.targetRate;
+                        snapSpeedForTicks = snapSpeedNow;
                     }
                 }
 
@@ -1410,7 +1421,14 @@ namespace RT64 {
                 // crossing hold. With it, on-screen velocity stays constant
                 // and the one-sub-frame backlog it creates is unwound by the
                 // existing frameReduction catch-up.
-                int64_t snapSpanTicks = workloadConfig.targetRate;
+                // Pokemon Snap port: in slow motion (speedPermille below
+                // 1000) a game frame stands for that much more of the
+                // display's time, so its span is stretched to match and the
+                // blend runs through it at the slower pace; the crossing
+                // stretch below is off then, its wall-clock gate being 1x's.
+                const uint32_t snapSpeedPermille = std::max<uint32_t>(snapdiag::speedPermille().load(std::memory_order_relaxed), 1);
+                int64_t snapSpanTicks = (snapSpeedPermille >= 1000) ? int64_t(workloadConfig.targetRate)
+                                                                    : (int64_t(workloadConfig.targetRate) * 1000) / int64_t(snapSpeedPermille);
                 {
                     static std::chrono::steady_clock::time_point snapLastArrival{};
                     const auto snapArrival = std::chrono::steady_clock::now();
@@ -1420,6 +1438,7 @@ namespace RT64 {
                     snapLastArrival = snapArrival;
                     const bool snapCrossingFrame =
                         generateInterpolatedFrames &&
+                        (snapSpeedPermille == 1000) &&
                         (workload.snapLogicSteps == 3) &&
                         (workload.viOriginalRate == 30) &&
                         !workload.snapCutscene &&

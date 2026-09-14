@@ -32,8 +32,8 @@ font. From the title screen, choose OPTIONS.
     Graphics   the port's additions (see below)
     Sound      volumes, stereo or mono, mute when not focused
     Controls   the game's own Z Button and Control Stick settings, then
-               button setup, pad sticks, dead zone, fast forward, mouse
-               aim, zoom speed, camera tilt and gyro aim
+               button setup, pad sticks, dead zone, fast forward, slow
+               motion, mouse aim, zoom speed, camera tilt and gyro aim
 
 GRAPHICS holds, in the order the page shows them: Render Scale, Super
 Sampling, Anti-Aliasing, Widescreen, Frame Rate, 2D Detail, Filter, Texture
@@ -65,6 +65,8 @@ The key on the left, the N64 control it stands for on the right.
     P              save the photo on screen to photos/
     Tab (held)     fast forward, 3x as shipped (Controls > Fast Forward);
                    on a pad, the right shoulder button
+    Space (held)   slow motion, off as shipped (Controls > Slow Motion);
+                   on a pad, the left stick pressed in
 
     Mouse          aims the camera in a course (Mouse Aim, on by default on a
                    PC and off on a Steam Deck). Left click is A, right click

@@ -143,11 +143,12 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *   +0x74  u32  SCRATCH_HELP_EXIT, the patch's own: its help line
  *   +0x78  u32  SCRATCH_HELP_EXIT2, the patch's own: its question line
  *   +0x60  u32  CONTROLS sequence word
- *   +0x64  u8   CONTROLS fields 0..8, through +0x6C: mouse aim, the mouse
+ *   +0x64  u8   CONTROLS fields 0..9, through +0x6D: mouse aim, the mouse
  *               speed's step, the zoom speed's step, the tilt, the gyro
  *               mode (off, on, zoomed), the gyro speed's step, the pad
  *               sticks swapped, the stick dead zone's step (fives), the
- *               fast forward speed (0 off, 1..3 for 2x, 3x, 4x)
+ *               fast forward speed (0 off, 1..3 for 2x, 3x, 4x), the slow
+ *               motion speed (0 off, 1 half, 2 a quarter)
  *   +0x7C  u32  MBOX_POOL_FAIL, the patch's own: strips the pool refused
  *   +0x80  u32  MBOX_POOL_PEAK, the patch's own: the pool's high water
  *   +0xA0  u32  BIND_REQ, the BUTTON SETUP page's request to the host: the
@@ -310,6 +311,10 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  * Graphics page's 2x, 3x, 4x. */
 #define STR_FF_LABEL         228
 #define STR_FF_DESC          229
+/* The CONTROLS page's Slow Motion row, the same way (ids BaseCount+200 and
+ * +201); its values are Off and the Graphics page's 2x and 4x. */
+#define STR_SM_LABEL         230
+#define STR_SM_DESC          231
 
 /* The SOUND bank of the mailbox: its own sequence word and value bytes
  * (percent volumes; stereo and background-mute booleans). The patched
@@ -2085,33 +2090,36 @@ static void snap_sound_page(void) {
  * screen's own variables exactly as the stock rows edited them (the
  * screen's exit writes them to the player flags); the other four are the
  * mouse's, in the mailbox's CONTROLS bank, applied live by the host. */
-/* Twelve rows, six on screen at a time: the page scrolls for the last
- * six the way the Graphics page scrolls, with the same edge arrows. In
+/* Thirteen rows, six on screen at a time: the page scrolls for the last
+ * seven the way the Graphics page scrolls, with the same edge arrows. In
  * order: the game's own Z Button and Control Stick; Button Setup, the row
  * that opens the BUTTON SETUP page, put where a player who came to change
  * the buttons sees it without scrolling, with no value (the Option list's
  * own Screen row has none) and a help line that says what A does; Pad
  * Sticks, which stick aims and which works the C buttons; Dead Zone, how
- * far the aiming stick moves before the game sees it; Fast Forward, how
- * much faster the game runs while its key is held; then the mouse and
- * gyro dials. The settings are numbered in the order the strings and the
- * CONTROLS bank were laid out in (the six mouse and gyro settings first,
- * Pad Sticks, Dead Zone and Fast Forward last as the seventh, eighth and
- * ninth fields), and snap_ctl_setting maps a row to its setting. */
-#define CTL_ROWS 12
+ * far the aiming stick moves before the game sees it; Fast Forward and
+ * Slow Motion, how much faster or slower the game runs while their keys
+ * are held; then the mouse and gyro dials. The settings are numbered in
+ * the order the strings and the CONTROLS bank were laid out in (the six
+ * mouse and gyro settings first, Pad Sticks, Dead Zone, Fast Forward and
+ * Slow Motion last as the seventh to tenth fields), and snap_ctl_setting
+ * maps a row to its setting. */
+#define CTL_ROWS 13
 #define CTL_VISIBLE 6
 #define CTL_ROW_BUTTONS 2
 #define CTL_ROW_STICKS 3
 #define CTL_ROW_DEADZONE 4
 #define CTL_ROW_FAST 5
+#define CTL_ROW_SLOW 6
 #define CTL_SETTING_STICKS 8
 #define CTL_SETTING_DEADZONE 9
 #define CTL_SETTING_FAST 10
+#define CTL_SETTING_SLOW 11
 
 /* A row's setting: 0 and 1 the game's own, 2..7 the six mouse and gyro
  * settings (CONTROLS bank fields 0..5), 8 Pad Sticks (field 6), 9 Dead
- * Zone (field 7), 10 Fast Forward (field 8); -1 for the Button Setup row,
- * which has none. */
+ * Zone (field 7), 10 Fast Forward (field 8), 11 Slow Motion (field 9); -1
+ * for the Button Setup row, which has none. */
 static s32 snap_ctl_setting(s32 row) {
     if (row == CTL_ROW_BUTTONS) {
         return -1;
@@ -2125,7 +2133,10 @@ static s32 snap_ctl_setting(s32 row) {
     if (row == CTL_ROW_FAST) {
         return CTL_SETTING_FAST;
     }
-    return (row > CTL_ROW_FAST) ? (row - 4) : row;
+    if (row == CTL_ROW_SLOW) {
+        return CTL_SETTING_SLOW;
+    }
+    return (row > CTL_ROW_SLOW) ? (row - 5) : row;
 }
 
 static s32 snap_ctl_value_count(s32 row) {
@@ -2139,6 +2150,7 @@ static s32 snap_ctl_value_count(s32 row) {
         case 7:  return 11;   /* Gyro Speed */
         case CTL_SETTING_DEADZONE: return 9;   /* 0, 5, 10 .. 40 */
         case CTL_SETTING_FAST: return 4;       /* Off, 2x, 3x, 4x */
+        case CTL_SETTING_SLOW: return 3;       /* Off, 2x, 4x slower */
         default: return 2;    /* the on/off pairs, Pad Sticks among them */
     }
 }
@@ -2158,6 +2170,9 @@ static s32 snap_ctl_label_str(s32 row) {
     if (setting == CTL_SETTING_FAST) {
         return STR_FF_LABEL;
     }
+    if (setting == CTL_SETTING_SLOW) {
+        return STR_SM_LABEL;
+    }
     return (setting < 6) ? (STR_CTL_LABEL + setting) : (STR_GYRO_LABEL + (setting - 6));
 }
 
@@ -2175,6 +2190,9 @@ static s32 snap_ctl_desc_str(s32 row) {
     }
     if (setting == CTL_SETTING_FAST) {
         return STR_FF_DESC;
+    }
+    if (setting == CTL_SETTING_SLOW) {
+        return STR_SM_DESC;
     }
     return (setting < 6) ? (STR_CTL_DESC + setting) : (STR_GYRO_DESC + (setting - 6));
 }
@@ -2245,6 +2263,7 @@ static s32 snap_ctl_value_str(s32 row, s32 v) {
                 default: return STR_VOL0 + 4;
             }
         case CTL_SETTING_FAST: return (v == 0) ? STR_OFF : (STR_1X + v);   /* Off, then 2x, 3x, 4x */
+        case CTL_SETTING_SLOW: return (v == 0) ? STR_OFF : ((v == 1) ? (STR_1X + 1) : (STR_1X + 3));   /* Off, 2x, 4x */
         case 0:  return v ? STR_SWITCH : STR_HOLD;
         case 1:  return v ? STR_REVERSE : STR_NORMAL;
         case 2:  return v ? STR_ON : STR_OFF;
@@ -2263,7 +2282,7 @@ static s32 snap_ctl_get(s32 row) {
     switch (snap_ctl_setting(row)) {
         case 0:  return D_800E8395_A0F925 ? 1 : 0;
         case 1:  return D_800E8396_A0F926 ? 1 : 0;
-        default: return CTL_FIELD(snap_ctl_setting(row) - 2);   /* Pad Sticks is field 6, Dead Zone 7, Fast Forward 8 */
+        default: return CTL_FIELD(snap_ctl_setting(row) - 2);   /* Pad Sticks is field 6, Dead Zone 7, Fast Forward 8, Slow Motion 9 */
     }
 }
 

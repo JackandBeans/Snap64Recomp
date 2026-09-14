@@ -146,8 +146,9 @@ const char* const kInputNames[IN_COUNT] = {
     "c_up", "c_down", "c_left", "c_right", "stick_up", "stick_down", "stick_left", "stick_right",
 };
 
-// The port's own fast-forward key, the table's nineteenth name (input.h).
+// The port's own keys, the table's nineteenth and twentieth names (input.h).
 static const char* const kFastForwardName = "fast_forward";
+static const char* const kSlowMotionName = "slow_motion";
 
 const uint16_t kInputBits[IN_CR + 1] = {
     N64_BTN_A, N64_BTN_B, N64_BTN_Z, N64_BTN_START, N64_BTN_DU, N64_BTN_DD, N64_BTN_DL, N64_BTN_DR,
@@ -229,6 +230,7 @@ struct Source {
 struct Resolved {
     std::vector<Source> sources[IN_COUNT];
     std::vector<Source> fast_forward;   // the fast_forward entry's (input_fast_forward_held)
+    std::vector<Source> slow_motion;    // the slow_motion entry's (input_slow_motion_held)
 };
 
 const Bindings& defaults() {
@@ -262,6 +264,10 @@ const Bindings& defaults() {
         // triggers are L and R, the left shoulder Z), and on an N64-shaped
         // pad, which has no such button, it presses nothing.
         {kFastForwardName, {"Tab", "Pad RightShoulder"}},
+        // The slow-motion key: held while the right thumb lines up A, so
+        // it lives on the left hand -- Space, and the left stick pressed
+        // in, the one unused control there.
+        {kSlowMotionName, {"Space", "Pad LeftStick"}},
     };
     return table;
 }
@@ -314,7 +320,7 @@ std::mutex g_bindings_mutex;
 std::shared_ptr<const Resolved> g_resolved;   // read by the game's thread
 Bindings g_bindings_in_force;                 // the names, for the file
 std::atomic<uint32_t> g_bindings_gen{0};      // bumped by every table put in force
-static std::vector<Source> g_ff_sources;      // the fast_forward entry in force, for the page's refusals
+static std::vector<Source> g_extra_sources;   // the fast_forward and slow_motion entries in force, for the page's refusals
 
 std::shared_ptr<const Resolved> resolved() {
     std::lock_guard<std::mutex> lock(g_bindings_mutex);
@@ -334,6 +340,7 @@ int64_t now_us() {
 std::atomic<bool> g_focused{true};
 std::atomic<bool> g_captured{false};
 std::atomic<bool> g_fast_forward_held{false};   // input_fast_forward_held
+std::atomic<bool> g_slow_motion_held{false};    // input_slow_motion_held
 // The click that focuses the window arrives with the focus; until this
 // moment, buttons are not presses.
 std::atomic<int64_t> g_buttons_from{0};
@@ -642,51 +649,56 @@ static void set_bindings(const Bindings& given, bool migrate) {
         r->sources[i] = std::move(sources);
         in_force[name] = std::move(accepted);
     }
-    // The fast-forward key (input.h): not an N64 input, so the Button Setup
-    // page never lists it and a table from the page carries the eighteen
-    // inputs only. Absent from the table given, the sources in force stay;
-    // nothing in force yet (the first load) or nothing usable means the
-    // shipped pair, as for the inputs.
+    // The port's own keys (input.h): fast_forward and slow_motion are not
+    // N64 inputs, so the Button Setup page never lists them and a table
+    // from the page carries the eighteen inputs only. Absent from the table
+    // given, the sources in force stay; nothing in force yet (the first
+    // load) or nothing usable means the shipped pair, as for the inputs.
     {
-        std::vector<std::string> wanted;
-        auto it = bindings.find(kFastForwardName);
-        if (it != bindings.end()) {
-            wanted = it->second;
-        } else {
-            std::lock_guard<std::mutex> lock(g_bindings_mutex);
-            auto cur = g_bindings_in_force.find(kFastForwardName);
-            wanted = (cur != g_bindings_in_force.end()) ? cur->second : defaults().at(kFastForwardName);
-        }
-        std::vector<Source> sources;
-        std::vector<std::string> accepted;
-        for (const std::string& src_name : wanted) {
-            Source src{};
-            if (resolve_source(src_name, src)) {
-                sources.push_back(src);
-                accepted.push_back(src_name);
-            } else {
-                printf("[SNAP-Input] keys.%s: \"%s\" is not a name SDL knows; skipped\n", kFastForwardName, src_name.c_str());
-            }
-        }
-        if (sources.empty()) {
-            for (const std::string& src_name : defaults().at(kFastForwardName)) {
-                Source src{};
-                if (resolve_source(src_name, src)) sources.push_back(src);
-            }
-            accepted = defaults().at(kFastForwardName);
+        std::vector<Source> extra;
+        for (int e = 0; e < 2; e++) {
+            const char* const ename = (e == 0) ? kFastForwardName : kSlowMotionName;
+            std::vector<std::string> wanted;
+            auto it = bindings.find(ename);
             if (it != bindings.end()) {
-                printf("[SNAP-Input] keys.%s: no usable source; the default stays\n", kFastForwardName);
+                wanted = it->second;
+            } else {
+                std::lock_guard<std::mutex> lock(g_bindings_mutex);
+                auto cur = g_bindings_in_force.find(ename);
+                wanted = (cur != g_bindings_in_force.end()) ? cur->second : defaults().at(ename);
             }
+            std::vector<Source> sources;
+            std::vector<std::string> accepted;
+            for (const std::string& src_name : wanted) {
+                Source src{};
+                if (resolve_source(src_name, src)) {
+                    sources.push_back(src);
+                    accepted.push_back(src_name);
+                } else {
+                    printf("[SNAP-Input] keys.%s: \"%s\" is not a name SDL knows; skipped\n", ename, src_name.c_str());
+                }
+            }
+            if (sources.empty()) {
+                for (const std::string& src_name : defaults().at(ename)) {
+                    Source src{};
+                    if (resolve_source(src_name, src)) sources.push_back(src);
+                }
+                accepted = defaults().at(ename);
+                if (it != bindings.end()) {
+                    printf("[SNAP-Input] keys.%s: no usable source; the default stays\n", ename);
+                }
+            }
+            extra.insert(extra.end(), sources.begin(), sources.end());
+            ((e == 0) ? r->fast_forward : r->slow_motion) = std::move(sources);
+            in_force[ename] = std::move(accepted);
         }
         {
             std::lock_guard<std::mutex> lock(g_bindings_mutex);
-            g_ff_sources = sources;
+            g_extra_sources = std::move(extra);
         }
-        r->fast_forward = std::move(sources);
-        in_force[kFastForwardName] = std::move(accepted);
     }
     for (const auto& entry : bindings) {
-        bool known = (entry.first == kFastForwardName);
+        bool known = (entry.first == kFastForwardName) || (entry.first == kSlowMotionName);
         for (const char* k : kInputNames) known = known || (entry.first == k);
         if (!known) {
             printf("[SNAP-Input] keys.%s: not an input this port has; ignored (input.h lists them)\n", entry.first.c_str());
@@ -717,6 +729,10 @@ uint32_t input_bindings_generation() {
 
 bool input_fast_forward_held() {
     return g_fast_forward_held.load(std::memory_order_relaxed);
+}
+
+bool input_slow_motion_held() {
+    return g_slow_motion_held.load(std::memory_order_relaxed);
 }
 
 // ---------------------------------------------------------------------------
@@ -921,15 +937,15 @@ void vpad_tick() {
     }
 }
 
-// A source the fast_forward entry has (by its name as the page would bind
-// it): it has a job of its own, like the keys below.
-static bool fast_forward_uses(const std::string& name) {
+// A source the fast_forward or slow_motion entry has (by its name as the
+// page would bind it): it has a job of its own, like the keys below.
+static bool port_key_uses(const std::string& name) {
     Source s{};
     if (!resolve_source(name, s)) {
         return false;
     }
     std::lock_guard<std::mutex> lock(g_bindings_mutex);
-    for (const Source& f : g_ff_sources) {
+    for (const Source& f : g_extra_sources) {
         if ((f.kind == s.kind) && (f.code == s.code)) {
             return true;
         }
@@ -997,7 +1013,7 @@ bool capture_event(const SDL_Event& event) {
             if ((n == nullptr) || (n[0] == '\0')) {
                 return true;
             }
-            capture_end_with((key_has_job(sc) || fast_forward_uses(n)) ? CaptureState::RefusedJob : CaptureState::Bound, n);
+            capture_end_with((key_has_job(sc) || port_key_uses(n)) ? CaptureState::RefusedJob : CaptureState::Bound, n);
             return true;
         }
         case SDL_MOUSEBUTTONDOWN: {
@@ -1052,9 +1068,9 @@ bool capture_event(const SDL_Event& event) {
             } else {
                 n = pad_source_name(b);
             }
-            // The fast-forward key's button (input.h fast_forward) has a
-            // job of its own, like Back.
-            if (!n.empty() && fast_forward_uses(n)) {
+            // The fast-forward and slow-motion keys' buttons (input.h)
+            // have jobs of their own, like Back.
+            if (!n.empty() && port_key_uses(n)) {
                 capture_end_with(CaptureState::RefusedJob, n);
                 return true;
             }
@@ -2348,14 +2364,19 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
                 ax += 1.0f;
             }
         }
-        // The fast-forward key, read here beside the inputs so it follows
-        // the same table, focus and pad snapshot; src/fast_forward.cpp
-        // applies it on the main thread.
+        // The fast-forward and slow-motion keys, read here beside the
+        // inputs so they follow the same table, focus and pad snapshot;
+        // src/fast_forward.cpp applies them on the main thread.
         bool fast = false;
         for (const Source& src : table->fast_forward) {
             if (source_down(src, keys, held, t, pad)) { fast = true; break; }
         }
         g_fast_forward_held.store(fast, std::memory_order_relaxed);
+        bool slow = false;
+        for (const Source& src : table->slow_motion) {
+            if (source_down(src, keys, held, t, pad)) { slow = true; break; }
+        }
+        g_slow_motion_held.store(slow, std::memory_order_relaxed);
     }
 
     // -----------------------------------------------------------------------

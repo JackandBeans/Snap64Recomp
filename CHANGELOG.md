@@ -25,6 +25,26 @@
   and B read back on the host as 4x and then 3x again. Asked for by Video
   Game Esoterica in "Pokemon Snap Recomp Out NOW! More Pokemon PC Ports"
   (2026-09-13).
+* Slow motion, the same thing run the other way: hold Space, or press the
+  left stick in on a pad, and the game runs at half or a quarter of the
+  console's speed, the Controls page's new Slow Motion row (Off as
+  shipped, because a shot lined up at half speed is an easier shot than
+  the cartridge offered). The runtime's clocks take a ratio now rather
+  than a whole number; below 1x the renderer keeps interpolating, each
+  game frame's span stretched over the longer time it stands for, so a
+  slow ride is smooth rather than a slideshow, and the audio path
+  stretches every stereo pair into two or four, interpolated, so the sound
+  plays slower and lower in step with the picture. The key is the
+  `slow_motion` entry of the `keys` table, on the left hand so the right
+  thumb stays free for A; slow motion wins when both keys are down;
+  `SNAP_SPEED=1/2` holds a whole run at half speed, and the suite's new
+  slow check times the Beach replay to the same reading at 1x and at half
+  speed. Verified on my PC: a real Space hold took the Beach ride from 64
+  drawn frames per pacing report to 32 with the display's presents
+  unchanged, and released with one hitch and nothing after; the scoring
+  replay at half speed scored the same 45 photos with the same numbers as
+  at 1x, in twice the time; the Controls row and its help line composed,
+  and Right and B read back on the host as 2x and then Off.
 
 ## 1.0.7 -- 2026-09-13
 

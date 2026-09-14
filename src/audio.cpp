@@ -34,10 +34,16 @@ static SDL_AudioDeviceID audio_device = 0;
 static uint32_t current_frequency = 32000;
 // Scratch for the channel swap below; reused so queueing allocates nothing.
 static std::vector<int16_t> swap_buffer;
-// The fast-forward multiplier (audio_set_speed), 1 at the console's speed,
-// and the whole stereo pairs a buffer left over from averaging by it.
-static std::atomic<uint32_t> g_speed{1};
+// The game's speed as a ratio (audio_set_speed), 1/1 at the console's; the
+// whole stereo pairs a buffer left over from averaging above 1x; the last
+// pair of a buffer stretched below 1x, for the line to the next buffer's
+// first; and the scratch the stretched samples are built in.
+static std::atomic<uint32_t> g_speed_num{1};
+static std::atomic<uint32_t> g_speed_den{1};
 static std::vector<int16_t> speed_carry;
+static int16_t slow_prev[2] = { 0, 0 };
+static bool slow_prev_valid = false;
+static std::vector<int16_t> slow_buffer;
 // Frequency of the last FAILED open attempt, or 0 if none. Without this,
 // audio_queue_samples() retried a full (and failing) WASAPI device open every
 // few milliseconds when no audio endpoint is available, starving the audio
@@ -200,7 +206,8 @@ void audio_queue_samples(int16_t* samples, size_t count) {
     // tape is in fast forward, and the queue holds the same real time as at
     // 1x. Pairs left over from a buffer wait for the next; the few in hand
     // when the speed drops back are dropped.
-    const uint32_t speed = g_speed.load(std::memory_order_relaxed);
+    const uint32_t speed = g_speed_num.load(std::memory_order_relaxed);
+    const uint32_t slow = g_speed_den.load(std::memory_order_relaxed);
     if (speed > 1) {
         speed_carry.insert(speed_carry.end(), swap_buffer.begin(), swap_buffer.end());
         const size_t pairs = speed_carry.size() / 2;
@@ -222,8 +229,45 @@ void audio_queue_samples(int16_t* samples, size_t count) {
         }
         count = swap_buffer.size();
     }
-    else if (!speed_carry.empty()) {
-        speed_carry.clear();
+    else if (slow > 1) {
+        // Slow motion: the game makes a `slow`th of the audio per real
+        // second, so every stereo pair becomes `slow`, interpolated in a
+        // straight line to the next one; the sound keeps the pace of the
+        // picture, slower and lower the way a tape is when it drags. The
+        // last pair of a buffer is kept for the line to the next buffer's
+        // first.
+        const size_t pairs = count / 2;
+        slow_buffer.resize(pairs * slow * 2);
+        int32_t pl = slow_prev[0];
+        int32_t pr = slow_prev[1];
+        bool have_prev = slow_prev_valid;
+        size_t o = 0;
+        for (size_t i = 0; i < pairs; i++) {
+            const int32_t cl = swap_buffer[i * 2 + 0];
+            const int32_t cr = swap_buffer[i * 2 + 1];
+            if (!have_prev) {
+                pl = cl;
+                pr = cr;
+                have_prev = true;
+            }
+            for (uint32_t k = 0; k < slow; k++) {
+                slow_buffer[o++] = int16_t(pl + ((cl - pl) * int32_t(k)) / int32_t(slow));
+                slow_buffer[o++] = int16_t(pr + ((cr - pr) * int32_t(k)) / int32_t(slow));
+            }
+            pl = cl;
+            pr = cr;
+        }
+        slow_prev[0] = int16_t(pl);
+        slow_prev[1] = int16_t(pr);
+        slow_prev_valid = true;
+        swap_buffer.swap(slow_buffer);
+        count = swap_buffer.size();
+    }
+    else {
+        if (!speed_carry.empty()) {
+            speed_carry.clear();
+        }
+        slow_prev_valid = false;
     }
     const size_t byte_count = count * sizeof(int16_t);
     if (SDL_QueueAudio(audio_device, swap_buffer.data(), static_cast<uint32_t>(byte_count)) != 0) {
@@ -250,9 +294,10 @@ size_t audio_get_frames_remaining() {
     // real backlog.
     const uint32_t queued_bytes = queued_bytes_bounded();
     // In the game's own units: under fast forward the queue's real time is
-    // `speed` times as much game time, the samples having been averaged down
-    // by that factor on the way in.
-    return static_cast<size_t>(queued_bytes / (2 * sizeof(int16_t))) * g_speed.load(std::memory_order_relaxed);
+    // num times as much game time, the samples having been averaged down by
+    // that factor on the way in; in slow motion a den-th of it.
+    return static_cast<size_t>(queued_bytes / (2 * sizeof(int16_t))) * g_speed_num.load(std::memory_order_relaxed) /
+           g_speed_den.load(std::memory_order_relaxed);
 }
 
 size_t audio_queued_bytes() {
@@ -263,11 +308,13 @@ size_t audio_queued_bytes() {
     }
     // Stereo signed-16 => 4 bytes per frame, which is exactly the unit the N64's
     // AI_LEN register reports. The game shifts this right by 2 to get frames.
-    return static_cast<size_t>(queued_bytes_bounded()) * g_speed.load(std::memory_order_relaxed);
+    return static_cast<size_t>(queued_bytes_bounded()) * g_speed_num.load(std::memory_order_relaxed) /
+           g_speed_den.load(std::memory_order_relaxed);
 }
 
-void audio_set_speed(uint32_t multiplier) {
-    g_speed.store((multiplier == 0) ? 1u : multiplier, std::memory_order_relaxed);
+void audio_set_speed(uint32_t num, uint32_t den) {
+    g_speed_num.store((num == 0) ? 1u : num, std::memory_order_relaxed);
+    g_speed_den.store((den == 0) ? 1u : den, std::memory_order_relaxed);
 }
 
 void audio_device_lost() {

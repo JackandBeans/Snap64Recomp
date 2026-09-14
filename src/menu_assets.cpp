@@ -1130,6 +1130,8 @@ static void write_setting_bytes(const Settings &s) {
     write_u8(MailboxAddr + 0x6B, uint8_t(std::clamp((s.pad_deadzone + 2) / 5, 0, 8)));
     // Fast Forward: 0 Off, then 2x, 3x, 4x as 1..3.
     write_u8(MailboxAddr + 0x6C, uint8_t(std::clamp(s.fast_forward_speed, 1, 4) - 1));
+    // Slow Motion: 0 Off, 1 half speed, 2 a quarter.
+    write_u8(MailboxAddr + 0x6D, uint8_t((s.slow_motion_speed >= 4) ? 2 : ((s.slow_motion_speed >= 2) ? 1 : 0)));
 }
 
 void seed_mailbox() {
@@ -1353,6 +1355,9 @@ void stage_menu_strings(uint8_t* rdram) {
     // The CONTROLS page's Fast Forward row (ids BaseCount+198 and +199): its
     // values are Off and the Graphics page's 2x, 3x and 4x.
     static const char* const fastDesc[2] = { "Hold Tab or the right shoulder button to", "run the game this many times as fast." };
+    // The CONTROLS page's Slow Motion row (ids BaseCount+200 and +201): its
+    // values are Off and the Graphics page's 2x and 4x.
+    static const char* const slowDesc[2] = { "Hold Space or press the left stick in to", "run the game this many times slower." };
     static const char* const sticksDesc[2] = { "Normal aims with the left stick, the", "right does the C buttons. Swapped flips." };
     static const char* const gyroDescs[2][2] = {
         { "Turn the pad to look around a course, on",  "pads with a gyro. Zoomed aims zoomed in." },
@@ -1442,7 +1447,7 @@ void stage_menu_strings(uint8_t* rdram) {
         { "Aims the camera left in a course, and", "walks the menus. A changes, Z clears." },
         { "Aims the camera right in a course, and", "walks the menus. A changes, Z clears." },
     };
-    constexpr uint32_t StringCount = BaseCount + 200;
+    constexpr uint32_t StringCount = BaseCount + 202;
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -1660,6 +1665,16 @@ void stage_menu_strings(uint8_t* rdram) {
         }
         else if (id == BaseCount + 199) {
             strip = compose_lines(fastDesc[0], fastDesc[1]);
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 200) {
+            strip = compose("Slow Motion");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 201) {
+            strip = compose_lines(slowDesc[0], slowDesc[1]);
             w = strip.width;
             h = strip.height;
         }
@@ -2179,6 +2194,17 @@ void poll_menu_mailbox(uint8_t* rdram) {
                     printf("[SNAP-CFG] fast forward: off\n");
                 } else {
                     printf("[SNAP-CFG] fast forward: %dx while the key is held\n", fast);
+                }
+                fflush(stdout);
+            }
+            const int slowStep = std::min<int>(read_u8_mail(MailboxAddr + 0x6D), 2);
+            const int slow = (slowStep == 0) ? 1 : ((slowStep == 1) ? 2 : 4);
+            if (slow != c.slow_motion_speed) {
+                c.slow_motion_speed = slow;
+                if (slow == 1) {
+                    printf("[SNAP-CFG] slow motion: off\n");
+                } else {
+                    printf("[SNAP-CFG] slow motion: %dx slower while the key is held\n", slow);
                 }
                 fflush(stdout);
             }

@@ -63,13 +63,15 @@ inline bool captureEnabled() {
     return enabled;
 }
 
-// The port's fast-forward multiplier, 1 at the console's speed: the game's
-// clocks run this many times faster while the player holds the key
-// (src/fast_forward.cpp). The workload queue switches frame interpolation
-// off for the duration -- the game's frames then come faster than any
-// display, and the latest raw one is what the screen gets.
-inline std::atomic<uint32_t> &speedMultiplier() {
-    static std::atomic<uint32_t> value{1};
+// The port's speed in thousandths of the console's (1000 at its own speed,
+// 3000 under fast forward, 500 in slow motion): the game's clocks run at
+// this rate while the player holds a key (src/fast_forward.cpp). Above
+// 1000 the workload queue switches frame interpolation off -- the game's
+// frames then come faster than any display, and the latest raw one is what
+// the screen gets; below it each game frame's span is stretched over the
+// longer time it stands for, so slow motion is smooth.
+inline std::atomic<uint32_t> &speedPermille() {
+    static std::atomic<uint32_t> value{1000};
     return value;
 }
 

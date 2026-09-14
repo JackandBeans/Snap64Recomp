@@ -18,15 +18,17 @@ static std::chrono::high_resolution_clock::time_point start_time = std::chrono::
 static int64_t ostime_offset = 0;
 // N64 CPU counter ticks per millisecond, at the console's own speed.
 constexpr uint32_t counter_per_ms = 46'875;
-// Game speed multiplier (1 means no speedup). Pokemon Snap port: set while the
-// program runs (set_speed_multiplier, held by the player's fast-forward key),
-// so every clock the game can read -- this counter, osGetTime, the OS timers
-// and the VI retraces in events.cpp -- runs that many times faster than the
-// wall clock. The game sees a faster console and nothing else. The counter is
-// piecewise linear: a change rebases it on the instant of the change, so it
-// never jumps and never runs backwards.
+// Game speed, as a ratio of the console's (1/1 means no change). Pokemon Snap
+// port: set while the program runs (set_speed_ratio, held by the player's
+// fast-forward or slow-motion key: 3/1, 1/2), so every clock the game can
+// read -- this counter, osGetTime, the OS timers and the VI retraces in
+// events.cpp -- runs at that ratio of the wall clock. The game sees a faster
+// or slower console and nothing else. The counter is piecewise linear: a
+// change rebases it on the instant of the change, so it never jumps and
+// never runs backwards.
 static std::mutex clock_mutex;
-static uint32_t speed_multiplier = 1;
+static uint32_t speed_num = 1;
+static uint32_t speed_den = 1;
 static uint64_t clock_base_ticks = 0;                                               // the counter at the last change
 static std::chrono::high_resolution_clock::time_point clock_base_time = start_time; // the instant of the last change
 
@@ -54,20 +56,20 @@ struct {
     moodycamel::BlockingConcurrentQueue<Action> action_queue{};
 } timer_context;
 
-// Counts at `multiplier` times the console's rate over a wall-clock span.
-uint64_t duration_to_ticks(std::chrono::high_resolution_clock::duration duration, uint32_t multiplier) {
+// Counts at num/den times the console's rate over a wall-clock span.
+uint64_t duration_to_ticks(std::chrono::high_resolution_clock::duration duration, uint32_t num, uint32_t den) {
     uint64_t delta_micros = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
     // More accurate than using a floating point timer, will only overflow after running for 12.47 years
     // (at 1x; the counter is rebased at every speed change, so a span here is one speed's)
     // Units: (micros * (counts/millis)) / (micros/millis) = counts
-    uint64_t total_count = (delta_micros * counter_per_ms * multiplier) / 1000;
+    uint64_t total_count = (delta_micros * counter_per_ms * num) / (1000 * den);
 
     return total_count;
 }
 
-std::chrono::microseconds ticks_to_duration(uint64_t ticks, uint32_t multiplier) {
+std::chrono::microseconds ticks_to_duration(uint64_t ticks, uint32_t num, uint32_t den) {
     using namespace std::chrono_literals;
-    return ticks * 1000us / (counter_per_ms * multiplier);
+    return ticks * 1000us * den / (counter_per_ms * num);
 }
 
 // The wall-clock instant a counter value falls on, at the speed in force. A
@@ -76,14 +78,14 @@ std::chrono::microseconds ticks_to_duration(uint64_t ticks, uint32_t multiplier)
 std::chrono::high_resolution_clock::time_point ticks_to_timepoint(uint64_t ticks) {
     std::lock_guard lock{ clock_mutex };
     if (ticks < clock_base_ticks) {
-        return clock_base_time - ticks_to_duration(clock_base_ticks - ticks, speed_multiplier);
+        return clock_base_time - ticks_to_duration(clock_base_ticks - ticks, speed_num, speed_den);
     }
-    return clock_base_time + ticks_to_duration(ticks - clock_base_ticks, speed_multiplier);
+    return clock_base_time + ticks_to_duration(ticks - clock_base_ticks, speed_num, speed_den);
 }
 
 uint64_t time_now() {
     std::lock_guard lock{ clock_mutex };
-    return clock_base_ticks + duration_to_ticks(std::chrono::high_resolution_clock::now() - clock_base_time, speed_multiplier);
+    return clock_base_ticks + duration_to_ticks(std::chrono::high_resolution_clock::now() - clock_base_time, speed_num, speed_den);
 }
 
 void timer_thread(RDRAM_ARG1) {
@@ -167,23 +169,37 @@ void ultramodern::init_timers(RDRAM_ARG1) {
 
 uint32_t ultramodern::get_speed_multiplier() {
     std::lock_guard lock{ clock_mutex };
-    return speed_multiplier;
+    return (speed_den == 1) ? speed_num : 1;
 }
 
-void ultramodern::set_speed_multiplier(uint32_t multiplier) {
-    if (multiplier == 0) {
-        multiplier = 1;
+void ultramodern::get_speed_ratio(uint32_t& num, uint32_t& den) {
+    std::lock_guard lock{ clock_mutex };
+    num = speed_num;
+    den = speed_den;
+}
+
+void ultramodern::set_speed_ratio(uint32_t num, uint32_t den) {
+    if (num == 0) {
+        num = 1;
+    }
+    if (den == 0) {
+        den = 1;
     }
     std::lock_guard lock{ clock_mutex };
-    if (multiplier == speed_multiplier) {
+    if ((num == speed_num) && (den == speed_den)) {
         return;
     }
     // Rebase: the counter keeps its value at this instant and runs at the
     // new rate from here on.
     const auto now = std::chrono::high_resolution_clock::now();
-    clock_base_ticks += duration_to_ticks(now - clock_base_time, speed_multiplier);
+    clock_base_ticks += duration_to_ticks(now - clock_base_time, speed_num, speed_den);
     clock_base_time = now;
-    speed_multiplier = multiplier;
+    speed_num = num;
+    speed_den = den;
+}
+
+void ultramodern::set_speed_multiplier(uint32_t multiplier) {
+    set_speed_ratio(multiplier, 1);
 }
 
 std::chrono::high_resolution_clock::time_point ultramodern::get_start() {
