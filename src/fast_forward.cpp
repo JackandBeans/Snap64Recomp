@@ -82,20 +82,24 @@ void fast_forward_tick() {
         wanted = fixed;
     }
     else {
-        int fast_speed = 1;
-        int slow_speed = 1;
-        {
-            std::lock_guard<std::mutex> lock(settings_mutex());
-            fast_speed = settings().fast_forward_speed;
-            slow_speed = settings().slow_motion_speed;
-        }
-        // Slow motion wins when both are down: it is the deliberate one, a
-        // shot being lined up.
-        if (input_slow_motion_held() && (slow_speed >= 2)) {
-            wanted.den = uint32_t(std::min(slow_speed, 8));
-        }
-        else if (input_fast_forward_held() && (fast_speed >= 2)) {
-            wanted.num = uint32_t(std::min(fast_speed, 8));
+        const bool slow_held = input_slow_motion_held();
+        const bool fast_held = input_fast_forward_held();
+        if (slow_held || fast_held) {
+            int fast_speed = 1;
+            int slow_speed = 1;
+            {
+                std::lock_guard<std::mutex> lock(settings_mutex());
+                fast_speed = settings().fast_forward_speed;
+                slow_speed = settings().slow_motion_speed;
+            }
+            // Slow motion wins when both are down: it is the deliberate
+            // one, a shot being lined up.
+            if (slow_held && (slow_speed >= 2)) {
+                wanted.den = uint32_t(std::min(slow_speed, 8));
+            }
+            else if (fast_held && (fast_speed >= 2)) {
+                wanted.num = uint32_t(std::min(fast_speed, 8));
+            }
         }
     }
     if ((wanted.num == s_ratio.num) && (wanted.den == s_ratio.den)) {

@@ -293,11 +293,15 @@ size_t audio_get_frames_remaining() {
     // pairs) -- 4 bytes each. Returning int16 count here reported double the
     // real backlog.
     const uint32_t queued_bytes = queued_bytes_bounded();
-    // In the game's own units: under fast forward the queue's real time is
-    // num times as much game time, the samples having been averaged down by
-    // that factor on the way in; in slow motion a den-th of it.
-    return static_cast<size_t>(queued_bytes / (2 * sizeof(int16_t))) * g_speed_num.load(std::memory_order_relaxed) /
-           g_speed_den.load(std::memory_order_relaxed);
+    // The real backlog, whatever the speed. The game reads this only to
+    // throttle its own synthesis, in units of its own buffers, and under
+    // fast forward or slow motion each of those buffers turns into a
+    // shorter or longer stretch of real audio on the way in (above); the
+    // real count keeps the device's queue at the depth it has at 1x, which
+    // is what keeps it from running dry. Reporting it scaled to the game's
+    // units was tried and reasoned wrong: at 3x it would have let the queue
+    // fall to a third of its depth, under one device chunk.
+    return static_cast<size_t>(queued_bytes / (2 * sizeof(int16_t)));
 }
 
 size_t audio_queued_bytes() {
@@ -308,8 +312,8 @@ size_t audio_queued_bytes() {
     }
     // Stereo signed-16 => 4 bytes per frame, which is exactly the unit the N64's
     // AI_LEN register reports. The game shifts this right by 2 to get frames.
-    return static_cast<size_t>(queued_bytes_bounded()) * g_speed_num.load(std::memory_order_relaxed) /
-           g_speed_den.load(std::memory_order_relaxed);
+    // The real backlog at any speed, as audio_get_frames_remaining says.
+    return static_cast<size_t>(queued_bytes_bounded());
 }
 
 void audio_set_speed(uint32_t num, uint32_t den) {

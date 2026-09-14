@@ -2,6 +2,7 @@
 // RT64
 //
 
+#include <algorithm>
 #include "rt64_workload_queue.h"
 
 #include <cstdlib>
@@ -1425,8 +1426,10 @@ namespace RT64 {
                 // 1000) a game frame stands for that much more of the
                 // display's time, so its span is stretched to match and the
                 // blend runs through it at the slower pace; the crossing
-                // stretch below is off then, its wall-clock gate being 1x's.
+                // stretch below scales its wall-clock gate the same way and
+                // stretches the stretched span, so a slow ride keeps it.
                 const uint32_t snapSpeedPermille = std::max<uint32_t>(snapdiag::speedPermille().load(std::memory_order_relaxed), 1);
+                const double snapGapScale = 1000.0 / double(snapSpeedPermille);
                 int64_t snapSpanTicks = (snapSpeedPermille >= 1000) ? int64_t(workloadConfig.targetRate)
                                                                     : (int64_t(workloadConfig.targetRate) * 1000) / int64_t(snapSpeedPermille);
                 {
@@ -1438,14 +1441,13 @@ namespace RT64 {
                     snapLastArrival = snapArrival;
                     const bool snapCrossingFrame =
                         generateInterpolatedFrames &&
-                        (snapSpeedPermille == 1000) &&
                         (workload.snapLogicSteps == 3) &&
                         (workload.viOriginalRate == 30) &&
                         !workload.snapCutscene &&
                         !workload.snapCutHold &&
-                        (snapGapMs > 40.0) && (snapGapMs < 70.0);
+                        (snapGapMs > 40.0 * snapGapScale) && (snapGapMs < 70.0 * snapGapScale);
                     if (snapCrossingFrame) {
-                        snapSpanTicks = (int64_t(workloadConfig.targetRate) * 3) / 2;
+                        snapSpanTicks = (snapSpanTicks * 3) / 2;
                         if (snapdiag::statsEnabled()) {
                             fprintf(stdout, "[SNAP-STRETCH] crossing frame spread over three fields (arrived %.1f ms late of nominal)\n",
                                 snapGapMs - (2000.0 / 60.0));
