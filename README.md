@@ -25,8 +25,8 @@ does contain the game's code, translated from the builder's own dump into C
 by N64Recomp and compiled, as every N64Recomp port does; `NOTICE.md` says
 exactly what is derived from the game and how.
 
-The title screen's credits line, `JackandBeans (Snap64 Recomp) · v1.0.4`, is
-the author's name, the port's name and its version; the name comes from the
+The title screen's credits line, `JackandBeans (Snap64 Recomp) · v1.0.6`, is
+my name, the port's name and its version; the name comes from the
 HAL team that made the game ([The game, and its history](#the-game-and-its-history)).
 The people and projects this port stands on are thanked under [Thanks](#thanks).
 
@@ -95,7 +95,7 @@ and what to attach to a bug report.
 ## Screenshots
 
 <table><tr>
-<td><a href="docs/screenshots/01-title.png"><img src="docs/screenshots/01-title.png" width="400" alt="The title screen"></a></td>
+<td><a href="docs/screenshots/01g-title-106.png"><img src="docs/screenshots/01g-title-106.png" width="400" alt="The title screen"></a></td>
 <td><a href="docs/screenshots/03-course-select.png"><img src="docs/screenshots/03-course-select.png" width="400" alt="Course select"></a></td>
 </tr><tr>
 <td><a href="docs/screenshots/04-beach.png"><img src="docs/screenshots/04-beach.png" width="400" alt="The Beach: Surfing Pikachu"></a></td>
@@ -108,13 +108,13 @@ and what to attach to a bug report.
 <td><a href="docs/screenshots/13-printer-stars.png"><img src="docs/screenshots/13-printer-stars.png" width="400" alt="The printer's display, three stars"></a></td>
 </tr></table>
 
-Taken from the 1.0.0 build, at 1440p with Render Scale and Anti-Aliasing
-both at 8x on the Graphics page, cropped to the game's picture. All
-twenty-two, with a caption each (the title menu, the Tunnel, the lab, the
-Options, Sound and Controls pages, the printer's marks, Oak's check from the
-photo choice to the score sheet, the Camera Check, and the 1.0.1 title, the
-Beach in Widescreen and the Controls page's gyro rows), are in
-[docs/SCREENSHOTS.md](docs/SCREENSHOTS.md).
+Every picture is the port's own render at 1440p with Render Scale and
+Anti-Aliasing both at 8x on the Graphics page, cropped to the game's
+picture; each caption names the release it was taken from. All twenty-eight,
+with a caption each (the title and its menu, the courses, the lab, every
+page of the Options screen including Button Setup, the printer's marks,
+Oak's check from the photo choice to the score sheet, the Camera Check and
+the Beach in Widescreen), are in [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md).
 
 ## What you need
 
@@ -128,7 +128,7 @@ Beach in Widescreen and the Controls page's gyro rows), are in
   Direct3D 12 device at feature level 11_0 and needs shader model 6.0 (its
   Vulkan path needs Vulkan 1.2), which GPU drivers have provided for years;
   no slowest card has been measured. It has run on an AMD Radeon RX 9060 XT
-  (the port's author), an NVIDIA GeForce RTX 4070 Ti Super (a reporter,
+  (mine), an NVIDIA GeForce RTX 4070 Ti Super (a reporter,
   issue #13), the Steam Deck's own GPU under Linux, and Mesa's software
   Vulkan, which draws the game slowly but correctly.
 * **Your own dump of the US cartridge**, whose SHA-1 checksum (a fingerprint
@@ -727,7 +727,7 @@ top-left corner during a course's first seconds in Widescreen -- was the
 Deck's Mesa driver culling one triangle of the sky in its NGG stage;
 from 1.0.5 the port asks the driver to leave that culling off
 (`RADV_DEBUG=nonggc`, set before it starts Vulkan and kept alongside
-anything you set yourself), which the author's Deck confirmed draws the
+anything you set yourself), which my Deck confirmed draws the
 corner whole. No Linux desktop has run the build yet. It is used like
 this:
 
@@ -923,7 +923,7 @@ The same list, with a place to reply, is pinned under
 
 ## What has been verified, and what has not
 
-* Verified in the sense that the developer has play-tested the entire game
+* Verified in the sense that I have play-tested the entire game
   on the one machine above: every course from the Beach to Rainbow Cloud,
   and every course again with Widescreen on (the Beach also frame by
   frame, for the edge fault 1.0.1 fixed), Oak's evaluations, the report,
@@ -960,7 +960,7 @@ The same list, with a place to reply, is pinned under
   tried.
 * The recompiled game is generated from a specific decompilation build; the
   chain of tools and inputs is spelled out in `BUILDING.md`, including one
-  stale input on the developer's machine that must be regenerated before the
+  stale input on my machine that must be regenerated before the
   recompiled code is.
 
 ## Building
@@ -1127,8 +1127,8 @@ decompilation's own IDO toolchain and loaded over the original. The whole
 chain, with the tools and inputs at each step, is `BUILDING.md`.
 
 **Who wrote it.** One person directed it, not a team, and the models named
-below wrote it. JackandBeans is an individual with no studio, no
-collaborators and no funding behind this, who directed the work from the
+below wrote it. I am JackandBeans, an individual with no studio, no
+collaborators and no funding behind this, and I directed the work from the
 first commit on 17 August 2026 to this release. That direction was setting
 the rule the port follows (console behaviour by default), choosing what it
 would and would not do, play-testing every build on screen and the whole
@@ -1138,14 +1138,13 @@ the Snap Station, chief among them Leonhart's recording of a working kiosk,
 the main video of the station in use and the one the printer's display was
 measured against; a published Virtual Console screenshot, found through an
 image search, that the Jynx colour was matched from; and the renders the
-logo was composed from. "The developer" elsewhere in this README is that person; no model
-played the game.
+logo was composed from. No model played the game.
 
 Every line of the port's own code, its tools and its documentation, this
 README included, was written by Anthropic's Claude models running in Claude
 Code under that direction. The models were Claude Fable 5.1 and Claude
 Fable 5, with Claude Opus 5 for a large share of the commits and two
-commits by Claude Opus 4.8; the author also used Claude Sonnet 5 in some
+commits by Claude Opus 4.8; I also used Claude Sonnet 5 in some
 sessions, and no commit names it. A commit's trailer names the model that
 wrote it (`git log --format=%(trailers:key=Co-Authored-By)`); forty-six
 commits between 18 and 24 August 2026 carry none, because they come from
@@ -1169,12 +1168,12 @@ executable and reads back its log and captured frames. And they wrote down
 every finding, measurement, dead end and revert in the commit messages,
 which are the project's real notebook. What they cannot
 do is see the screen or hold a controller: every judgement of how a thing
-looks or feels was the author's, made on one machine, and the port has not
+looks or feels was mine, made on one machine, and the port has not
 yet run on any other.
 
 None of this asks to be taken on trust. The code is here, the commit
 history is here with its reasoning, the notes under `docs/dev/` are the
-models' reports to the author kept as written, and the suite's replays
+models' reports to me, kept as written, and the suite's replays
 are tracked so its checks can be re-run. `git log --stat` and an afternoon
 of reading is the way to judge the job Claude did.
 
@@ -1221,6 +1220,6 @@ None of this would exist without:
 
 ## License
 
-Copyright (C) 2026 JackandBeans. GPLv3: see `LICENSE` and `NOTICE.md`. The port's own code is the author's
+Copyright (C) 2026 JackandBeans. GPLv3: see `LICENSE` and `NOTICE.md`. The port's own code is mine
 and GPLv3; the game is Nintendo's, Creatures', GAME FREAK's and HAL's, and
 nothing of it is here.

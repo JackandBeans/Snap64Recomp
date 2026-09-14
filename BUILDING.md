@@ -253,7 +253,7 @@ plume files back with `git checkout --` after cloning plume (`VENDORING.md`,
 release v1.7.2308, downloaded from the release archive (25 MB) and checked
 by SHA-256, because the copy in rt64's `dxc-bin` is under terms that do not
 allow distributing it (`VENDORING.md`, "dxc"). On a tree whose `.git` points
-at a git directory that no longer exists (the developer's original checkouts)
+at a git directory that no longer exists (my original checkouts)
 it reports `UNVERIFIED` and leaves the directory alone rather than replace
 the only copy, apart from that one `dxil.dll`; delete such a directory to have
 it fetched at the pin.
@@ -507,14 +507,14 @@ version resource read `1.0.0-rc1`, the number of the day; the release is
 `1.0.0`), `SDL2.dll`, `dxcompiler.dll` and
 `dxil.dll` (the last two byte-identical to `lib/rt64/src/contrib/dxc/bin/x64/`),
 `Snap64Recomp.map` and `menu_text/recomp_logo.png`. The fetched trees were
-diffed against the developer's own: identical apart from zstd's two test-suite
+diffed against my own: identical apart from zstd's two test-suite
 symlinks (empty files in the original checkout, link-target text in the new
 one). The executable was not run as part of this check.
 
 That record predates two changes made the same day: the two plume headers
 became tracked (so `fetch_deps.py` no longer patches them), and `dxil.dll`
 became the v1.7.2308 file (`VENDORING.md`, "dxc"). With the new validator in
-place the developer's build directory was rebuilt with its 53 compiled shaders
+place my build directory was rebuilt with its 53 compiled shaders
 deleted first: all 53 were regenerated and signed through it, the executable
 relinked, and `Release/dxil.dll` restaged (SHA-256 `9cccc7ef…`). The
 v1.8.2403.2 validator had been tried first and refused the very first library
@@ -544,7 +544,7 @@ executable (`SNAP_REPLAY=name.inputs`; twelve bytes per reading, `src/input.cpp`
 Three are used by `tools/release_check.py` and are tracked under
 `tools/replays/` (the suite copies them beside the executable when they are
 not already there): `beach.inputs`
-and `eval.inputs` were recorded by the developer (a Beach ride; a ride, the
+and `eval.inputs` were recorded by me (a Beach ride; a ride, the
 Camera Check and Oak's evaluation of five photos), and `station.inputs` was
 synthesised from those two on 2026-09-03 for the Snap Station: the evaluation
 replay, a second Beach ride, an Album Mark in the Camera Check, Oak's check,

@@ -10,7 +10,7 @@
   such list ends, with its reset after what it resets. Up from the top
   row wraps to it, as it always did; its help line names the device at
   the top, which is off screen from down there; the second A it asks for
-  is unchanged. Raised by the port's author on 2026-09-13, the day 1.0.6
+  is unchanged. Raised by me on 2026-09-13, the day 1.0.6
   shipped.
 * A first start with no ROM asks for it. Until now a missing
   `pokemonsnap.z64` produced a dialog naming the path and nothing more, and a
@@ -96,14 +96,14 @@
 * On a Steam Deck in Widescreen, a course's first frames after its
   opening cinematic showed a chunk at the top-left -- black bands and a
   piece of an earlier picture -- until the next camera cut, the
-  viewfinder's first raise, repainted it (the port's author, on the Deck,
+  viewfinder's first raise, repainted it (me, on the Deck,
   from 1.0.1 to 1.0.4). One triangle of the course's sky dome has a vertex
   on the camera plane there; the renderer nudges such a vertex a hair in
   front of the camera, which makes its projected coordinate enormous. The
   Deck's Mesa driver (RADV) culls that triangle in its NGG stage, in
   software, ahead of the hardware clipper that copes with it, so the
   corner kept whatever the colour buffer held before. Settled with the
-  driver's own switches on the author's Deck: `RADV_DEBUG=nonggc` (that
+  driver's own switches on my Deck: `RADV_DEBUG=nonggc` (that
   culling alone off) draws the frame whole, while its synchronisation,
   memory-zeroing, compression and shader-compiler switches change nothing;
   Windows (Direct3D 12 and Vulkan) and Mesa's software renderer always
@@ -123,7 +123,7 @@
   and the intro on Windows (Vulkan, anti-aliasing 4x at 90 Hz), each held
   frame equal to the one before it.
 * With Mouse Aim or Gyro Aim on, the Beach tutorial asked for the Control
-  Stick after ten seconds of looking around (the port's author, on a
+  Stick after ten seconds of looking around (me, on a
   Steam Deck with the gyro). The mouse and the gyro turn the view directly,
   never through the stick, so the game's watch for the stick
   (player.c, the check the tutorial runs for six hundred frames) saw
@@ -222,7 +222,7 @@
   gamescope scaled onto the 1280x800 panel with bars top and bottom and
   a softer, less even picture, and it stuttered: gamescope gives a
   non-Steam shortcut a screen of Steam's choosing unless its Game
-  Resolution is set to Native -- 3840x2160 on the author's OLED Deck --
+  Resolution is set to Native -- 3840x2160 on my OLED Deck --
   and the port took the screen it was given, so it was rendering at its
   8x cap on a handheld (found in the 1.0.4 test logs: the view widened
   by 16:9 in Gaming Mode and by 16:10 in Desktop Mode, and the screen
@@ -237,7 +237,7 @@
   seconds, that the Native setting is the fallback.
 * With anti-aliasing on, the frame after the HAL logo -- the intro's
   scenery re-posed for one tick, a frame the console never displayed --
-  showed on a Steam Deck (the port's author, since before 1.0.0) and on
+  showed on a Steam Deck (me, since before 1.0.0) and on
   any 60 Hz monitor. The renderer holds the previous picture over that
   tick, and with anti-aliasing the held picture has to go into a
   single-sampled target of its own, the first interpolated target; the
@@ -252,7 +252,7 @@
   through that target in every anti-aliased case, and the present thread
   is told to show it.
 * The game's Options screen has an **Exit Game** row, under Return, in the
-  screen's own font and rhythm (the port's author, from Steam Deck play:
+  screen's own font and rhythm (me, from Steam Deck play:
   a pad had no way to close the program, and in Gaming Mode the quit
   question of a held Esc needs a keyboard). Its help line says what it
   does; A turns the help line into "Press A again to close the game, B to
