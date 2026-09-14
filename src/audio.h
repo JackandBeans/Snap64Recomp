@@ -44,6 +44,11 @@ void set_mute_unfocused(bool mute);
  * @param freq  Sample rate in Hz (e.g., 32000 for N64 audio).
  */
 void audio_set_frequency(uint32_t freq);
+// Fast forward (src/fast_forward.cpp): the game makes `multiplier` times the
+// audio per real second from here on, and every `multiplier` stereo pairs
+// are averaged into one on the way to the device, so the sound keeps the
+// pace of the picture; 1 is the console's speed.
+void audio_set_speed(uint32_t multiplier);
 
 // The device went away (SDL_AUDIODEVICEREMOVED: headphones unplugged, a
 // Bluetooth switch, a machine waking from sleep). Closes it; the next

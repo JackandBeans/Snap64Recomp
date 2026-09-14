@@ -244,6 +244,7 @@ set(SNAP_SOURCES
     src/main.cpp
     src/paths.cpp
     src/rom_picker.cpp
+    src/fast_forward.cpp
     src/steam_deck.cpp
     src/rt64_render_context.cpp
     src/rsp_microcode.cpp

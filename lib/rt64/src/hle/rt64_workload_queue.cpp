@@ -1297,7 +1297,13 @@ namespace RT64 {
                     // authored step is held rather than shown, camera cuts
                     // snap through their matrix group, and the pose guard
                     // keeps shown pairs from blending across a re-pose.
-                    generateInterpolatedFrames = !workload.paused && displayRateAboveOriginal && !interpolationTargetKey.isEmpty();
+                    // Pokemon Snap port: no interpolation while the game is
+                    // fast-forwarded (rt64_snap_diag.h speedMultiplier): its
+                    // frames come faster than the display and the latest raw
+                    // one is shown; the tick accounting starts over from the
+                    // rate when the key is released (resetTicks below).
+                    generateInterpolatedFrames = !workload.paused && displayRateAboveOriginal && !interpolationTargetKey.isEmpty() &&
+                        (snapdiag::speedMultiplier().load(std::memory_order_relaxed) == 1);
 
                     const bool resetTicks = !generateInterpolatedFrames || (originalRateForTicks != workload.viOriginalRate) || (displayRateForTicks != workloadConfig.targetRate) || !displayRateAboveOriginal;
                     if (resetTicks) {

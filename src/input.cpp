@@ -146,6 +146,9 @@ const char* const kInputNames[IN_COUNT] = {
     "c_up", "c_down", "c_left", "c_right", "stick_up", "stick_down", "stick_left", "stick_right",
 };
 
+// The port's own fast-forward key, the table's nineteenth name (input.h).
+static const char* const kFastForwardName = "fast_forward";
+
 const uint16_t kInputBits[IN_CR + 1] = {
     N64_BTN_A, N64_BTN_B, N64_BTN_Z, N64_BTN_START, N64_BTN_DU, N64_BTN_DD, N64_BTN_DL, N64_BTN_DR,
     N64_BTN_L, N64_BTN_R, N64_BTN_CU, N64_BTN_CD, N64_BTN_CL, N64_BTN_CR,
@@ -225,6 +228,7 @@ struct Source {
 
 struct Resolved {
     std::vector<Source> sources[IN_COUNT];
+    std::vector<Source> fast_forward;   // the fast_forward entry's (input_fast_forward_held)
 };
 
 const Bindings& defaults() {
@@ -252,6 +256,12 @@ const Bindings& defaults() {
         {"stick_down",  {"S"}},
         {"stick_left",  {"A"}},
         {"stick_right", {"D"}},
+        // Not an N64 input: the port's own fast-forward key
+        // (src/fast_forward.cpp). Tab is the emulators' key for it; the
+        // right shoulder is the one pad button the game leaves free (the
+        // triggers are L and R, the left shoulder Z), and on an N64-shaped
+        // pad, which has no such button, it presses nothing.
+        {kFastForwardName, {"Tab", "Pad RightShoulder"}},
     };
     return table;
 }
@@ -304,6 +314,7 @@ std::mutex g_bindings_mutex;
 std::shared_ptr<const Resolved> g_resolved;   // read by the game's thread
 Bindings g_bindings_in_force;                 // the names, for the file
 std::atomic<uint32_t> g_bindings_gen{0};      // bumped by every table put in force
+static std::vector<Source> g_ff_sources;      // the fast_forward entry in force, for the page's refusals
 
 std::shared_ptr<const Resolved> resolved() {
     std::lock_guard<std::mutex> lock(g_bindings_mutex);
@@ -322,6 +333,7 @@ int64_t now_us() {
 
 std::atomic<bool> g_focused{true};
 std::atomic<bool> g_captured{false};
+std::atomic<bool> g_fast_forward_held{false};   // input_fast_forward_held
 // The click that focuses the window arrives with the focus; until this
 // moment, buttons are not presses.
 std::atomic<int64_t> g_buttons_from{0};
@@ -630,8 +642,51 @@ static void set_bindings(const Bindings& given, bool migrate) {
         r->sources[i] = std::move(sources);
         in_force[name] = std::move(accepted);
     }
+    // The fast-forward key (input.h): not an N64 input, so the Button Setup
+    // page never lists it and a table from the page carries the eighteen
+    // inputs only. Absent from the table given, the sources in force stay;
+    // nothing in force yet (the first load) or nothing usable means the
+    // shipped pair, as for the inputs.
+    {
+        std::vector<std::string> wanted;
+        auto it = bindings.find(kFastForwardName);
+        if (it != bindings.end()) {
+            wanted = it->second;
+        } else {
+            std::lock_guard<std::mutex> lock(g_bindings_mutex);
+            auto cur = g_bindings_in_force.find(kFastForwardName);
+            wanted = (cur != g_bindings_in_force.end()) ? cur->second : defaults().at(kFastForwardName);
+        }
+        std::vector<Source> sources;
+        std::vector<std::string> accepted;
+        for (const std::string& src_name : wanted) {
+            Source src{};
+            if (resolve_source(src_name, src)) {
+                sources.push_back(src);
+                accepted.push_back(src_name);
+            } else {
+                printf("[SNAP-Input] keys.%s: \"%s\" is not a name SDL knows; skipped\n", kFastForwardName, src_name.c_str());
+            }
+        }
+        if (sources.empty()) {
+            for (const std::string& src_name : defaults().at(kFastForwardName)) {
+                Source src{};
+                if (resolve_source(src_name, src)) sources.push_back(src);
+            }
+            accepted = defaults().at(kFastForwardName);
+            if (it != bindings.end()) {
+                printf("[SNAP-Input] keys.%s: no usable source; the default stays\n", kFastForwardName);
+            }
+        }
+        {
+            std::lock_guard<std::mutex> lock(g_bindings_mutex);
+            g_ff_sources = sources;
+        }
+        r->fast_forward = std::move(sources);
+        in_force[kFastForwardName] = std::move(accepted);
+    }
     for (const auto& entry : bindings) {
-        bool known = false;
+        bool known = (entry.first == kFastForwardName);
         for (const char* k : kInputNames) known = known || (entry.first == k);
         if (!known) {
             printf("[SNAP-Input] keys.%s: not an input this port has; ignored (input.h lists them)\n", entry.first.c_str());
@@ -658,6 +713,10 @@ Bindings input_bindings() {
 
 uint32_t input_bindings_generation() {
     return g_bindings_gen.load(std::memory_order_acquire);
+}
+
+bool input_fast_forward_held() {
+    return g_fast_forward_held.load(std::memory_order_relaxed);
 }
 
 // ---------------------------------------------------------------------------
@@ -862,6 +921,22 @@ void vpad_tick() {
     }
 }
 
+// A source the fast_forward entry has (by its name as the page would bind
+// it): it has a job of its own, like the keys below.
+static bool fast_forward_uses(const std::string& name) {
+    Source s{};
+    if (!resolve_source(name, s)) {
+        return false;
+    }
+    std::lock_guard<std::mutex> lock(g_bindings_mutex);
+    for (const Source& f : g_ff_sources) {
+        if ((f.kind == s.kind) && (f.code == s.code)) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Keys the port answers to itself (src/settings.cpp handle_settings_hotkey,
 // main.cpp's Esc): a game button cannot be one of them.
 bool key_has_job(int sc) {
@@ -922,7 +997,7 @@ bool capture_event(const SDL_Event& event) {
             if ((n == nullptr) || (n[0] == '\0')) {
                 return true;
             }
-            capture_end_with(key_has_job(sc) ? CaptureState::RefusedJob : CaptureState::Bound, n);
+            capture_end_with((key_has_job(sc) || fast_forward_uses(n)) ? CaptureState::RefusedJob : CaptureState::Bound, n);
             return true;
         }
         case SDL_MOUSEBUTTONDOWN: {
@@ -976,6 +1051,12 @@ bool capture_event(const SDL_Event& event) {
                 n = "Pad RightTrigger";
             } else {
                 n = pad_source_name(b);
+            }
+            // The fast-forward key's button (input.h fast_forward) has a
+            // job of its own, like Back.
+            if (!n.empty() && fast_forward_uses(n)) {
+                capture_end_with(CaptureState::RefusedJob, n);
+                return true;
             }
             if (!n.empty()) {
                 capture_end_with(CaptureState::Bound, n);
@@ -2267,6 +2348,14 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
                 ax += 1.0f;
             }
         }
+        // The fast-forward key, read here beside the inputs so it follows
+        // the same table, focus and pad snapshot; src/fast_forward.cpp
+        // applies it on the main thread.
+        bool fast = false;
+        for (const Source& src : table->fast_forward) {
+            if (source_down(src, keys, held, t, pad)) { fast = true; break; }
+        }
+        g_fast_forward_held.store(fast, std::memory_order_relaxed);
     }
 
     // -----------------------------------------------------------------------

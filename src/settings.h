@@ -182,6 +182,16 @@ struct Settings {
     // smallest (input_get). The Controls page's Dead Zone row (mailbox
     // byte 0x80C0006B, in steps of five) and the file both set it.
     int   pad_deadzone      = 15;
+    // Fast forward: how much faster the game runs while the fast-forward key
+    // is held (the keys table's fast_forward entry; Tab or the pad's right
+    // shoulder as shipped), as a multiple of the console's speed: 1 is Off
+    // (the key does nothing), 2, 3 or 4. Every clock the game reads runs
+    // that many times faster (src/fast_forward.cpp), so the game itself is
+    // unchanged; the screen shows its latest frame at the display's rate and
+    // the sound plays quicker and higher, as a tape does. The Controls page's
+    // Fast Forward row (mailbox byte 0x80C0006C: 0 Off, then 2x, 3x, 4x as
+    // 1..3) and the file both set it.
+    int   fast_forward_speed = 3;
     // Multiplies the angle per pixel: 1 is a full turn in about 2500
     // pixels, 2 twice as quick, 0.5 half. Bounded to 0.1 .. 10 where read.
     float mouse_sensitivity = 1.0f;

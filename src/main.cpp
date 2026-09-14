@@ -42,6 +42,7 @@
 #include "version.h"
 #include "paths.h"
 #include "rom_picker.h"
+#include "fast_forward.h"
 #include "snap_station.h"
 #include "steam_deck.h"
 namespace snap { extern uint8_t* g_rdram; }
@@ -285,6 +286,10 @@ static void update_gfx(void* /*gfx_data*/) {
     // samples every tick, so music advances faster than wall-clock and the
     // queue overruns (sped-up, choppy audio).
     snap_publish_ai_len(snap::g_rdram);
+
+    // The fast-forward key: the runtime's clocks, the audio and the
+    // renderer's interpolation switch follow it (src/fast_forward.cpp).
+    snap::fast_forward_tick();
 
     // The Snap Station's relaunches come back at the window state the run
     // had. A boot is always windowed (settings.cpp), so the return to

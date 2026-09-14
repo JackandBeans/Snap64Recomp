@@ -1128,6 +1128,8 @@ static void write_setting_bytes(const Settings &s) {
     write_u8(MailboxAddr + 0x6A, s.pad_sticks_swapped ? 1 : 0);
     // The dead zone in steps of five: the page shows 0, 5, 10 .. 40.
     write_u8(MailboxAddr + 0x6B, uint8_t(std::clamp((s.pad_deadzone + 2) / 5, 0, 8)));
+    // Fast Forward: 0 Off, then 2x, 3x, 4x as 1..3.
+    write_u8(MailboxAddr + 0x6C, uint8_t(std::clamp(s.fast_forward_speed, 1, 4) - 1));
 }
 
 void seed_mailbox() {
@@ -1348,6 +1350,9 @@ void stage_menu_strings(uint8_t* rdram) {
     // The CONTROLS page's Dead Zone row (id BaseCount+154), then Pad
     // Sticks (BaseCount+152).
     static const char* const deadzoneDesc[2] = { "How far the stick moves before the game", "sees it. Raise it if the camera drifts." };
+    // The CONTROLS page's Fast Forward row (ids BaseCount+198 and +199): its
+    // values are Off and the Graphics page's 2x, 3x and 4x.
+    static const char* const fastDesc[2] = { "Hold Tab or the right shoulder button to", "run the game this many times as fast." };
     static const char* const sticksDesc[2] = { "Normal aims with the left stick, the", "right does the C buttons. Swapped flips." };
     static const char* const gyroDescs[2][2] = {
         { "Turn the pad to look around a course, on",  "pads with a gyro. Zoomed aims zoomed in." },
@@ -1437,7 +1442,7 @@ void stage_menu_strings(uint8_t* rdram) {
         { "Aims the camera left in a course, and", "walks the menus. A changes, Z clears." },
         { "Aims the camera right in a course, and", "walks the menus. A changes, Z clears." },
     };
-    constexpr uint32_t StringCount = BaseCount + 198;
+    constexpr uint32_t StringCount = BaseCount + 200;
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -1645,6 +1650,16 @@ void stage_menu_strings(uint8_t* rdram) {
             // What the help line becomes once the item is chosen; the
             // next A closes the program, B withdraws.
             strip = compose_help("Press A again to close the game, B to stay.");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 198) {
+            strip = compose("Fast Forward");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 199) {
+            strip = compose_lines(fastDesc[0], fastDesc[1]);
             w = strip.width;
             h = strip.height;
         }
@@ -2155,6 +2170,16 @@ void poll_menu_mailbox(uint8_t* rdram) {
             if (deadzone != c.pad_deadzone) {
                 c.pad_deadzone = deadzone;
                 printf("[SNAP-CFG] stick dead zone: %d%%\n", deadzone);
+                fflush(stdout);
+            }
+            const int fast = std::min<int>(read_u8_mail(MailboxAddr + 0x6C), 3) + 1;
+            if (fast != c.fast_forward_speed) {
+                c.fast_forward_speed = fast;
+                if (fast == 1) {
+                    printf("[SNAP-CFG] fast forward: off\n");
+                } else {
+                    printf("[SNAP-CFG] fast forward: %dx while the key is held\n", fast);
+                }
                 fflush(stdout);
             }
             const bool swapped = read_u8_mail(MailboxAddr + 0x6A) != 0;

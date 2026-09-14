@@ -1,5 +1,31 @@
 # Changelog
 
+## 1.0.8 -- unreleased
+
+* Fast forward: hold Tab, or the pad's right shoulder button, and the game
+  runs at two, three or four times the console's speed, the Controls page's
+  new Fast Forward row (3x as shipped, or Off). It is the console run
+  faster, not the game changed: the runtime's clocks -- the retraces, the
+  counter, osGetTime, the OS timers -- run that many times faster than the
+  wall clock from the moment the key goes down, so the game steps through
+  exactly the frames it would have stepped through anyway, with the same
+  scores and the same saves. The renderer shows the latest frame at the
+  display's rate, frame interpolation off for the duration, and the audio
+  path averages every two, three or four stereo pairs into one, so the
+  sound keeps the picture's pace, quicker and higher the way a tape is in
+  fast forward. The key is the `fast_forward` entry of the settings file's
+  `keys` table; the Button Setup page refuses its sources, as it refuses
+  Back. `SNAP_SPEED=<n>` holds a whole run at that speed with no key, and
+  the release suite's new speed check runs the scoring replay at 3x and
+  compares every scored photo with the 1x run's. Verified on my PC: a real
+  Tab hold took the Beach ride from 64 drawn frames per pacing report to
+  600, three times the rate, and released cleanly with no stall at either
+  end; the scoring replay at 3x scored the same 45 photos with the same
+  numbers as at 1x; the Controls row and its help line composed, and Right
+  and B read back on the host as 4x and then 3x again. Asked for by Video
+  Game Esoterica in "Pokemon Snap Recomp Out NOW! More Pokemon PC Ports"
+  (2026-09-13).
+
 ## 1.0.7 -- 2026-09-13
 
 * Restore Defaults is the last row of the Button Setup page, after Stick

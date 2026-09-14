@@ -333,6 +333,19 @@ reported in the log and skipped, and an input left with nothing usable
 keeps its default. The keys are positional scancodes: on a non-QWERTY
 layout `"X"` is the key in X's place, not the letter printed on it.
 
+**Fast forward.** Hold Tab, or the pad's right shoulder button, and the game
+runs at the speed the Controls page's Fast Forward row says: 3x as shipped,
+2x or 4x, or Off. It is the console run faster, not the game changed: every
+clock the game reads runs that many times faster, so it steps through exactly
+the frames it would have stepped through anyway, with the same scores and the
+same saves; the picture shows the latest frame at the display's rate, with
+frame interpolation off for the duration, and the sound plays quicker and
+higher, as a tape does. Release the key and everything is back at once. The
+key is the `fast_forward` entry of the `keys` table, changed in the file like
+any other; it has no row on the Button Setup page, which refuses its sources
+as it refuses Back. On an N64-shaped pad, which has no shoulder button of that
+kind, only the key works until the file names another button.
+
 Any SDL game controller overrides the keyboard while attached: left stick is
 the control stick, A is A, B or X is B, the left shoulder button is Z, Start
 is Start, the D-pad is the D-pad, the triggers are L and R, and the right stick
@@ -425,12 +438,14 @@ Volume, Speaker Output (Stereo/Mono), Background Mute.
 
 Options > **Controls**: Z Button (Hold/Switch) and Control Stick
 (Normal/Reverse), the game's own two settings, moved here from the Options
-list so the list keeps the stock rhythm; then Mouse Aim, Mouse Speed (25 to
-400 percent of the shipped speed), Zoom Speed (the share of that speed
-used while zoomed in), Camera Tilt (Normal/Reverse, for the mouse and the
-gyro alike), Gyro Aim (Off, On, or Zoomed for only while zoomed in) and
-Gyro Speed (25 to 400 percent of natural). Eight rows, six on screen; the
-page scrolls for the last two, as the Graphics page does. Every change
+list so the list keeps the stock rhythm; then Button Setup, the row that
+opens the Button Setup page; Pad Sticks; Dead Zone; Fast Forward (Off, 2x,
+3x or 4x: the speed the held key runs the game at); Mouse Aim, Mouse Speed
+(25 to 400 percent of the shipped speed), Zoom Speed (the share of that
+speed used while zoomed in), Camera Tilt (Normal/Reverse, for the mouse and
+the gyro alike), Gyro Aim (Off, On, or Zoomed for only while zoomed in) and
+Gyro Speed (25 to 400 percent of natural). Twelve rows, six on screen; the
+page scrolls for the last six, as the Graphics page does. Every change
 applies as it is made; B puts the page back as it was opened.
 
 Options > **Exit Game**: the list's sixth row, under Return, in the
@@ -466,6 +481,7 @@ investigating the renderer and are not features.
 | [ / ] | Mouse Speed down / up, through the Controls page's steps |
 | P | Save the photo on screen as a PNG in `photos/` (see "Photos") |
 | Esc | Tap: Start (the pause menu in a course). Held a second and released: the quit question |
+| Tab (held) | Fast forward, at the Controls page's Fast Forward speed; the `fast_forward` entry of `keys` moves it, and names a pad button too (the right shoulder as shipped) |
 
 ### Photos
 
@@ -619,6 +635,9 @@ the defaults below are that file's.
 | `snap_station` | `false` | keep the Snap Station on port 4 from the title menu on, every start (see "The Snap Station") |
 | `pad_enabled` | `true` | `false` makes the port ignore every pad: none is opened, and the keyboard and mouse carry on |
 | `pad_layout` | `0` | how a pad's shoulders and triggers are read: `0` decides by the pad's name, `1` the Xbox-style layout the defaults describe, `2` an N64-shaped pad (the Switch Online N64 controller), whose L, R and Z are L, R and Z |
+| `pad_sticks_swapped` | `false` | the right stick aims and the left works the C buttons (Pad Sticks) |
+| `pad_deadzone` | `15` | the aiming stick's dead zone in percent of full travel, 0 to 40 in steps of five (Dead Zone) |
+| `fast_forward_speed` | `3` | the speed the held fast-forward key runs the game at: 1 Off, 2, 3 or 4 (Fast Forward) |
 | `mouse_aim` | `true` | the mouse aims while a course runs and the window has focus ("Controls"); its buttons work whenever the window has focus, through `keys` |
 | `mouse_sensitivity` | `1.0` | angle per pixel of mouse: 1 is a full turn in about 2500 pixels, 2 twice as quick, 0.5 half; 0.1 to 10 |
 | `mouse_invert_y` | `false` | mouse forward, or the pad's front rising, tilts the view down (Camera Tilt: Reverse) |

@@ -22,6 +22,9 @@ that a release build can be put through all of them in one go:
               stage from the harvested font with no character missing, so the
               page opens instead of falling back to the stock menu
   settings    snapsettings.json is valid JSON and carries the port's fields
+  speed       the scoring replay again at three times the console's speed
+              (SNAP_SPEED=3, the fast-forward key held for a whole run): the
+              same photos scored with the same numbers, in a third of the time
   rompick     a data directory with no ROM: the first run's chooser, answered
               by SNAP_ROM_PICK, copies the dump in byte-identical, copies a
               byte-swapped dump in big-endian order, and a Cancel starts
@@ -253,11 +256,41 @@ def check_score(c, exe_dir):
             continue
         if odd != 0 or eq != u or or1 != 0 or rec != game:
             bad.append(l)
+    _score_lines_1x[:] = lines
     c.add('score', len(lines) >= 1 and not bad,
           '%d scored photos, %d outside the healthy signature%s' % (len(lines), len(bad), (': ' + bad[0]) if bad else ''))
     new = (set(photos.glob('*.png')) - before) if photos.exists() else set()
     c.add('score', len(new) >= 10, '%d photos exported by the run' % len(new))
     c.add('score', '[SNAP-AV]' not in out, 'crash report %s' % ('present' if '[SNAP-AV]' in out else 'none'))
+
+
+_score_lines_1x = []   # check_score's photo lines, for check_speed to compare against
+
+
+def check_speed(c, exe_dir):
+    """Fast forward: the scoring replay again with the whole run held at three
+    times the console's speed (SNAP_SPEED=3, what a held key does for a
+    moment). The proof that the game cannot tell is its own output: the same
+    photos scored with the same numbers, reached in about a third of the time.
+    Compared line for line against the score check's run when that ran first
+    in the same invocation, against the healthy signature alone otherwise."""
+    if not ensure_replay(exe_dir, 'eval.inputs'):
+        c.add('speed', False, 'eval.inputs is not beside the executable')
+        return
+    t0 = time.time()
+    out = run_game(exe_dir, {'SNAP_REPLAY': 'eval.inputs', 'SNAP_MUTE': '1', 'SNAP_STATS': '1',
+                             'SNAP_SPEED': '3'}, 160)
+    took = int(time.time() - t0)
+    lines = [l for l in out.splitlines() if l.startswith('[SNAP-SCORE] pokemon')]
+    applied = '[SNAP] fast forward: 3x' in out
+    c.add('speed', applied, 'the multiplier was %s' % ('applied at the first frame' if applied else 'NOT applied'))
+    if _score_lines_1x:
+        same = (lines == _score_lines_1x)
+        c.add('speed', same, "%d scored photos at 3x, %s the 1x run's %d, in %d seconds"
+              % (len(lines), 'identical to' if same else 'DIFFERENT from', len(_score_lines_1x), took))
+    else:
+        c.add('speed', len(lines) >= 1, '%d scored photos at 3x in %d seconds (no 1x run in this invocation to compare)' % (len(lines), took))
+    c.add('speed', '[SNAP-AV]' not in out, 'crash report %s' % ('present' if '[SNAP-AV]' in out else 'none'))
 
 
 def ensure_replay(exe_dir, name):
@@ -539,7 +572,8 @@ def main():
         return 2
     checks = [('subsystem', check_subsystem), ('stdio', check_stdio), ('attract', check_attract),
               ('stats', check_stats), ('score', check_score), ('settings', check_settings),
-              ('rompick', check_rompick), ('menu', check_menu), ('station', check_station)]
+              ('speed', check_speed), ('rompick', check_rompick), ('menu', check_menu),
+              ('station', check_station)]
     c = Check()
     t0 = time.time()
     for name, fn in checks:

@@ -190,10 +190,25 @@ void vi_thread_func() {
     using namespace std::chrono_literals;
 
     int remaining_retraces = 1;
+    // Pokemon Snap port: the retrace schedule is anchored on the instant the
+    // speed multiplier last changed (set_speed_multiplier), not on the
+    // program's start, so a change moves the cadence from that instant on
+    // with no burst of retraces and no stall to catch the count up.
+    uint32_t vi_multiplier = ultramodern::get_speed_multiplier();
+    auto vi_origin = ultramodern::get_start();
+    uint64_t vi_origin_vis = 0;
 
     while (!exited) {
+        {
+            const uint32_t multiplier_now = ultramodern::get_speed_multiplier();
+            if (multiplier_now != vi_multiplier) {
+                vi_multiplier = multiplier_now;
+                vi_origin = std::chrono::high_resolution_clock::now();
+                vi_origin_vis = total_vis;
+            }
+        }
         // Determine the next VI time (more accurate than adding 16ms each VI interrupt)
-        auto next = ultramodern::get_start() + (total_vis * 1000000us) / (60 * ultramodern::get_speed_multiplier());
+        auto next = vi_origin + ((total_vis - vi_origin_vis) * 1000000us) / (60 * vi_multiplier);
         //if (next > std::chrono::high_resolution_clock::now()) {
         //    printf("Sleeping for %" PRIu64 " us to get from %" PRIu64 " us to %" PRIu64 " us \n",
         //        (next - std::chrono::high_resolution_clock::now()) / 1us,
@@ -208,9 +223,9 @@ void vi_thread_func() {
             next = std::chrono::high_resolution_clock::now();
         }
         ultramodern::sleep_until(next);
-        auto time_now = ultramodern::time_since_start();
+        auto time_now = std::chrono::high_resolution_clock::now() - vi_origin;
         // Calculate how many VIs have passed
-        uint64_t new_total_vis = (time_now * (60 * ultramodern::get_speed_multiplier()) / 1000ms) + 1;
+        uint64_t new_total_vis = vi_origin_vis + (time_now * (60 * vi_multiplier) / 1000ms) + 1;
         if (new_total_vis > total_vis + 1) {
             //printf("Skipped % " PRId64 " frames in VI interupt thread!\n", new_total_vis - total_vis - 1);
         }

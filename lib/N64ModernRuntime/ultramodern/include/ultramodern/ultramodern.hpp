@@ -104,6 +104,10 @@ bool is_game_thread();
 void submit_rsp_task(RDRAM_ARG PTR(OSTask) task);
 void send_si_message();
 uint32_t get_speed_multiplier();
+// Pokemon Snap port: from the call on, the game's clocks (the counter,
+// osGetTime, the OS timers, the VI retraces) run `multiplier` times faster
+// than the wall clock; 1 is the console's speed. Any thread.
+void set_speed_multiplier(uint32_t multiplier);
 
 // Time
 std::chrono::high_resolution_clock::time_point get_start();

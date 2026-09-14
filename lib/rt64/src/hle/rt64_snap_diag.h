@@ -63,6 +63,16 @@ inline bool captureEnabled() {
     return enabled;
 }
 
+// The port's fast-forward multiplier, 1 at the console's speed: the game's
+// clocks run this many times faster while the player holds the key
+// (src/fast_forward.cpp). The workload queue switches frame interpolation
+// off for the duration -- the game's frames then come faster than any
+// display, and the latest raw one is what the screen gets.
+inline std::atomic<uint32_t> &speedMultiplier() {
+    static std::atomic<uint32_t> value{1};
+    return value;
+}
+
 // Counts frames the renderer held instead of showing, so the pacing meter can
 // say whether a stutter is the hold system's own doing. A hold copies a whole
 // render target and waits for the GPU to finish, which is real time spent on
