@@ -88,6 +88,10 @@ namespace RT64 {
             // survives a wipe; the count tells a re-render of the same photo
             // after a window change from one before it (see fillPixels).
             uint64_t generation = 0;
+            // The display list this was pinned in (listCounter then): its
+            // sprite's loads may come only in the next one, after the list
+            // that filled it has ended, so until then it is not evictable.
+            uint64_t createdList = 0;
             bool filled = false;
             bool duplicate = false;
             uint64_t matchedTimestamp = 0;
@@ -117,6 +121,9 @@ namespace RT64 {
         static constexpr uint32_t ScreenTolerance = 4096;
 
         std::deque<Candidate> candidates;
+        // Counts the display lists ended (endDisplayList); the age of a
+        // candidate in lists is what eviction goes by.
+        uint64_t listCounter = 0;
 
         // RDRAM as the recompiler lays it out: a big-endian halfword at
         // address a lives at host offset a ^ 2 (rt64_rdp.cpp reads bytes at
@@ -192,6 +199,7 @@ namespace RT64 {
 
             Candidate candidate;
             candidate.generation = FramebufferManager::snapTileCopyWipes.load(std::memory_order_acquire);
+            candidate.createdList = listCounter;
             candidate.address = address;
             candidate.width = width;
             candidate.dstWidth = dstWidth;
@@ -308,6 +316,8 @@ namespace RT64 {
                     it++;
                 }
             }
+
+            listCounter++;
         }
 
         // The oldest render nothing ever matched goes first; failing that,
@@ -317,25 +327,65 @@ namespace RT64 {
         // is drawn until the next move, so age of creation would evict the
         // thumbnails still on screen ahead of previews long replaced -- the
         // thumbnails then fall back to the console's halved texels.
+        //
+        // Never one pinned in this display list or the last (createdList):
+        // its rows come back at a flush, and a sprite whose loads ran before
+        // that flush finds the copy only in the next list. Before this rule
+        // such a copy counted as "filled and never matched", the first to
+        // go when the ring was full, and on a screen that renders enough
+        // small things a frame the ring was full every frame: the copy was
+        // pinned, filled after the loads, evicted at the next render, and
+        // its photo drew from the console's texels for as long as the
+        // screen lasted. A render split in two by a framebuffer read (the
+        // fire in a Volcano photo) gave it one copy per part: the first,
+        // filled before the loads, served the top strips; the second never
+        // served, and the bottom of the photo stayed pixelated (my own
+        // Charizard review, and issue #15's Cave thumbnails, 2026-09-14).
         void evictOne(FramebufferManager &fbManager) {
             if (candidates.empty()) {
                 return;
             }
 
             auto victim = candidates.end();
+            const auto evictable = [&](const Candidate &c) {
+                return (c.createdList + 1) < listCounter;
+            };
+
             for (auto it = candidates.begin(); it != candidates.end(); it++) {
-                if (it->filled && (it->matchedTimestamp == 0)) {
+                if (evictable(*it) && it->filled && (it->matchedTimestamp == 0)) {
                     victim = it;
                     break;
                 }
             }
 
             if (victim == candidates.end()) {
-                victim = candidates.begin();
                 for (auto it = candidates.begin(); it != candidates.end(); it++) {
-                    if (it->matchedTimestamp < victim->matchedTimestamp) {
+                    if (evictable(*it) && ((victim == candidates.end()) || (it->matchedTimestamp < victim->matchedTimestamp))) {
                         victim = it;
                     }
+                }
+            }
+
+            if (victim == candidates.end()) {
+                // The whole ring is this list's and the last's: the front
+                // goes, and a line says the ring is too small for the screen.
+                victim = candidates.begin();
+                static int reported = 0;
+                if (reported < 20) {
+                    reported++;
+                    printf("[SNAP-PHOTO-DETAIL] the ring of %u is all from the last two display lists; the oldest goes (render %08X, %ux%u, %s)\n",
+                        unsigned(candidates.size()), victim->address, victim->dstWidth, victim->dstHeight,
+                        victim->matchedTimestamp ? "matched" : "never matched");
+                }
+            }
+            else if (victim->matchedTimestamp != 0) {
+                // A photo that was being drawn from is going: worth a line.
+                static int reported = 0;
+                if (reported < 50) {
+                    reported++;
+                    printf("[SNAP-PHOTO-DETAIL] evicted a matched photo (render %08X, %ux%u, last matched at %llu of %llu) for a new render\n",
+                        victim->address, victim->dstWidth, victim->dstHeight, (unsigned long long)victim->matchedTimestamp,
+                        (unsigned long long)fbManager.getUsedTimestamp());
                 }
             }
 
@@ -374,17 +424,103 @@ namespace RT64 {
                     }
 
                     if (same) {
-                        if (snapdiag::statsEnabled() && !candidate.matchReported) {
-                            candidate.matchReported = true;
-                            printf("[SNAP-PHOTO-DETAIL] load %08X..%08X is rows %u..%u of the bitmap halved from render %08X width %u (tile copy %llu)\n",
-                                addressStart, addressEnd, row, row + rows, candidate.address, candidate.width, (unsigned long long)candidate.tileId);
+                        if (snapdiag::statsEnabled()) {
+                            // Each distinct load range and match once: which
+                            // rows of which bitmap each strip was served from.
+                            static std::vector<uint64_t> seen;
+                            const uint64_t key = (uint64_t(addressStart) << 32) ^ (uint64_t(addressEnd) << 8) ^ (uint64_t(candidate.address) << 20) ^ row;
+                            bool known = false;
+                            for (uint64_t k : seen) {
+                                known = known || (k == key);
+                            }
+
+                            if (!known && (seen.size() < 400)) {
+                                seen.push_back(key);
+                                printf("[SNAP-PHOTO-DETAIL] load %08X..%08X is rows %u..%u of the bitmap halved from render %08X width %u (tile copy %llu)\n",
+                                    addressStart, addressEnd, row, row + rows, candidate.address, candidate.width, (unsigned long long)candidate.tileId);
+                            }
                         }
 
+                        candidate.matchReported = true;
                         candidate.matchedTimestamp = usedTimestamp;
                         out.candidate = &candidate;
                         out.row = row;
                         out.rows = rows;
                         return true;
+                    }
+                }
+            }
+
+            {
+                // A plausible strip that matched nothing: the candidate and
+                // row it came closest to, and the first halfword that broke
+                // the match, so a missed strip says why. Always on, each
+                // distinct miss once, a hundred at most: a healthy run
+                // writes none of these.
+                static std::vector<uint64_t> missedSeen;
+                if ((bytes >= 1000) && (missedSeen.size() < 100)) {
+                    uint32_t bestLen = 0;
+                    uint32_t bestRow = 0;
+                    const Candidate *best = nullptr;
+                    uint16_t bestGot = 0;
+                    uint16_t bestWant = 0;
+                    for (auto it = candidates.rbegin(); it != candidates.rend(); it++) {
+                        const Candidate &candidate = *it;
+                        const uint32_t rowBytes = candidate.dstWidth * 2u;
+                        if (!candidate.filled || (rowBytes == 0) || ((rowBytes & 7u) != 0) || (bytes < rowBytes) || ((bytes % rowBytes) != 0)) {
+                            continue;
+                        }
+
+                        const uint32_t rows = bytes / rowBytes;
+                        if (rows > candidate.dstHeight) {
+                            continue;
+                        }
+
+                        const uint32_t halfwords = bytes / 2u;
+                        for (uint32_t row = 0; (row + rows) <= candidate.dstHeight; row++) {
+                            const uint16_t *expected = candidate.pixels.data() + size_t(row) * candidate.dstWidth;
+                            uint32_t i = 0;
+                            while ((i < halfwords) && (readHalf(RDRAM, addressStart + i * 2u) == expected[i])) {
+                                i++;
+                            }
+
+                            if ((i > bestLen) || (best == nullptr)) {
+                                bestLen = i;
+                                bestRow = row;
+                                best = &candidate;
+                                bestGot = (i < halfwords) ? readHalf(RDRAM, addressStart + i * 2u) : 0;
+                                bestWant = (i < halfwords) ? expected[i] : 0;
+                            }
+                        }
+                    }
+
+                    const uint64_t key = (uint64_t(addressStart) << 32) ^ (uint64_t(addressEnd) << 8) ^ (uint64_t(bestLen) << 40) ^ bestRow;
+                    bool known = false;
+                    for (uint64_t k : missedSeen) {
+                        known = known || (k == key);
+                    }
+
+                    if ((best != nullptr) && !known) {
+                        missedSeen.push_back(key);
+                        unsigned unfilled = 0;
+                        for (const Candidate &c : candidates) {
+                            unfilled += c.filled ? 0u : 1u;
+                        }
+                        printf("[SNAP-PHOTO-DETAIL] miss %08X..%08X (%u bytes): closest is render %08X (%ux%u, list %llu of %llu) at row %u, %u of %u halfwords equal, then %04X in memory vs %04X computed; %u candidates, %u not yet filled\n",
+                            addressStart, addressEnd, bytes, best->address, best->dstWidth, best->dstHeight, (unsigned long long)best->createdList,
+                            (unsigned long long)listCounter, bestRow, bestLen, bytes / 2u, bestGot, bestWant, unsigned(candidates.size()), unfilled);
+                    }
+                    else if ((best == nullptr) && !known && (bytes >= 1900)) {
+                        // Loads of a photo's size with nothing of a fitting
+                        // width and height to compare against; the small
+                        // interface textures are left out by the size.
+                        missedSeen.push_back(key);
+                        unsigned unfilled = 0;
+                        for (const Candidate &c : candidates) {
+                            unfilled += c.filled ? 0u : 1u;
+                        }
+                        printf("[SNAP-PHOTO-DETAIL] miss %08X..%08X (%u bytes): no candidate of a fitting width and height; %u candidates, %u not yet filled\n",
+                            addressStart, addressEnd, bytes, unsigned(candidates.size()), unfilled);
                     }
                 }
             }
