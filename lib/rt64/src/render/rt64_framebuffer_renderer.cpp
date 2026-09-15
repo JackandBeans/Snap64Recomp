@@ -1455,6 +1455,32 @@ namespace RT64 {
     }
 #endif
 
+    // Pokemon Snap port, the headset: a rectangle of the game's picture, in
+    // its pixels, placed on the plane in front of the head as the eye's
+    // target pixels (rt64_snap_vr.h).
+    static RenderRect snapVrMapRect(const FramebufferRenderer::DrawParams &p, const FixedRect &rect) {
+        const float x0 = p.snapVrRectAx * float(rect.left(false)) + p.snapVrRectBx;
+        const float x1 = p.snapVrRectAx * float(rect.right(true)) + p.snapVrRectBx;
+        const float y0 = p.snapVrRectAy * float(rect.top(false)) + p.snapVrRectBy;
+        const float y1 = p.snapVrRectAy * float(rect.bottom(true)) + p.snapVrRectBy;
+        RenderRect r;
+        r.left = std::max(0, int32_t(std::lround(std::min(x0, x1))));
+        r.top = std::max(0, int32_t(std::lround(std::min(y0, y1))));
+        r.right = std::min(int32_t(p.targetWidth), int32_t(std::lround(std::max(x0, x1))));
+        r.bottom = std::min(int32_t(p.targetHeight), int32_t(std::lround(std::max(y0, y1))));
+        if (r.right < r.left) r.right = r.left;
+        if (r.bottom < r.top) r.bottom = r.top;
+        return r;
+    }
+
+    static RenderViewport snapVrMapViewport(const FramebufferRenderer::DrawParams &p, const FixedRect &rect) {
+        const float x0 = p.snapVrRectAx * float(rect.left(true)) + p.snapVrRectBx;
+        const float x1 = p.snapVrRectAx * float(rect.right(true)) + p.snapVrRectBx;
+        const float y0 = p.snapVrRectAy * float(rect.top(true)) + p.snapVrRectBy;
+        const float y1 = p.snapVrRectAy * float(rect.bottom(true)) + p.snapVrRectBy;
+        return RenderViewport(std::min(x0, x1), std::min(y0, y1), std::fabs(x1 - x0), std::fabs(y1 - y0));
+    }
+
     void FramebufferRenderer::addFramebuffer(const DrawParams &p) {
         assert(p.fbStorage != nullptr);
         
@@ -1679,12 +1705,26 @@ namespace RT64 {
             // what the console shows black beside the film counter. A scissor
             // that matches its viewport (the course itself, the photo renders)
             // is stretched as before.
+            // Pokemon Snap port, the headset: an eye's replay draws the whole
+            // target through the eye's own viewport; none of the picture's
+            // widening or cropping applies.
+            const bool snapVrEyePass = (p.snapVrEye >= 0);
+            if (snapVrEyePass) {
+                projInvRatioScale = 1.0f;
+                triangles.screenScale = { 1.0f, 1.0f };
+                triangles.screenOffset = halfPixelOffset;
+                viewportClip = RenderViewport(0.0f, 0.0f, float(p.targetWidth), float(p.targetHeight));
+            }
+
             bool snapCropScissor = false;
             if (proj.usesViewport() && (projInvRatioScale == 1.0f) && (proj.transformsIndex < drawData.rspViewports.size())) {
                 const FixedRect vpRect = drawData.rspViewports[proj.transformsIndex].rect(viewportClipRatios);
                 snapCropScissor = !proj.scissorRect.isNull() && (vpRect.ulx < proj.scissorRect.ulx) && (vpRect.lrx > proj.scissorRect.lrx);
             }
             const float snapCropInvRatioScale = (p.aspectRatioTarget > 0.0f) ? (p.aspectRatioSource / p.aspectRatioTarget) : 1.0f;
+            if (snapVrEyePass) {
+                snapCropScissor = false;
+            }
 
             // Pokemon Snap port, diagnostic (SNAP_DRAW_TRACE=<game frame>): the
             // projections and draw calls of the frames around that one, with
@@ -1706,6 +1746,17 @@ namespace RT64 {
 
             for (uint32_t d = 0; (d < proj.gameCallCount) && (globalCallIndex < p.maxGameCall); d++) {
                 const GameCall &call = proj.gameCalls[d];
+
+                // Pokemon Snap port, the headset: while the viewfinder window
+                // shows the game's picture, the flat draws are not repeated
+                // on the plane behind it.
+                if (snapVrEyePass && p.snapVrSkip2D) {
+                    const bool rideCall = (proj.transformsIndex < drawData.snapVrRideTransforms.size()) && (drawData.snapVrRideTransforms[proj.transformsIndex] != 0);
+                    if (!rideCall) {
+                        globalCallIndex++;
+                        continue;
+                    }
+                }
                 renderIndices.instanceIndex = call.callDesc.callIndex;
                 renderIndices.faceIndicesStart = call.meshDesc.faceIndicesStart;
                 renderIndices.rdpTileIndex = call.callDesc.tileIndex;
@@ -1751,6 +1802,21 @@ namespace RT64 {
                     }
 
                     clearRect.rect = convertFixedRect(call.callDesc.rect, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, horizontalMisalignment, call.callDesc.rectLeftOrigin, call.callDesc.rectRightOrigin);
+
+                    // Pokemon Snap port, the headset: a fill of the whole
+                    // picture (the frame's clear) fills the whole eye; any
+                    // other fill is a flat element and lands on the plane.
+                    if (snapVrEyePass) {
+                        const FixedRect &fill = call.callDesc.rect;
+                        const bool wholeFrame = (fill.ulx <= fbPair.scissorRect.ulx) && (fill.lrx >= fbPair.scissorRect.lrx) &&
+                            (fill.uly <= fbPair.scissorRect.uly) && (fill.lry >= fbPair.scissorRect.lry);
+                        if (wholeFrame) {
+                            clearRect.rect = RenderRect(0, 0, int32_t(p.targetWidth), int32_t(p.targetHeight));
+                        }
+                        else {
+                            clearRect.rect = snapVrMapRect(p, fill);
+                        }
+                    }
                 }
                 else if (call.callDesc.extendedType != DrawExtendedType::None) {
                     switch (call.callDesc.extendedType) {
@@ -2054,6 +2120,11 @@ namespace RT64 {
                             }
 
                             RenderViewport viewportRect = convertViewportRect(drawnRect, p.resolutionScale, p.fbWidth, invRatioScale, extOriginPercentage, horizontalMisalignment, call.callDesc.rectLeftOrigin, call.callDesc.rectRightOrigin);
+                            // Pokemon Snap port, the headset: the rectangle
+                            // where the plane puts it.
+                            if (snapVrEyePass) {
+                                viewportRect = snapVrMapViewport(p, drawnRect);
+                            }
                             // Pokemon Snap port, diagnostic (SNAP_PASS_TRACE): every
                             // rectangle drawn by a pass whose colour image is at
                             // most sixteen pixels wide -- the game's photo
@@ -2089,6 +2160,18 @@ namespace RT64 {
                         case Projection::Type::Triangle: {
                             instanceDrawCall.type = InstanceDrawCall::Type::RawTriangles;
                             triangles.indexStart = call.meshDesc.rawVertexStart;
+                            // Pokemon Snap port, the headset: screen-space
+                            // triangles onto the plane. The vertex shader
+                            // normalizes them against the eye's virtual
+                            // picture, which is as wide as the game's and
+                            // taller, so the vertical is rescaled to the
+                            // game's picture first.
+                            if (snapVrEyePass) {
+                                const float heightRatio = float(p.fbHeight) / float(std::max(1u, p.snapVrFrameHeight));
+                                triangles.screenScale = { p.snapVrPlaneSx, p.snapVrPlaneSy * heightRatio };
+                                triangles.screenOffset.x = halfPixelOffset.x + p.snapVrPlaneTx;
+                                triangles.screenOffset.y = halfPixelOffset.y + p.snapVrPlaneSy * (1.0f - heightRatio) + p.snapVrPlaneTy;
+                            }
                             break;
                         }
                         case Projection::Type::None:
@@ -2141,6 +2224,12 @@ namespace RT64 {
                         if (usesViewport) {
                             triangles.scissor = viewportScissorIntersection(viewportClip, triangles.scissor);
                         }
+                        // Pokemon Snap port, the headset: no scissor but the
+                        // eye's whole target.
+                        if (snapVrEyePass) {
+                            triangles.scissor = RenderRect(0, 0, int32_t(p.targetWidth), int32_t(p.targetHeight));
+                        }
+
                         if (snapDrawTrace) {
                             snapDrawTraceLine("  call %u type %d tris %u scissor (%d,%d)-(%d,%d) callRect (%d,%d)-(%d,%d) origins %u/%u testZ %d indexStart %u rect (%d,%d)-(%d,%d)",
                                 d, int(instanceDrawCall.type), call.callDesc.triangleCount,

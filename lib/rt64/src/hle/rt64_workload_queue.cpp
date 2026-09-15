@@ -420,7 +420,42 @@ namespace RT64 {
         rendererCPUProfiler.start();
 
         const bool aspectRatioAdjustment = (abs(workloadConfig.aspectRatioScale - 1.0f) > 1e-6f);
-        const bool processProjections = aspectRatioAdjustment || prevFrame.matched|| curFrame.isDebuggerCameraEnabled(*this);
+        // Pokemon Snap port, the headset (rt64_snap_vr.h): whether this image
+        // is drawn once more per eye. It is when the session runs, the game
+        // is in a course with its ride camera live, the present thread has
+        // learned the headset's timing, and the eyes can be located for the
+        // time this slot will be shown -- about a tick from now, since the
+        // slots of a tick are drawn as the previous tick's are shown.
+        SnapVR::Interface *snapVr = SnapVR::get();
+        SnapVR::GameCamera snapVrCam;
+        SnapVR::Views snapVrViews;
+        SnapVR::EyeFrame snapVrEyes[2];
+        bool snapVrEyePass = false;
+        uint32_t snapVrEyeW = 0;
+        uint32_t snapVrEyeH = 0;
+        uint32_t snapVrVirtualW = SnapVR::VirtualWidth;
+        uint32_t snapVrVirtualH = 240;
+        snapVrRecord = SnapVR::SubFrame();
+        if ((snapVr != nullptr) && snapVr->active() && (snapVrSubFrame >= 0) && (debuggerRenderer.framebufferIndex < 0)) {
+            snapVr->gameCamera(snapVrCam);
+            SnapVR::Timing snapVrTiming;
+            snapVr->latestTiming(snapVrTiming);
+            snapVrEyeW = snapVr->eyeWidth();
+            snapVrEyeH = snapVr->eyeHeight();
+            if (snapVrCam.worldMode && (snapVrMainColorAddress != 0) && (snapVrTiming.predictedDisplayTime > 0) && (snapVrEyeW > 0) && (snapVrEyeH > 0)) {
+                const int64_t displayTime = snapVrTiming.predictedDisplayTime + snapVrTiming.predictedDisplayPeriod * int64_t(std::max(1u, snapVrFramesPerTick));
+                if (snapVr->locateViews(displayTime, snapVrViews)) {
+                    SnapVR::computeEyeFrames(snapVrCam, snapVrViews, snapVrEyes);
+                    snapVrVirtualH = SnapVR::virtualHeight(snapVrEyeW, snapVrEyeH);
+                    snapVrEyePass = true;
+                }
+            }
+            snapVrRecord.views = snapVrViews;
+            snapVrRecord.worldMode = snapVrCam.worldMode;
+            snapVrRecord.zoomed = snapVrCam.zoomed;
+        }
+
+        const bool processProjections = aspectRatioAdjustment || prevFrame.matched|| curFrame.isDebuggerCameraEnabled(*this) || snapVrEyePass;
         bool uploadProjections = false;
         if (processProjections) {
             ProjectionProcessor::ProcessParams projParams;
@@ -431,6 +466,10 @@ namespace RT64 {
             projParams.curFrameWeight = curFrameWeight;
             projParams.prevFrameWeight = prevFrameWeight;
             projParams.aspectRatioScale = workloadConfig.aspectRatioScale;
+            projParams.snapVrEyes = snapVrEyePass ? snapVrEyes : nullptr;
+            projParams.snapVrCamera = &snapVrCam;
+            projParams.snapVrVirtualWidth = snapVrVirtualW;
+            projParams.snapVrVirtualHeight = snapVrVirtualH;
             projectionProcessor.process(projParams);
             projectionProcessor.upload(projParams);
             uploadProjections = true;
@@ -767,6 +806,39 @@ namespace RT64 {
                 }
             }
 
+            // Pokemon Snap port, the headset: the eye targets of this slot,
+            // sized to the eye, resized with everything else.
+            RenderFramebufferStorage *snapVrEyeStorage[2] = { nullptr, nullptr };
+            RenderFramebufferKey snapVrEyeKeys[2];
+            snapVrEyeFramebuffers[0].clear();
+            snapVrEyeFramebuffers[1].clear();
+            if (snapVrEyePass) {
+                for (uint32_t e = 0; (e < 2) && snapVrEyePass; e++) {
+                    auto &ring = ext.sharedResources->snapVrEyeColorTargets[e];
+                    auto &depth = ext.sharedResources->snapVrEyeDepthTargets[e];
+                    if (uint32_t(snapVrSubFrame) >= ring.size()) {
+                        snapVrEyePass = false;
+                        break;
+                    }
+                    if (ring[snapVrSubFrame] == nullptr) {
+                        ring[snapVrSubFrame] = std::make_unique<RenderTarget>(0xFEED0000u + e * 0x100u + uint32_t(snapVrSubFrame), Framebuffer::Type::Color, targetManager.multisampling, targetManager.usesHDR);
+                    }
+                    if (depth == nullptr) {
+                        depth = std::make_unique<RenderTarget>(0xFEEE0000u + e, Framebuffer::Type::Depth, targetManager.multisampling, targetManager.usesHDR);
+                    }
+                    RenderTarget *color = ring[snapVrSubFrame].get();
+                    if (color->resize(ext.workloadGraphicsWorker, snapVrEyeW, snapVrEyeH)) {
+                        resizedTargets.emplace(color);
+                    }
+                    if (depth->resize(ext.workloadGraphicsWorker, snapVrEyeW, snapVrEyeH)) {
+                        resizedTargets.emplace(depth.get());
+                    }
+                    snapVrEyeKeys[e].colorTargetKey = RenderTargetKey(color->addressForName, snapVrEyeW, 2, Framebuffer::Type::Color);
+                    snapVrEyeKeys[e].depthTargetKey = RenderTargetKey(depth->addressForName, snapVrEyeW, 2, Framebuffer::Type::Depth);
+                    snapVrEyeKeys[e].modifierKey = 0xEE00u + e;
+                }
+            }
+
             for (RenderTarget *renderTarget : resizedTargets) {
                 renderFramebufferManager->destroyAllWithRenderTarget(renderTarget);
             }
@@ -865,6 +937,69 @@ namespace RT64 {
                 }
                 
                 gameCallCursor += fbPair.gameCallCount;
+            }
+
+            // Pokemon Snap port, the headset: every pass that draws into the
+            // picture the screen shows is added again for each eye, after the
+            // picture's own passes so their framebuffer indices stand.
+            if (snapVrEyePass) {
+                for (uint32_t e = 0; e < 2; e++) {
+                    snapVrEyeStorage[e] = &renderFramebufferManager->get(snapVrEyeKeys[e],
+                        ext.sharedResources->snapVrEyeColorTargets[e][snapVrSubFrame].get(), ext.sharedResources->snapVrEyeDepthTargets[e].get());
+                }
+                const float snapVrFrameW = (workload.viFbSize.x > 0) ? float(workload.viFbSize.x) : 320.0f;
+                const float snapVrFrameH = (workload.viFbSize.y > 0) ? float(workload.viFbSize.y) : 240.0f;
+                for (uint32_t f = 0; f < fbPairCount; f++) {
+                    const FramebufferPair &fbPair = workload.fbPairs[f];
+                    if ((fbPair.colorImage.address != snapVrMainColorAddress) || fbPair.fastPaths.clearDepthOnly) {
+                        continue;
+                    }
+                    if (!getTargetsFromPair(f)) {
+                        continue;
+                    }
+                    for (uint32_t e = 0; e < 2; e++) {
+                        const SnapVR::EyeFrame &ef = snapVrEyes[e];
+                        FramebufferRenderer::DrawParams eyeParams;
+                        eyeParams.worker = ext.workloadGraphicsWorker;
+                        eyeParams.fbStorage = snapVrEyeStorage[e];
+                        eyeParams.curWorkload = &workload;
+                        eyeParams.fbPairIndex = f;
+                        eyeParams.fbWidth = snapVrVirtualW;
+                        eyeParams.fbHeight = snapVrVirtualH;
+                        eyeParams.targetWidth = snapVrEyeW;
+                        eyeParams.targetHeight = snapVrEyeH;
+                        eyeParams.rasterShaderCache = ext.rasterShaderCache;
+                        eyeParams.resolutionScale = hlslpp::float2(float(snapVrEyeW) / float(snapVrVirtualW), float(snapVrEyeH) / float(snapVrVirtualH));
+                        eyeParams.aspectRatioSource = 1.0f;
+                        eyeParams.aspectRatioTarget = 1.0f;
+                        eyeParams.extAspectPercentage = 0.0f;
+                        eyeParams.horizontalMisalignment = 0.0f;
+                        eyeParams.presetScene = curFrame.presetScene;
+                        eyeParams.rtEnabled = false;
+                        eyeParams.submissionFrame = workload.submissionFrame;
+                        eyeParams.deltaTimeMs = deltaTimeMs;
+                        eyeParams.ubershadersOnly = ubershadersOnly;
+                        eyeParams.postBlendNoise = workloadConfig.postBlendNoise;
+                        eyeParams.postBlendNoiseNegative = workloadConfig.postBlendNoiseNegative;
+                        eyeParams.maxGameCall = fbPair.gameCallCount;
+                        eyeParams.snapRectWeight = curFrameWeight;
+                        eyeParams.snapVrEye = int32_t(e);
+                        eyeParams.snapVrSkip2D = snapVrCam.zoomed;
+                        eyeParams.snapVrFrameWidth = uint32_t(snapVrFrameW);
+                        eyeParams.snapVrFrameHeight = uint32_t(snapVrFrameH);
+                        eyeParams.snapVrPlaneSx = ef.planeSx;
+                        eyeParams.snapVrPlaneSy = ef.planeSy;
+                        eyeParams.snapVrPlaneTx = ef.planeTx;
+                        eyeParams.snapVrPlaneTy = ef.planeTy;
+                        eyeParams.snapVrRectAx = ef.planeSx * float(snapVrEyeW) / snapVrFrameW;
+                        eyeParams.snapVrRectBx = (ef.planeTx + 1.0f - ef.planeSx) * float(snapVrEyeW) * 0.5f;
+                        eyeParams.snapVrRectAy = ef.planeSy * float(snapVrEyeH) / snapVrFrameH;
+                        eyeParams.snapVrRectBy = (1.0f - ef.planeSy - ef.planeTy) * float(snapVrEyeH) * 0.5f;
+                        snapVrEyeFramebuffers[e].push_back(framebufferRenderer->framebufferCount);
+                        framebufferRenderer->addFramebuffer(eyeParams);
+                    }
+                }
+                snapVrRecord.eyesRendered = !snapVrEyeFramebuffers[0].empty() && !snapVrEyeFramebuffers[1].empty();
             }
 
             // Create all GPU tile mappings and upload them.
@@ -1110,6 +1245,25 @@ namespace RT64 {
                 
                 fbManager.recordOperations(ext.workloadGraphicsWorker, &workload.fbChangePool, &workload.fbStorage, ext.shaderLibrary, ext.textureCache,
                     fbPair.endFbOperations, targetManager, fixedResScale, f, workload.submissionFrame);
+            }
+
+            // Pokemon Snap port, the headset: the frame once more per eye --
+            // the RSP pass with the eye's matrices, then the picture's passes
+            // into the eye's target, cleared first, resolved after.
+            if (snapVrEyePass && snapVrRecord.eyesRendered) {
+                for (uint32_t e = 0; e < 2; e++) {
+                    RenderTarget *eyeColor = snapVrEyeStorage[e]->colorTarget;
+                    RenderTarget *eyeDepth = snapVrEyeStorage[e]->depthTarget;
+                    eyeColor->clearColorTarget(ext.workloadGraphicsWorker);
+                    eyeDepth->clearDepthTarget(ext.workloadGraphicsWorker);
+                    rspProcessor->recordCommandList(ext.workloadGraphicsWorker, ext.shaderLibrary, &workload.outputBuffers, int32_t(e));
+                    for (uint32_t eyeIndex : snapVrEyeFramebuffers[e]) {
+                        framebufferRenderer->recordFramebuffer(ext.workloadGraphicsWorker, eyeIndex);
+                    }
+                    eyeColor->markForResolve();
+                    eyeColor->resolveTarget(ext.workloadGraphicsWorker, ext.shaderLibrary);
+                    ext.workloadGraphicsWorker->commandList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(eyeColor->getResolvedTexture(), RenderTextureLayout::SHADER_READ));
+                }
             }
 
             ext.workloadGraphicsWorker->commandList->writeTimestamp(queryPool.get(), 1);
@@ -1625,6 +1779,23 @@ namespace RT64 {
                     }
                 }
                 
+                // Pokemon Snap port, the headset: a record and an eye target
+                // per slot of this tick.
+                if (SnapVR::get() != nullptr) {
+                    std::scoped_lock<std::mutex> interpolatedLock(ext.sharedResources->interpolatedMutex);
+                    const size_t slots = std::max<size_t>(1, displayFrames);
+                    auto &subs = ext.sharedResources->snapVrSubFrames;
+                    if (subs.size() < slots) {
+                        subs.resize(slots);
+                    }
+                    for (uint32_t e = 0; e < 2; e++) {
+                        auto &ring = ext.sharedResources->snapVrEyeColorTargets[e];
+                        if (ring.size() < slots) {
+                            ring.resize(slots);
+                        }
+                    }
+                }
+
                 // The console never displayed a cut's transit frame: its draw
                 // overran and gtl held the previous image for a tick. Matched
                 // here by presenting the previous frame's image for this
@@ -1936,6 +2107,13 @@ namespace RT64 {
                     // RDRAM exactly as the game computed it), and its
                     // presented image is then replaced with the previous
                     // frame's before the present thread is told about it.
+                    // Pokemon Snap port, the headset: the slot this image is
+                    // shown from and the picture the screen shows.
+                    snapVrSubFrame = int32_t(frame);
+                    snapVrMainColorAddress = interpolationTargetKey.isEmpty() ? 0u : interpolationTargetKey.address;
+                    snapVrFramesPerTick = displayFrames;
+                    snapVrRecord = SnapVR::SubFrame();
+
                     const bool heldSubFrame = snapCutHold && (frame > 0) &&
                         threadHoldCopy(snapHoldScratch.get(), RenderTargetKey(), overrideTarget, RenderTargetKey());
                     if (!heldSubFrame) {
@@ -1953,6 +2131,17 @@ namespace RT64 {
                         threadRenderFrame(curFrame, prevFrame, workloadConfig, workload.debuggerRenderer, workload.debuggerCamera, curFrameWeight, prevFrameWeight, deltaTimeMs,
                             interpolationTargetKey, interpolationTargetFbPairIndex, overrideTarget, overrideModifier, velocityUploaderUsed, uploadExtras, tileInterpolationUsed, lookAtInterpolationUsed,
                             interpolationSubFrame);
+                    }
+
+                    // Pokemon Snap port, the headset: what this slot holds,
+                    // for the present thread, before the slot is declared
+                    // available.
+                    if (SnapVR::get() != nullptr) {
+                        std::scoped_lock<std::mutex> interpolatedLock(ext.sharedResources->interpolatedMutex);
+                        auto &subs = ext.sharedResources->snapVrSubFrames;
+                        if (frame < subs.size()) {
+                            subs[frame] = snapVrRecord;
+                        }
                     }
 
                     if (snapCutHold && (frame == 0)) {

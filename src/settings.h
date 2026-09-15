@@ -202,6 +202,20 @@ struct Settings {
     // offered. The Controls page's Slow Motion row (mailbox byte 0x80C0006D:
     // 0 Off, 1 half, 2 quarter) and the file both set it.
     int   slow_motion_speed = 1;
+    // The headset (src/vr_openxr.cpp): off as shipped. On, the port opens an
+    // OpenXR session on the active runtime and draws each frame once more
+    // per eye; SNAP_VR=1 or 0 in the environment overrides the file.
+    bool  vr                = false;
+    // The game's units per metre, for the eyes' separation and the head's
+    // movement: the ride camera sits a hundred units above the cart, so
+    // eighty puts the eyes at a seated height. 20 to 400.
+    float vr_world_scale    = 80.0f;
+    // The eye images' size as a share of what the runtime recommends: 1 is
+    // its size, 1.5 sharper, 0.75 cheaper. 0.5 to 2.
+    float vr_render_scale   = 1.0f;
+    // The screen the menus and the flat picture are shown on, three metres
+    // ahead of the seat: its width in metres. 1 to 8.
+    float vr_screen_width   = 2.4f;
     // Multiplies the angle per pixel: 1 is a full turn in about 2500
     // pixels, 2 twice as quick, 0.5 half. Bounded to 0.1 .. 10 where read.
     float mouse_sensitivity = 1.0f;

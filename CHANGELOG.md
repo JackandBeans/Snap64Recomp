@@ -1,5 +1,29 @@
 # Changelog
 
+## 1.0.9 -- unreleased
+
+* The headset: with `vr: true` in the settings file (or `SNAP_VR=1`), the
+  port opens an OpenXR session on the PC's active runtime and draws for a
+  VR headset. The game's own camera follows the head: each tick the head's
+  yaw and pitch are written into the variables the cartridge's camera code
+  reads from the Control Stick (the two ride camera processes are wrapped,
+  src/vr_game.cpp), so photos, scores and reactions are the game's; the
+  renderer draws each frame once more per eye with the ride camera's view
+  and projection replaced by the eye's own (lib/rt64/src/hle/rt64_snap_vr.h,
+  the projection processor, the RSP pass and the framebuffer renderer),
+  lays the flat draws on a plane two metres ahead, shows the picture as a
+  4:3 screen outside a course and as a viewfinder window while zoomed in,
+  and paces on the headset's refresh rate; the controllers are an OpenXR
+  action set bound for Touch, Index and Vive controllers. The cartridge's
+  on-screen cull is widened for drawing while the headset shows the world
+  and kept for the photo's list of subjects (patches/src/widescreen_cull_patch.c).
+  Windows and Direct3D 12 only; off, nothing changes. The OpenXR loader
+  (Khronos, Apache 2.0) is built into the executable from `lib/OpenXR-SDK`,
+  fetched by `tools/fetch_deps.py`. Verified on this machine without a
+  headset: the port names the runtime, reports no headset and runs the
+  scoring replay flat with the same 45 photos; the release suite's scoring
+  check passed on the build. Not yet seen in a headset.
+
 ## 1.0.8 -- 2026-09-15
 
 * Fast forward: hold Tab, or the pad's right shoulder button, and the game

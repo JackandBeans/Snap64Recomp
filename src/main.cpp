@@ -43,6 +43,7 @@
 #include "paths.h"
 #include "rom_picker.h"
 #include "fast_forward.h"
+#include "vr_openxr.h"
 #include "snap_station.h"
 #include "steam_deck.h"
 namespace snap { extern uint8_t* g_rdram; }
@@ -290,6 +291,10 @@ static void update_gfx(void* /*gfx_data*/) {
     // The fast-forward key: the runtime's clocks, the audio and the
     // renderer's interpolation switch follow it (src/fast_forward.cpp).
     snap::fast_forward_tick();
+
+    // The headset's tick (src/vr_openxr.cpp): the mailbox byte the cull
+    // patch reads follows the world mode.
+    snap::vr_tick(snap::g_rdram);
 
     // The Snap Station's relaunches come back at the window state the run
     // had. A boot is always windowed (settings.cpp), so the return to

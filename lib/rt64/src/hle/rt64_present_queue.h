@@ -12,6 +12,8 @@
 #include "rt64_present.h"
 #include "rt64_shared_queue_resources.h"
 
+#include <unordered_map>
+
 #define PRESENT_QUEUE_SIZE 4
 
 namespace RT64 {
@@ -66,6 +68,19 @@ namespace RT64 {
         // creation default.
         bool swapChainVsyncEnabled = false;
         bool swapChainVsyncKnown = false;
+        // Pokemon Snap port, the headset (rt64_snap_vr.h): the framebuffers
+        // made on the runtime's images, the copy descriptors per source
+        // target (remade when the target's texture is), the rate the
+        // renderer was last told, and whether the last present went to it.
+        struct SnapVrCopySet {
+            std::unique_ptr<TextureCopyDescriptorSet> set;
+            uint64_t revision = 0;
+        };
+        std::unordered_map<const RenderTexture *, std::unique_ptr<RenderFramebuffer>> snapVrFramebuffers;
+        std::unordered_map<const RenderTarget *, SnapVrCopySet> snapVrCopySets;
+        uint32_t snapVrRate = 0;
+        bool snapVrWasLive = false;
+        void snapVrCopy(RenderTarget *src, RenderTexture *dst, uint32_t dstWidth, uint32_t dstHeight);
 
         PresentQueue();
         ~PresentQueue();

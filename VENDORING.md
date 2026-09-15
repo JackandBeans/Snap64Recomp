@@ -27,6 +27,7 @@ N64ModernRuntime's is not.
 | `lib/rt64/src/contrib/` | **no** (ignored), except the port's three plume files (below) | RT64's third-party trees, 396 MB; fetched by `tools/fetch_deps.py` at the pins below |
 | `lib/SDL` | no (ignored) | fetched by `tools/fetch_deps.py` at the pin below (the developer's copy is a full clone with a live `.git`) |
 | `lib/DirectX-Headers` | no (ignored) | fetched by `tools/fetch_deps.py` at the pin below (same) |
+| `lib/OpenXR-SDK` | no (ignored) | fetched by `tools/fetch_deps.py` at the pin below; the OpenXR loader, built into the Windows executable for the headset |
 
 ## Recovered pins
 
@@ -40,6 +41,7 @@ pinned in BUILDING.md (N64Recomp `ffb39cd`, decomp `3a236dc`).
 | `lib/rt64` (fork base; not fetched, tracked) | https://github.com/rt64/rt64.git | `a012a2301908b130f9251dd3ec0aaeebf9678d80` | main, 2026-07-22, "Improve synchronization detection for tiles being sampled. (#254)" | high (inferred from content; no gitlink was ever recorded) |
 | `lib/SDL` | https://github.com/libsdl-org/SDL.git | `fa24d868ac2f8fd558e4e914c9863411245db8fd` | `release-2.30.11` | exact |
 | `lib/DirectX-Headers` | https://github.com/microsoft/DirectX-Headers.git | `ee479f0bd5f7b884f202bcf0c3f076cc050dd256` | `v1.619.5` | exact |
+| `lib/OpenXR-SDK` | https://github.com/KhronosGroup/OpenXR-SDK.git | `f2448a8797c85814aa892efc1ab8707900fbcc78` | `release-1.1.63`, 2026-09-01 | exact |
 | `contrib/ddspp` | https://github.com/redorav/ddspp.git | `21ca0c4319dfd5a161c5f2a0c406e8f60194ea6c` | tag 1.11, 2024-08-07 | exact |
 | `contrib/dxc` | https://github.com/rt64/dxc-bin | `cc15e715ee378a4f675b335bd1071ff105873fc8` | 2024-05-16, "Add x64/macos v1.8.2403.2"; the binaries' origins are below. `bin/x64/dxil.dll` is then **replaced** by the file of Microsoft's release v1.7.2308 (below, "dxc") | exact |
 | `contrib/hlslpp` | https://github.com/redorav/hlslpp | `6f5274c66132e8f951c400103d897582b8f21491` | tag 3.6, 2024-12-22 | exact |

@@ -4,6 +4,8 @@
 
 #include "rt64_projection_processor.h"
 
+#include <cstdio>
+
 #include "common/rt64_math.h"
 #include "hle/rt64_workload_queue.h"
 
@@ -48,6 +50,95 @@ namespace RT64 {
 
         for (size_t s = 0; s < p.curFrame->orthographicScenes.size(); s++) {
             processScene(p, p.curFrame->orthographicScenes[s], s);
+        }
+
+        // Pokemon Snap port, the headset.
+        if ((p.snapVrEyes != nullptr) && (p.snapVrCamera != nullptr)) {
+            snapVrProcess(p);
+        }
+    }
+
+    // Pokemon Snap port, the headset: for each eye, a copy of this
+    // sub-frame's view-projections with the ride camera's replaced by the
+    // eye's own and every other projection carried onto the plane in front
+    // of the head, and a copy of the viewports with every one opened to the
+    // eye's whole picture (rt64_snap_vr.h).
+    void ProjectionProcessor::snapVrProcess(const ProcessParams &p) {
+        const SnapVR::GameCamera &cam = *p.snapVrCamera;
+        for (uint32_t w : p.curFrame->workloads) {
+            Workload &workload = p.workloadQueue->workloads[w];
+            DrawData &drawData = workload.drawData;
+            const size_t count = drawData.modViewProjTransforms.size();
+            uint32_t rideCount = 0;
+            drawData.snapVrRideTransforms.assign(count, 0);
+            for (uint32_t e = 0; e < 2; e++) {
+                drawData.snapVrViewProjTransforms[e] = drawData.modViewProjTransforms;
+                drawData.snapVrRspViewports[e] = drawData.modRspViewports;
+            }
+
+            const float frameWidth = (workload.viFbSize.x > 0) ? float(workload.viFbSize.x) : 320.0f;
+            const float frameHeight = (workload.viFbSize.y > 0) ? float(workload.viFbSize.y) : 240.0f;
+            for (uint32_t f = 0; f < workload.fbPairCount; f++) {
+                const FramebufferPair &fbPair = workload.fbPairs[f];
+                for (uint32_t pr = 0; pr < fbPair.projectionCount; pr++) {
+                    const Projection &proj = fbPair.projections[pr];
+                    const uint32_t t = proj.transformsIndex;
+                    if ((t >= count) || (proj.type == Projection::Type::None)) {
+                        continue;
+                    }
+
+                    // The game's own camera this frame, before interpolation,
+                    // is what the port read from the game's memory.
+                    const bool ride = (proj.type == Projection::Type::Perspective) && (t < drawData.viewTransforms.size()) &&
+                        SnapVR::isRideView(drawData.viewTransforms[t], cam);
+                    const interop::RSPViewport original = (t < drawData.modRspViewports.size()) ? drawData.modRspViewports[t] : interop::RSPViewport::identity();
+                    for (uint32_t e = 0; e < 2; e++) {
+                        const SnapVR::EyeFrame &eye = p.snapVrEyes[e];
+                        if (ride) {
+                            drawData.snapVrViewProjTransforms[e][t] = eye.viewProj;
+                        }
+                        else {
+                            drawData.snapVrViewProjTransforms[e][t] = hlslpp::mul(drawData.modViewProjTransforms[t], SnapVR::planeMatrix(eye, original, frameWidth, frameHeight));
+                        }
+
+                        if (t < drawData.snapVrRspViewports[e].size()) {
+                            drawData.snapVrRspViewports[e][t] = SnapVR::eyeViewport(original, p.snapVrVirtualWidth, p.snapVrVirtualHeight);
+                        }
+                    }
+
+                    if (ride) {
+                        drawData.snapVrRideTransforms[t] = 1;
+                        rideCount++;
+                    }
+                }
+            }
+
+            // A world that never finds its camera is the fault the log has
+            // to name: every perspective view's eye against the game's, a
+            // few times, not every frame.
+            if (rideCount == 0) {
+                static uint32_t snapVrUnmatchedLogged = 0;
+                if (snapVrUnmatchedLogged < 6) {
+                    snapVrUnmatchedLogged++;
+                    fprintf(stdout, "[SNAP-VR] world mode, no projection matches the ride camera: game eye (%.1f %.1f %.1f) at (%.1f %.1f %.1f)\n",
+                        cam.eye[0], cam.eye[1], cam.eye[2], cam.at[0], cam.at[1], cam.at[2]);
+                    uint32_t listed = 0;
+                    for (uint32_t f = 0; (f < workload.fbPairCount) && (listed < 6); f++) {
+                        const FramebufferPair &fbPair = workload.fbPairs[f];
+                        for (uint32_t pr = 0; (pr < fbPair.projectionCount) && (listed < 6); pr++) {
+                            const Projection &proj = fbPair.projections[pr];
+                            if ((proj.type != Projection::Type::Perspective) || (proj.transformsIndex >= drawData.viewTransforms.size())) {
+                                continue;
+                            }
+                            const hlslpp::float3 eye = SnapVR::viewEye(drawData.viewTransforms[proj.transformsIndex]);
+                            fprintf(stdout, "[SNAP-VR]   pair %u proj %u t%u: eye (%.1f %.1f %.1f), %u calls\n", f, pr, proj.transformsIndex,
+                                float(eye.x), float(eye.y), float(eye.z), proj.gameCallCount);
+                            listed++;
+                        }
+                    }
+                    fflush(stdout);
+                }
+            }
         }
     }
 
@@ -233,6 +324,19 @@ namespace RT64 {
             std::pair<size_t, size_t> viewportRange = { 0, drawData.modRspViewports.size() };
             if (viewportRange.second > 0) {
                 uploads.emplace_back(BufferUploader::Upload{ drawData.modRspViewports.data(), viewportRange, sizeof(interop::RSPViewport), RenderBufferFlag::STORAGE, { }, &drawBuffers.rspViewportsBuffer });
+            }
+
+            // Pokemon Snap port, the headset: the eyes' copies, into buffers
+            // of their own that the eye passes bind instead.
+            for (uint32_t e = 0; e < 2; e++) {
+                const auto &eyeTransforms = drawData.snapVrViewProjTransforms[e];
+                const auto &eyeViewports = drawData.snapVrRspViewports[e];
+                if (!eyeTransforms.empty()) {
+                    uploads.emplace_back(BufferUploader::Upload{ eyeTransforms.data(), { 0, eyeTransforms.size() }, sizeof(interop::float4x4), RenderBufferFlag::STORAGE, { }, &drawBuffers.snapVrViewProjTransformsBuffer[e] });
+                }
+                if (!eyeViewports.empty()) {
+                    uploads.emplace_back(BufferUploader::Upload{ eyeViewports.data(), { 0, eyeViewports.size() }, sizeof(interop::RSPViewport), RenderBufferFlag::STORAGE, { }, &drawBuffers.snapVrRspViewportsBuffer[e] });
+                }
             }
         }
 

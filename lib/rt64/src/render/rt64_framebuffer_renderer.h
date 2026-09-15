@@ -156,6 +156,27 @@ namespace RT64 {
             // Pokemon Snap port: how far this image sits between the previous
             // drawn frame and the current one, for moving tagged rectangles.
             float snapRectWeight;
+            // Pokemon Snap port, the headset (rt64_snap_vr.h): -1 for the
+            // game's own picture; 0 or 1 for an eye's replay of this pass.
+            // The replay draws the whole target through the eye's viewport,
+            // takes no widening or cropping, and lays the flat draws on the
+            // plane in front of the head: rectangles through the affine map
+            // x' = ax * x + bx, y' = ay * y + by from the picture's pixels to
+            // the target's, raw triangles through the plane's own scale and
+            // offset in normalized coordinates. While the viewfinder window
+            // shows the picture (skip2D), the flat draws are left out.
+            int32_t snapVrEye = -1;
+            bool snapVrSkip2D = false;
+            uint32_t snapVrFrameWidth = 320;
+            uint32_t snapVrFrameHeight = 240;
+            float snapVrRectAx = 1.0f;
+            float snapVrRectBx = 0.0f;
+            float snapVrRectAy = 1.0f;
+            float snapVrRectBy = 0.0f;
+            float snapVrPlaneSx = 1.0f;
+            float snapVrPlaneSy = 1.0f;
+            float snapVrPlaneTx = 0.0f;
+            float snapVrPlaneTy = 0.0f;
         };
 
         FramebufferRenderer(RenderWorker *worker, bool rtSupport, UserConfiguration::GraphicsAPI graphicsAPI, const ShaderLibrary *shaderLibrary);

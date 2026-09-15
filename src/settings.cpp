@@ -157,6 +157,10 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
             const int slow = j.value("slow_motion_speed", s.slow_motion_speed);
             s.slow_motion_speed = (slow < 2) ? 1 : ((slow < 4) ? 2 : 4);
         }
+        s.vr                 = j.value("vr", s.vr);
+        s.vr_world_scale     = std::clamp(j.value("vr_world_scale", s.vr_world_scale), 20.0f, 400.0f);
+        s.vr_render_scale    = std::clamp(j.value("vr_render_scale", s.vr_render_scale), 0.5f, 2.0f);
+        s.vr_screen_width    = std::clamp(j.value("vr_screen_width", s.vr_screen_width), 1.0f, 8.0f);
         s.mouse_sensitivity  = std::clamp(j.value("mouse_sensitivity", s.mouse_sensitivity), 0.1f, 10.0f);
         s.mouse_invert_y     = j.value("mouse_invert_y", s.mouse_invert_y);
         s.mouse_zoom_speed   = std::clamp(j.value("mouse_zoom_speed", s.mouse_zoom_speed), 0.25f, 1.0f);
@@ -188,7 +192,8 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         s_fields_missing = !j.contains("gyro_aim") || !j.contains("pad_enabled") ||
                            !j.contains("keys_help") || !j.contains("pad_layout") ||
                            !j.contains("pad_sticks_swapped") || !j.contains("pad_deadzone") ||
-                           !j.contains("fast_forward_speed") || !j.contains("slow_motion_speed");
+                           !j.contains("fast_forward_speed") || !j.contains("slow_motion_speed") ||
+                           !j.contains("vr");
         out = s;
         return SettingsRead::Ok;
     } catch (const std::exception& e) {
@@ -370,6 +375,10 @@ bool save_settings() {
         {"pad_deadzone",          copy.pad_deadzone},
         {"fast_forward_speed",    copy.fast_forward_speed},
         {"slow_motion_speed",     copy.slow_motion_speed},
+        {"vr",                    copy.vr},
+        {"vr_world_scale",        copy.vr_world_scale},
+        {"vr_render_scale",       copy.vr_render_scale},
+        {"vr_screen_width",       copy.vr_screen_width},
         {"mouse_sensitivity",     copy.mouse_sensitivity},
         {"mouse_invert_y",        copy.mouse_invert_y},
         {"mouse_zoom_speed",      copy.mouse_zoom_speed},

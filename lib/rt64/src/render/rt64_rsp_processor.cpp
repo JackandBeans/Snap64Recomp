@@ -12,6 +12,8 @@ namespace RT64 {
     RSPProcessor::RSPProcessor(RenderDevice *device) {
         processSet = std::make_unique<RSPProcessDescriptorSet>(device);
         modifySet = std::make_unique<RSPModifyDescriptorSet>(device);
+        snapVrProcessSet[0] = std::make_unique<RSPProcessDescriptorSet>(device);
+        snapVrProcessSet[1] = std::make_unique<RSPProcessDescriptorSet>(device);
     }
 
     RSPProcessor::~RSPProcessor() { }
@@ -48,13 +50,52 @@ namespace RT64 {
         processSet->setBuffer(processSet->dstTc, p.outputBuffers->genTexCoordBuffer.buffer.get(), RenderBufferStructuredView(sizeof(float) * 2));
         processSet->setBuffer(processSet->dstCol, p.outputBuffers->shadedColBuffer.buffer.get(), RenderBufferStructuredView(sizeof(float) * 4));
 
+        // Pokemon Snap port, the headset: an eye's set differs from the
+        // picture's in the two buffers the projection processor filled for it.
+        for (uint32_t e = 0; e < 2; e++) {
+            RSPProcessDescriptorSet *eyeSet = snapVrProcessSet[e].get();
+            const BufferPair &eyeViewProj = p.drawBuffers->snapVrViewProjTransformsBuffer[e];
+            const BufferPair &eyeViewports = p.drawBuffers->snapVrRspViewportsBuffer[e];
+            if ((eyeSet == nullptr) || (eyeViewProj.get() == nullptr) || (eyeViewports.get() == nullptr)) {
+                continue;
+            }
+
+            eyeSet->setBuffer(eyeSet->srcPos, p.drawBuffers->positionBuffer.get(), p.drawBuffers->positionBuffer.getView(0));
+            eyeSet->setBuffer(eyeSet->srcVel, p.drawBuffers->velocityBuffer.get(), p.drawBuffers->velocityBuffer.getView(0));
+            eyeSet->setBuffer(eyeSet->srcTc, p.drawBuffers->texcoordBuffer.get(), p.drawBuffers->texcoordBuffer.getView(0));
+            eyeSet->setBuffer(eyeSet->srcTcVel, p.drawBuffers->texcoordVelocityBuffer.get(), p.drawBuffers->texcoordVelocityBuffer.getView(0));
+            eyeSet->setBuffer(eyeSet->srcCol, p.drawBuffers->normalColorBuffer.get(), p.drawBuffers->normalColorBuffer.getView(0));
+            eyeSet->setBuffer(eyeSet->srcNorm, p.drawBuffers->normalColorBuffer.get(), p.drawBuffers->normalColorBuffer.getView(1));
+            eyeSet->setBuffer(eyeSet->srcViewProjIndices, p.drawBuffers->viewProjIndicesBuffer.get(), p.drawBuffers->viewProjIndicesBuffer.getView(0));
+            eyeSet->setBuffer(eyeSet->srcWorldIndices, p.drawBuffers->worldIndicesBuffer.get(), p.drawBuffers->worldIndicesBuffer.getView(0));
+            eyeSet->setBuffer(eyeSet->srcFogIndices, p.drawBuffers->fogIndicesBuffer.get(), p.drawBuffers->fogIndicesBuffer.getView(0));
+            eyeSet->setBuffer(eyeSet->srcLightIndices, p.drawBuffers->lightIndicesBuffer.get(), p.drawBuffers->lightIndicesBuffer.getView(0));
+            eyeSet->setBuffer(eyeSet->srcLightCounts, p.drawBuffers->lightCountsBuffer.get(), p.drawBuffers->lightCountsBuffer.getView(0));
+            eyeSet->setBuffer(eyeSet->srcLookAtIndices, p.drawBuffers->lookAtIndicesBuffer.get(), p.drawBuffers->lookAtIndicesBuffer.getView(0));
+            eyeSet->setBuffer(eyeSet->rspViewportVector, eyeViewports.get(), RenderBufferStructuredView(sizeof(interop::RSPViewport)));
+            eyeSet->setBuffer(eyeSet->rspFogVector, p.drawBuffers->rspFogBuffer.get(), RenderBufferStructuredView(sizeof(interop::RSPFog)));
+            eyeSet->setBuffer(eyeSet->rspLightVector, p.drawBuffers->rspLightsBuffer.get(), RenderBufferStructuredView(sizeof(interop::RSPLight)));
+            eyeSet->setBuffer(eyeSet->rspLookAtVector, p.drawBuffers->rspLookAtBuffer.get(), RenderBufferStructuredView(sizeof(interop::RSPLookAt)));
+            eyeSet->setBuffer(eyeSet->viewProjTransforms, eyeViewProj.get(), RenderBufferStructuredView(sizeof(interop::float4x4)));
+            eyeSet->setBuffer(eyeSet->worldTransforms, p.drawBuffers->worldTransformsBuffer.get(), RenderBufferStructuredView(sizeof(interop::float4x4)));
+            eyeSet->setBuffer(eyeSet->dstPos, p.outputBuffers->screenPosBuffer.buffer.get(), RenderBufferStructuredView(sizeof(float) * 4));
+            eyeSet->setBuffer(eyeSet->dstTc, p.outputBuffers->genTexCoordBuffer.buffer.get(), RenderBufferStructuredView(sizeof(float) * 2));
+            eyeSet->setBuffer(eyeSet->dstCol, p.outputBuffers->shadedColBuffer.buffer.get(), RenderBufferStructuredView(sizeof(float) * 4));
+        }
+
         const uint32_t modifyCount = drawData.modifyCount();
         modifyCB.modifyCount = modifyCount;
         modifySet->setBuffer(modifySet->srcModifyPos, p.drawBuffers->modifyPosUintsBuffer.get(), p.drawBuffers->modifyPosUintsBuffer.getView(0));
         modifySet->setBuffer(modifySet->screenPos, p.outputBuffers->screenPosBuffer.buffer.get(), RenderBufferStructuredView(sizeof(float) * 4));
     }
 
-    void RSPProcessor::recordCommandList(RenderWorker *worker, const ShaderLibrary *shaderLibrary, const OutputBuffers *outputBuffers) {
+    void RSPProcessor::recordCommandList(RenderWorker *worker, const ShaderLibrary *shaderLibrary, const OutputBuffers *outputBuffers, int32_t snapVrEye) {
+        // Pokemon Snap port, the headset: an eye's pass binds its own set.
+        RSPProcessDescriptorSet *set = processSet.get();
+        if ((snapVrEye >= 0) && (snapVrEye < 2) && (snapVrProcessSet[snapVrEye] != nullptr)) {
+            set = snapVrProcessSet[snapVrEye].get();
+        }
+
         const uint32_t ThreadGroupSize = 64;
         
         if (processCB.vertexCount > 0) {
@@ -75,7 +116,7 @@ namespace RT64 {
             worker->commandList->setPipeline(shaderLibrary->rspProcess.pipeline.get());
             worker->commandList->setComputePipelineLayout(shaderLibrary->rspProcess.pipelineLayout.get());
             worker->commandList->setComputePushConstants(0, &processCB);
-            worker->commandList->setComputeDescriptorSet(processSet->get(), 0);
+            worker->commandList->setComputeDescriptorSet(set->get(), 0);
             worker->commandList->dispatch(dispatchCount, 1, 1);
             worker->commandList->barriers(RenderBarrierStage::GRAPHICS, afterBarriers, uint32_t(std::size(afterBarriers)));
         }

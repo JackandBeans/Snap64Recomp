@@ -112,6 +112,11 @@ HOOKED = [
     # most recently freed address, so an address alone names two different
     # sprites within a frame of each other.
     'omGObjAddSprite',
+    # The ride camera's two processes, wrapped so the head's turn is written
+    # into the game's own yaw and pitch before each runs, and the camera the
+    # game computed is read after (src/vr_game.cpp).
+    'updateCameraZoomedOut',
+    'updateCameraZoomedIn',
 ]
 
 # Calls inserted INSIDE a recompiled function, at a named guest address.

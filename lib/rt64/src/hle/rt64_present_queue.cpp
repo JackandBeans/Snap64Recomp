@@ -4,6 +4,8 @@
 
 #include "rt64_present_queue.h"
 
+#include "shared/rt64_texture_copy.h"
+
 #include "common/rt64_thread.h"
 #include "rhi/rt64_render_hooks.h"
 
@@ -428,6 +430,49 @@ namespace {
         presentThread = new std::thread(&PresentQueue::threadLoop, this);
     }
 
+    // Pokemon Snap port, the headset: a target's resolved picture drawn into
+    // one of the runtime's images with the copy shader, scaled to it. The
+    // image was wrapped in its render-target state (src/vr_openxr.cpp), so
+    // the write needs no transition and leaves it as it must be returned.
+    void PresentQueue::snapVrCopy(RenderTarget *src, RenderTexture *dst, uint32_t dstWidth, uint32_t dstHeight) {
+        RenderCommandList *commandList = ext.presentGraphicsWorker->commandList.get();
+        src->resolveTarget(ext.presentGraphicsWorker, ext.shaderLibrary);
+
+        SnapVrCopySet &copySet = snapVrCopySets[src];
+        if ((copySet.set == nullptr) || (copySet.revision != src->textureRevision)) {
+            copySet.set = std::make_unique<TextureCopyDescriptorSet>(ext.device);
+            copySet.set->setTexture(copySet.set->gInput, src->getResolvedTexture(), RenderTextureLayout::SHADER_READ, src->getResolvedTextureView());
+            copySet.revision = src->textureRevision;
+        }
+
+        std::unique_ptr<RenderFramebuffer> &framebuffer = snapVrFramebuffers[dst];
+        if (framebuffer == nullptr) {
+            const RenderTexture *attachment = dst;
+            framebuffer = ext.device->createFramebuffer(RenderFramebufferDesc(&attachment, 1));
+        }
+
+        RenderTextureBarrier copyBarriers[] = {
+            RenderTextureBarrier(src->getResolvedTexture(), RenderTextureLayout::SHADER_READ),
+            RenderTextureBarrier(dst, RenderTextureLayout::COLOR_WRITE)
+        };
+        commandList->barriers(RenderBarrierStage::GRAPHICS, copyBarriers, uint32_t(std::size(copyBarriers)));
+        commandList->setFramebuffer(framebuffer.get());
+
+        interop::TextureCopyCB copyCB;
+        copyCB.uvScroll = { 0.0f, 0.0f };
+        copyCB.uvScale = { float(src->width), float(src->height) };
+        copyCB.boxSize = { 1, 1 };
+        const ShaderRecord &textureCopy = ext.shaderLibrary->textureCopy;
+        commandList->setPipeline(textureCopy.pipeline.get());
+        commandList->setGraphicsPipelineLayout(textureCopy.pipelineLayout.get());
+        commandList->setVertexBuffers(0, nullptr, 0, nullptr);
+        commandList->setViewports(RenderViewport(0.0f, 0.0f, float(dstWidth), float(dstHeight)));
+        commandList->setScissors(RenderRect(0, 0, int32_t(dstWidth), int32_t(dstHeight)));
+        commandList->setGraphicsDescriptorSet(copySet.set->get(), 0);
+        commandList->setGraphicsPushConstants(0, &copyCB);
+        commandList->drawInstanced(3, 1, 0, 0);
+    }
+
     void PresentQueue::threadPresent(const Present &present, bool &swapChainValid) {
         // Stall hunt, pre-loop half: everything before the per-frame loop
         // can execute and fence on the present worker (fb operations, the
@@ -719,6 +764,85 @@ namespace {
                 }
             }
 
+            // Pokemon Snap port, the headset (rt64_snap_vr.h): this image goes
+            // to it first. The headset paces the frame; the eyes drawn for
+            // this slot are copied into its images and submitted as the
+            // world, the picture itself as a window in front of the eyes
+            // while zoomed in or as the screen when there is no world. The
+            // desktop window follows, unsynchronized, as a mirror.
+            SnapVR::Interface *snapVr = SnapVR::get();
+            bool snapVrFrame = false;
+            if ((snapVr != nullptr) && snapVr->active()) {
+                SnapVR::Timing snapVrTiming;
+                if (snapVr->frameWait(snapVrTiming)) {
+                    snapVrFrame = true;
+                    if ((snapVrTiming.refreshRate > 0) && (snapVrTiming.refreshRate != snapVrRate)) {
+                        snapVrRate = snapVrTiming.refreshRate;
+                        ext.sharedResources->setSwapChainRate(snapVrRate);
+                        fprintf(stdout, "[SNAP-VR] headset rate %u Hz: the renderer targets it\n", snapVrRate);
+                        fflush(stdout);
+                    }
+
+                    SnapVR::SubFrame snapVrSub;
+                    {
+                        std::scoped_lock<std::mutex> interpolatedLock(ext.sharedResources->interpolatedMutex);
+                        const auto &subs = ext.sharedResources->snapVrSubFrames;
+                        if (uint32_t(i) < subs.size()) {
+                            snapVrSub = subs[i];
+                        }
+                    }
+
+                    if (snapVr->frameBegin()) {
+                        RenderTarget *eyeTargets[2] = { nullptr, nullptr };
+                        bool eyesReady = snapVrSub.eyesRendered && snapVrSub.worldMode && snapVrSub.views.valid;
+                        if (eyesReady) {
+                            std::scoped_lock<std::mutex> interpolatedLock(ext.sharedResources->interpolatedMutex);
+                            for (uint32_t e = 0; e < 2; e++) {
+                                const auto &ring = ext.sharedResources->snapVrEyeColorTargets[e];
+                                eyeTargets[e] = (uint32_t(i) < ring.size()) ? ring[i].get() : nullptr;
+                                eyesReady = eyesReady && (eyeTargets[e] != nullptr) && !eyeTargets[e]->isEmpty();
+                            }
+                        }
+
+                        const bool showScreen = (colorTarget != nullptr) && (!eyesReady || snapVrSub.zoomed);
+                        RenderCommandList *snapVrList = ext.presentGraphicsWorker->commandList.get();
+                        snapVrList->begin();
+                        bool eyesCopied = false;
+                        if (eyesReady) {
+                            eyesCopied = true;
+                            for (uint32_t e = 0; e < 2; e++) {
+                                RenderTexture *image = snapVr->acquireEyeImage(e);
+                                if (image == nullptr) {
+                                    eyesCopied = false;
+                                    break;
+                                }
+                                snapVrCopy(eyeTargets[e], image, snapVr->eyeWidth(), snapVr->eyeHeight());
+                            }
+                        }
+                        bool screenCopied = false;
+                        float screenAspect = 4.0f / 3.0f;
+                        if (showScreen) {
+                            RenderTexture *image = snapVr->acquireScreenImage(colorTarget->width, colorTarget->height);
+                            if (image != nullptr) {
+                                const uint32_t screenW = std::min(colorTarget->width, uint32_t(snapVr->eyeWidth() * 4u));
+                                snapVrCopy(colorTarget, image, colorTarget->width, colorTarget->height);
+                                screenAspect = float(colorTarget->width) / float(std::max(1u, colorTarget->height));
+                                screenCopied = true;
+                                (void)screenW;
+                            }
+                        }
+                        snapVrList->end();
+                        ext.presentGraphicsWorker->execute();
+                        ext.presentGraphicsWorker->wait();
+                        for (uint32_t e = 0; e < 2; e++) {
+                            snapVr->releaseEyeImage(e);
+                        }
+                        snapVr->releaseScreenImage();
+                        snapVr->frameEnd(snapVrSub.views, eyesCopied, screenCopied, eyesCopied, screenAspect);
+                    }
+                }
+            }
+
             snapPTInterp = std::chrono::steady_clock::now();
             uint32_t swapChainIndex = 0;
             const bool presentFrame = (i < framesToPresent) && swapChainValid;
@@ -975,7 +1099,7 @@ namespace {
                 // on again, and presents free-ran unsynchronised from then on.
                 const uint32_t displayRate = ext.sharedResources->swapChainRate;
                 const bool softwarePaced = snapSoftwarePaced(targetRate, viOriginalRate, displayRate);
-                const bool wantVsync = !softwarePaced;
+                const bool wantVsync = !softwarePaced && !snapVrFrame;
                 if (!swapChainVsyncKnown || (wantVsync != swapChainVsyncEnabled)) {
                     ext.swapChain->setVsyncEnabled(wantVsync);
                     swapChainVsyncEnabled = wantVsync;
@@ -988,7 +1112,7 @@ namespace {
                     }
                 }
 
-                if (softwarePaced && (presentTimestamp != Timestamp())) {
+                if (softwarePaced && !snapVrFrame && (presentTimestamp != Timestamp())) {
                     Timer::preciseSleepUntil(presentTimestamp + std::chrono::nanoseconds(1'000'000'000 / targetRate));
                 }
 
@@ -1355,12 +1479,24 @@ namespace {
                     }
                 }
 
-                if (needsResize || ext.appWindow->detectWindowMoved()) {
+                // Pokemon Snap port, the headset: while it runs, its rate is
+                // the renderer's and the window's is not consulted; when it
+                // stops, the window's rate comes back.
+                SnapVR::Interface *snapVrLoop = SnapVR::get();
+                const bool snapVrLive = (snapVrLoop != nullptr) && snapVrLoop->active();
+                if (!snapVrLive && snapVrWasLive) {
+                    ext.appWindow->detectRefreshRate();
+                    ext.sharedResources->setSwapChainRate(std::min(ext.appWindow->getRefreshRate(), displayTimingRate));
+                    snapVrRate = 0;
+                }
+                snapVrWasLive = snapVrLive;
+
+                if (!snapVrLive && (needsResize || ext.appWindow->detectWindowMoved())) {
                     ext.appWindow->detectRefreshRate();
                     ext.sharedResources->setSwapChainRate(std::min(ext.appWindow->getRefreshRate(), displayTimingRate));
                 }
 
-                if (displayTiming) {
+                if (displayTiming && !snapVrLive) {
                     uint32_t newDisplayTimingRate = ext.swapChain->getRefreshRate();
                     if (newDisplayTimingRate == 0) {
                         newDisplayTimingRate = UINT32_MAX;

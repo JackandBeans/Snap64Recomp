@@ -231,8 +231,8 @@ microcode on the next build.
 
 ### 10. Vendored trees on the Windows side
 
-`lib/SDL`, `lib/DirectX-Headers` and `lib/rt64/src/contrib` are **not in
-git** and must exist before CMake runs. One command puts them there, at the
+`lib/SDL`, `lib/DirectX-Headers`, `lib/OpenXR-SDK` and `lib/rt64/src/contrib`
+are **not in git** and must exist before CMake runs. One command puts them there, at the
 upstream commits recorded in `VENDORING.md`:
 
     python tools/fetch_deps.py
@@ -461,8 +461,10 @@ tracked copies of N64ModernRuntime and RT64, the recompiler configs, the
 tools, the patch sources, the microcode template `rsp/aspMain.us.toml.in` and
 the two symbol files. It does **not** contain:
 
-1. `lib/SDL` and `lib/DirectX-Headers` -- ignored; `python tools/fetch_deps.py`
-   fetches them at the recorded pins (step 10).
+1. `lib/SDL`, `lib/DirectX-Headers` and `lib/OpenXR-SDK` -- ignored;
+   `python tools/fetch_deps.py` fetches them at the recorded pins (step 10).
+   Without `lib/OpenXR-SDK` the Windows build configures and links without
+   the headset (`SNAP_HAS_OPENXR` off) and the `vr` setting logs and runs flat.
 2. `lib/rt64/src/contrib` -- ignored except for the port's three plume files;
    the same script fetches all of it at the pins recovered in VENDORING.md.
    CMake cannot configure without it.

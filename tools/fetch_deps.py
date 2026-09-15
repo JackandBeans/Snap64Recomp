@@ -80,6 +80,12 @@ GIT_PINS = [
          url='https://github.com/microsoft/DirectX-Headers.git',
          sha='ee479f0bd5f7b884f202bcf0c3f076cc050dd256',
          describe='v1.619.5', confidence='exact'),
+    # The OpenXR loader and headers, for the headset (src/vr_openxr.cpp).
+    # Built as a static library by the port's CMake; Windows only.
+    dict(name='OpenXR-SDK', path='lib/OpenXR-SDK',
+         url='https://github.com/KhronosGroup/OpenXR-SDK.git',
+         sha='f2448a8797c85814aa892efc1ab8707900fbcc78',
+         describe='release-1.1.63, 2026-09-01', confidence='exact'),
     # RT64's submodules, at the gitlinks recorded by rt64/rt64 RT64_BASE.
     dict(name='ddspp', path=CONTRIB + '/ddspp',
          url='https://github.com/redorav/ddspp.git',

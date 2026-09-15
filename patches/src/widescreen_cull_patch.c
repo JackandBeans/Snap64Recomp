@@ -41,6 +41,8 @@ extern Mtx4f D_803B14D8_5518E8;
 
 /* Host-owned: the renderer's horizontal widening, Q8 (256 = none). */
 #define SNAP_VIEW_WIDE_Q8 (*(volatile u32*) 0x80C00044)
+/* Host-owned: one while the headset shows the world (src/vr_openxr.cpp). */
+#define SNAP_VR_WORLD (*(volatile u8*) 0x80C000E0)
 /* Host-owned, zeroed at the seed: how many verdicts the widened bound has
  * turned from culled to drawn, so a replay can measure the patch without
  * a picture (the host prints it under SNAP_STATS). */
@@ -80,5 +82,41 @@ s32 func_80364618_504A28(GObj* obj, f32 x, f32 y, f32 z) {
     if (temp < -180 || temp > 180) {
         return 1;
     }
+    return 0;
+}
+
+/**
+ * Replaces func_80364718_504B28 from src/app_level/5047F0.c -- the per-frame
+ * verdict on a Pokemon: the test above on its collision point, with the
+ * result kept in the Pokemon's flag 0x100, which is what its render function
+ * consults before drawing it (pokemon_detect.c, renderPokemonModelType*),
+ * and returned to the photo data builder (app_render/47380.c), which fills
+ * the frame's list of photographable Pokemon from it.
+ *
+ * With the headset showing the world, the head looks wherever it likes while
+ * the game's camera points where the photo will be taken, so a Pokemon
+ * outside the camera's picture must still draw: the flag is left clear for
+ * every Pokemon within the game's own distance. The verdict returned is the
+ * cartridge's, so the photo's list, its twelve slots and the scoring behind
+ * them see exactly what the console's camera saw.
+ */
+s32 func_80364718_504B28(GObj* obj) {
+    Pokemon* pokemon = GET_POKEMON(obj);
+    s32 culled;
+
+    if (pokemon->flags & POKEMON_FLAG_40) {
+        Pokemon_SetFlag100(obj, false);
+        return 0;
+    }
+    if (10000.0f < pokemon->playerDist) {
+        Pokemon_SetFlag100(obj, true);
+        return 1;
+    }
+    culled = func_80364618_504A28(obj, pokemon->collPosition.x, pokemon->collPosition.y, pokemon->collPosition.z);
+    if (culled != 0) {
+        Pokemon_SetFlag100(obj, SNAP_VR_WORLD ? false : true);
+        return 1;
+    }
+    Pokemon_SetFlag100(obj, false);
     return 0;
 }

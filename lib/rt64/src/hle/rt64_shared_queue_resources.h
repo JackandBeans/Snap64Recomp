@@ -12,6 +12,7 @@
 #include "render/rt64_render_target_manager.h"
 
 #include "rt64_framebuffer_manager.h"
+#include "rt64_snap_vr.h"
 
 #if RT_ENABLED
 #   include "render/rt64_raytracing_resources.h"
@@ -59,6 +60,13 @@ namespace RT64 {
         std::vector<uint32_t> colorImageAddressVector;
         std::unordered_set<uint32_t> colorImageAddressSet;
         std::vector<std::unique_ptr<RenderTarget>> interpolatedColorTargets;
+        // Pokemon Snap port, the headset (rt64_snap_vr.h): each eye's colour
+        // target per sub-frame slot, a depth target per eye, and each slot's
+        // record of the views its eyes were drawn with. Sized beside the
+        // interpolated targets, under the same lock.
+        std::vector<std::unique_ptr<RenderTarget>> snapVrEyeColorTargets[2];
+        std::unique_ptr<RenderTarget> snapVrEyeDepthTargets[2];
+        std::vector<SnapVR::SubFrame> snapVrSubFrames;
         InterpolatedFrameCounters interpolatedFrames[2];
         uint32_t interpolatedFramesIndex = 0;
         std::mutex interpolatedMutex;

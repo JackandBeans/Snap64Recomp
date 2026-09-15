@@ -132,6 +132,15 @@ namespace RT64 {
         // (a scene-init clear) can dirty the previous frame's target, and a
         // hold copied afterwards would present that half-wiped image.
         std::unique_ptr<RenderTarget> snapHoldScratch;
+        // Pokemon Snap port, the headset (rt64_snap_vr.h): the sub-frame slot
+        // the image about to render is shown from, the colour image the
+        // screen shows, how many display frames this tick spans, and what
+        // the render found (published to the shared record by the loop).
+        int32_t snapVrSubFrame = -1;
+        uint32_t snapVrMainColorAddress = 0;
+        uint32_t snapVrFramesPerTick = 1;
+        SnapVR::SubFrame snapVrRecord;
+        std::vector<uint32_t> snapVrEyeFramebuffers[2];
         void threadRenderFrame(GameFrame &curFrame, const GameFrame &prevFrame, const WorkloadConfiguration &workloadConfig,
             const DebuggerRenderer &debuggerRenderer, const DebuggerCamera &debuggerCamera, float curFrameWeight, float prevFrameWeight,
             float deltaTimeMs, RenderTargetKey overrideTargetKey, int32_t overrideTargetFbPairIndex, RenderTarget *overrideTarget,

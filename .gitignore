@@ -38,6 +38,7 @@ patches/build/
 lib/rt64/src/contrib/
 lib/SDL/
 lib/DirectX-Headers/
+lib/OpenXR-SDK/
 
 # Python
 __pycache__/

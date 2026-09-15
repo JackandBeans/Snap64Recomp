@@ -84,6 +84,24 @@ endif()
 add_subdirectory(lib/N64ModernRuntime EXCLUDE_FROM_ALL)
 
 # =============================================================================
+# OpenXR -- the headset (src/vr_openxr.cpp). Windows only, and only when the
+# SDK is fetched (tools/fetch_deps.py): without it the port builds flat.
+# =============================================================================
+set(SNAP_HAS_OPENXR OFF)
+if (WIN32 AND EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/lib/OpenXR-SDK/CMakeLists.txt")
+    set(SNAP_HAS_OPENXR ON)
+    set(DYNAMIC_LOADER OFF CACHE BOOL "" FORCE)
+    set(BUILD_API_LAYERS OFF CACHE BOOL "" FORCE)
+    set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(BUILD_CONFORMANCE_TESTS OFF CACHE BOOL "" FORCE)
+    set(BUILD_SDK_TESTS OFF CACHE BOOL "" FORCE)
+    add_subdirectory(lib/OpenXR-SDK EXCLUDE_FROM_ALL)
+    # The loader's own CMake links the dynamic C runtime into its static
+    # library; the port is built on the static one.
+    set_target_properties(openxr_loader PROPERTIES MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+endif()
+
+# =============================================================================
 # Recompiled functions -- static library from N64Recomp output
 # =============================================================================
 file(GLOB RECOMP_FUNC_SOURCES
@@ -245,6 +263,8 @@ set(SNAP_SOURCES
     src/paths.cpp
     src/rom_picker.cpp
     src/fast_forward.cpp
+    src/vr_openxr.cpp
+    src/vr_game.cpp
     src/steam_deck.cpp
     src/rt64_render_context.cpp
     src/rsp_microcode.cpp
@@ -363,6 +383,16 @@ endif()
 
 if (BUILD_RT64)
     target_link_libraries(Snap64Recomp PRIVATE rt64)
+    if (WIN32)
+        # The headset's source wraps the runtime's images in plume's Direct3D
+        # 12 texture, whose header wants the same headers RT64 builds with.
+        target_include_directories(Snap64Recomp BEFORE PRIVATE "${DXHEADERS}/directx" "${DXHEADERS}")
+    endif()
+    if (SNAP_HAS_OPENXR)
+        target_link_libraries(Snap64Recomp PRIVATE openxr_loader)
+        target_include_directories(Snap64Recomp PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/lib/OpenXR-SDK/include")
+        target_compile_definitions(Snap64Recomp PRIVATE SNAP_HAS_OPENXR=1)
+    endif()
     # The first run's file chooser (src/rom_picker.cpp) is RT64's own copy of
     # nativefiledialog-extended, already built for RT64's use.
     target_link_libraries(Snap64Recomp PRIVATE nfd)
@@ -519,6 +549,8 @@ set(SNAP_THIRD_PARTY_LICENSES
     "N64ModernRuntime|lib/N64ModernRuntime/COPYING"
     "N64Recomp|lib/N64ModernRuntime/N64Recomp/LICENSE"
     "DirectX-Headers|lib/DirectX-Headers/LICENSE"
+    "OpenXR-SDK|lib/OpenXR-SDK/LICENSE"
+    "jsoncpp|lib/OpenXR-SDK/src/external/jsoncpp/LICENSE"
     "plume|lib/rt64/src/contrib/plume/LICENSE"
     "re-spirv|lib/rt64/src/contrib/re-spirv/LICENSE"
     "zstd|lib/rt64/src/contrib/zstd/LICENSE"

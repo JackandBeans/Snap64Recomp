@@ -19,6 +19,7 @@
 #include "paths.h"
 #include "settings.h"
 #include "steam_deck.h"
+#include "vr_openxr.h"
 #include "hle/rt64_snap_diag.h"
 
 // Time the game thread lost inside osCreateThread (ultramodern/src/threads.cpp).
@@ -327,6 +328,21 @@ public:
         printf("[SNAP-RT64] Renderer context created (result=%d, api=%d)\n",
                static_cast<int>(result), static_cast<int>(chosen_api));
 
+        // The headset (src/vr_openxr.cpp): a session on the renderer's device
+        // and the present queue's command queue. With one open, the renderer
+        // paces on the headset and draws the picture at a fixed scale, since
+        // the desktop window is only a mirror now.
+        if (snap::vr_wanted()) {
+            const bool d3d12 = (app_->chosenGraphicsAPI == RT64::UserConfiguration::GraphicsAPI::D3D12);
+            if (snap::vr_init(app_->device.get(), app_->presentGraphicsWorker->commandQueue.get(), d3d12)) {
+                app_->userConfig.refreshRate = RT64::UserConfiguration::RefreshRate::Display;
+                app_->userConfig.resolution = RT64::UserConfiguration::Resolution::Manual;
+                app_->userConfig.resolutionMultiplier = 4.0;
+                app_->userConfig.validate();
+                app_->updateUserConfig(false);
+            }
+        }
+
         // Load any texture packs sitting in texture_packs/ next to the
         // executable. RT64's replacement subsystem is complete -- database,
         // .rtz archives, DDS and PNG, streaming, its own VRAM pool -- and was
@@ -443,6 +459,13 @@ public:
         // never consumed -- antialiasing has been a no-op switch since the
         // port began. Rebuilt only on an actual change: it is a full teardown
         // and costs a visible pause.
+        // The headset keeps the renderer paced on it and the picture at its
+        // fixed scale whatever the pages say (src/vr_openxr.cpp).
+        if (snap::vr_active()) {
+            app_->userConfig.refreshRate = RT64::UserConfiguration::RefreshRate::Display;
+            app_->userConfig.resolution = RT64::UserConfiguration::Resolution::Manual;
+            app_->userConfig.resolutionMultiplier = 4.0;
+        }
         app_->userConfig.validate();
         const bool msaaChanged = (app_->userConfig.msaaSampleCount() != prevSamples);
         app_->updateUserConfig(true);
@@ -821,6 +844,9 @@ public:
         s_live_app.store(nullptr, std::memory_order_release);
         if (app_) {
             app_->end();
+            // The headset's session closes after the renderer's threads have
+            // stopped and before its device goes.
+            snap::vr_shutdown();
             app_.reset();
         }
     }

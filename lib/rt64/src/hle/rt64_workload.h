@@ -67,6 +67,16 @@ namespace RT64 {
         // the display's rate instead of stepping at the game's. Rebuilt and
         // re-uploaded per sub-frame by the projection processor.
         std::vector<interop::RSPViewport> modRspViewports;
+        // Pokemon Snap port, the headset (rt64_snap_vr.h): each eye's
+        // view-projection per projection and each eye's viewport, rebuilt
+        // per sub-frame by the projection processor and read by the RSP
+        // pass that replays the frame for that eye; and, per
+        // view-projection transform, 1 when it is the ride camera's, the one
+        // each eye replaces, 0 for a flat projection laid on the plane in
+        // front of the head.
+        std::vector<interop::float4x4> snapVrViewProjTransforms[2];
+        std::vector<interop::RSPViewport> snapVrRspViewports[2];
+        std::vector<uint8_t> snapVrRideTransforms;
         std::vector<int16_t> viewportClipRatios;
         std::vector<uint16_t> viewportOrigins;
         std::vector<interop::RSPFog> rspFog;
@@ -166,6 +176,8 @@ namespace RT64 {
         BufferPair rspLookAtBuffer;
         BufferPair worldTransformsBuffer;
         BufferPair viewProjTransformsBuffer;
+        BufferPair snapVrViewProjTransformsBuffer[2];
+        BufferPair snapVrRspViewportsBuffer[2];
         BufferPair prevWorldTransformsBuffer;
         BufferPair invTWorldTransformsBuffer;
         BufferPair triPosBuffer;

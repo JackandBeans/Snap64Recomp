@@ -33,11 +33,16 @@ namespace RT64 {
         ProcessCB processCB;
         ModifyCB modifyCB;
         std::unique_ptr<RSPProcessDescriptorSet> processSet;
+        // Pokemon Snap port, the headset: the same bindings with an eye's
+        // view-projections and viewports in place of the picture's
+        // (rt64_snap_vr.h), one set per eye so the recorded dispatches keep
+        // their own.
+        std::unique_ptr<RSPProcessDescriptorSet> snapVrProcessSet[2];
         std::unique_ptr<RSPModifyDescriptorSet> modifySet;
 
         RSPProcessor(RenderDevice *device);
         ~RSPProcessor();
         void process(const ProcessParams &p);
-        void recordCommandList(RenderWorker *worker, const ShaderLibrary *shaderLibrary, const OutputBuffers *outputBuffers);
+        void recordCommandList(RenderWorker *worker, const ShaderLibrary *shaderLibrary, const OutputBuffers *outputBuffers, int32_t snapVrEye = -1);
     };
 };

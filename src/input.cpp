@@ -65,6 +65,7 @@
 #include "paths.h"
 #include "photo_export.h"
 #include "settings.h"
+#include "vr_openxr.h"
 #include "snap_station.h"
 
 // Pokemon Snap port: how many more presented images to photograph. Lives in
@@ -2377,6 +2378,16 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
             if (source_down(src, keys, held, t, pad)) { slow = true; break; }
         }
         g_slow_motion_held.store(slow, std::memory_order_relaxed);
+    }
+
+    // The headset's controllers (src/vr_openxr.cpp): their buttons beside
+    // the keyboard's, their stick beside the pad's.
+    if (snap::vr_active()) {
+        btn |= snap::vr_buttons();
+        float vrX = 0.0f, vrY = 0.0f;
+        snap::vr_stick(vrX, vrY);
+        ax += vrX;
+        ay += vrY;
     }
 
     // -----------------------------------------------------------------------
