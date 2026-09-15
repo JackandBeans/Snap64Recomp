@@ -25,7 +25,7 @@ does contain the game's code, translated from the builder's own dump into C
 by N64Recomp and compiled, as every N64Recomp port does; `NOTICE.md` says
 exactly what is derived from the game and how.
 
-The title screen's credits line, `JackandBeans (Snap64 Recomp) · v1.0.7`, is
+The title screen's credits line, `JackandBeans (Snap64 Recomp) · v1.0.8`, is
 my name, the port's name and its version; the name comes from the
 HAL team that made the game ([The game, and its history](#the-game-and-its-history)).
 The people and projects this port stands on are thanked under [Thanks](#thanks).
@@ -58,10 +58,10 @@ You need a 64-bit Windows 10 or 11 PC whose graphics driver provides
 Direct3D 12, and your own dump of the US cartridge; nothing has to be
 installed. Then:
 
-1. Download `Snap64Recomp-1.0.7-win64.zip` from the
+1. Download `Snap64Recomp-1.0.8-win64.zip` from the
    [Releases](https://github.com/JackandBeans/Snap64Recomp/releases/latest)
    page and unpack it anywhere; it holds one folder,
-   `Snap64Recomp-1.0.7-win64`, with `Snap64Recomp.exe` inside.
+   `Snap64Recomp-1.0.8-win64`, with `Snap64Recomp.exe` inside.
 2. Have your own dump of the US cartridge to hand (the ROM: the cartridge's
    contents read out into one file). Either put it next to
    `Snap64Recomp.exe` named `pokemonsnap.z64`, or just start the program:
@@ -95,7 +95,7 @@ and what to attach to a bug report.
 ## Screenshots
 
 <table><tr>
-<td><a href="docs/screenshots/01h-title-107.png"><img src="docs/screenshots/01h-title-107.png" width="400" alt="The title screen"></a></td>
+<td><a href="docs/screenshots/01i-title-108.png"><img src="docs/screenshots/01i-title-108.png" width="400" alt="The title screen"></a></td>
 <td><a href="docs/screenshots/03-course-select.png"><img src="docs/screenshots/03-course-select.png" width="400" alt="Course select"></a></td>
 </tr><tr>
 <td><a href="docs/screenshots/04-beach.png"><img src="docs/screenshots/04-beach.png" width="400" alt="The Beach: Surfing Pikachu"></a></td>
@@ -110,7 +110,7 @@ and what to attach to a bug report.
 
 Every picture is the port's own render at 1440p with Render Scale and
 Anti-Aliasing both at 8x on the Graphics page, cropped to the game's
-picture; each caption names the release it was taken from. All twenty-nine,
+picture; each caption names the release it was taken from. All thirty-two,
 with a caption each (the title and its menu, the courses, the lab, every
 page of the Options screen including Button Setup, the printer's marks,
 Oak's check from the photo choice to the score sheet, the Camera Check and
@@ -157,7 +157,7 @@ the Beach in Widescreen), are in [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md).
 Start `Snap64Recomp.exe`; a shortcut works from anywhere, because the port
 reads and writes the folder the executable is in, whatever the working
 directory (`src/paths.cpp`). It opens a 1280x960 window titled
-`Snap64 Recomp 1.0.7`; `SNAP_WINDOW=WxH` in the environment opens it at
+`Snap64 Recomp 1.0.8`; `SNAP_WINDOW=WxH` in the environment opens it at
 an exact size instead (at least 320x240). The window's maximize button is the
 fullscreen switch; the in-game Graphics page and F11 do the same, and F11
 is the way out of fullscreen from anywhere. **A tap of Esc is Start** (the
@@ -910,7 +910,7 @@ In the order it will be worked on; nothing here is a promise until it runs.
 1. **Reports from machines other than mine.** The port was built and played
    on one PC and, from 1.0.1, a Steam Deck; what other GPUs, drivers and
    Windows 10 do with it is what the next release will be made of, as 1.0.1
-   to 1.0.7 were made of the first reports. The issue form is the way to
+   to 1.0.8 were made of the first reports. The issue form is the way to
    send them.
 2. **Steam Deck.** The native Linux build has been played on a Deck in
    Desktop Mode through a day of testing -- the Beach with gyro aim, the
@@ -943,7 +943,7 @@ The same list, with a place to reply, is pinned under
 * No CI and no installer. The release archive is the ZIP that `cpack`
   writes (`BUILDING.md`, step 13), after the headless suite in
   `tools/release_check.py` has passed on it ("What has been verified").
-* Version `1.0.7`, typed once in `CMakeLists.txt` and shown in the title
+* Version `1.0.8`, typed once in `CMakeLists.txt` and shown in the title
   bar, the log banner, the credits line, the executable's file properties and
   the ZIP's name. `CHANGELOG.md` says what each release changed.
 * Licensed under the GPLv3 (`LICENSE`); `NOTICE.md` lists every third-party
@@ -975,15 +975,17 @@ The same list, with a place to reply, is pinned under
   or not) and a Cancel starts nothing, and the archive carries everything it
   must; `--only station` puts the Snap Station print
   through both relaunches and checks the sheets, and a first start with no
-  ROM is put through the chooser's three cases. On the 1.0.7 executable
-  (SHA-256 beginning `1bffb35f`), run without diagnostics in the
-  environment, the suite passed 25 of 25 checks in 825 seconds, and the
-  station's 5 of 5 in 487; the 1.0.6 executable had passed the earlier 22
-  of 22 in 781 and the station's 5 in 487, 1.0.5 the same in 781 and 489,
-  1.0.4 in 781 and 487, 1.0.3, 1.0.2 and 1.0.1 in 781 and 491 each, and
-  1.0.0 in 781 and 489 on a cold shader cache. The suite opens the game
-  window for each run and takes about fourteen minutes, plus eight for the
-  station. There is no CI run, and no
+  ROM is put through the chooser's three cases, and the scoring replay is
+  run again at three times the console's speed and the Beach replay at
+  half, the same photos and the same reading reached in the expected time.
+  On the 1.0.8 executable (SHA-256 beginning `9963a410`), run without
+  diagnostics in the environment, the suite passed 26 of 26 checks in 1103
+  seconds, and the station's 5 of 5 in 488; the 1.0.7 executable had
+  passed the earlier 25 of 25 in 825 and the station's 5 in 487, 1.0.6 the
+  22 of 22 before that in 781 and 487, 1.0.5 the same in 781 and 489, 1.0.4
+  in 781 and 487, 1.0.3, 1.0.2 and 1.0.1 in 781 and 491 each, and 1.0.0 in
+  781 and 489 on a cold shader cache. The suite opens the game window for
+  each run and takes about nineteen minutes, plus eight for the station. There is no CI run, and no
   build on any other machine is recorded in this repository. Anything not
   listed here should be assumed untried.
 * The photo export (P, the controller's Back button, `photos/`) is checked
@@ -1002,7 +1004,7 @@ WSL, N64Recomp for the game and the patches, CMake and MSVC on Windows, and a
 list of things git does not carry
 ([What a clean checkout is missing](BUILDING.md#what-a-clean-checkout-is-missing)).
 `cpack -C Release` in the build directory then writes
-`Snap64Recomp-1.0.7-win64.zip` ([step 13](BUILDING.md#13-package)).
+`Snap64Recomp-1.0.8-win64.zip` ([step 13](BUILDING.md#13-package)).
 
 ## The game, and its history
 
@@ -1246,8 +1248,12 @@ None of this would exist without:
 * Jack and Beans, the team at HAL Laboratory who made the game. Their name,
   shown in the game's opening and at the head of its credits, gave the
   port's author a name.
+* [Video Game Esoterica](https://www.youtube.com/@VideoGameEsoterica), whose video on the port,
+  ["Pokemon Snap Recomp Out NOW! More Pokemon PC Ports"](https://youtu.be/1ds9leciGU4?si=iLBwSeI-OqSO8NsI), asked
+  for a speed multiplier: fast forward and slow motion are his idea.
+  Thank you for the video, and for the ask.
 * Everyone who plays it and reports what they see: the first reports from
-  other machines are what 1.0.1 to 1.0.7 were made of, and the next ones
+  other machines are what 1.0.1 to 1.0.8 were made of, and the next ones
   are what the release after will be.
 
 ## License

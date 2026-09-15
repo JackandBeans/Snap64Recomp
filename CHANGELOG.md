@@ -1,6 +1,6 @@
 # Changelog
 
-## 1.0.8 -- unreleased
+## 1.0.8 -- 2026-09-15
 
 * Fast forward: hold Tab, or the pad's right shoulder button, and the game
   runs at two, three or four times the console's speed, the Controls page's
@@ -22,9 +22,10 @@
   600, three times the rate, and released cleanly with no stall at either
   end; the scoring replay at 3x scored the same 45 photos with the same
   numbers as at 1x; the Controls row and its help line composed, and Right
-  and B read back on the host as 4x and then 3x again. Asked for by Video
-  Game Esoterica in "Pokemon Snap Recomp Out NOW! More Pokemon PC Ports"
-  (2026-09-13).
+  and B read back on the host as 4x and then 3x again. Asked for by
+  [Video Game Esoterica](https://www.youtube.com/@VideoGameEsoterica) in his video
+  ["Pokemon Snap Recomp Out NOW! More Pokemon PC Ports"](https://youtu.be/1ds9leciGU4?si=iLBwSeI-OqSO8NsI)
+  (2026-09-13); thank you.
 * Slow motion, the same thing run the other way: hold Space, or press the
   left stick in on a pad, and the game runs at half or a quarter of the
   console's speed, the Controls page's new Slow Motion row (Off as

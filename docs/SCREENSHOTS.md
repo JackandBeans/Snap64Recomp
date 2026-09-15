@@ -1,6 +1,6 @@
 # Screenshots
 
-All twenty-nine, in the order a session meets them. Every one was taken from
+All thirty-two, in the order a session meets them. Every one was taken from
 the 1.0.0 build, or a later one where it says so, at 1440p with Render
 Scale and Anti-Aliasing both at 8x on the game's Graphics page, then cropped
 to the game's picture. They are frames of
@@ -37,8 +37,14 @@ sprite crossing the water.
 
 <a href="screenshots/01h-title-107.png"><img src="screenshots/01h-title-107.png" width="640" alt="The title screen, 1.0.7"></a>
 
-**The title screen, 1.0.7.** The same title from the current build, the
+**The title screen, 1.0.7.** The same title from the 1.0.7 build, the
 credits line reading v1.0.7, taken with PRESS START at its brightest and no
+sprite crossing the picture.
+
+<a href="screenshots/01i-title-108.png"><img src="screenshots/01i-title-108.png" width="640" alt="The title screen, 1.0.8"></a>
+
+**The title screen, 1.0.8.** The same title from the current build, the
+credits line reading v1.0.8, taken with PRESS START at its brightest and no
 sprite crossing the picture.
 
 ## A course
@@ -146,6 +152,19 @@ for a second A before it puts the device at the top back the way it came.
 **Button Setup, on the keyboard.** The same page with Set Up turned to
 Keyboard: the shipped keys, and Esc beside Return on the Start row, since a
 tap of Esc is Start whatever the table says.
+
+<a href="screenshots/10j-controls-fast-108.png"><img src="screenshots/10j-controls-fast-108.png" width="640" alt="The Controls page, 1.0.8: Fast Forward"></a>
+
+**The Controls page, 1.0.8: Fast Forward.** Thirteen rows now. After Dead
+Zone comes **Fast Forward**, the speed the game runs at while Tab or the
+pad's right shoulder button is held: Off, 2x, 3x or 4x, 3x as shipped. The
+help box says what the row does and what holds it.
+
+<a href="screenshots/10k-controls-slow-108.png"><img src="screenshots/10k-controls-slow-108.png" width="640" alt="The Controls page, 1.0.8: Slow Motion"></a>
+
+**The Controls page, 1.0.8: Slow Motion.** The page scrolled one row to
+its seventh, **Slow Motion**, the same thing run the other way: Off as
+shipped, 2x or 4x slower while Space, or the left stick pressed in, is held.
 
 ## The Snap Station
 
