@@ -65,6 +65,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <algorithm>
 #include <deque>
 #include <vector>
 
@@ -432,12 +433,28 @@ namespace RT64 {
                 }
 
                 const uint32_t rows = bytes / rowBytes;
-                if (rows > candidate.dstHeight) {
+                if (candidate.dstHeight < 2) {
                     continue;
                 }
 
-                const uint32_t halfwords = bytes / 2u;
-                for (uint32_t row = 0; (row + rows) <= candidate.dstHeight; row++) {
+                // Every window that fits whole first; then the tail, where a
+                // strip runs past the bitmap's end and only the rows that
+                // exist are compared, two at least. The last strip of a
+                // 105-row photo is loaded as fourteen rows of which seven
+                // exist (my playtest log, 2026-09-15: the load at the eighth
+                // strip's address matched nothing at any row, six frames
+                // running); the tile then stands for the rows that exist,
+                // and the sprite draws no further than them.
+                const bool anyFull = (rows <= candidate.dstHeight);
+                const uint32_t fullLast = anyFull ? (candidate.dstHeight - rows) : 0;
+                for (uint32_t row = 0; row < candidate.dstHeight; row++) {
+                    const bool full = anyFull && (row <= fullLast);
+                    const uint32_t avail = full ? rows : (candidate.dstHeight - row);
+                    if (avail < 2) {
+                        break;
+                    }
+
+                    const uint32_t halfwords = avail * candidate.dstWidth;
                     const uint16_t *expected = candidate.pixels.data() + size_t(row) * candidate.dstWidth;
                     bool same = true;
                     for (uint32_t i = 0; (i < halfwords) && same; i++) {
@@ -445,9 +462,11 @@ namespace RT64 {
                     }
 
                     if (same) {
-                        if (snapdiag::statsEnabled()) {
+                        if (snapdiag::statsEnabled() || (candidate.dstWidth >= 100)) {
                             // Each distinct load range and match once: which
                             // rows of which bitmap each strip was served from.
+                            // Always on for the big photos, a line per strip
+                            // per photo, so a log shows what was served.
                             static std::vector<uint64_t> seen;
                             const uint64_t key = (uint64_t(addressStart) << 32) ^ (uint64_t(addressEnd) << 8) ^ (uint64_t(candidate.address) << 20) ^ row;
                             bool known = false;
@@ -457,8 +476,9 @@ namespace RT64 {
 
                             if (!known && (seen.size() < 400)) {
                                 seen.push_back(key);
-                                printf("[SNAP-PHOTO-DETAIL] load %08X..%08X is rows %u..%u of the bitmap halved from render %08X width %u (tile copy %llu)\n",
-                                    addressStart, addressEnd, row, row + rows, candidate.address, candidate.width, (unsigned long long)candidate.tileId);
+                                printf("[SNAP-PHOTO-DETAIL] load %08X..%08X is rows %u..%u of the bitmap halved from render %08X width %u (tile copy %llu)%s\n",
+                                    addressStart, addressEnd, row, row + avail, candidate.address, candidate.width, (unsigned long long)candidate.tileId,
+                                    full ? "" : ", the rest past its end");
                             }
                         }
 
@@ -467,7 +487,7 @@ namespace RT64 {
                         candidate.matchedList = listCounter;
                         out.candidate = &candidate;
                         out.row = row;
-                        out.rows = rows;
+                        out.rows = avail;
                         return true;
                     }
                 }
@@ -494,12 +514,17 @@ namespace RT64 {
                         }
 
                         const uint32_t rows = bytes / rowBytes;
-                        if (rows > candidate.dstHeight) {
+                        if (candidate.dstHeight < 2) {
                             continue;
                         }
 
-                        const uint32_t halfwords = bytes / 2u;
-                        for (uint32_t row = 0; (row + rows) <= candidate.dstHeight; row++) {
+                        for (uint32_t row = 0; row < candidate.dstHeight; row++) {
+                            const uint32_t avail = std::min(rows, candidate.dstHeight - row);
+                            if (avail < 2) {
+                                break;
+                            }
+
+                            const uint32_t halfwords = avail * candidate.dstWidth;
                             const uint16_t *expected = candidate.pixels.data() + size_t(row) * candidate.dstWidth;
                             uint32_t i = 0;
                             while ((i < halfwords) && (readHalf(RDRAM, addressStart + i * 2u) == expected[i])) {
