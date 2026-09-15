@@ -46,24 +46,32 @@
   at 1x, in twice the time; the Controls row and its help line composed,
   and Right and B read back on the host as 2x and then Off.
 
-* Photo Detail showed some photos, or the bottom part of one, at the
+* Photo Detail showed some photos, or the bottom rows of one, at the
   console's own resolution, some runs and not others, a restart clearing
-  it (issue #15, Succulent-Puppet, Intel UHD 630; my own review of a
-  Volcano shot, since 1.0.0). Photo Detail keeps a ring of forty pinned
-  copies of the photos the game renders, and it pinned every small
-  colour render as a possible photo, the interface's 8x8 and 16x16
-  icons included, dozens of them a frame on the review screens. On
-  those screens the ring overflowed within a single frame and the photos
-  on screen were the ones pushed out, so their sprites, or the strips of
-  a big photo loaded after the overflow, fell back to the console's
-  texels; which photos went depended on the order of the frame's draws,
-  which is why it came and went. Read from my own playtest log, which
-  showed a photo being drawn from pushed out forty-eight times in one
-  session. Now nothing smaller than a thumbnail is pinned, a photo
-  matched within the last two frames is never pushed out, and the ring
-  grows rather than lose one; the log names any photo-sized load that
-  matches nothing, with the copy it came closest to and the first pixel
-  that differed, so a recurrence explains itself.
+  it (issue #15, Succulent-Puppet, Intel UHD 630; my own review and Oak's
+  comparison, since 1.0.0). Three faults in the ring of pinned copies,
+  found one at a time from my own playtest logs. The ring pinned every
+  small colour render as a possible photo, the interface's 8x8 and 16x16
+  icons included, dozens a frame on the review screens, so it overflowed
+  within a single frame and the photos on screen were the ones pushed out;
+  nothing smaller than a thumbnail is pinned now, and a photo drawn within
+  the last two frames is never pushed out. A photo 105 rows tall is loaded
+  in strips of fourteen, the last of them seven rows past the bitmap's
+  end, and the comparison only ever tried windows that fit whole, so the
+  last seven rows of every such photo drew from the console's texels; a
+  strip is matched on the rows that exist now. And the game keeps a
+  photo's bitmap across screens without rendering it again -- Oak's
+  comparison draws "This time" from the Camera Check's thumbnail -- while
+  the Report's browsing renders a fresh preview on every cursor move and
+  six thumbnails a page, all of which churned the course's own photos out
+  of the ring before the comparison needed them; a copy now lives until
+  the game halves another photo over its bitmap, which is the one moment
+  it can never be drawn again, and the ring grew from forty to sixty-four.
+  Verified on my PC on the last build: the review photo sharp to its
+  bottom edge and both of Oak's comparison thumbnails sharp, with the log
+  showing every strip served and nothing evicted. The log names any
+  photo-sized load that matches nothing, with the copy it came closest to
+  and the first pixel that differed, so a recurrence explains itself.
 * `snap64.log` can be copied while the game runs. It was opened for
   exclusive access, so a player could not attach it to a report without
   quitting first.

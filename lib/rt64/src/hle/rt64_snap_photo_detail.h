@@ -551,6 +551,16 @@ namespace RT64 {
                             continue;
                         }
 
+                        // Only a load that could be this photo: its whole
+                        // bitmap, or a strip of a big one. A sprite of a
+                        // coincidental width (72x26 list art loads as 36
+                        // rows of 52) is not worth a line.
+                        const bool whole = (bytes == rowBytes * candidate.dstHeight);
+                        const bool strip = (candidate.dstWidth >= 100) && (bytes <= rowBytes * candidate.dstHeight);
+                        if (!whole && !strip) {
+                            continue;
+                        }
+
                         const uint32_t rows = bytes / rowBytes;
                         if (candidate.dstHeight < 2) {
                             continue;
