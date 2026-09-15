@@ -64,6 +64,8 @@
   to and the first pixel that differed, so a recurrence explains itself.
   The cause was found by reading the code against the two screenshots;
   the fault did not reproduce in my replays, which have no such photo.
+  On this build the fire photo enlarged from the Gallery drew sharp from
+  the wings to the lava on my PC.
 ## 1.0.7 -- 2026-09-13
 
 * Restore Defaults is the last row of the Button Setup page, after Stick
