@@ -100,6 +100,14 @@ namespace RT64 {
             // frame is matched every list, and one matched within the last
             // two lists is on screen and never evicted.
             uint64_t matchedList = 0;
+            // The load range that last matched this candidate: the sprite
+            // bitmap its photo was halved into. When a load at that very
+            // range matches another candidate, the game has halved another
+            // photo into the bitmap, and this one's content is gone from
+            // memory for good: superseded, the first to leave the ring.
+            uint32_t matchStart = 0;
+            uint32_t matchEnd = 0;
+            bool superseded = false;
             bool matchReported = false;
             // The bitmap in the order the game stores it: pixel (x, y) at
             // halfword index (((y * dstWidth + x) * 2) ^ ((y & 1) ? 4 : 0)) / 2.
@@ -128,7 +136,15 @@ namespace RT64 {
         // Report renders afresh on every cursor move, and the scoring passes
         // between them; each pin is the halved photo at the render scale,
         // half a megabyte for a thumbnail at 8x.
-        static constexpr size_t MaxCandidates = 40;
+        // 64: a course's eighteen photos, the Report's page and preview,
+        // Oak's check and the comparison after it, with room to spare. The
+        // game keeps a photo's bitmap across screens without rendering it
+        // again -- the Camera Check's thumbnail is what Oak's comparison
+        // draws as "This time" -- so a copy must outlive the screen it was
+        // made on; 40, with the Report's previews churning through it, lost
+        // the course's photos before Oak's comparison showed them (my
+        // playtest log, 2026-09-15).
+        static constexpr size_t MaxCandidates = 64;
         static constexpr uint32_t RDRAMBytes = 0x800000;
         // A VI origin sits a row or two into its buffer; treat anything within
         // a few rows of a displayed address as the screen.
@@ -374,10 +390,21 @@ namespace RT64 {
                 return !young && !onScreen;
             };
 
+            // Superseded first: its photo was halved over in memory and no
+            // load can match it again.
             for (auto it = candidates.begin(); it != candidates.end(); it++) {
-                if (evictable(*it) && it->filled && (it->matchedTimestamp == 0)) {
+                if (evictable(*it) && it->superseded) {
                     victim = it;
                     break;
+                }
+            }
+
+            if (victim == candidates.end()) {
+                for (auto it = candidates.begin(); it != candidates.end(); it++) {
+                    if (evictable(*it) && it->filled && (it->matchedTimestamp == 0)) {
+                        victim = it;
+                        break;
+                    }
                 }
             }
 
@@ -400,8 +427,9 @@ namespace RT64 {
                 return false;
             }
 
-            if (victim->matchedTimestamp != 0) {
-                // A photo that was drawn from, two lists ago or more: going.
+            if ((victim->matchedTimestamp != 0) && !victim->superseded) {
+                // A photo that was drawn from, two lists ago or more, whose
+                // bitmap may still come back: going for lack of room.
                 static int reported = 0;
                 if (reported < 50) {
                     reported++;
@@ -485,6 +513,16 @@ namespace RT64 {
                         candidate.matchReported = true;
                         candidate.matchedTimestamp = usedTimestamp;
                         candidate.matchedList = listCounter;
+                        // The bitmap now holds this candidate's photo: any
+                        // other candidate this range last matched is gone.
+                        for (Candidate &other : candidates) {
+                            if ((&other != &candidate) && (other.matchStart == addressStart) && (other.matchEnd == addressEnd)) {
+                                other.superseded = true;
+                            }
+                        }
+
+                        candidate.matchStart = addressStart;
+                        candidate.matchEnd = addressEnd;
                         out.candidate = &candidate;
                         out.row = row;
                         out.rows = avail;
