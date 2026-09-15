@@ -49,23 +49,24 @@
 * Photo Detail showed some photos, or the bottom part of one, at the
   console's own resolution, some runs and not others, a restart clearing
   it (issue #15, Succulent-Puppet, Intel UHD 630; my own review of a
-  Volcano shot, since 1.0.0). A photo's sharp copy comes back from the
-  GPU at a flush, and a sprite whose texture loads ran before that flush
-  in the same frame cannot use the copy until the next; the eviction
-  rule of the ring of forty took such a copy, filled but never used,
-  first, and on a screen that renders enough small things a frame the
-  ring is full every frame, so the copy was thrown out at the next render
-  before any frame could use it, for as long as the screen lasted. A
-  photo whose render is split in two by a framebuffer read, fire in it
-  for one, got one copy per part: the first served the top strips, the
-  second never served, and the bottom stayed pixelated. A copy now gets
-  a full frame to be found before it can be evicted. The log names any
-  photo-sized load that matches nothing, with the copy it came closest
-  to and the first pixel that differed, so a recurrence explains itself.
-  The cause was found by reading the code against the two screenshots;
-  the fault did not reproduce in my replays, which have no such photo.
-  On this build the fire photo enlarged from the Gallery drew sharp from
-  the wings to the lava on my PC.
+  Volcano shot, since 1.0.0). Photo Detail keeps a ring of forty pinned
+  copies of the photos the game renders, and it pinned every small
+  colour render as a possible photo, the interface's 8x8 and 16x16
+  icons included, dozens of them a frame on the review screens. On
+  those screens the ring overflowed within a single frame and the photos
+  on screen were the ones pushed out, so their sprites, or the strips of
+  a big photo loaded after the overflow, fell back to the console's
+  texels; which photos went depended on the order of the frame's draws,
+  which is why it came and went. Read from my own playtest log, which
+  showed a photo being drawn from pushed out forty-eight times in one
+  session. Now nothing smaller than a thumbnail is pinned, a photo
+  matched within the last two frames is never pushed out, and the ring
+  grows rather than lose one; the log names any photo-sized load that
+  matches nothing, with the copy it came closest to and the first pixel
+  that differed, so a recurrence explains itself.
+* `snap64.log` can be copied while the game runs. It was opened for
+  exclusive access, so a player could not attach it to a report without
+  quitting first.
 ## 1.0.7 -- 2026-09-13
 
 * Restore Defaults is the last row of the Button Setup page, after Stick

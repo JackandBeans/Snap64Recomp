@@ -895,10 +895,17 @@ static void snap_bind_stdio() {
         Sleep(100);
     }
     std::filesystem::remove(log, ec);
-    if (_wfreopen_s(&f, log.c_str(), L"a", stdout) != 0) {
+    // The plain freopen, not the _s one: the secure variant opens the file
+    // for exclusive access, and nothing else could open snap64.log while
+    // the game ran -- not a player copying it for a report mid-session, not
+    // a tool reading it. freopen opens it shared for reading.
+#pragma warning(push)
+#pragma warning(disable: 4996)
+    if (_wfreopen(log.c_str(), L"a", stdout) == nullptr) {
         return;
     }
-    _wfreopen_s(&f, log.c_str(), L"a", stderr);
+    _wfreopen(log.c_str(), L"a", stderr);
+#pragma warning(pop)
     setvbuf(stdout, nullptr, _IONBF, 0);
     setvbuf(stderr, nullptr, _IONBF, 0);
 }

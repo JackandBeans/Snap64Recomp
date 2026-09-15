@@ -95,6 +95,10 @@ namespace RT64 {
             bool filled = false;
             bool duplicate = false;
             uint64_t matchedTimestamp = 0;
+            // The display list it was last matched in: a photo drawn every
+            // frame is matched every list, and one matched within the last
+            // two lists is on screen and never evicted.
+            uint64_t matchedList = 0;
             bool matchReported = false;
             // The bitmap in the order the game stores it: pixel (x, y) at
             // halfword index (((y * dstWidth + x) * 2) ^ ((y & 1) ? 4 : 0)) / 2.
@@ -110,6 +114,15 @@ namespace RT64 {
         // The window library's buffer is 320x210; the screen is 240 rows.
         static constexpr uint32_t MaxSourceWidth = 320;
         static constexpr uint32_t MaxSourceHeight = 210;
+        // The smallest photo the game halves is the 52x39 thumbnail (from
+        // a 104x78 render). Renders below this, halved, are the interface's
+        // own: 8x8 and 16x16 icons, 32x12 list entries, rendered by the
+        // dozen every frame. Pinning those flooded the ring within a single
+        // frame and pushed the photos being drawn out of it (the author's
+        // playtest log, 2026-09-15: "evicted a matched photo" 48 times in
+        // one session, the big photo and the thumbnails alike).
+        static constexpr uint32_t MinHalvedWidth = 40;
+        static constexpr uint32_t MinHalvedHeight = 30;
         // Enough for every photo a screen shows at once, the previews the
         // Report renders afresh on every cursor move, and the scoring passes
         // between them; each pin is the halved photo at the render scale,
@@ -161,7 +174,8 @@ namespace RT64 {
         // the VI has displayed is the screen, whatever its size.
         static bool photoSized(uint8_t siz, uint32_t width, uint32_t drawnWidth, uint32_t drawnHeight, uint32_t address, const uint32_t *screens, size_t screenCount) {
             const bool sized = (siz == G_IM_SIZ_16b) && (width >= 2) && (width <= MaxSourceWidth) &&
-                (drawnWidth >= 2) && (drawnWidth <= width) && (drawnHeight >= 2) && (drawnHeight <= MaxSourceHeight);
+                (drawnWidth >= 2) && (drawnWidth <= width) && (drawnHeight >= 2) && (drawnHeight <= MaxSourceHeight) &&
+                ((drawnWidth >> 1) >= MinHalvedWidth) && ((drawnHeight >> 1) >= MinHalvedHeight);
             if (!sized) {
                 return false;
             }
@@ -193,8 +207,7 @@ namespace RT64 {
                 return;
             }
 
-            while (candidates.size() >= MaxCandidates) {
-                evictOne(fbManager);
+            while ((candidates.size() >= MaxCandidates) && evictOne(fbManager)) {
             }
 
             Candidate candidate;
@@ -341,14 +354,23 @@ namespace RT64 {
         // filled before the loads, served the top strips; the second never
         // served, and the bottom of the photo stayed pixelated (my own
         // Charizard review, and issue #15's Cave thumbnails, 2026-09-14).
-        void evictOne(FramebufferManager &fbManager) {
+        //
+        // And never one matched in this display list or the last: that is a
+        // photo on screen, drawn every frame. If nothing else is left the
+        // ring grows past MaxCandidates rather than lose a photo the player
+        // is looking at; with the interface's small renders kept out
+        // (MinHalvedWidth) it holds a screen's photos with room to spare.
+        // Returns false when nothing may go.
+        bool evictOne(FramebufferManager &fbManager) {
             if (candidates.empty()) {
-                return;
+                return false;
             }
 
             auto victim = candidates.end();
             const auto evictable = [&](const Candidate &c) {
-                return (c.createdList + 1) < listCounter;
+                const bool young = (c.createdList + 1) >= listCounter;
+                const bool onScreen = (c.matchedTimestamp != 0) && ((c.matchedList + 1) >= listCounter);
+                return !young && !onScreen;
             };
 
             for (auto it = candidates.begin(); it != candidates.end(); it++) {
@@ -367,30 +389,29 @@ namespace RT64 {
             }
 
             if (victim == candidates.end()) {
-                // The whole ring is this list's and the last's: the front
-                // goes, and a line says the ring is too small for the screen.
-                victim = candidates.begin();
                 static int reported = 0;
                 if (reported < 20) {
                     reported++;
-                    printf("[SNAP-PHOTO-DETAIL] the ring of %u is all from the last two display lists; the oldest goes (render %08X, %ux%u, %s)\n",
-                        unsigned(candidates.size()), victim->address, victim->dstWidth, victim->dstHeight,
-                        victim->matchedTimestamp ? "matched" : "never matched");
+                    printf("[SNAP-PHOTO-DETAIL] the ring holds %u photos on screen or just rendered; it grows rather than evict one\n",
+                        unsigned(candidates.size()));
                 }
+
+                return false;
             }
-            else if (victim->matchedTimestamp != 0) {
-                // A photo that was being drawn from is going: worth a line.
+
+            if (victim->matchedTimestamp != 0) {
+                // A photo that was drawn from, two lists ago or more: going.
                 static int reported = 0;
                 if (reported < 50) {
                     reported++;
-                    printf("[SNAP-PHOTO-DETAIL] evicted a matched photo (render %08X, %ux%u, last matched at %llu of %llu) for a new render\n",
-                        victim->address, victim->dstWidth, victim->dstHeight, (unsigned long long)victim->matchedTimestamp,
-                        (unsigned long long)fbManager.getUsedTimestamp());
+                    printf("[SNAP-PHOTO-DETAIL] evicted a photo last drawn from in list %llu of %llu (render %08X, %ux%u) for a new render\n",
+                        (unsigned long long)victim->matchedList, (unsigned long long)listCounter, victim->address, victim->dstWidth, victim->dstHeight);
                 }
             }
 
             unpin(fbManager, victim->tileId);
             candidates.erase(victim);
+            return true;
         }
 
         // Whether the bytes a texture load reads are rows of a bitmap the game
@@ -443,6 +464,7 @@ namespace RT64 {
 
                         candidate.matchReported = true;
                         candidate.matchedTimestamp = usedTimestamp;
+                        candidate.matchedList = listCounter;
                         out.candidate = &candidate;
                         out.row = row;
                         out.rows = rows;
@@ -509,18 +531,6 @@ namespace RT64 {
                         printf("[SNAP-PHOTO-DETAIL] miss %08X..%08X (%u bytes): closest is render %08X (%ux%u, list %llu of %llu) at row %u, %u of %u halfwords equal, then %04X in memory vs %04X computed; %u candidates, %u not yet filled\n",
                             addressStart, addressEnd, bytes, best->address, best->dstWidth, best->dstHeight, (unsigned long long)best->createdList,
                             (unsigned long long)listCounter, bestRow, bestLen, bytes / 2u, bestGot, bestWant, unsigned(candidates.size()), unfilled);
-                    }
-                    else if ((best == nullptr) && !known && (bytes >= 1900)) {
-                        // Loads of a photo's size with nothing of a fitting
-                        // width and height to compare against; the small
-                        // interface textures are left out by the size.
-                        missedSeen.push_back(key);
-                        unsigned unfilled = 0;
-                        for (const Candidate &c : candidates) {
-                            unfilled += c.filled ? 0u : 1u;
-                        }
-                        printf("[SNAP-PHOTO-DETAIL] miss %08X..%08X (%u bytes): no candidate of a fitting width and height; %u candidates, %u not yet filled\n",
-                            addressStart, addressEnd, bytes, unsigned(candidates.size()), unfilled);
                     }
                 }
             }
