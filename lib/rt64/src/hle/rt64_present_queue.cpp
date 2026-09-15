@@ -439,10 +439,11 @@ namespace {
         src->resolveTarget(ext.presentGraphicsWorker, ext.shaderLibrary);
 
         SnapVrCopySet &copySet = snapVrCopySets[src];
-        if ((copySet.set == nullptr) || (copySet.revision != src->textureRevision)) {
+        if ((copySet.set == nullptr) || (copySet.revision != src->textureRevision) || (copySet.texture != src->getResolvedTexture())) {
             copySet.set = std::make_unique<TextureCopyDescriptorSet>(ext.device);
             copySet.set->setTexture(copySet.set->gInput, src->getResolvedTexture(), RenderTextureLayout::SHADER_READ, src->getResolvedTextureView());
             copySet.revision = src->textureRevision;
+            copySet.texture = src->getResolvedTexture();
         }
 
         std::unique_ptr<RenderFramebuffer> &framebuffer = snapVrFramebuffers[dst];
@@ -772,7 +773,7 @@ namespace {
             // desktop window follows, unsynchronized, as a mirror.
             SnapVR::Interface *snapVr = SnapVR::get();
             bool snapVrFrame = false;
-            if ((snapVr != nullptr) && snapVr->active()) {
+            if ((snapVr != nullptr) && snapVr->sessionAlive()) {
                 SnapVR::Timing snapVrTiming;
                 if (snapVr->frameWait(snapVrTiming)) {
                     snapVrFrame = true;

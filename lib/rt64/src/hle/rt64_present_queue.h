@@ -75,6 +75,7 @@ namespace RT64 {
         struct SnapVrCopySet {
             std::unique_ptr<TextureCopyDescriptorSet> set;
             uint64_t revision = 0;
+            const RenderTexture *texture = nullptr;
         };
         std::unordered_map<const RenderTexture *, std::unique_ptr<RenderFramebuffer>> snapVrFramebuffers;
         std::unordered_map<const RenderTarget *, SnapVrCopySet> snapVrCopySets;

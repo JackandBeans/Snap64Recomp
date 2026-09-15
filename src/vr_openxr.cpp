@@ -831,6 +831,10 @@ struct Session final : RT64::SnapVR::Interface {
     // RT64::SnapVR::Interface
     // ---------------------------------------------------------------
 
+    bool sessionAlive() override {
+        return alive.load(std::memory_order_acquire);
+    }
+
     bool active() override {
         return alive.load(std::memory_order_acquire) && running.load(std::memory_order_acquire);
     }

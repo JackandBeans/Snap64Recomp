@@ -86,6 +86,9 @@ namespace RT64 {
 
         struct Interface {
             virtual ~Interface() { }
+            // The session exists: its events must be serviced and its frames
+            // waited on, whether or not it is running yet.
+            virtual bool sessionAlive() = 0;
             // The session is running: render for it.
             virtual bool active() = 0;
             // The port's reading of the game's camera this tick.
