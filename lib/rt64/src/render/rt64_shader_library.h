@@ -14,6 +14,13 @@ namespace RT64 {
 
     struct ShaderLibrary {
         SamplerLibrary samplerLibrary;
+        // Pokemon Snap port, the headset: the texture copy again, for the
+        // runtime's 8-bit images in either channel order (the copy above is
+        // built for the renderer's own colour format, 16-bit float under the
+        // High colour depth, and a pipeline draws garbage into a target of
+        // another format). Both share textureCopy's layout.
+        ShaderRecord snapVrTextureCopyRGBA;
+        ShaderRecord snapVrTextureCopyBGRA;
         bool usesHDR = false;
         bool usesHardwareResolve = false;
 

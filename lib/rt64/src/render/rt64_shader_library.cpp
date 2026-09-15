@@ -567,6 +567,12 @@ namespace RT64 {
             pipelineDesc.vertexShader = fullScreenVertexShader.get();
             pipelineDesc.pixelShader = pixelShader.get();
             textureCopy.pipeline = device->createGraphicsPipeline(pipelineDesc);
+
+            // Pokemon Snap port, the headset (rt64_snap_vr.h).
+            pipelineDesc.renderTargetFormat[0] = RenderFormat::R8G8B8A8_UNORM;
+            snapVrTextureCopyRGBA.pipeline = device->createGraphicsPipeline(pipelineDesc);
+            pipelineDesc.renderTargetFormat[0] = RenderFormat::B8G8R8A8_UNORM;
+            snapVrTextureCopyBGRA.pipeline = device->createGraphicsPipeline(pipelineDesc);
         }
 
         // Texture Decode.

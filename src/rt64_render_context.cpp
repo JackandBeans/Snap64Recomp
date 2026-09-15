@@ -461,7 +461,7 @@ public:
         // and costs a visible pause.
         // The headset keeps the renderer paced on it and the picture at its
         // fixed scale whatever the pages say (src/vr_openxr.cpp).
-        if (snap::vr_active()) {
+        if (snap::vr_wanted()) {
             app_->userConfig.refreshRate = RT64::UserConfiguration::RefreshRate::Display;
             app_->userConfig.resolution = RT64::UserConfiguration::Resolution::Manual;
             app_->userConfig.resolutionMultiplier = 4.0;

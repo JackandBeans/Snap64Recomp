@@ -1181,6 +1181,7 @@ struct Session final : RT64::SnapVR::Interface {
         }
     }
 
+    plume::RenderFormat imageFormat() override { return viewFormat; }
     uint32_t eyeWidth() override { return eyes[0].width; }
     uint32_t eyeHeight() override { return eyes[0].height; }
     bool traceEnabled() override { return trace; }

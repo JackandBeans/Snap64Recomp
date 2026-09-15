@@ -463,8 +463,15 @@ namespace {
         copyCB.uvScroll = { 0.0f, 0.0f };
         copyCB.uvScale = { float(src->width), float(src->height) };
         copyCB.boxSize = { 1, 1 };
+        // The copy pipeline built for the image's own format: the library's
+        // textureCopy targets the renderer's colour format, which under the
+        // High colour depth is 16-bit float, and a pipeline draws garbage
+        // into a target of another format.
         const ShaderRecord &textureCopy = ext.shaderLibrary->textureCopy;
-        commandList->setPipeline(textureCopy.pipeline.get());
+        SnapVR::Interface *snapVrCopyTarget = SnapVR::get();
+        const bool bgra = (snapVrCopyTarget != nullptr) && (snapVrCopyTarget->imageFormat() == RenderFormat::B8G8R8A8_UNORM);
+        const RenderPipeline *copyPipeline = bgra ? ext.shaderLibrary->snapVrTextureCopyBGRA.pipeline.get() : ext.shaderLibrary->snapVrTextureCopyRGBA.pipeline.get();
+        commandList->setPipeline(copyPipeline);
         commandList->setGraphicsPipelineLayout(textureCopy.pipelineLayout.get());
         commandList->setVertexBuffers(0, nullptr, 0, nullptr);
         commandList->setViewports(RenderViewport(0.0f, 0.0f, float(dstWidth), float(dstHeight)));

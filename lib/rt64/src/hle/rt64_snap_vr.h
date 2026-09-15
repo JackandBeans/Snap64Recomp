@@ -115,6 +115,9 @@ namespace RT64 {
             // as a screen, world-locked ahead of the seat (the menus) or
             // head-locked as a window (the viewfinder while zoomed in).
             virtual void frameEnd(const Views &views, bool showEyes, bool showScreen, bool screenHeadLocked, float screenAspect) = 0;
+            // The format the runtime's images are written through: R8G8B8A8_UNORM
+            // or B8G8R8A8_UNORM, whichever the runtime offered.
+            virtual plume::RenderFormat imageFormat() = 0;
             virtual uint32_t eyeWidth() = 0;
             virtual uint32_t eyeHeight() = 0;
             virtual bool traceEnabled() = 0;
