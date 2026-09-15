@@ -46,6 +46,24 @@
   at 1x, in twice the time; the Controls row and its help line composed,
   and Right and B read back on the host as 2x and then Off.
 
+* Photo Detail showed some photos, or the bottom part of one, at the
+  console's own resolution, some runs and not others, a restart clearing
+  it (issue #15, Succulent-Puppet, Intel UHD 630; my own review of a
+  Volcano shot, since 1.0.0). A photo's sharp copy comes back from the
+  GPU at a flush, and a sprite whose texture loads ran before that flush
+  in the same frame cannot use the copy until the next; the eviction
+  rule of the ring of forty took such a copy, filled but never used,
+  first, and on a screen that renders enough small things a frame the
+  ring is full every frame, so the copy was thrown out at the next render
+  before any frame could use it, for as long as the screen lasted. A
+  photo whose render is split in two by a framebuffer read, fire in it
+  for one, got one copy per part: the first served the top strips, the
+  second never served, and the bottom stayed pixelated. A copy now gets
+  a full frame to be found before it can be evicted. The log names any
+  photo-sized load that matches nothing, with the copy it came closest
+  to and the first pixel that differed, so a recurrence explains itself.
+  The cause was found by reading the code against the two screenshots;
+  the fault did not reproduce in my replays, which have no such photo.
 ## 1.0.7 -- 2026-09-13
 
 * Restore Defaults is the last row of the Button Setup page, after Stick
