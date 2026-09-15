@@ -6,6 +6,8 @@
 
 #include "shared/rt64_texture_copy.h"
 
+#include <filesystem>
+
 #include "common/rt64_thread.h"
 #include "rhi/rt64_render_hooks.h"
 
@@ -816,15 +818,43 @@ namespace {
                         RenderCommandList *snapVrList = ext.presentGraphicsWorker->commandList.get();
                         snapVrList->begin();
                         bool eyesCopied = false;
+                        RenderTexture *eyeImages[2] = { nullptr, nullptr };
                         if (eyesReady) {
                             eyesCopied = true;
                             for (uint32_t e = 0; e < 2; e++) {
-                                RenderTexture *image = snapVr->acquireEyeImage(e);
-                                if (image == nullptr) {
+                                eyeImages[e] = snapVr->acquireEyeImage(e);
+                                if (eyeImages[e] == nullptr) {
                                     eyesCopied = false;
                                     break;
                                 }
-                                snapVrCopy(eyeTargets[e], image, snapVr->eyeWidth(), snapVr->eyeHeight());
+                                snapVrCopy(eyeTargets[e], eyeImages[e], snapVr->eyeWidth(), snapVr->eyeHeight());
+                            }
+                        }
+
+                        // Diagnostic (SNAP_VR_DUMP=<n>): every n frames the left
+                        // eye's image, as handed to the runtime, into
+                        // snap_frame_dumps/ through the present capture rig. The
+                        // image goes back to its render-target state after the
+                        // copy, which is the state it must be released in.
+                        static const int32_t snapVrDumpEvery = []() {
+                            const char *env = std::getenv("SNAP_VR_DUMP");
+                            return (env != nullptr) ? std::max(1, std::atoi(env)) : 0;
+                        }();
+                        static SnapPresentCapture snapVrCaptureRig;
+                        static uint32_t snapVrDumpCounter = 0;
+                        bool snapVrDumped = false;
+                        if (eyesCopied && (snapVrDumpEvery > 0)) {
+                            snapVrDumpCounter++;
+                            if ((snapVrDumpCounter % uint32_t(snapVrDumpEvery)) == 0) {
+                                static bool snapVrDumpDirMade = false;
+                                if (!snapVrDumpDirMade) {
+                                    snapVrDumpDirMade = true;
+                                    std::error_code ec;
+                                    std::filesystem::create_directories("snap_frame_dumps", ec);
+                                }
+                                snapCaptureRecordTo(snapVrCaptureRig, ext.device, snapVrList, eyeImages[0], snapVr->imageFormat(), snapVr->eyeWidth(), snapVr->eyeHeight());
+                                snapVrList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(eyeImages[0], RenderTextureLayout::COLOR_WRITE));
+                                snapVrDumped = snapVrCaptureRig.pending;
                             }
                         }
                         bool screenCopied = false;
@@ -842,6 +872,9 @@ namespace {
                         snapVrList->end();
                         ext.presentGraphicsWorker->execute();
                         ext.presentGraphicsWorker->wait();
+                        if (snapVrDumped) {
+                            snapCaptureFinishFrom(snapVrCaptureRig, snapVr->imageFormat(), "vrleft", -1);
+                        }
                         for (uint32_t e = 0; e < 2; e++) {
                             snapVr->releaseEyeImage(e);
                         }
