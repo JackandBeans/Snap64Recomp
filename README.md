@@ -408,11 +408,11 @@ each step, is `BUILDING.md`.
 no team behind it. I set the rule it follows, decided what it would and
 would not do, researched the Snap Station down to its protocol, played
 every build on my own hardware and on a Steam Deck, and shipped nine
-releases from the reports players sent. The code, the tools and the
-documentation were written in sessions I directed, and every commit made
-that way names the model in its trailer, so the record is in the history
-and not in this paragraph. Judge the port by what it does and by the
-changelog, which says what each fault was and why.
+releases from the reports players sent. Claude wrote the code, the tools
+and the documentation, this page included, in sessions I directed, and
+every commit made that way names the model in its trailer, so the record
+is in the history and not in this paragraph. Judge the port by what it
+does and by the changelog, which says what each fault was and why.
 
 None of this asks to be taken on trust. The code is here, the commit
 history is here with its reasoning, the notes under `docs/dev/` are my
