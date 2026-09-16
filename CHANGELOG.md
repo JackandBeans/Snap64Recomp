@@ -156,9 +156,9 @@
   so it is never asked again. The chooser is RT64's own copy of
   nativefiledialog-extended, which the build already carried. `SNAP_ROM_PICK`
   answers the chooser for the release suite.
-* The README no longer lists Widescreen as untested beyond the Beach: the
-  port's author has since played every course with the option on and seen
-  nothing wrong, and says so in the verified list, as play, not proof.
+* The README no longer lists Widescreen as untested beyond the Beach: I
+  have since played every course with the option on and seen nothing
+  wrong, and say so in the verified list, as play, not proof.
 
 ## 1.0.6 -- 2026-09-13
 

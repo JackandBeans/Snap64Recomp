@@ -1149,7 +1149,7 @@ std::string input_bind_display(const char* input, int device) {
         out = "Motion";
     }
     // Two names on a row are joined with "or": "B or X" says that either
-    // presses the button, where "B, X" read as a puzzle (the author, on the
+    // presses the button, where "B, X" read as a puzzle (me, on the
     // release's own screenshot, 2026-09-13).
     for (const std::string& s : it->second) {
         if (source_device(s) != device) {
@@ -1527,8 +1527,8 @@ void input_handle_sdl_event(const SDL_Event& event) {
 void input_update_mouse_capture() {
     // A replayed run takes no input from the mouse (input_get), so it must
     // not take the cursor either: the release suite plays courses while
-    // the author is elsewhere on the same desktop, and a captured cursor
-    // locked them out of it.
+    // I am elsewhere on the same desktop, and a captured cursor locked me
+    // out of it.
     static const bool replaying = (getenv("SNAP_REPLAY") != nullptr);
     const bool wanted = !replaying &&
                         settings().mouse_aim &&

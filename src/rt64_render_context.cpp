@@ -572,7 +572,7 @@ public:
             // The surface's size, said whenever it changes, and kept for
             // the window's thread (snap_render_surface_size). On a Steam Deck
             // in Gaming Mode the port draws into whatever screen gamescope
-            // gave the shortcut -- a 3840x2160 one on the author's OLED Deck
+            // gave the shortcut -- a 3840x2160 one on my OLED Deck
             // until the port asked for the display's own size (main.cpp,
             // create_window), which gamescope answers by resizing the screen
             // and then the fullscreen window, each a moment after the other.

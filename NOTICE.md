@@ -20,8 +20,8 @@ release v1.7.2308, the terms `dxil.dll` ships under; the same row) and `roboto.t
 
 What follows is every component in the working tree as read on 2026-09-02,
 with its license as found in its own files, its origin, and whether this build
-uses it. "Ignored" means the directory is present on the developer's machine
-but not in git (`VENDORING.md` explains).
+uses it. "Ignored" means the directory is present on my machine but not in
+git (`VENDORING.md` explains).
 
 ## Recompilation toolchain and runtime
 

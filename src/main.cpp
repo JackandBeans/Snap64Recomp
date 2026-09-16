@@ -1130,7 +1130,7 @@ static bool snap_take_instance_lock(std::string& note) {
 // On a Steam Deck the Mesa driver (RADV) drops one triangle of a course's
 // sky dome at the ride's first frames in Widescreen: a chunk at the top-left
 // showing the previous picture, black bands and all, until the next camera
-// cut repaints it (the port's author, from 1.0.1 to 1.0.4, 2026-09-06 to
+// cut repaints it (seen by me from 1.0.1 to 1.0.4, 2026-09-06 to
 // 2026-09-12). The triangle has a vertex on the camera plane, which the
 // port's vertex shader nudges a hair in front of it (RT64, RSPProcessCS);
 // the hardware clipper handles the enormous projected coordinate that makes,
