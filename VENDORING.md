@@ -25,7 +25,7 @@ N64ModernRuntime's is not.
 | `lib/N64ModernRuntime/N64Recomp` | yes (part of the above) | the runtime's bundled copy of N64Recomp's headers and sources; its `RSPRecomp` target is built by the port's CMake to recompile the audio microcode at build time (BUILDING.md step 9); upstream commit unrecorded |
 | `lib/rt64` (outside `src/contrib`) | yes, 300 files | forked from rt64/rt64 `a012a23` (established by content, below); `lib/rt64/.git` is an orphaned gitfile pointing at a deleted `.git/modules/lib/rt64` |
 | `lib/rt64/src/contrib/` | **no** (ignored), except the port's three plume files (below) | RT64's third-party trees, 396 MB; fetched by `tools/fetch_deps.py` at the pins below |
-| `lib/SDL` | no (ignored) | fetched by `tools/fetch_deps.py` at the pin below (the developer's copy is a full clone with a live `.git`) |
+| `lib/SDL` | no (ignored) | fetched by `tools/fetch_deps.py` at the pin below (my copy is a full clone with a live `.git`) |
 | `lib/DirectX-Headers` | no (ignored) | fetched by `tools/fetch_deps.py` at the pin below (same) |
 
 ## Recovered pins
@@ -144,7 +144,7 @@ Proof: on 2026-09-02 a plain `git clone` of this repository into a second
 directory, `python tools/fetch_deps.py`, the three generated inputs copied in,
 and CMake with the Visual Studio 16 2019 x64 generator produced
 `Snap64Recomp.exe` with the three DLLs beside it; the fetched trees were then
-diffed against the developer's and matched apart from the two zstd symlink
+diffed against mine and matched apart from the two zstd symlink
 stand-ins (BUILDING.md, "What a clean checkout is missing", has the record).
 
 ## Local modifications to vendored trees
@@ -250,7 +250,7 @@ repository (`git add -f`; the directory around them stays ignored):
 
 The `.cpp` does not compile against pristine plume headers, which is why the
 headers are tracked too (until 2026-09-02 they were not, and the only copy of
-their changes was the developer's working tree). `tools/fetch_deps.py` clones
+their changes was my working tree). `tools/fetch_deps.py` clones
 plume at the pin, which writes upstream's versions over the three files, and
 then puts them back with `git checkout --`; an uncommitted local edit to one
 of them is kept and reported instead.

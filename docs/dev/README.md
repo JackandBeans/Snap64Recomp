@@ -1,8 +1,8 @@
 # Working notes
 
-Internal notes kept for the record, written during development and addressed
-to the maintainer, not to players. Nothing here is user documentation;
-`README.md` and `BUILDING.md` at the top of the repository are.
+My working notes, kept for the record as they were written during
+development. They are addressed to me, not to players, and nothing here is
+user documentation; `README.md` and the pages under `docs/` are.
 
 * `OVERNIGHT-REPORT-2026-09-03.md`: the status report of the 2026-09-03 push.
 * `RELEASE-CHECKLIST.md`: the checklist that closed 1.0.0, with its status.

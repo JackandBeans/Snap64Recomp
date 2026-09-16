@@ -18,5 +18,5 @@ example), write to snap64recomp@gmail.com rather than opening a public
 issue, with the file that triggers it if you can share it. Everything else
 goes to Issues.
 
-There is no bug bounty; this is a hobby project. Reports are answered as
+There is no bug bounty; this is a hobby project, and I answer reports as
 time allows.

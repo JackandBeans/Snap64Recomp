@@ -17,10 +17,10 @@ template asks for. For code, the ground rules that shaped the port:
 * **Comments say what is true**, not what was intended; a build that ships
   has its version bumped, its suite run and its archive checked
   (`BUILDING.md`, "To cut a release").
-* **Say how a change was made.** This port was written with Claude
-  (README, "How it was made"), and every commit that was names the model
-  in a `Co-Authored-By` trailer; a contribution made with an AI tool is
-  welcome on the same terms: say so in the trailer, and read what it
+* **Say how a change was made.** I made this port with Claude Code
+  (README, "How I made it"), and every commit made that way names the
+  model in a `Co-Authored-By` trailer; a contribution made with an AI tool
+  is welcome on the same terms: say so in the trailer, and read what it
   wrote before you send it.
 
 Build instructions are in `BUILDING.md`; the automated suite is

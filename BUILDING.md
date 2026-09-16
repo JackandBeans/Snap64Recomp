@@ -452,7 +452,7 @@ drew Oak's lab correctly on `llvmpipe`. WSL's audio sink accepts samples
 and never plays them; the port drops the queue and says so
 (`[SNAP-Audio] the device is not draining`), which is the guard that also
 covers a Deck's sleep or a Bluetooth switch. Running the game on a Linux
-desktop or a Steam Deck is [unverified](README.md#linux-and-steam-deck).
+desktop or a Steam Deck is [unverified](docs/STEAM-DECK.md).
 
 ## What a clean checkout is missing
 
@@ -478,8 +478,13 @@ the two symbol files. It does **not** contain:
 submodules without ever committing a gitlink; it has been removed, and
 VENDORING.md records what those directories actually are.
 
-There is no CI. The headless suite, `tools/release_check.py`, is described
-under [Replays and the headless suite](#replays-and-the-headless-suite).
+The only CI is a documentation check: `.github/workflows/docs.yml` runs
+`tools/check_docs.py`, which follows every relative link and anchor in the
+Markdown files, and compiles the Python tools, on every push. A build
+cannot run there, because the ROM is a build input (step 9) that no
+workflow may hold, and the recompiled game depends on it too. The headless
+suite, `tools/release_check.py`, is described under
+[Replays and the headless suite](#replays-and-the-headless-suite).
 Packaging is `cpack` (step 13): the
 `install()` rules lay out the portable folder, and the build stages the DLLs
 and the `menu_text` badge beside the executable (step 12). The ROM is the one

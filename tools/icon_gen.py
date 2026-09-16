@@ -1,5 +1,5 @@
 # The executable's icon, src/snap64.ico, composed from the port's logo,
-# docs/logo.png (the author's own art, nothing of the game's).
+# docs/logo.png (my own art, nothing of the game's).
 #
 # 256, 128, 64, 48 and 32 px: the whole logo (burst, Snap64, the Recomp
 # filmstrip) on a square tile filling the whole icon, of the blue-violet the

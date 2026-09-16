@@ -20,8 +20,8 @@ detached checkout of its own (`git init`, `git fetch --depth 1 <url> <sha>`,
 tag has to survive upstream; only the commit does.
 
 What each entry is and how its pin was established is in VENDORING.md. The
-short version of the table below: `confidence` is `exact` when the developer's
-tree was byte-identical to the pinned commit (file modes and symlinks aside,
+short version of the table below: `confidence` is `exact` when my tree was
+byte-identical to the pinned commit (file modes and symlinks aside,
 which NTFS does not keep), `high` when it matched apart from files the port
 changes on purpose or files nothing compiles.
 
@@ -170,7 +170,7 @@ GIT_PINS = [
          sha='0ff651dd876823b99fa5c5f53292be28381aee9b',
          describe='dev branch, 2024-07-16 (merge of PR #4096)', confidence='high',
          why=('636 of 638 files match; tests/cli-tests/bin/unzstd and zstdcat are symlinks '
-              'upstream and were empty files in the developer\'s tree. Nothing compiled differs.')),
+              'upstream and were empty files in my tree. Nothing compiled differs.')),
 ]
 
 # Files rt64/rt64 keeps as plain files under src/contrib (not submodules), with
