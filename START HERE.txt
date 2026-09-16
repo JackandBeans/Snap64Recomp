@@ -97,11 +97,11 @@ a motion sensor: a Deck, a DualShock 4, a DualSense or a Switch Pro.
                        Snap64Recomp-window.png for the window and a
                        Snap64Recomp.desktop launcher written on first start
 
-To change what any key, mouse button or controller button does, edit the
-"keys" section of snapsettings.json: every input is listed there after the
-first run, so it is a matter of changing a name. A controller's buttons are
-written as "Pad A", "Pad LeftTrigger" and so on. An in-game page for this is
-coming in the next release.
+To change what any key, mouse button or controller button does, open
+Options > Controls > Button Setup in the game: a row for each input, and A
+on a row listens for the next press on the device shown at the top. The
+same table is the "keys" section of snapsettings.json, where a controller's
+buttons are written as "Pad A", "Pad LeftTrigger" and so on.
 
 
 SOMETHING WRONG?
@@ -111,5 +111,7 @@ It is written next to this file whenever the game is started from the desktop
 (started from a terminal, the same text goes to the terminal instead), and it
 is the single most useful thing you can send.
 
-README.md has the full documentation: every setting, the Snap Station, HD
-texture packs, mods, known limitations, and how the port was built.
+README.md is the front page, and docs/MANUAL.md the full manual: every
+setting, every control, the Snap Station (docs/SNAP-STATION.md), the Steam
+Deck (docs/STEAM-DECK.md), HD texture packs, mods, known limitations, and
+how the port was built.

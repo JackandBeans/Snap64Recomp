@@ -19,10 +19,43 @@
   and kept for the photo's list of subjects (patches/src/widescreen_cull_patch.c).
   Windows and Direct3D 12 only; off, nothing changes. The OpenXR loader
   (Khronos, Apache 2.0) is built into the executable from `lib/OpenXR-SDK`,
-  fetched by `tools/fetch_deps.py`. Verified on this machine without a
-  headset: the port names the runtime, reports no headset and runs the
-  scoring replay flat with the same 45 photos; the release suite's scoring
-  check passed on the build. Not yet seen in a headset.
+  fetched by `tools/fetch_deps.py`. Run three times in my own Quest 3
+  over a Link cable, on the Beach and in the Tunnel, each run finding
+  faults the next build fixed: the world drawn through the plane meant
+  for flat content whenever the ride camera was not recognised (white
+  flashing over the course, garbled static over an intro); the camera
+  compared against a later tick's; the eyes anchored at the game's
+  per-tick position while the world around them was interpolated; sub-
+  frame slots the workload never drew submitted as fresh; a swapchain
+  image lost on every wait timeout; the game's own display list buffer
+  overrun by a cull widened too far, which froze the game when the zoom
+  was toggled; the flat screen hidden behind a held world through a
+  course intro; and effect sprites given the plane's separation whatever
+  their distance. Without a headset the port names the runtime, reports
+  none and runs the scoring replay flat with the same 45 photos, which
+  the release suite checks on every build. Still being settled ride by
+  ride; `docs/VR.md` says where it stands.
+* The documentation, rebuilt. The README had grown to fourteen thousand
+  words, six times the size of the other recompilations' pages, and in
+  several places contradicted itself: it said every run had been on one
+  machine while listing three players' GPUs, that Vulkan had never been
+  run while its own settings table said where it had, that the Deck's
+  Gaming Mode and the corner flicker remained after both were done, and
+  that VR was an idea while the same file described the headset. It is a
+  front page now -- what the port is, how to run it, what it adds, the
+  rule, the controls, what is known not to work -- and the manual lives
+  under `docs/`: MANUAL.md, SNAP-STATION.md, STEAM-DECK.md, VR.md,
+  VERIFICATION.md and HISTORY.md, the text moved rather than rewritten and
+  the stale sentences corrected where they stood. The section on how the
+  port was made now says what it is, my project made with Claude Code,
+  with the commit trailers as the record, in place of the account of the
+  models that had stood there. `START HERE.txt` no longer promises the
+  rebinding page that 1.0.6 shipped; NOTICE.md counts the screenshots as
+  they are; the bug report form asks which system rather than which
+  Windows, and points requests at Discussions; and a GitHub workflow runs
+  `tools/check_docs.py`, which follows every relative link and anchor in
+  the Markdown, and compiles the Python tools on every push, the only
+  check a build that needs the ROM can have.
 
 ## 1.0.8 -- 2026-09-15
 

@@ -1,3 +1,10 @@
-# Blank issues stay allowed; the form is a guide, not a gate. No contact
-# links: the README's "Reporting a bug" section is the reference.
+# Blank issues stay allowed; the form is a guide, not a gate. Requests and
+# questions have their own places under Discussions.
 blank_issues_enabled: true
+contact_links:
+  - name: Ask for something
+    url: https://github.com/JackandBeans/Snap64Recomp/discussions/categories/ideas
+    about: A feature, an option, a platform. Ideas live in Discussions, so the issue list stays the bug list.
+  - name: Ask a question
+    url: https://github.com/JackandBeans/Snap64Recomp/discussions/categories/q-a
+    about: How something works, whether something is expected, what a setting does.

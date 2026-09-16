@@ -5,8 +5,9 @@ body:
   - type: markdown
     attributes:
       value: |
-        Thanks. The three files asked for below are what make a report answerable;
-        `snap64.log` is written next to the executable on every run.
+        Thanks. The files asked for below are what make a report answerable;
+        `snap64.log` is written next to the executable on every run (on Linux, in the
+        data directory the log's first line names).
   - type: textarea
     id: what
     attributes:
@@ -26,15 +27,29 @@ body:
     attributes:
       label: Port version
       description: From the window title, or Properties > Details on Snap64Recomp.exe.
-      placeholder: 1.0.0
+      placeholder: 1.0.8
+    validations:
+      required: true
+  - type: dropdown
+    id: system
+    attributes:
+      label: System
+      options:
+        - Windows 11
+        - Windows 10
+        - Steam Deck, the native Linux build
+        - Steam Deck, the Windows build through Proton
+        - Linux desktop, the native build
+        - Linux desktop, the Windows build through Wine or Proton
+        - Something else (say what below)
     validations:
       required: true
   - type: input
-    id: system
+    id: gpu
     attributes:
-      label: Windows and GPU
-      description: Windows version, GPU model and driver version.
-      placeholder: Windows 11 24H2, GeForce RTX 3060, driver 566.03
+      label: GPU and driver
+      description: GPU model and driver version; on a Deck, which model and which SteamOS.
+      placeholder: GeForce RTX 3060, driver 566.03
     validations:
       required: true
   - type: textarea
@@ -49,5 +64,5 @@ body:
     attributes:
       label: ROM
       options:
-        - label: I am using my own dump of the US cartridge, and its SHA-1 matches the one in the README.
+        - label: I am using my own dump of the US cartridge, and the port accepted it at start-up.
           required: true

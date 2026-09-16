@@ -1,20 +1,23 @@
 # Screenshots
 
-All thirty-two, in the order a session meets them. Every one was taken from
-the 1.0.0 build, or a later one where it says so, at 1440p with Render
-Scale and Anti-Aliasing both at 8x on the game's Graphics page, then cropped
-to the game's picture. They are frames of
+In the order a session meets them. Every one was taken from the 1.0.0
+build, or a later one where it says so, at 1440p with Render Scale and
+Anti-Aliasing both at 8x on the game's Graphics page, then cropped to the
+game's picture. They are frames of
 Pokémon Snap as the port renders it, and the game is Nintendo's, Creatures',
 GAME FREAK's and HAL Laboratory's (`NOTICE.md`); the README shows eight of
 them.
 
 ## The title
 
-<a href="screenshots/01-title.png"><img src="screenshots/01-title.png" width="640" alt="The title screen"></a>
+<a href="screenshots/01i-title-108.png"><img src="screenshots/01i-title-108.png" width="640" alt="The title screen"></a>
 
 **The title screen.** The game's own title with the port's "Recomp" wordmark
 under it, the copyright block, and the port's credits line
-(`JackandBeans (Snap64 Recomp) · v1.0.0`) set in the game's own lettering.
+(`JackandBeans (Snap64 Recomp) · v1.0.8`) set in the game's own lettering.
+The same picture from each earlier release, `01-title.png` for 1.0.0 and
+`01b` to `01h` for 1.0.1 to 1.0.7, stays in the folder for that release's
+page.
 
 <a href="screenshots/02-title-menu.png"><img src="screenshots/02-title-menu.png" width="640" alt="The title menu with the Snap Station entry"></a>
 
@@ -22,30 +25,6 @@ under it, the copyright block, and the port's credits line
 **Snap Station**, the fifth entry, is the port's, drawn in the title's own
 lettering. Like the Gallery entry above it, it is shown once the saved
 report holds more than three species.
-
-<a href="screenshots/01f-title-105.png"><img src="screenshots/01f-title-105.png" width="640" alt="The title screen, 1.0.5"></a>
-
-**The title screen, 1.0.5.** The same title from that build, with the
-credits line the port adds reading v1.0.5. (The 1.0.4 picture,
-`01e-title-104.png`, stays for that release's page.)
-
-<a href="screenshots/01g-title-106.png"><img src="screenshots/01g-title-106.png" width="640" alt="The title screen, 1.0.6"></a>
-
-**The title screen, 1.0.6.** The same title from the 1.0.6 build, the
-credits line reading v1.0.6, taken with PRESS START at its brightest and no
-sprite crossing the water.
-
-<a href="screenshots/01h-title-107.png"><img src="screenshots/01h-title-107.png" width="640" alt="The title screen, 1.0.7"></a>
-
-**The title screen, 1.0.7.** The same title from the 1.0.7 build, the
-credits line reading v1.0.7, taken with PRESS START at its brightest and no
-sprite crossing the picture.
-
-<a href="screenshots/01i-title-108.png"><img src="screenshots/01i-title-108.png" width="640" alt="The title screen, 1.0.8"></a>
-
-**The title screen, 1.0.8.** The same title from the current build, the
-credits line reading v1.0.8, taken with PRESS START at its brightest and no
-sprite crossing the picture.
 
 ## A course
 

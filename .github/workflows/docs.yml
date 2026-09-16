@@ -1,0 +1,21 @@
+# The one check a build that needs the ROM can have: every relative link
+# and anchor in the Markdown resolves, and every Python tool compiles.
+name: docs
+
+on:
+  push:
+    branches: [main, snap-port]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+      - name: Links and anchors
+        run: python tools/check_docs.py
+      - name: The tools compile
+        run: python -m compileall -q tools patches
