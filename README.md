@@ -398,9 +398,8 @@ not in this paragraph. Judge the port by what it does and by the
 changelog, which says what each fault was and why.
 
 None of this asks to be taken on trust. The code is here, the commit
-history is here with its reasoning, the notes under `docs/dev/` are my
-working notes from the release work, kept as written, and the suite's
-replays are tracked so its checks can be re-run.
+history is here with its reasoning, and the suite's replays are tracked
+so its checks can be re-run.
 
 ## Thanks
 
