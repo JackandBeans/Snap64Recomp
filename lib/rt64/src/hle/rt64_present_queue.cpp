@@ -840,7 +840,20 @@ namespace {
                         // pose and the runtime reprojects it. The world holds
                         // still for a frame instead of blinking out, and the
                         // headset is never handed a frame with no layers at all.
-                        const bool holdLastEyes = !eyesReady && snapVrSub.worldMode && snapVrEyesEverShown && snapVrLastViews.valid;
+                        // The hold is for a GAP -- a slot this tick did not
+                        // draw -- and never for a state. A course intro cannot
+                        // draw eyes at all for seconds together, and holding
+                        // there froze the world and hid the flat picture behind
+                        // it, which is what the second ride's intro flashing
+                        // was. Bounded as well: a few frames, then the picture.
+                        bool holdLastEyes = !eyesReady && !snapVrSub.rideMissing && snapVrSub.worldMode &&
+                            snapVrEyesEverShown && snapVrLastViews.valid && (snapVrHeldRun < 4);
+                        if (holdLastEyes) {
+                            snapVrHeldRun++;
+                        }
+                        else if (eyesReady) {
+                            snapVrHeldRun = 0;
+                        }
 
                         const bool showScreen = (colorTarget != nullptr) && (!eyesReady || snapVrSub.zoomed) && !holdLastEyes;
                         RenderCommandList *snapVrList = ext.presentGraphicsWorker->commandList.get();

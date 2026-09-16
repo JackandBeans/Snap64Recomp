@@ -487,6 +487,7 @@ namespace RT64 {
             // course onto a panel, which is what a course intro looked like.
             if (snapVrEyePass && !projectionProcessor.snapVrRideFound()) {
                 snapVrEyePass = false;
+                snapVrRecord.rideMissing = true;
             }
         }
 
@@ -1006,6 +1007,12 @@ namespace RT64 {
                         eyeParams.snapVrPlaneSy = ef.planeSy;
                         eyeParams.snapVrPlaneTx = ef.planeTx;
                         eyeParams.snapVrPlaneTy = ef.planeTy;
+                        eyeParams.snapVrOxP00 = ef.oxP00;
+                        eyeParams.snapVrOyP11 = ef.oyP11;
+                        eyeParams.snapVrP20 = ef.p20;
+                        eyeParams.snapVrP21 = ef.p21;
+                        eyeParams.snapVrNear = snapVrCam.nearPlane;
+                        eyeParams.snapVrFar = snapVrCam.farPlane;
                         eyeParams.snapVrRectAx = ef.planeSx * float(snapVrEyeW) / snapVrFrameW;
                         eyeParams.snapVrRectBx = (ef.planeTx + 1.0f - ef.planeSx) * float(snapVrEyeW) * 0.5f;
                         eyeParams.snapVrRectAy = ef.planeSy * float(snapVrEyeH) / snapVrFrameH;

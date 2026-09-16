@@ -49,6 +49,9 @@
 
 // overlay_hook.cpp: true while a course's code overlay is resident.
 namespace snap { extern std::atomic<bool> g_app_level_resident; }
+// dl_budget.cpp: how full the fullest of the game's display list buffers got
+// last frame, in parts per thousand.
+uint32_t snap_dl_peak_permille();
 
 namespace {
 
@@ -66,6 +69,10 @@ constexpr float Pi = 3.14159265358979f;
 // mode, so every Pokemon within the game's own distance draws whichever way
 // the head is turned (patches/src/widescreen_cull_patch.c).
 constexpr uint32_t MailboxVrWorldAddr = 0x80C000E0u;
+// How much wider than the cartridge's own margins a Pokemon may be and still be
+// drawn, Q8 (patches/src/widescreen_cull_patch.c). Backed off when the game's
+// display list buffers fill, because overrunning one corrupts its memory.
+constexpr uint32_t MailboxVrMarginAddr = 0x80C000E4u;
 // The pause flag, read to hold the world while the pause menu is up.
 constexpr uint32_t AddrIsPaused = 0x80382D20u;
 
@@ -1413,6 +1420,22 @@ void vr_tick(uint8_t *rdram) {
     s->pausedInCourse.store(paused, std::memory_order_relaxed);
     const bool world = vr_world_mode();
     rdram[(MailboxVrWorldAddr - 0x80000000u) ^ 3u] = world ? 1u : 0u;
+
+    // The margin, and the retreat when the game's own buffers fill. The port
+    // measures them every frame (src/dl_budget.cpp); past four fifths full the
+    // margin is walked back towards the cartridge's own, and it recovers
+    // slowly, so a busy stretch costs a little of what can be seen at the edge
+    // of vision rather than the game's memory.
+    static uint32_t margin = 576;   // 2.25x
+    const uint32_t fullest = snap_dl_peak_permille();
+    if (fullest >= 800) {
+        margin = (margin > 288) ? (margin - 8) : 256;
+    }
+    else if ((fullest > 0) && (fullest < 700) && (margin < 576)) {
+        margin += 1;
+    }
+    uint32_t *marginWord = reinterpret_cast<uint32_t *>(rdram + (MailboxVrMarginAddr - 0x80000000u));
+    *marginWord = world ? margin : 256u;
 }
 
 } // namespace snap

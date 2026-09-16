@@ -43,6 +43,16 @@ extern Mtx4f D_803B14D8_5518E8;
 #define SNAP_VIEW_WIDE_Q8 (*(volatile u32*) 0x80C00044)
 /* Host-owned: one while the headset shows the world (src/vr_openxr.cpp). */
 #define SNAP_VR_WORLD (*(volatile u8*) 0x80C000E0)
+/* Host-owned: how much wider than the cartridge's own margins a Pokemon may
+ * be and still be drawn while the headset shows the world, Q8 (256 = the
+ * cartridge's). A headset sees about fifty degrees each way against the
+ * cartridge's forty-six horizontally and thirty-eight vertically, and the head
+ * can pitch past the limit the course sets the camera, so a little over twice
+ * the margins covers what can be seen. It must stay BOUNDED: drawing the whole
+ * course at once overran the game's own display list buffer, which is sized
+ * for what the console drew, and writing past it corrupted the game's memory
+ * and wedged it. */
+#define SNAP_VR_MARGIN_Q8 (*(volatile u32*) 0x80C000E4)
 /* Host-owned, zeroed at the seed: how many verdicts the widened bound has
  * turned from culled to drawn, so a replay can measure the patch without
  * a picture (the host prints it under SNAP_STATS). */
@@ -100,9 +110,61 @@ s32 func_80364618_504A28(GObj* obj, f32 x, f32 y, f32 z) {
  * cartridge's, so the photo's list, its twelve slots and the scoring behind
  * them see exactly what the console's camera saw.
  */
+/* The same test as above with the margins scaled, for the DRAWING verdict
+ * while the headset shows the world. Bounded at four times, and the distance
+ * test above it is the cartridge's. */
+static s32 snapVrOffScreen(f32 x, f32 y, f32 z) {
+    f32 outX;
+    f32 outY;
+    f32 outZ;
+    s32 temp;
+    s32 xBound;
+    s32 yBound;
+    u32 q8;
+    u32 wide;
+
+    guMtxXFMF(D_803B14D8_5518E8, x, y, z, &outX, &outY, &outZ);
+    if (outZ > -1.0f) {
+        return 1;
+    }
+    if (outZ < -10000.0f) {
+        return 1;
+    }
+
+    q8 = SNAP_VR_MARGIN_Q8;
+    if (q8 < 256) {
+        q8 = 256;
+    }
+    if (q8 > 1024) {
+        q8 = 1024;
+    }
+    xBound = (s32) ((240 * q8 + 128) >> 8);
+    yBound = (s32) ((180 * q8 + 128) >> 8);
+
+    /* Widescreen widens the picture as well; both apply. */
+    wide = SNAP_VIEW_WIDE_Q8;
+    if (wide > 256) {
+        if (wide > 1024) {
+            wide = 1024;
+        }
+        xBound = (s32) ((xBound * wide + 128) >> 8);
+    }
+
+    temp = (outX * 228.506134f) / outZ;
+    if (temp < -xBound || temp > xBound) {
+        return 1;
+    }
+    temp = (outY * 228.506134f) / outZ;
+    if (temp < -yBound || temp > yBound) {
+        return 1;
+    }
+    return 0;
+}
+
 s32 func_80364718_504B28(GObj* obj) {
     Pokemon* pokemon = GET_POKEMON(obj);
     s32 culled;
+    s32 hidden;
 
     if (pokemon->flags & POKEMON_FLAG_40) {
         Pokemon_SetFlag100(obj, false);
@@ -114,7 +176,11 @@ s32 func_80364718_504B28(GObj* obj) {
     }
     culled = func_80364618_504A28(obj, pokemon->collPosition.x, pokemon->collPosition.y, pokemon->collPosition.z);
     if (culled != 0) {
-        Pokemon_SetFlag100(obj, SNAP_VR_WORLD ? false : true);
+        hidden = true;
+        if (SNAP_VR_WORLD) {
+            hidden = snapVrOffScreen(pokemon->collPosition.x, pokemon->collPosition.y, pokemon->collPosition.z);
+        }
+        Pokemon_SetFlag100(obj, hidden);
         return 1;
     }
     Pokemon_SetFlag100(obj, false);

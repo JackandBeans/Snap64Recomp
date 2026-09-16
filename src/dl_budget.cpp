@@ -24,6 +24,7 @@
  * overwritten.
  */
 
+#include <atomic>
 #include <cstdint>
 #include <cstdio>
 
@@ -31,6 +32,17 @@
 
 extern "C" {
 #include "funcs.h"
+}
+
+// How full the fullest of the game's display list buffers got, in parts per
+// thousand, for the headset's draw-margin retreat (src/vr_openxr.cpp): the
+// buffers are the cartridge's own size and overrunning one corrupts memory.
+std::atomic<uint32_t> g_dl_permille{0};
+
+// Read and cleared by the headset's tick (src/vr_openxr.cpp): the peak since
+// it last looked, so a single busy frame is seen and then forgotten.
+uint32_t snap_dl_peak_permille() {
+    return g_dl_permille.exchange(0, std::memory_order_relaxed);
 }
 
 namespace snap {
@@ -80,6 +92,13 @@ extern "C" void gtlCheckBuffers(uint8_t* rdram, recomp_context* ctx) {
         // frame by frame.
         const uint32_t used = pos - start;
         const uint32_t reportThreshold = (capacity / 10) * 9;
+        if (capacity > 0) {
+            const uint32_t permille = uint32_t((uint64_t(used) * 1000u) / capacity);
+            uint32_t seen = g_dl_permille.load(std::memory_order_relaxed);
+            while ((permille > seen) && !g_dl_permille.compare_exchange_weak(seen, permille, std::memory_order_relaxed)) {
+            }
+        }
+
         if ((used > snap::g_peak_used[kind]) && (used >= reportThreshold)) {
             snap::g_peak_used[kind] = used;
             printf("[SNAP-DL] kind %u peak %u / %u bytes (%.1f%% full, %d spare)\n",

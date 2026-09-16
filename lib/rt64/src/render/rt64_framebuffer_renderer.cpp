@@ -2133,9 +2133,43 @@ namespace RT64 {
                             // Pokemon Snap port, the headset: the rectangle
                             // where the plane puts it.
                             if (snapVrEyePass) {
-                                viewportRect = snapVrMapViewport(p, drawnRect);
-                                const float ex0 = snapVrRectEdge(p, drawnRect.left(true), call.callDesc.rectLeftOrigin, false);
-                                const float ex1 = snapVrRectEdge(p, drawnRect.right(true), call.callDesc.rectRightOrigin, true);
+                                // A rectangle the game draws with its own depth
+                                // is an effect sprite, placed from the world:
+                                // give it the separation its own distance calls
+                                // for, so it sits where it is rather than at
+                                // arm's length like the film counter. Its size
+                                // is the game's own, which is already right for
+                                // that distance, and its depth is the game's,
+                                // which the eye's projection shares because both
+                                // use the cartridge's near and far.
+                                float rectBx = p.snapVrRectBx;
+                                float rectBy = p.snapVrRectBy;
+                                if ((call.shaderDesc.otherMode.zSource() != 0) && (proj.transformsIndex < drawData.rspViewports.size())) {
+                                    const interop::RSPViewport &vp = drawData.rspViewports[proj.transformsIndex];
+                                    const float primZ = drawData.rdpParams[call.callDesc.callIndex].primDepth.x;
+                                    const float scaleZ = float(vp.scale.z);
+                                    if (std::fabs(scaleZ) > 1e-4f) {
+                                        const float ndcZ = std::max(-0.999f, std::min(0.999f, (primZ - float(vp.translate.z)) / scaleZ));
+                                        const float n = p.snapVrNear;
+                                        const float f = p.snapVrFar;
+                                        const float denom = (f + n) - ndcZ * (f - n);
+                                        if (std::fabs(denom) > 1e-4f) {
+                                            const float d = (2.0f * n * f) / denom;
+                                            if ((d > n) && (d < f)) {
+                                                const float tx = p.snapVrOxP00 / d - p.snapVrP20;
+                                                const float ty = p.snapVrOyP11 / d - p.snapVrP21;
+                                                rectBx = (tx + 1.0f - p.snapVrPlaneSx) * float(p.targetWidth) * 0.5f;
+                                                rectBy = (1.0f - p.snapVrPlaneSy - ty) * float(p.targetHeight) * 0.5f;
+                                            }
+                                        }
+                                    }
+                                }
+                                FramebufferRenderer::DrawParams rectParams = p;
+                                rectParams.snapVrRectBx = rectBx;
+                                rectParams.snapVrRectBy = rectBy;
+                                viewportRect = snapVrMapViewport(rectParams, drawnRect);
+                                const float ex0 = snapVrRectEdge(rectParams, drawnRect.left(true), call.callDesc.rectLeftOrigin, false);
+                                const float ex1 = snapVrRectEdge(rectParams, drawnRect.right(true), call.callDesc.rectRightOrigin, true);
                                 viewportRect.x = std::min(ex0, ex1);
                                 viewportRect.width = std::fabs(ex1 - ex0);
                             }

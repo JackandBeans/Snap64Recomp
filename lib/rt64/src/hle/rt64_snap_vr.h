@@ -94,6 +94,12 @@ namespace RT64 {
             uint64_t workloadId = 0;
             uint32_t slot = 0;
             bool stamped = false;
+            // A course is running but its camera is not the ride's -- an
+            // intro's glide, a zoom transition -- so no eyes were drawn and
+            // none can be. This is a STATE, not a gap: the flat picture is
+            // shown for as long as it lasts, rather than holding a world that
+            // has stopped moving.
+            bool rideMissing = false;
         };
 
         struct Interface {
@@ -281,6 +287,17 @@ namespace RT64 {
             float planeTx = 0.0f;
             float planeTy = 0.0f;
             float planeZ = 0.0f;
+            // What the plane's own placement is made of, so a rectangle that
+            // says where it is (an effect sprite, drawn with its own depth) can
+            // be given the separation ITS distance calls for instead of the
+            // plane's. The picture's scale does not change with distance -- the
+            // game already sized the sprite for where it is -- so only the
+            // eye's offset term moves:
+            //     planeTx(d) = oxP00 / d - p20,  planeTy(d) = oyP11 / d - p21.
+            float oxP00 = 0.0f;
+            float oyP11 = 0.0f;
+            float p20 = 0.0f;
+            float p21 = 0.0f;
         };
 
         // The game's own vertical field of view, zoomed out (player.c: 55
@@ -341,6 +358,10 @@ namespace RT64 {
                 frame.planeSy = halfHeight * P11 / D;
                 frame.planeTy = oy * P11 / D - P21;
                 frame.planeZ = (-D * P22 + P32) / D;
+                frame.oxP00 = ox * P00;
+                frame.oyP11 = oy * P11;
+                frame.p20 = P20;
+                frame.p21 = P21;
             }
         }
 

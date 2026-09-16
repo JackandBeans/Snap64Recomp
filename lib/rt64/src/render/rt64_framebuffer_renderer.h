@@ -177,6 +177,14 @@ namespace RT64 {
             float snapVrPlaneSy = 1.0f;
             float snapVrPlaneTx = 0.0f;
             float snapVrPlaneTy = 0.0f;
+            // For a rectangle that carries its own depth (an effect sprite):
+            // the separation its distance calls for, rather than the plane's.
+            float snapVrOxP00 = 0.0f;
+            float snapVrOyP11 = 0.0f;
+            float snapVrP20 = 0.0f;
+            float snapVrP21 = 0.0f;
+            float snapVrNear = 10.0f;
+            float snapVrFar = 25600.0f;
         };
 
         FramebufferRenderer(RenderWorker *worker, bool rtSupport, UserConfiguration::GraphicsAPI graphicsAPI, const ShaderLibrary *shaderLibrary);
