@@ -44,7 +44,7 @@ projects this port stands on are under [Thanks](#thanks).
 [What you need](#what-you-need) ·
 [The rule the port follows](#the-rule-the-port-follows) ·
 [Controls](#controls) · [Linux and Steam Deck](#linux-and-steam-deck) ·
-[The headset](#the-headset) · [Known limitations](#known-limitations) ·
+[Known limitations](#known-limitations) ·
 [What's next](#whats-next) · [Reporting a bug](#reporting-a-bug) ·
 [What has been verified](#what-has-been-verified) ·
 [Building](#building) · [How I made it](#how-i-made-it) ·
@@ -174,9 +174,6 @@ has each in full.
 * **Mods and texture packs.** The runtime's `.nrm` mod loader and RT64's
   texture-pack loader are compiled in and run at every start; nothing
   ships with them, and nothing made from another game's data ever will.
-* **A VR headset**, in progress on the `snap-port` branch and not in any
-  release: the game's own camera follows your head through OpenXR
-  ([its page on the branch](https://github.com/JackandBeans/Snap64Recomp/blob/snap-port/docs/VR.md)).
 
 ## What you need
 
@@ -270,18 +267,6 @@ Gaming Mode. The native build needs the system's SDL2, GTK 3 and a Vulkan
 Deck's controls and gyro, its screen, quitting from a pad and the icon are
 in [STEAM-DECK.md](docs/STEAM-DECK.md).
 
-## The headset
-
-Work in progress, and in no release: Snap64 Recomp is being made to draw
-for a VR headset through OpenXR. The game's own camera follows your head,
-so the photo you take is the game's own frame scored by the game's own
-rules, the world is stereo at the headset's rate, and the menus sit on a
-screen in front of you. It lives on the `snap-port` branch, has run in my
-own Quest 3, and is being settled ride by ride;
-[its page on the branch](https://github.com/JackandBeans/Snap64Recomp/blob/snap-port/docs/VR.md)
-says what it does, how to set it up, and exactly what has and has not been
-seen in a headset. Nothing of it is in 1.0.8.
-
 ## Known limitations
 
 * Some 2D content is drawn without a name the interpolation can pair
@@ -334,15 +319,12 @@ In the order it will be worked on; nothing here is a promise until it runs.
 1. **Reports from machines other than mine.** Each release from 1.0.1 to
    1.0.8 was made of what players reported, and the next will be too. The
    issue form is the way to send one, with `snap64.log` attached.
-2. **The headset.** The ride in my own Quest 3, settled; then the hands, a
-   camera held in one of them, apples thrown by hand, and the ZERO-ONE
-   around you.
-3. **The renderer and the runtime as patches on their upstreams.** RT64 and
+2. **The renderer and the runtime as patches on their upstreams.** RT64 and
    N64ModernRuntime are edited in place today, and the runtime's base
    commit is not recorded. Recording both and carrying the port's changes
    as patches is what would let an upstream fix be taken rather than
    ported by hand.
-4. **A Linux desktop.** The native build has run under WSL and on a Deck
+3. **A Linux desktop.** The native build has run under WSL and on a Deck
    and on no Linux desktop yet; the first report from one is wanted.
 
 The same list, with a place to reply, is pinned under
