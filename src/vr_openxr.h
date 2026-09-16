@@ -50,9 +50,11 @@ void vr_stick(float& x, float& y);
 // left, pitch positive upwards. False when the headset is not tracking.
 bool vr_head_yaw_pitch(float& yaw, float& pitch);
 
-// The game's ride camera ran this tick (src/vr_game.cpp), with what it
-// computed: the camera's eye and look-at point and the cart's pose.
-void vr_publish_camera(bool zoomed, const float eye[3], const float at[3], const float cartPos[3], const float cartRot[3]);
+// The camera the game is building its display list with, and whether it is
+// the ride's rather than an intro's glide or a zoom transition, stamped with
+// the game frame it belongs to (src/vr_game.cpp).
+void vr_publish_camera(bool zoomed, bool rideDriving, uint32_t gameFrame,
+                       const float eye[3], const float at[3], const float cartPos[3], const float cartRot[3]);
 
 // The renderer's world mode: a course is running and the ride camera has
 // run within the last ticks (or the game is paused inside one).
@@ -61,6 +63,10 @@ bool vr_world_mode();
 // Once per game tick, on the game's thread: keeps the mailbox byte the cull
 // patch reads in step with the world mode.
 void vr_tick(uint8_t* rdram);
+
+// The camera the display list is being built with, from the renderer's own
+// camera set-up (src/vr_game.cpp, called by src/matrix_tags.cpp).
+void vr_camera_from_display_list(uint8_t* rdram, uint32_t cameraAddress, uint32_t gameFrame);
 
 } // namespace snap
 

@@ -437,7 +437,14 @@ namespace RT64 {
         uint32_t snapVrVirtualH = 240;
         snapVrRecord = SnapVR::SubFrame();
         if ((snapVr != nullptr) && snapVr->active() && (snapVrSubFrame >= 0) && (debuggerRenderer.framebufferIndex < 0)) {
-            snapVr->gameCamera(snapVrCam);
+            // The camera the game drew THIS frame with, interpolated towards the
+            // frame before it by the weight this sub-frame sits at.
+            uint32_t snapVrGameFrame = 0;
+            for (uint32_t w : curFrame.workloads) {
+                snapVrGameFrame = std::max(snapVrGameFrame, workloads[w].snapVrGameFrame);
+            }
+            snapVr->gameCameraForFrame(snapVrGameFrame, curFrameWeight, snapVrCam);
+            snapVrCam.worldMode = snapVrCam.worldMode && snapVr->worldRunning();
             SnapVR::Timing snapVrTiming;
             snapVr->latestTiming(snapVrTiming);
             snapVrEyeW = snapVr->eyeWidth();
@@ -473,6 +480,14 @@ namespace RT64 {
             projectionProcessor.process(projParams);
             projectionProcessor.upload(projParams);
             uploadProjections = true;
+
+            // The headset: a frame whose world camera is not the ride's draws no
+            // eyes at all. The plane the other projections take is for FLAT
+            // content; the world's own perspective through it collapses the
+            // course onto a panel, which is what a course intro looked like.
+            if (snapVrEyePass && !projectionProcessor.snapVrRideFound()) {
+                snapVrEyePass = false;
+            }
         }
 
         // Pokemon Snap port: on the frames where most of the scene's transform
@@ -2140,6 +2155,9 @@ namespace RT64 {
                         std::scoped_lock<std::mutex> interpolatedLock(ext.sharedResources->interpolatedMutex);
                         auto &subs = ext.sharedResources->snapVrSubFrames;
                         if (frame < subs.size()) {
+                            snapVrRecord.workloadId = workload.workloadId;
+                            snapVrRecord.slot = frame;
+                            snapVrRecord.stamped = true;
                             subs[frame] = snapVrRecord;
                         }
                     }

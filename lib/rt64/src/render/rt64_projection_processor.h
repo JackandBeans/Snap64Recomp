@@ -13,6 +13,12 @@ namespace RT64 {
     struct ProjectionProcessor {
         std::unique_ptr<BufferUploader> bufferUploader;
         std::vector<BufferUploader::Upload> uploads;
+        // Pokemon Snap port, the headset: how often the world's camera was
+        // the ride's and how often it was not, reported on a timer rather
+        // than as a handful of one-shot lines, so the rate is known.
+        uint32_t snapVrMatched = 0;
+        uint32_t snapVrUnmatched = 0;
+        float snapVrWorstEyeDelta = 0.0f;
 
         struct ProcessParams {
             RenderWorker *worker = nullptr;
@@ -35,7 +41,12 @@ namespace RT64 {
         void setup(RenderWorker *worker);
         void process(const ProcessParams &p);
         void processScene(const ProcessParams &p, const GameScene &scene, size_t sceneIndex);
-        void snapVrProcess(const ProcessParams &p);
+        // False when the frame's world camera is not the ride's: the caller
+        // must then draw no eyes, because the world must never be put
+        // through the plane meant for flat content (rt64_snap_vr.h).
+        bool snapVrProcess(const ProcessParams &p);
+        bool snapVrRideFound() const { return snapVrFound; }
+        bool snapVrFound = false;
         void upload(const ProcessParams &p);
     };
 };

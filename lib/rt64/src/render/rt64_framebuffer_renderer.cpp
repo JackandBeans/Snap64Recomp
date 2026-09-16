@@ -1458,6 +1458,16 @@ namespace RT64 {
     // Pokemon Snap port, the headset: a rectangle of the game's picture, in
     // its pixels, placed on the plane in front of the head as the eye's
     // target pixels (rt64_snap_vr.h).
+    // An edge the game pinned to the picture's edge with an extended origin
+    // is pinned to the PLANE's edge here, not carried a whole picture-width
+    // past it: the eye pass has no scissor of the picture's own to cut it back.
+    static float snapVrRectEdge(const FramebufferRenderer::DrawParams &p, int32_t coord, uint16_t origin, bool right) {
+        if (origin < G_EX_ORIGIN_NONE) {
+            coord = right ? int32_t(p.snapVrFrameWidth) : 0;
+        }
+        return p.snapVrRectAx * float(coord) + p.snapVrRectBx;
+    }
+
     static RenderRect snapVrMapRect(const FramebufferRenderer::DrawParams &p, const FixedRect &rect) {
         const float x0 = p.snapVrRectAx * float(rect.left(false)) + p.snapVrRectBx;
         const float x1 = p.snapVrRectAx * float(rect.right(true)) + p.snapVrRectBx;
@@ -2124,6 +2134,10 @@ namespace RT64 {
                             // where the plane puts it.
                             if (snapVrEyePass) {
                                 viewportRect = snapVrMapViewport(p, drawnRect);
+                                const float ex0 = snapVrRectEdge(p, drawnRect.left(true), call.callDesc.rectLeftOrigin, false);
+                                const float ex1 = snapVrRectEdge(p, drawnRect.right(true), call.callDesc.rectRightOrigin, true);
+                                viewportRect.x = std::min(ex0, ex1);
+                                viewportRect.width = std::fabs(ex1 - ex0);
                             }
                             // Pokemon Snap port, diagnostic (SNAP_PASS_TRACE): every
                             // rectangle drawn by a pass whose colour image is at

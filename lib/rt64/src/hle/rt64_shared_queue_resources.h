@@ -67,6 +67,7 @@ namespace RT64 {
         std::vector<std::unique_ptr<RenderTarget>> snapVrEyeColorTargets[2];
         std::unique_ptr<RenderTarget> snapVrEyeDepthTargets[2];
         std::vector<SnapVR::SubFrame> snapVrSubFrames;
+        uint32_t snapVrChainGeneration = 0;
         InterpolatedFrameCounters interpolatedFrames[2];
         uint32_t interpolatedFramesIndex = 0;
         std::mutex interpolatedMutex;

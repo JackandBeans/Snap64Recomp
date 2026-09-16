@@ -80,6 +80,8 @@ namespace RT64 {
         std::unordered_map<const RenderTexture *, std::unique_ptr<RenderFramebuffer>> snapVrFramebuffers;
         std::unordered_map<const RenderTarget *, SnapVrCopySet> snapVrCopySets;
         uint32_t snapVrRate = 0;
+        bool snapVrEyesEverShown = false;
+        SnapVR::Views snapVrLastViews;
         bool snapVrWasLive = false;
         void snapVrCopy(RenderTarget *src, RenderTexture *dst, uint32_t dstWidth, uint32_t dstHeight);
 

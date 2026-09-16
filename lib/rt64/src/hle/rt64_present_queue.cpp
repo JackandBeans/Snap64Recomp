@@ -802,9 +802,28 @@ namespace {
                         }
                     }
 
+                    // Only a slot THIS workload drew, in the slot it drew it
+                    // into. A tick that drops its tail sub-frames leaves the
+                    // slots holding the previous tick's record and pictures, and
+                    // submitting those as a fresh frame steps the world back a
+                    // tick and then forward again.
+                    const bool snapVrSlotFresh = snapVrSub.stamped && (snapVrSub.workloadId == present.workloadId) &&
+                        (snapVrSub.slot == uint32_t(i)) && (i < framesToPresent);
+                    if (!snapVrSlotFresh) {
+                        snapVrSub.eyesRendered = false;
+                    }
+                    if (ext.sharedResources->snapVrChainGeneration != snapVr->chainGeneration()) {
+                        // The runtime rebuilt a swapchain: the caches keyed on
+                        // its image pointers name resources that are gone.
+                        ext.sharedResources->snapVrChainGeneration = snapVr->chainGeneration();
+                        snapVrFramebuffers.clear();
+                        snapVrCopySets.clear();
+                    }
+
                     if (snapVr->frameBegin()) {
                         RenderTarget *eyeTargets[2] = { nullptr, nullptr };
-                        bool eyesReady = snapVrSub.eyesRendered && snapVrSub.worldMode && snapVrSub.views.valid;
+                        const bool eyesReadyFresh = snapVrSub.eyesRendered && snapVrSub.worldMode && snapVrSub.views.valid;
+                        bool eyesReady = eyesReadyFresh;
                         if (eyesReady) {
                             std::scoped_lock<std::mutex> interpolatedLock(ext.sharedResources->interpolatedMutex);
                             for (uint32_t e = 0; e < 2; e++) {
@@ -814,7 +833,16 @@ namespace {
                             }
                         }
 
-                        const bool showScreen = (colorTarget != nullptr) && (!eyesReady || snapVrSub.zoomed);
+                        // Nothing fresh to show, but a course is still running:
+                        // the swapchains hold the pictures last released into
+                        // them, and OpenXR shows a swapchain's last released
+                        // image, so the layer goes out again at this frame's own
+                        // pose and the runtime reprojects it. The world holds
+                        // still for a frame instead of blinking out, and the
+                        // headset is never handed a frame with no layers at all.
+                        const bool holdLastEyes = !eyesReady && snapVrSub.worldMode && snapVrEyesEverShown && snapVrLastViews.valid;
+
+                        const bool showScreen = (colorTarget != nullptr) && (!eyesReady || snapVrSub.zoomed) && !holdLastEyes;
                         RenderCommandList *snapVrList = ext.presentGraphicsWorker->commandList.get();
                         snapVrList->begin();
                         bool eyesCopied = false;
@@ -842,9 +870,16 @@ namespace {
                         }();
                         static SnapPresentCapture snapVrCaptureRig;
                         static uint32_t snapVrDumpCounter = 0;
+                        // Alternating eyes, and an interval that is not a whole
+                        // number of a tick's sub-frames: sampling every 45th
+                        // frame of a 90 Hz headset over a 60 Hz game landed on
+                        // the same slot of every tick and could not have seen a
+                        // fault in the others.
+                        uint32_t snapVrDumpEye = 0;
                         bool snapVrDumped = false;
                         if (eyesCopied && (snapVrDumpEvery > 0)) {
                             snapVrDumpCounter++;
+                            snapVrDumpEye = (snapVrDumpCounter / uint32_t(snapVrDumpEvery)) & 1u;
                             if ((snapVrDumpCounter % uint32_t(snapVrDumpEvery)) == 0) {
                                 static bool snapVrDumpDirMade = false;
                                 if (!snapVrDumpDirMade) {
@@ -852,8 +887,8 @@ namespace {
                                     std::error_code ec;
                                     std::filesystem::create_directories("snap_frame_dumps", ec);
                                 }
-                                snapCaptureRecordTo(snapVrCaptureRig, ext.device, snapVrList, eyeImages[0], snapVr->imageFormat(), snapVr->eyeWidth(), snapVr->eyeHeight());
-                                snapVrList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(eyeImages[0], RenderTextureLayout::COLOR_WRITE));
+                                snapCaptureRecordTo(snapVrCaptureRig, ext.device, snapVrList, eyeImages[snapVrDumpEye], snapVr->imageFormat(), snapVr->eyeWidth(), snapVr->eyeHeight());
+                                snapVrList->barriers(RenderBarrierStage::GRAPHICS, RenderTextureBarrier(eyeImages[snapVrDumpEye], RenderTextureLayout::COLOR_WRITE));
                                 snapVrDumped = snapVrCaptureRig.pending;
                             }
                         }
@@ -873,13 +908,27 @@ namespace {
                         ext.presentGraphicsWorker->execute();
                         ext.presentGraphicsWorker->wait();
                         if (snapVrDumped) {
-                            snapCaptureFinishFrom(snapVrCaptureRig, snapVr->imageFormat(), "vrleft", -1);
+                            snapCaptureFinishFrom(snapVrCaptureRig, snapVr->imageFormat(), (snapVrDumpEye == 0) ? "vrleft" : "vrright", -1);
                         }
                         for (uint32_t e = 0; e < 2; e++) {
                             snapVr->releaseEyeImage(e);
                         }
                         snapVr->releaseScreenImage();
-                        snapVr->frameEnd(snapVrSub.views, eyesCopied, screenCopied, eyesCopied, screenAspect);
+                        snapVrEyesEverShown = snapVrEyesEverShown || eyesCopied;
+                        // A held frame keeps the last pictures but takes THIS
+                        // frame's pose, which is what lets the runtime reproject
+                        // it rather than showing a stale head position.
+                        SnapVR::Views submitViews = snapVrSub.views;
+                        if (eyesCopied) {
+                            snapVrLastViews = snapVrSub.views;
+                        }
+                        else if (holdLastEyes) {
+                            SnapVR::Timing holdTiming;
+                            snapVr->latestTiming(holdTiming);
+                            submitViews = snapVrLastViews;
+                            snapVr->locateViews(holdTiming.predictedDisplayTime, submitViews);
+                        }
+                        snapVr->frameEnd(submitViews, eyesCopied || holdLastEyes, screenCopied, eyesCopied || holdLastEyes, screenAspect);
                     }
                 }
             }
@@ -1559,6 +1608,18 @@ namespace {
                 }
 
                 if (skipPresent) {
+                    // The desktop drops a present it has fallen behind on. The
+                    // headset must not lose its frame with it: a runtime that is
+                    // not given a frame shows its own empty room.
+                    SnapVR::Interface *snapVrSkip = SnapVR::get();
+                    if ((snapVrSkip != nullptr) && snapVrSkip->active()) {
+                        SnapVR::Timing skipTiming;
+                        if (snapVrSkip->frameWait(skipTiming) && snapVrSkip->frameBegin()) {
+                            SnapVR::Views skipViews = snapVrLastViews;
+                            snapVrSkip->locateViews(skipTiming.predictedDisplayTime, skipViews);
+                            snapVrSkip->frameEnd(skipViews, snapVrEyesEverShown && skipViews.valid, false, snapVrEyesEverShown && skipViews.valid, 4.0f / 3.0f);
+                        }
+                    }
                     skipInterpolation();
                     notifyPresentId(present);
                 }

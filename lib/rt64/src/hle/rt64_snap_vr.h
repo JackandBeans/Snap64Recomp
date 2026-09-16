@@ -51,10 +51,16 @@ namespace RT64 {
             bool valid = false;
         };
 
-        // What the game says about its own camera, read by the port from the
-        // game's memory each tick (src/vr_game.cpp).
+        // What the game says about the camera it is DRAWING WITH, read by the
+        // port from the game's memory as the display list is built, and stamped
+        // with the game frame it belongs to (src/vr_game.cpp). The renderer asks
+        // for the entry belonging to the frame it is rendering, so the two are
+        // never a tick apart.
         struct GameCamera {
-            bool worldMode = false;     // the ride camera ran within the last ticks
+            bool worldMode = false;     // a course is running
+            bool rideDriving = false;   // this camera is the ride's, not an intro's glide or a zoom
+            bool valid = false;         // an entry was found for the frame asked for
+            uint32_t gameFrame = 0;
             bool zoomed = false;        // the zoomed-in camera is the one running
             float eye[3] = { 0.0f, 0.0f, 0.0f };      // the ride camera's eye, as the game computed it
             float at[3] = { 0.0f, 0.0f, 1.0f };       // its look-at point
@@ -82,6 +88,12 @@ namespace RT64 {
             bool worldMode = false;
             bool zoomed = false;
             bool eyesRendered = false;
+            // Which workload and which of its slots these eyes belong to. A
+            // present that does not match holds the last good pair rather than
+            // submitting one the workload never drew this tick.
+            uint64_t workloadId = 0;
+            uint32_t slot = 0;
+            bool stamped = false;
         };
 
         struct Interface {
@@ -91,8 +103,14 @@ namespace RT64 {
             virtual bool sessionAlive() = 0;
             // The session is running: render for it.
             virtual bool active() = 0;
-            // The port's reading of the game's camera this tick.
-            virtual bool gameCamera(GameCamera &out) = 0;
+            // The camera the game drew the given frame with, interpolated
+            // towards the frame before it by weight (0 = the previous frame's
+            // camera, 1 = this one's), so the eyes sit where the interpolated
+            // world sits rather than stepping once per tick.
+            virtual bool gameCameraForFrame(uint32_t gameFrame, float weight, GameCamera &out) = 0;
+            // Whether a course is running at all, for the frames no camera was
+            // published for.
+            virtual bool worldRunning() = 0;
             // Both eyes' poses for an image to be shown at that time. Any thread.
             virtual bool locateViews(int64_t displayTime, Views &out) = 0;
             // The headset's timing as of the last frame wait. Any thread.
@@ -118,6 +136,10 @@ namespace RT64 {
             // The format the runtime's images are written through: R8G8B8A8_UNORM
             // or B8G8R8A8_UNORM, whichever the runtime offered.
             virtual plume::RenderFormat imageFormat() = 0;
+            // Bumped whenever a swapchain is created or destroyed: the present
+            // thread's caches of framebuffers and descriptors are keyed on the
+            // runtime's image pointers, which a rebuild invalidates.
+            virtual uint32_t chainGeneration() = 0;
             virtual uint32_t eyeWidth() = 0;
             virtual uint32_t eyeHeight() = 0;
             virtual bool traceEnabled() = 0;
@@ -268,12 +290,12 @@ namespace RT64 {
 
         inline void computeEyeFrames(const GameCamera &cam, const Views &views, EyeFrame out[2]) {
             const float units = (cam.unitsPerMetre > 1.0f) ? cam.unitsPerMetre : 1.0f;
-            const hlslpp::float3 cartPos(cam.cartPos[0], cam.cartPos[1], cam.cartPos[2]);
-            // The ride camera's eye is the cart's point plus a hundred units
-            // straight up (updateCameraZoomedOut, updateCameraZoomedIn); the
-            // shake and the vibration the game adds are left out, since a
-            // shaken head is a sick head.
-            const hlslpp::float3 base = cartPos + hlslpp::float3(0.0f, 100.0f, 0.0f);
+            // The camera's own eye point, as the game computed it for this
+            // frame and interpolated towards the frame before it: the world
+            // around the eyes is interpolated to the headset's rate, and an
+            // anchor that stepped once per game tick lurched the whole world
+            // thirty times a second.
+            const hlslpp::float3 base(cam.eye[0], cam.eye[1], cam.eye[2]);
             float headPos[3] = {
                 (views.eye[0].pos[0] + views.eye[1].pos[0]) * 0.5f,
                 (views.eye[0].pos[1] + views.eye[1].pos[1]) * 0.5f,
@@ -344,7 +366,12 @@ namespace RT64 {
             m[3][0] = frame.planeSx * bx + frame.planeTx;
             m[1][1] = frame.planeSy * ay;
             m[3][1] = frame.planeSy * by + frame.planeTy;
-            m[2][2] = 1e-4f;
+            // A slab, not a single depth. Every flat draw pinned to one depth
+            // fights every other one, and the game's own ordering (the fade over
+            // the picture, a panel over the counter) is lost to the depth
+            // buffer's quantisation. The game's clip depth is carried into a
+            // thin range in front of the world instead.
+            m[2][2] = 0.02f;
             m[3][2] = frame.planeZ;
             m[3][3] = 1.0f;
             return m;

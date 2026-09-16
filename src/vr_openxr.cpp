@@ -116,6 +116,7 @@ struct Chain {
     std::vector<std::unique_ptr<plume::D3D12Texture>> textures;
     int32_t acquired = -1;
     bool releasedThisFrame = false;
+    bool waitPending = false;
 };
 
 struct Session final : RT64::SnapVR::Interface {
@@ -173,16 +174,25 @@ struct Session final : RT64::SnapVR::Interface {
     bool recenterFired = false;
 
     std::mutex camMutex;
-    RT64::SnapVR::GameCamera cam;
-    uint32_t rideTick = 0;
-    bool rideSeen = false;
+    // The last cameras the game drew with, newest last, each stamped with the
+    // game frame it belongs to: the renderer asks for the one belonging to the
+    // frame it is rendering rather than taking whatever the game thread, which
+    // runs ahead of it, published most recently.
+    static constexpr uint32_t CamRing = 16;
+    RT64::SnapVR::GameCamera camRing[CamRing];
+    uint32_t camWrite = 0;
     std::atomic<bool> pausedInCourse{false};
+    std::atomic<uint32_t> chainGen{0};
 
     bool trace = false;
     std::chrono::steady_clock::time_point lastTrace;
     uint32_t framesEnded = 0;
     uint32_t framesWithEyes = 0;
     uint32_t framesWithScreen = 0;
+    uint32_t framesNoLayers = 0;
+    uint32_t endFailCount = 0;
+    uint32_t timeoutCount = 0;
+    uint32_t acquireFailCount = 0;
     bool loggedFrameError = false;
     bool loggedAcquireError = false;
     bool loggedLocateError = false;
@@ -463,6 +473,7 @@ struct Session final : RT64::SnapVR::Interface {
         }
         chain.acquired = -1;
         chain.releasedThisFrame = false;
+        chainGen.fetch_add(1, std::memory_order_relaxed);
         return true;
     }
 
@@ -476,6 +487,7 @@ struct Session final : RT64::SnapVR::Interface {
         chain.width = chain.height = 0;
         chain.acquired = -1;
         chain.releasedThisFrame = false;
+        chainGen.fetch_add(1, std::memory_order_relaxed);
     }
 
     bool makeAction(XrActionType type, const char *name, const char *localized, XrAction &out) {
@@ -839,13 +851,57 @@ struct Session final : RT64::SnapVR::Interface {
         return alive.load(std::memory_order_acquire) && running.load(std::memory_order_acquire);
     }
 
-    bool gameCamera(RT64::SnapVR::GameCamera &out) override {
+    bool worldRunning() override {
+        return snap::g_app_level_resident.load(std::memory_order_relaxed);
+    }
+
+    bool gameCameraForFrame(uint32_t gameFrame, float weight, RT64::SnapVR::GameCamera &out) override {
         std::scoped_lock<std::mutex> lock(camMutex);
-        out = cam;
-        const uint32_t now = snapdiag::gameFrameCounter().load(std::memory_order_relaxed);
-        const bool recent = rideSeen && ((now - rideTick) <= 15u);
-        const bool resident = snap::g_app_level_resident.load(std::memory_order_relaxed);
-        out.worldMode = resident && (recent || (rideSeen && pausedInCourse.load(std::memory_order_relaxed)));
+        // The newest entry no later than the frame asked for, and the one
+        // before it: the frame being rendered sits between them.
+        int32_t best = -1;
+        for (uint32_t k = 0; k < CamRing; k++) {
+            const RT64::SnapVR::GameCamera &e = camRing[k];
+            if (!e.valid) {
+                continue;
+            }
+            if (e.gameFrame > gameFrame) {
+                continue;
+            }
+            if ((best < 0) || (e.gameFrame > camRing[best].gameFrame)) {
+                best = int32_t(k);
+            }
+        }
+        if (best < 0) {
+            out = RT64::SnapVR::GameCamera();
+            out.worldMode = worldRunning();
+            return false;
+        }
+
+        out = camRing[best];
+        int32_t prev = -1;
+        for (uint32_t k = 0; k < CamRing; k++) {
+            const RT64::SnapVR::GameCamera &e = camRing[k];
+            if (!e.valid || (e.gameFrame >= out.gameFrame)) {
+                continue;
+            }
+            if ((prev < 0) || (e.gameFrame > camRing[prev].gameFrame)) {
+                prev = int32_t(k);
+            }
+        }
+        // Interpolated towards the previous frame's camera by the same weight
+        // the geometry is drawn at, so the eyes glide with the world instead of
+        // stepping once per game tick.
+        const float w = std::max(0.0f, std::min(1.0f, weight));
+        if ((prev >= 0) && camRing[prev].rideDriving && out.rideDriving && (w < 1.0f)) {
+            const RT64::SnapVR::GameCamera &p = camRing[prev];
+            for (uint32_t i = 0; i < 3; i++) {
+                out.eye[i] = p.eye[i] + (out.eye[i] - p.eye[i]) * w;
+                out.at[i] = p.at[i] + (out.at[i] - p.at[i]) * w;
+                out.cartPos[i] = p.cartPos[i] + (out.cartPos[i] - p.cartPos[i]) * w;
+            }
+        }
+        out.worldMode = worldRunning();
         out.unitsPerMetre = std::max(20.0f, std::min(400.0f, snap::settings().vr_world_scale));
         out.hudDistanceMetres = 2.0f;
         return true;
@@ -984,8 +1040,27 @@ struct Session final : RT64::SnapVR::Interface {
     }
 
     plume::RenderTexture *acquireFrom(Chain &chain) {
-        if (!frameBegun || (chain.handle == XR_NULL_HANDLE) || (chain.acquired >= 0)) {
+        if (!frameBegun || (chain.handle == XR_NULL_HANDLE)) {
             return nullptr;
+        }
+        if (chain.acquired >= 0) {
+            // An image acquired on an earlier frame whose wait timed out: wait
+            // for it again rather than acquiring another.
+            if (!chain.waitPending) {
+                return nullptr;
+            }
+            XrSwapchainImageWaitInfo again{ XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
+            again.timeout = 100000000;
+            const XrResult rr = xrWaitSwapchainImage(chain.handle, &again);
+            if (rr == XR_TIMEOUT_EXPIRED) {
+                timeoutCount++;
+                return nullptr;
+            }
+            if (XR_FAILED(rr)) {
+                return nullptr;
+            }
+            chain.waitPending = false;
+            return (uint32_t(chain.acquired) < chain.textures.size()) ? chain.textures[chain.acquired].get() : nullptr;
         }
         XrSwapchainImageAcquireInfo ai{ XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO };
         uint32_t index = 0;
@@ -999,11 +1074,22 @@ struct Session final : RT64::SnapVR::Interface {
             return nullptr;
         }
         XrSwapchainImageWaitInfo wi{ XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO };
-        wi.timeout = 1000000000; // one second
+        wi.timeout = 100000000; // a tenth of a second
         r = xrWaitSwapchainImage(chain.handle, &wi);
-        if (XR_FAILED(r) || (r == XR_TIMEOUT_EXPIRED)) {
+        if (r == XR_TIMEOUT_EXPIRED) {
+            // The image stays acquired: releasing one that was never waited for
+            // loses it to the runtime for good, and a swapchain that runs out of
+            // images stops accepting frames -- the world then disappears and the
+            // runtime shows its own empty room, which on Link is a pale void.
+            chain.acquired = int32_t(index);
+            chain.waitPending = true;
+            timeoutCount++;
+            return nullptr;
+        }
+        if (XR_FAILED(r)) {
             XrSwapchainImageReleaseInfo ri{ XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
             xrReleaseSwapchainImage(chain.handle, &ri);
+            acquireFailCount++;
             if (!loggedAcquireError) {
                 loggedAcquireError = true;
                 printf("[SNAP-VR] xrWaitSwapchainImage failed: %s\n", xrResultName(instance, r));
@@ -1011,6 +1097,7 @@ struct Session final : RT64::SnapVR::Interface {
             }
             return nullptr;
         }
+        chain.waitPending = false;
         if (index >= chain.textures.size()) {
             XrSwapchainImageReleaseInfo ri{ XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO };
             xrReleaseSwapchainImage(chain.handle, &ri);
@@ -1148,6 +1235,10 @@ struct Session final : RT64::SnapVR::Interface {
             framesWithScreen++;
         }
 
+        if (layerCount == 0) {
+            framesNoLayers++;
+        }
+
         XrFrameEndInfo fei{ XR_TYPE_FRAME_END_INFO };
         fei.displayTime = frameDisplayTime;
         fei.environmentBlendMode = XR_ENVIRONMENT_BLEND_MODE_OPAQUE;
@@ -1163,6 +1254,7 @@ struct Session final : RT64::SnapVR::Interface {
             if (r == XR_ERROR_SESSION_LOST) {
                 die("the session was lost");
             }
+            endFailCount++;
         }
         framesEnded++;
 
@@ -1172,16 +1264,17 @@ struct Session final : RT64::SnapVR::Interface {
                 lastTrace = now;
                 RT64::SnapVR::Timing t;
                 latestTiming(t);
-                printf("[SNAP-VR] state %d focused %d rate %u frames %u eyes %u screen %u head yaw %.1f pitch %.1f world %d zoomed %d buttons %04X\n",
+                printf("[SNAP-VR] state %d focused %d rate %u frames %u eyes %u screen %u head yaw %.1f pitch %.1f world %d blank %d buttons %04X\n",
                     int(state), focused ? 1 : 0, t.refreshRate, framesEnded, framesWithEyes, framesWithScreen,
                     headYaw.load(std::memory_order_relaxed) * 180.0f / Pi, headPitch.load(std::memory_order_relaxed) * 180.0f / Pi,
-                    snap::vr_world_mode() ? 1 : 0, cam.zoomed ? 1 : 0, unsigned(buttons.load(std::memory_order_relaxed)));
+                    snap::vr_world_mode() ? 1 : 0, int(framesNoLayers), unsigned(buttons.load(std::memory_order_relaxed)));
                 fflush(stdout);
             }
         }
     }
 
     plume::RenderFormat imageFormat() override { return viewFormat; }
+    uint32_t chainGeneration() override { return chainGen.load(std::memory_order_relaxed); }
     uint32_t eyeWidth() override { return eyes[0].width; }
     uint32_t eyeHeight() override { return eyes[0].height; }
     bool traceEnabled() override { return trace; }
@@ -1242,8 +1335,10 @@ void vr_shutdown() {
         return;
     }
     RT64::SnapVR::instanceSlot().store(nullptr, std::memory_order_release);
-    printf("[SNAP-VR] session closed: %u frames, %u with eyes, %u with the screen\n",
-        g_session->framesEnded, g_session->framesWithEyes, g_session->framesWithScreen);
+    printf("[SNAP-VR] session closed: %u frames, %u with eyes, %u with the screen, %u with no layers; "
+        "%u ends refused, %u image waits timed out, %u acquires failed\n",
+        g_session->framesEnded, g_session->framesWithEyes, g_session->framesWithScreen, g_session->framesNoLayers,
+        g_session->endFailCount, g_session->timeoutCount, g_session->acquireFailCount);
     fflush(stdout);
     g_session->destroy();
     g_session.reset();
@@ -1279,21 +1374,26 @@ bool vr_head_yaw_pitch(float &yaw, float &pitch) {
     return true;
 }
 
-void vr_publish_camera(bool zoomed, const float eye[3], const float at[3], const float cartPos[3], const float cartRot[3]) {
+void vr_publish_camera(bool zoomed, bool rideDriving, uint32_t gameFrame,
+                       const float eye[3], const float at[3], const float cartPos[3], const float cartRot[3]) {
     Session *s = g_session.get();
     if (s == nullptr) {
         return;
     }
     std::scoped_lock<std::mutex> lock(s->camMutex);
-    s->cam.zoomed = zoomed;
+    RT64::SnapVR::GameCamera &e = s->camRing[s->camWrite % Session::CamRing];
+    s->camWrite++;
+    e = RT64::SnapVR::GameCamera();
+    e.zoomed = zoomed;
+    e.rideDriving = rideDriving;
+    e.gameFrame = gameFrame;
+    e.valid = true;
     for (int i = 0; i < 3; i++) {
-        s->cam.eye[i] = eye[i];
-        s->cam.at[i] = at[i];
-        s->cam.cartPos[i] = cartPos[i];
-        s->cam.cartRot[i] = cartRot[i];
+        e.eye[i] = eye[i];
+        e.at[i] = at[i];
+        e.cartPos[i] = cartPos[i];
+        e.cartRot[i] = cartRot[i];
     }
-    s->rideTick = snapdiag::gameFrameCounter().load(std::memory_order_relaxed);
-    s->rideSeen = true;
 }
 
 bool vr_world_mode() {
@@ -1301,9 +1401,7 @@ bool vr_world_mode() {
     if ((s == nullptr) || !s->active()) {
         return false;
     }
-    RT64::SnapVR::GameCamera c;
-    s->gameCamera(c);
-    return c.worldMode;
+    return s->worldRunning();
 }
 
 void vr_tick(uint8_t *rdram) {

@@ -248,6 +248,10 @@ namespace RT64 {
         // session showed every one of them during play produced a freeze and
         // then a jump of two to three game frames.
         bool snapCutscene = false;
+        // Pokemon Snap port, the headset: the game frame this workload's
+        // display list was built on, so the camera published for that frame
+        // is the one the renderer compares against (rt64_snap_vr.h).
+        uint32_t snapVrGameFrame = 0;
         // How many of the game's logic steps this drawn frame stands for.
         // Normally two on this game; three when the game skipped a draw
         // because the renderer still had the graphics context. A frame that

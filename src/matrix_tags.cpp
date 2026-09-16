@@ -36,6 +36,7 @@
 #include "recomp.h"
 
 #include "settings.h"
+#include "vr_openxr.h"
 
 extern "C" {
 #include "funcs.h"
@@ -554,6 +555,13 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
     }
 
     snap::clear_stepped_objects();
+
+    // The headset: the camera this frame is drawn with, published from here
+    // because this hook runs for EVERY camera the game sets up -- the ride's, a
+    // course intro's glide, a zoom transition -- so the renderer compares the
+    // frame it is rendering against the camera that frame was built with
+    // (src/vr_game.cpp).
+    snap::vr_camera_from_display_list(rdram, cam, snapdiag::gameFrameCounter().load(std::memory_order_relaxed));
 
     __real_renPrepareCameraMatrix(rdram, ctx);
 

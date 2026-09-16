@@ -461,7 +461,9 @@ public:
         // and costs a visible pause.
         // The headset keeps the renderer paced on it and the picture at its
         // fixed scale whatever the pages say (src/vr_openxr.cpp).
-        if (snap::vr_wanted()) {
+        // Only with a session actually open: a player who ticked the setting
+        // and has no headset keeps their own render scale and frame target.
+        if (snap::vr_active()) {
             app_->userConfig.refreshRate = RT64::UserConfiguration::RefreshRate::Display;
             app_->userConfig.resolution = RT64::UserConfiguration::Resolution::Manual;
             app_->userConfig.resolutionMultiplier = 4.0;
@@ -670,6 +672,10 @@ public:
             workload.snapLogicSteps = snap_take_logic_steps();
             workload.snapCutscene = !snap::g_app_level_resident.load(std::memory_order_relaxed) ||
             snap::g_hold_in_course.load(std::memory_order_relaxed);
+            // The headset: the game frame this display list was built on, so the
+            // renderer compares it against the camera published for that frame
+            // rather than whichever the game thread published last.
+            workload.snapVrGameFrame = snapdiag::gameFrameCounter().load(std::memory_order_relaxed);
         }
 
         // Taken with an exchange so the flag and the deltas it refers to are

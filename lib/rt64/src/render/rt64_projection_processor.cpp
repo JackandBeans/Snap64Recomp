@@ -4,6 +4,8 @@
 
 #include "rt64_projection_processor.h"
 
+#include <algorithm>
+
 #include <cstdio>
 
 #include "common/rt64_math.h"
@@ -53,8 +55,9 @@ namespace RT64 {
         }
 
         // Pokemon Snap port, the headset.
+        snapVrFound = false;
         if ((p.snapVrEyes != nullptr) && (p.snapVrCamera != nullptr)) {
-            snapVrProcess(p);
+            snapVrFound = snapVrProcess(p);
         }
     }
 
@@ -63,17 +66,70 @@ namespace RT64 {
     // eye's own and every other projection carried onto the plane in front
     // of the head, and a copy of the viewports with every one opened to the
     // eye's whole picture (rt64_snap_vr.h).
-    void ProjectionProcessor::snapVrProcess(const ProcessParams &p) {
+    bool ProjectionProcessor::snapVrProcess(const ProcessParams &p) {
         const SnapVR::GameCamera &cam = *p.snapVrCamera;
+        bool anyWorld = false;
         for (uint32_t w : p.curFrame->workloads) {
             Workload &workload = p.workloadQueue->workloads[w];
             DrawData &drawData = workload.drawData;
             const size_t count = drawData.modViewProjTransforms.size();
-            uint32_t rideCount = 0;
             drawData.snapVrRideTransforms.assign(count, 0);
             for (uint32_t e = 0; e < 2; e++) {
                 drawData.snapVrViewProjTransforms[e] = drawData.modViewProjTransforms;
                 drawData.snapVrRspViewports[e] = drawData.modRspViewports;
+            }
+
+            // The world's own projection, found by what the frame spends its
+            // draws on rather than by where its camera sits. A course frame has
+            // one perspective camera the scene is drawn with and, at most, a
+            // handful of small ones (the fade's quad has its own); the scene's
+            // is the one with the draws. Picking it structurally is what keeps
+            // the world off the plane no matter which code is moving the camera
+            // -- the ride's, an intro's glide, a zoom transition -- because the
+            // plane matrix collapses a perspective view into a panel.
+            uint32_t worldTransform = UINT32_MAX;
+            uint32_t worldCalls = 0;
+            for (uint32_t f = 0; f < workload.fbPairCount; f++) {
+                const FramebufferPair &fbPair = workload.fbPairs[f];
+                for (uint32_t pr = 0; pr < fbPair.projectionCount; pr++) {
+                    const Projection &proj = fbPair.projections[pr];
+                    if ((proj.type != Projection::Type::Perspective) || (proj.transformsIndex >= count)) {
+                        continue;
+                    }
+                    if (proj.gameCallCount > worldCalls) {
+                        worldCalls = proj.gameCallCount;
+                        worldTransform = proj.transformsIndex;
+                    }
+                }
+            }
+
+            if ((worldTransform == UINT32_MAX) || (worldCalls == 0)) {
+                continue;
+            }
+
+            // Whether the camera that projection is drawn with is the ride's.
+            // Both readings come from the same game frame (the camera is
+            // published as the display list is built and stamped with its
+            // frame), so the comparison is not a tick out of date.
+            bool rideView = cam.valid && cam.rideDriving;
+            float eyeDelta = 0.0f;
+            if (rideView && (worldTransform < drawData.viewTransforms.size())) {
+                const hlslpp::float3 drawn = SnapVR::viewEye(drawData.viewTransforms[worldTransform]);
+                const hlslpp::float3 published(cam.eye[0], cam.eye[1], cam.eye[2]);
+                eyeDelta = float(hlslpp::length(drawn - published));
+                rideView = (eyeDelta <= 64.0f);
+            }
+            else {
+                rideView = false;
+            }
+
+            snapVrMatched += rideView ? 1u : 0u;
+            snapVrUnmatched += rideView ? 0u : 1u;
+            snapVrWorstEyeDelta = std::max(snapVrWorstEyeDelta, eyeDelta);
+            if (!rideView) {
+                // No eyes this frame: the caller shows the flat picture. The
+                // world is never put through the plane.
+                continue;
             }
 
             const float frameWidth = (workload.viFbSize.x > 0) ? float(workload.viFbSize.x) : 320.0f;
@@ -87,10 +143,7 @@ namespace RT64 {
                         continue;
                     }
 
-                    // The game's own camera this frame, before interpolation,
-                    // is what the port read from the game's memory.
-                    const bool ride = (proj.type == Projection::Type::Perspective) && (t < drawData.viewTransforms.size()) &&
-                        SnapVR::isRideView(drawData.viewTransforms[t], cam);
+                    const bool ride = (t == worldTransform);
                     const interop::RSPViewport original = (t < drawData.modRspViewports.size()) ? drawData.modRspViewports[t] : interop::RSPViewport::identity();
                     for (uint32_t e = 0; e < 2; e++) {
                         const SnapVR::EyeFrame &eye = p.snapVrEyes[e];
@@ -108,38 +161,14 @@ namespace RT64 {
 
                     if (ride) {
                         drawData.snapVrRideTransforms[t] = 1;
-                        rideCount++;
                     }
                 }
             }
 
-            // A world that never finds its camera is the fault the log has
-            // to name: every perspective view's eye against the game's, a
-            // few times, not every frame.
-            if (rideCount == 0) {
-                static uint32_t snapVrUnmatchedLogged = 0;
-                if (snapVrUnmatchedLogged < 6) {
-                    snapVrUnmatchedLogged++;
-                    fprintf(stdout, "[SNAP-VR] world mode, no projection matches the ride camera: game eye (%.1f %.1f %.1f) at (%.1f %.1f %.1f)\n",
-                        cam.eye[0], cam.eye[1], cam.eye[2], cam.at[0], cam.at[1], cam.at[2]);
-                    uint32_t listed = 0;
-                    for (uint32_t f = 0; (f < workload.fbPairCount) && (listed < 6); f++) {
-                        const FramebufferPair &fbPair = workload.fbPairs[f];
-                        for (uint32_t pr = 0; (pr < fbPair.projectionCount) && (listed < 6); pr++) {
-                            const Projection &proj = fbPair.projections[pr];
-                            if ((proj.type != Projection::Type::Perspective) || (proj.transformsIndex >= drawData.viewTransforms.size())) {
-                                continue;
-                            }
-                            const hlslpp::float3 eye = SnapVR::viewEye(drawData.viewTransforms[proj.transformsIndex]);
-                            fprintf(stdout, "[SNAP-VR]   pair %u proj %u t%u: eye (%.1f %.1f %.1f), %u calls\n", f, pr, proj.transformsIndex,
-                                float(eye.x), float(eye.y), float(eye.z), proj.gameCallCount);
-                            listed++;
-                        }
-                    }
-                    fflush(stdout);
-                }
-            }
+            anyWorld = true;
         }
+
+        return anyWorld;
     }
 
     void ProjectionProcessor::processScene(const ProcessParams &p, const GameScene &scene, size_t sceneIndex) {

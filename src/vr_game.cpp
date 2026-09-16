@@ -59,6 +59,8 @@ constexpr uint32_t AddrIsInputDisabled = 0x80382D0Cu;       // s32
 constexpr uint32_t AddrCameraEyePos = 0x803AE410u;          // Vec3f
 constexpr uint32_t AddrCameraAtPos = 0x803AE420u;           // Vec3f
 constexpr uint32_t AddrMovementState = 0x80366BA4u;         // MovementState (world.h)
+constexpr uint32_t AddrMainCamera = 0x80382C30u;            // OMCamera* gMainCamera
+constexpr uint32_t AddrZoomedHeld = 0x80382D08u;            // s32: nonzero holds the zoomed camera
 constexpr uint32_t MovementPosOffset = 0x0Cu;               // Vec3f pos
 constexpr uint32_t MovementRotOffset = 0x18u;               // Vec3f rotation
 
@@ -141,21 +143,68 @@ void camera_before(uint8_t *rdram, bool zoomed) {
     }
 }
 
+// What the ride camera computed this tick. The camera the frame is DRAWN with
+// is read later, as the display list is built; if the two agree, the ride is
+// driving, and if they do not, something else is moving the camera -- a course
+// intro's glide, a zoom transition -- and the headset shows the flat picture
+// rather than a world the head does not command.
+float g_ride_eye[3] = { 0.0f, 0.0f, 0.0f };
+bool g_ride_valid = false;
+
 void camera_after(uint8_t *rdram, bool zoomed) {
     if (!snap::vr_active()) {
         return;
     }
-    float eye[3], at[3], pos[3], rot[3];
     for (uint32_t i = 0; i < 3; i++) {
-        eye[i] = read_f32(rdram, AddrCameraEyePos + i * 4);
-        at[i] = read_f32(rdram, AddrCameraAtPos + i * 4);
-        pos[i] = read_f32(rdram, AddrMovementState + MovementPosOffset + i * 4);
-        rot[i] = read_f32(rdram, AddrMovementState + MovementRotOffset + i * 4);
+        g_ride_eye[i] = read_f32(rdram, AddrCameraEyePos + i * 4);
     }
-    snap::vr_publish_camera(zoomed, eye, at, pos, rot);
+    g_ride_valid = true;
+    (void)zoomed;
 }
 
 } // namespace
+
+namespace snap {
+
+// The camera the display list is being built with, whatever moved it. Called
+// from the renPrepareCameraMatrix wrapper (src/matrix_tags.cpp), which the game
+// runs for every camera it sets up, so the published camera is always the one
+// the frame is drawn with and the renderer can find it among the frame's
+// projections (lib/rt64/src/hle/rt64_snap_vr.h).
+void vr_camera_from_display_list(uint8_t *rdram, uint32_t cameraAddress, uint32_t gameFrame) {
+    if (!snap::vr_active() || (cameraAddress == 0)) {
+        return;
+    }
+    const uint32_t mainCamera = *word_at(rdram, AddrMainCamera);
+    if (cameraAddress != mainCamera) {
+        return;
+    }
+
+    float eye[3], at[3], pos[3], rot[3];
+    for (uint32_t i = 0; i < 3; i++) {
+        // OMCamera's look-at: eye at +0x3C, target at +0x48 (sys/om.h).
+        eye[i] = read_f32(rdram, cameraAddress + 0x3Cu + i * 4u);
+        at[i] = read_f32(rdram, cameraAddress + 0x48u + i * 4u);
+        pos[i] = read_f32(rdram, AddrMovementState + MovementPosOffset + i * 4);
+        rot[i] = read_f32(rdram, AddrMovementState + MovementRotOffset + i * 4);
+    }
+
+    bool rideDriving = false;
+    if (g_ride_valid) {
+        float d2 = 0.0f;
+        for (uint32_t i = 0; i < 3; i++) {
+            const float d = eye[i] - g_ride_eye[i];
+            d2 += d * d;
+        }
+        // The zoom transitions add the camera's vibration a second time, so a
+        // few units of slack; an intro's glide is hundreds away.
+        rideDriving = (d2 <= 64.0f * 64.0f);
+    }
+    const bool zoomed = read_s32(rdram, AddrZoomedHeld) != 0;
+    snap::vr_publish_camera(zoomed, rideDriving, gameFrame, eye, at, pos, rot);
+}
+
+} // namespace snap
 
 extern "C" void updateCameraZoomedOut(uint8_t *rdram, recomp_context *ctx) {
     camera_before(rdram, false);
