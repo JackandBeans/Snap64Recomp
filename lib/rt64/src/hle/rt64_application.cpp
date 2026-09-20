@@ -248,16 +248,32 @@ namespace RT64 {
         else if (deviceDescription.vendor == RenderDeviceVendor::AMD) {
             if (chosenGraphicsAPI == UserConfiguration::GraphicsAPI::D3D12) {
                 const uint64_t BrokenAMDDriverD3D12 = 0x1800142B080004; // Jan 2019
+                const uint64_t BrokenRDNA4DriverD3D12 = 0x200000794103EC; // Aug 2026
+                const bool isRX90 = deviceDescription.name.find("AMD Radeon RX 90") != std::string::npos;
+                const bool isRDNA4 = isRX90;
+                // Pokemon Snap port: upstream also forces Vulkan for RDNA4 up to
+                // BrokenRDNA4DriverD3D12 whatever the player chose (#265). This
+                // port's suite and a full playthrough ran on an RX 9060 XT at
+                // exactly that driver in D3D12 without the fault, and the API
+                // is the player's choice on the Graphics page; the RDNA4
+                // clause is kept to Automatic mode.
+                (void)BrokenRDNA4DriverD3D12;
                 if (deviceDescription.driverVersion <= BrokenAMDDriverD3D12) {
                     forceVulkanForCompatibility = true;
                 }
                 else if (automaticGraphicsAPI) {
-                    // Wireframe artifacts have been reported when using a high-precision color format on RDNA3 GPUs in D3D12. The workaround is to switch to Vulkan if this is the case.
-                    bool isRX7 = deviceDescription.name.find("AMD Radeon RX 7") != std::string::npos;
-                    bool isTheCoolerRX7 = deviceDescription.name.find("AMD Radeon(TM) RX 7") != std::string::npos;
-                    bool isRDNA3 = isRX7 || isTheCoolerRX7;
-                    bool useHDRinD3D12 = (userConfig.internalColorFormat == UserConfiguration::InternalColorFormat::Automatic) && device->getCapabilities().preferHDR;
-                    forceVulkanForCompatibility = isRDNA3 && useHDRinD3D12;
+                    if (isRDNA4) {
+                        // We don't know yet what driver will fix the issue for RDNA4, so if it's newer than BrokenRDNA4DriverD3D12, we only force Vulkan if it's in Automatic mode.
+                        forceVulkanForCompatibility = true;
+                    }
+                    else {
+                        // Wireframe artifacts have been reported when using a high-precision color format on RDNA3 GPUs in D3D12. The workaround is to switch to Vulkan if this is the case.
+                        const bool isRX7 = deviceDescription.name.find("AMD Radeon RX 7") != std::string::npos;
+                        const bool isTheCoolerRX7 = deviceDescription.name.find("AMD Radeon(TM) RX 7") != std::string::npos;
+                        const bool isRDNA3 = isRX7 || isTheCoolerRX7;
+                        const bool useHDRinD3D12 = (userConfig.internalColorFormat == UserConfiguration::InternalColorFormat::Automatic) && device->getCapabilities().preferHDR;
+                        forceVulkanForCompatibility = isRDNA3 && useHDRinD3D12;
+                    }
                 }
             }
         }

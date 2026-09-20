@@ -26,7 +26,7 @@ here should be assumed untried.
 * No CI and no installer. The release archive is the ZIP that `cpack`
   writes (`BUILDING.md`, step 13), after the headless suite in
   `tools/release_check.py` has passed on it ("What has been verified").
-* Version `1.0.8`, typed once in `CMakeLists.txt` and shown in the title
+* Version `1.0.9`, typed once in `CMakeLists.txt` and shown in the title
   bar, the log banner, the credits line, the executable's file properties and
   the ZIP's name. `CHANGELOG.md` says what each release changed.
 * Licensed under the GPLv3 (`LICENSE`); `NOTICE.md` lists every third-party
@@ -62,11 +62,14 @@ here should be assumed untried.
   ROM is put through the chooser's three cases, and the scoring replay is
   run again at three times the console's speed and the Beach replay at
   half, the same photos and the same reading reached in the expected time.
-  On the 1.0.8 executable (SHA-256 beginning `9963a410`), run without
-  diagnostics in the environment, the suite passed 26 of 26 checks in 1103
-  seconds, and the station's 5 of 5 in 488; the 1.0.7 executable had
-  passed the earlier 25 of 25 in 825 and the station's 5 in 487, 1.0.6 the
-  22 of 22 before that in 781 and 487, 1.0.5 the same in 781 and 489, 1.0.4
+  Since 1.0.9 the key that opens the pages from anywhere is pressed in the
+  title tape: the list opens over the title and closes again, the runner's
+  own log line and the display list's say so, and nothing hangs or overruns.
+  On the 1.0.9 executable (SHA-256 beginning `e7fc4627`), run without
+  diagnostics in the environment, the suite passed 28 of 28 checks in 1154
+  seconds, and the station's 5 of 5 in 488; the 1.0.8 executable had passed
+  the 26 checks of its day in 1103 and the station's 5 in 488, 1.0.7 the earlier 25 of 25 in 825
+  and 487, 1.0.6 the 22 of 22 before that in 781 and 487, 1.0.5 the same in 781 and 489, 1.0.4
   in 781 and 487, 1.0.3, 1.0.2 and 1.0.1 in 781 and 491 each, and 1.0.0 in
   781 and 489 on a cold shader cache. The suite opens the game window for
   each run and takes about nineteen minutes, plus eight for the station. There is no CI run, and no

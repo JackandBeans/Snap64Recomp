@@ -21,9 +21,11 @@ namespace recomp {
     struct GameEntry {
         uint64_t rom_hash;
         std::string internal_name;
+        std::string display_name;
         std::u8string game_id;
         std::string mod_game_id;
         SaveType save_type = SaveType::None;
+        std::span<const char> thumbnail_bytes;
         bool is_enabled;
         // Only needed for mod function hooking support, not needed if `has_compressed_code` is false.
         std::vector<uint8_t> (*decompression_routine)(std::span<const uint8_t> compressed_rom) = nullptr;
@@ -44,6 +46,14 @@ namespace recomp {
         int patch = -1;
         std::string suffix;
 
+        Version() = default;
+        Version(int major, int minor, int patch, std::string suffix = std::string()) {
+            this->major = major;
+            this->minor = minor;
+            this->patch = patch;
+            this->suffix = suffix;
+        }
+
         std::string to_string() const {
             return std::to_string(major) + "." + std::to_string(minor) + "." + std::to_string(patch) + suffix;
         }
@@ -58,7 +68,11 @@ namespace recomp {
                 return minor <=> rhs.minor;
             }
             return patch <=> rhs.patch;
-        } 
+        }
+
+        bool is_null() const {
+            return (major == -1) && (minor == -1) && (patch == -1) && suffix.empty();
+        }
     };
     enum class RomValidationError {
         Good,
@@ -70,11 +84,12 @@ namespace recomp {
         OtherError
     };
     void register_config_path(std::filesystem::path path);
+    std::filesystem::path get_config_path();
     bool register_game(const recomp::GameEntry& entry);
     void check_all_stored_roms();
-    bool load_stored_rom(std::u8string& game_id);
-    RomValidationError select_rom(const std::filesystem::path& rom_path, std::u8string& game_id);
-    bool is_rom_valid(std::u8string& game_id);
+    bool load_stored_rom(const std::u8string& game_id);
+    RomValidationError select_rom(const std::filesystem::path& rom_path, const std::u8string& game_id);
+    bool is_rom_valid(const std::u8string& game_id);
     bool is_rom_loaded();
     void set_rom_contents(std::vector<uint8_t>&& new_rom);
     std::span<const uint8_t> get_rom();
@@ -89,6 +104,8 @@ namespace recomp {
     /// - `renderer_callbacks`
     /// 
     struct Configuration {
+        int argc = 0;
+        char **argv = nullptr;
         Version project_version;
         ultramodern::renderer::WindowHandle window_handle;
         recomp::rsp::callbacks_t rsp_callbacks;
@@ -114,7 +131,7 @@ namespace recomp {
     bool sram_allowed();
     bool flashram_allowed();
 
-    void start_game(const std::u8string& game_id);
+    void start_game(const std::u8string& game_id, const std::string& game_mode_id);
     std::u8string current_game_id();
     std::string current_mod_game_id();
 }

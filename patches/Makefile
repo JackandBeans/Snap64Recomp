@@ -41,7 +41,10 @@ $(TARGET): $(OBJECTS) patch.ld game_syms.ld
 $(BINARY): $(TARGET)
 	$(CROSS)objcopy -O binary $< $@
 
-build/%.o: src/%.c
+# The .inc files are included by the page sources (pause_menu_patch.inc and
+# anywhere_patch.inc by graphics_menu_patch.c): an edit to one of them must
+# rebuild the object too, or the executable carries the old code.
+build/%.o: src/%.c $(wildcard src/*.inc)
 	@mkdir -p $(dir $@)
 	$(CC) $(CFLAGS) -c -o $@ $<
 

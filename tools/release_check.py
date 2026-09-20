@@ -21,6 +21,11 @@ that a release build can be put through all of them in one go:
   menu        the in-game Graphics/Sound Options page: its interface strings
               stage from the harvested font with no character missing, so the
               page opens instead of falling back to the stock menu
+  pages       the key that opens the port's pages from anywhere: the title
+              tape with the key at two readings (SNAP_MENU_AT) opens the
+              list over the title and closes it again; the runner says so
+              in the log, the pages fit the screen's display list, and
+              nothing hangs or overruns
   settings    snapsettings.json is valid JSON and carries the port's fields
   speed       the scoring replay again at three times the console's speed
               (SNAP_SPEED=3, the fast-forward key held for a whole run): the
@@ -60,6 +65,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import shutil
 import struct
 import subprocess
@@ -391,6 +397,38 @@ def check_menu(c, exe_dir):
     c.add('menu', bool(staged) and not withheld, 'interface strings ' + detail)
 
 
+def check_pages(c, exe_dir):
+    """Esc, or Select on a pad, opens the Options list on any screen by making
+    an object with one coroutine on it through the game's own object manager
+    (src/menu_assets.cpp, patches/src/anywhere_patch.inc). A tape cannot
+    carry the host's key, so SNAP_MENU_AT presses it: at reading 300 over
+    the title, where the press waits out the title's fade, and at 700 to
+    close. What can go wrong here goes wrong silently -- the game's panic is
+    a parked thread -- so the check reads the runner's own line, the
+    display-list line printed when the pages close, and the absence of the
+    hang and overrun reports."""
+    if not ensure_replay(exe_dir, 'menu_title.inputs'):
+        c.add('pages', False, 'menu_title.inputs is not beside the executable')
+        return
+    out = run_game(exe_dir, {'SNAP_REPLAY': 'menu_title.inputs', 'SNAP_MUTE': '1',
+                             'SNAP_MENU_AT': '300,700'}, 45)
+    lines = out.splitlines()
+    opened = [l for l in lines if l.startswith('[SNAP-MENU] the pages from here: opened on scene ')]
+    hung = [l for l in lines if l.startswith('[SNAP-HANG] no game logic step')]
+    overrun = [l for l in lines if '*** OVERFLOW ***' in l]
+    c.add('pages', bool(opened) and not hung and not overrun,
+          (opened[0].split('] ', 1)[1] if opened else 'the runner never said the pages opened')
+          + ('; HUNG' if hung else '') + ('; display list OVERRUN' if overrun else ''))
+    fit = None
+    for l in lines:
+        m = re.match(r'\[SNAP-DL\] with the pages up the main buffer reached (\d+) of (\d+) bytes', l)
+        if m:
+            fit = (int(m.group(1)), int(m.group(2)))
+    c.add('pages-closed', fit is not None and fit[0] < fit[1],
+          ('closed by the key; the display list reached %d of %d bytes with them up' % fit) if fit
+          else 'the pages never closed (no display-list line)')
+
+
 def check_settings(c, exe_dir):
     p = exe_dir / 'snapsettings.json'
     try:
@@ -637,7 +675,7 @@ def main():
     checks = [('subsystem', check_subsystem), ('stdio', check_stdio), ('attract', check_attract),
               ('stats', check_stats), ('score', check_score), ('settings', check_settings),
               ('speed', check_speed), ('slow', check_slow), ('rompick', check_rompick),
-              ('menu', check_menu), ('station', check_station)]
+              ('menu', check_menu), ('pages', check_pages), ('station', check_station)]
     c = Check()
     t0 = time.time()
     for name, fn in checks:

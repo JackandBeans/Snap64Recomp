@@ -99,8 +99,9 @@ fine.
 
 * **Controls.** The Deck's controls arrive as an Xbox-style pad: A is A,
   B or X is B, the left bumper is Z, Start is Start, the triggers are L
-  and R, the right stick is the C buttons, the D-pad is the D-pad, and the
-  View button saves the photo on screen ([Controls](MANUAL.md#controls)). Back paddles,
+  and R, the right stick is the C buttons and, pressed in, saves the photo
+  on screen, the D-pad is the D-pad, and the View button opens the port's
+  Options ([Controls](MANUAL.md#controls)). Back paddles,
   trackpads and gyro reach the game only as whatever Steam's controller
   layout maps them to.
 * **The icon.** A Linux binary cannot carry one, where the Windows

@@ -370,6 +370,10 @@ constexpr Source kCreditsSource = { 0x802F82C8, "@1995 1996 1998 Nintendo/Creatu
 constexpr uint32_t kLabelVram = 0x8033F498;   // "@Screen": the bullet dot
 constexpr uint32_t kValueVram = 0x80342FF0;   // "<Stereo>": the chevrons
 
+// The header's legend, kept whole (src/main_menu/A0D4D0.c draws it at
+// 161,41): 117x11, 32-bit RGBA, eight bitmaps in two bands.
+constexpr uint32_t kLegendVram = 0x80341160;
+
 // --- the port's own glyphs (harvest_menu_font.py SYNTH, HLP_SYNTH, CRD_SYNTH,
 // HDR_SYNTH, transcribed verbatim) ------------------------------------------
 
@@ -483,26 +487,28 @@ constexpr SynthGlyph kCreditsSynth[] = {
 // header face's style: 2px strokes, squarish bowls, minimal antialiasing.
 constexpr SynthGlyph kHeaderSynth[] = {
     { 'S', { "........", ".+####+.", "+######.", "##+..+#.", "##+.....", "+####+..", "..+####+", ".....+##", "#+...+##", ".######+", ".+####+.", "........" } },
-    { 'u', { ".......", ".......", ".......", ".......", "#+...##", "#+...##", "#+...##", "#+...##", "##...##", "##+.+##", ".#####+", "......." } },
-    { 'd', { ".......", "....+##", "....+##", "....+##", ".+##+##", "+#+.+##", "##...##", "##...##", "##..+##", "##+.+##", ".#####+", "......." } },
+    { 'u', { ".......", ".......", ".......", ".......", ".......", "#+...##", "#+...##", "#+...##", "##...##", "##+.+##", ".#####+", "......." } },
+    /* The d is the stock o (five columns, rows 5..10) with a two-column
+     * stem on its right rising to row 3, where the t's top is. */
+    { 'd', { "......", "......", "......", "....##", "....##", "+#####", "######", "#+.+##", "#+.+##", "##+###", "+####+", "......" } },
     { 'G', { "........", ".+####+.", ".######+", "##+..+##", "##......", "#+......", "#+..+###", "##....##", "##...+##", ".######+", ".+####+.", "........" } },
-    { 'r', { ".......", ".......", ".......", ".......", "#+.###.", "#+####+", "###+.#+", "##+....", "#+.....", "#+.....", "##.....", "......." } },
-    { 'a', { ".......", ".......", ".......", ".......", ".+####+", ".#++.##", "....+##", ".+#####", "##+..##", "##..+##", ".#####+", "......." } },
-    { 'c', { ".......", ".......", ".......", ".......", ".+####.", ".##++#+", "##+....", "#+.....", "##.....", ".##++#.", ".+####.", "......." } },
-    { 'h', { ".......", ".##....", ".#+....", ".#+....", ".#+###.", ".######", ".##+.##", ".#+..##", ".#+..##", ".#+..##", ".##..##", "......." } },
+    { 'r', { ".......", ".......", ".......", ".......", ".......", "#+.###.", "#+####+", "###+.#+", "##+....", "#+.....", "##.....", "......." } },
+    { 'a', { ".......", ".......", ".......", ".......", ".......", ".+####+", ".#++.##", "....+##", ".+#####", "##+.+##", ".#####+", "......." } },
+    { 'c', { ".......", ".......", ".......", ".......", ".......", ".+####.", ".##++#+", "##+....", "#+.....", ".##++#.", ".+####.", "......." } },
+    { 'h', { ".......", ".......", ".......", ".##....", ".#+....", ".#+###.", ".######", ".##+.##", ".#+..##", ".#+..##", ".##..##", "......." } },
     /* For the CONTROLS page's heading. C is the G above without its bar,
      * the right side left open the way the lowercase c's is; l is h's
      * stem alone, the full cap height. */
     { 'C', { "........", ".+####+.", ".######+", "##+..+##", "##......", "#+......", "#+......", "##......", "##+..+##", ".######+", ".+####+.", "........" } },
-    { 'l', { "....", ".##.", ".#+.", ".#+.", ".#+.", ".#+.", ".#+.", ".#+.", ".#+.", ".#+.", ".##.", "...." } },
+    { 'l', { "....", "....", "....", ".##.", ".#+.", ".#+.", ".#+.", ".#+.", ".#+.", ".#+.", ".##.", "...." } },
     /* For the BUTTON SETUP page's heading: B is h's stem with two bowls at
      * the S's stroke weight; e the c with a bar across its middle; M and g
      * (two of h's stems joined by a V, and the d's bowl with p's stem
      * turned into a tail) stay for a heading that may need them. */
     { 'B', { "........", ".#####+.", ".##+++##", ".#+...##", ".#+..+#+", ".######.", ".#+..+##", ".#+...##", ".#+...##", ".##+++##", ".#####+.", "........" } },
     { 'M', { ".........", ".##...##.", ".##+.+##.", ".###.###.", ".#%#+#%#.", ".#+###+#.", ".#+.#.+#.", ".#+...+#.", ".#+...+#.", ".#+...+#.", ".##...##.", "........." } },
-    { 'g', { ".......", ".......", ".......", ".......", ".+##+##", "+#+.+##", "##...##", "##...##", "##+.+##", ".#####+", "....+##", ".+####+" } },
-    { 'e', { ".......", ".......", ".......", ".......", ".+####.", "+#+.+#+", "##...##", "#######", "##.....", ".##++#.", ".+####.", "......." } },
+    { 'g', { ".......", ".......", ".......", ".......", ".......", ".+##+##", "+#+.+##", "##...##", "##+.+##", ".#####+", "....+##", ".+####+" } },
+    { 'e', { ".......", ".......", ".......", ".......", ".......", ".+####.", "+#+.+#+", "#######", "##.....", ".##++#.", ".+####.", "......." } },
 };
 
 // --- the four faces --------------------------------------------------------
@@ -1174,6 +1180,78 @@ bool harvest_title(const Segment& seg, Table& ttl, std::string& why) {
     return true;
 }
 
+// The legend as the game keeps it. Unlike the faces this is not cut into
+// cells: the texels are copied, in 8-bit RGBA, with the pre-shuffle undone.
+// A 32-bit texture is split into two 16-bit halves in TMEM, so its 64-bit
+// TMEM word spans sixteen bytes of DRAM and the odd rows' swap exchanges
+// texel pairs (0,1) and (2,3) -- decode_sprite's rule at twice the stride.
+// The bitmaps fill the sprite in bands of bmheight rows: across the width,
+// then the next band down (the legend's eleventh row is four one-row
+// bitmaps under four ten-row ones).
+bool harvest_legend(const Segment& seg, MenuArt& out, std::string& why) {
+    const uint32_t vram = kLegendVram;
+    if (!seg.holds(vram, 0x38)) {
+        fail(why, "legend header outside the segment", vram);
+        return false;
+    }
+    const int width = seg.s16(vram + 0x04);
+    const int height = seg.s16(vram + 0x06);
+    const uint16_t attr = seg.u16(vram + 0x14);
+    const int nbitmaps = seg.s16(vram + 0x28);
+    const int bmheight = seg.s16(vram + 0x2C);
+    const uint16_t fmtsiz = seg.u16(vram + 0x30);   // bmfmt, bmsiz
+    const uint32_t bitmapPtr = seg.u32(vram + 0x34);
+    if ((width <= 0) || (width > 256) || (height <= 0) || (height > 32) ||
+        (nbitmaps <= 0) || (nbitmaps > 16) || (bmheight <= 0) || (fmtsiz != 0x0003) ||
+        !seg.holds(bitmapPtr, uint32_t(nbitmaps) * 0x10u)) {
+        fail(why, "legend is not the 32-bit RGBA sprite expected", vram);
+        return false;
+    }
+    const bool shuffled = (attr & 0x200u) != 0;
+    MenuArt art;
+    art.w = width;
+    art.h = height;
+    art.rgba.assign(size_t(width) * size_t(height), 0u);
+    int x0 = 0;
+    int y0 = 0;
+    for (int bi = 0; bi < nbitmaps; bi++) {
+        const uint32_t b = bitmapPtr + uint32_t(bi) * 0x10u;
+        const int bw = seg.s16(b + 0x0);
+        const int bwImg = seg.s16(b + 0x2);
+        const uint32_t buf = seg.u32(b + 0x8);
+        int rows = seg.s16(b + 0xC);
+        if (rows == 0) {
+            rows = bmheight;
+        }
+        if ((bw <= 0) || (bwImg < bw) || (rows <= 0)) {
+            fail(why, "implausible legend bitmap", vram);
+            return false;
+        }
+        const int rowBytes = bwImg * 4;
+        if (!seg.holds(buf, uint32_t(rowBytes) * uint32_t(rows))) {
+            fail(why, "legend pixels outside the segment", vram);
+            return false;
+        }
+        if (x0 >= width) {
+            x0 = 0;
+            y0 += bmheight;
+        }
+        for (int ry = 0; (ry < rows) && (y0 + ry < height); ry++) {
+            for (int p = 0; (p < bw) && (x0 + p < width); p++) {
+                int o = p * 4;
+                if (shuffled && (ry & 1) && (o < (rowBytes & ~15))) {
+                    o ^= 8;
+                }
+                art.rgba[size_t(y0 + ry) * size_t(width) + size_t(x0 + p)] =
+                    seg.u32(buf + uint32_t(ry * rowBytes + o));
+            }
+        }
+        x0 += bw;
+    }
+    out = std::move(art);
+    return true;
+}
+
 bool harvest_menu_font(const uint8_t* rdram, MenuFont& out) {
     if (rdram == nullptr) {
         return false;
@@ -1205,6 +1283,20 @@ bool harvest_menu_font(const uint8_t* rdram, MenuFont& out) {
     }
     pack_kern(kern, font.hlpKern);
     pack_kern(spaceKern, font.hlpSpaceKern);
+    // The legend is for the pages over a course; without it they draw the
+    // rest of the dress and no legend.
+    if (!harvest_legend(seg, font.legend, why)) {
+        printf("[SNAP-MENU] header legend not harvested: %s\n", why.c_str());
+    }
+    // The title word goes with the legend, whole: the list over a course is
+    // headed by the screen's own sprite, not a composition from the face
+    // that was cut out of it (which runs one column wider).
+    {
+        Img word;
+        if (decode_sprite(seg, kHeaderSource.vram, word, why)) {
+            font.hdrWord = crop(word, 0, word.w);
+        }
+    }
     font.ready = true;
     out = std::move(font);
     printf("[SNAP-MENU] menu font harvested from RDRAM: %zu body, %zu header, %zu credits, %zu help, %zu title glyphs; "

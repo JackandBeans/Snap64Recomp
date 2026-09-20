@@ -367,6 +367,21 @@ bool settings_boot_fullscreen();
 void stage_menu_assets(uint8_t* rdram);
 void stage_menu_strings(uint8_t* rdram);
 void poll_menu_mailbox(uint8_t* rdram);
+// The pages from anywhere: a press of the menu key (input_request_menu)
+// taken on the game thread; in a course it becomes the pause code's word,
+// elsewhere an object with one process on it, created through the game's
+// own omAddGObj and omCreateProcess with the frame's context. `ctx` is the
+// recomp_context of the update the call is made from.
+void menu_anywhere_tick(uint8_t* rdram, void* ctx);
+// The pages' arena cursor back to its start: every scene load, before the
+// scene rebuilds the pools the arena's objects sat in (overlay_hook.cpp).
+void menu_arena_reset(uint8_t* rdram);
+// True while a port page, or the game's Option screen, is up: the menu key
+// is Start then, which closes the pages.
+bool menu_pages_open();
+// A file dropped on the window: a mod (.nrm) is copied into the mods folder
+// for the next start.
+void mods_drop_file(const char* path);
 
 // The window's icon from Snap64Recomp-window.png beside the executable
 // (Linux; on Windows the executable's own resource serves). False without

@@ -79,6 +79,16 @@ struct MenuBitmap {
     std::vector<unsigned char> ia;
 };
 
+// A piece of the Options screen kept whole, in 8-bit RGBA (0xRRGGBBAA,
+// row-major): the header's "A OK  B Cancel" legend, an RGBA32 sprite whose
+// 8-bit alpha is the words' antialiasing, for the pages to draw over a
+// course, where the screen's own sprites do not exist.
+struct MenuArt {
+    int w = 0;
+    int h = 0;
+    std::vector<uint32_t> rgba;
+};
+
 struct MenuFont {
     bool ready = false;
     MenuFace body;      // the label/value face, kMenuFontCellH rows
@@ -91,6 +101,8 @@ struct MenuFont {
     MenuBitmap dot;     // the items' bullet dot
     MenuBitmap brkL;    // the values' left chevron
     MenuBitmap brkR;    // the values' right chevron
+    MenuArt legend;     // the header's A OK / B Cancel (may be empty)
+    MenuBitmap hdrWord; // the "Options" title word whole, as the screen draws it
     int dotTextStart = 0;   // column the label text starts at, after the dot
 };
 

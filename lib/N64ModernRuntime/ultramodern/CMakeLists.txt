@@ -1,4 +1,5 @@
-﻿cmake_minimum_required(VERSION 3.20)
+# Pokemon Snap port: modified from upstream N64ModernRuntime; VENDORING.md lists the changes.
+cmake_minimum_required(VERSION 3.20)
 
 project(ultramodern)
 set(CMAKE_CXX_STANDARD 20)

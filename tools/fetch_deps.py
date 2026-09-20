@@ -2,7 +2,7 @@
 """Fetch the vendored trees a clean checkout of Snap64 Recomp does not carry.
 
 A `git clone` of this repository has no `lib/SDL`, no `lib/DirectX-Headers`
-and, under `lib/rt64/src/contrib`, only the port's three plume files. This script
+and, under `lib/rt64/src/contrib`, only the port's four plume files. This script
 puts everything else there at the exact upstream commits the port was built
 against (VENDORING.md, "Recovered pins"), verifies it, and leaves the port's
 own changes to plume in place. It is idempotent: a tree already at its pin is
@@ -35,9 +35,9 @@ Two entries are not plain checkouts:
   file is not dxc-bin's: `bin/x64/dxil.dll` is replaced by the file of
   Microsoft's release v1.7.2308, downloaded from the release asset and
   checked by SHA-256 (`DXIL_OVERLAY` below says why).
-* `plume` carries three files of the port's own, `plume_d3d12.cpp`,
-  `plume_d3d12.h` and `plume_render_interface.h`, all tracked by this
-  repository. The clone writes upstream's versions over them, so they are put
+* `plume` carries four files of the port's own, `plume_d3d12.cpp`,
+  `plume_d3d12.h`, `plume_render_interface.h` and `plume_vulkan.cpp`, all
+  tracked by this repository. The clone writes upstream's versions over them, so they are put
   back with `git checkout --` afterwards; an uncommitted local edit to one of
   them is kept instead, and said so.
 
@@ -67,7 +67,7 @@ CONTRIB = 'lib/rt64/src/contrib'
 # .gitmodules is what the contrib pins below were read from, and its plain
 # contrib subtrees are copied from it (RT64_PLAIN_FILES).
 RT64_UPSTREAM = 'https://github.com/rt64/rt64.git'
-RT64_BASE = 'a012a2301908b130f9251dd3ec0aaeebf9678d80'  # 2026-07-22, "Improve synchronization detection for tiles being sampled. (#254)"
+RT64_BASE = '43373749dac9bbc1b653e6a02aed40a9e1783bed'  # 2026-09-02, "Don't consider VIs with inverted regions as valid. (#264)"; the port's changes are lib/rt64/SNAP64-CHANGES.patch
 
 # One entry per git checkout, parents before the trees nested inside them.
 # path is relative to the repository root, forward slashes.
@@ -120,12 +120,12 @@ GIT_PINS = [
          describe='v1.1.1-6-g17b6e8c, 2024-02-24', confidence='exact'),
     dict(name='plume', path=CONTRIB + '/plume',
          url='https://github.com/renderbag/plume.git',
-         sha='51b1ad443b9f202c5cfc930ae25345d3f2ba7716',
-         describe='2026-01-28 "Force residency sets to off.", branch metal-release-pool-refactor-plus-sets-off',
-         confidence='high',
-         why=('863 of 866 files match this commit; the other three are the port\'s own '
-              '(plume_d3d12.cpp, plume_d3d12.h, plume_render_interface.h, plume_vulkan.cpp) and are put back below. '
-              'The commit is not on plume\'s main branch.'),
+         sha='d890ac899e505fb30040e037a4037cdeca68f033',
+         describe='2026-07-22 "manually reset nullbuffer (#105)", the commit rt64 4337374 pins',
+         confidence='exact',
+         why=('the gitlink of the RT64 commit the tree is rebased on; the four port files '
+              '(plume_d3d12.cpp, plume_d3d12.h, plume_render_interface.h, plume_vulkan.cpp) are put back below, '
+              'and lib/rt64/SNAP64-PLUME-CHANGES.patch is their difference from this commit.'),
          port_files=['plume_d3d12.cpp', 'plume_d3d12.h', 'plume_render_interface.h', 'plume_vulkan.cpp']),
     # plume's own submodules, at the gitlinks recorded by the plume commit above.
     dict(name='plume/D3D12MemoryAllocator', path=CONTRIB + '/plume/contrib/D3D12MemoryAllocator',
@@ -526,7 +526,7 @@ def blob_hash(rel):
 
 def process_rt64_plain(args):
     print('== %-28s %s/{json,miniz,plainargs,project64,utf8conv}' % ('rt64 plain subtrees', CONTRIB))
-    print('   pin %s  rt64/rt64 %s  [exact]' % (RT64_BASE, 'main, 2026-07-22'))
+    print('   pin %s  rt64/rt64 %s  [exact]' % (RT64_BASE, 'main, 2026-09-02'))
     missing = []
     for up_rel, blob in sorted(RT64_PLAIN_FILES.items()):
         rel = 'lib/rt64/' + up_rel

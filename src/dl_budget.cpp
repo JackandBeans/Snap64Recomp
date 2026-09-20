@@ -54,6 +54,18 @@ uint32_t read_word(uint8_t* rdram, uint32_t address) {
 // that is being overrun, and so the margin is visible before it runs out.
 uint32_t g_peak_used[BufferKinds] = {};
 uint32_t g_peak_heap = 0;
+
+// The port's pages (graphics_menu_patch.c) are sprites drawn into the main
+// buffer, kind 0, on whatever screen they open over. The room that buffer
+// had left last frame is published in the menu mailbox, and the pages stay
+// shut on a screen that cannot afford them: the photo check after a ride
+// fills its 53,248 bytes to within a few hundred on its own, and the list
+// on top of that was an overrun, which is the game's panic.
+constexpr uint32_t DlSpareAddr   = 0x80C000E8u;   // u32: kind 0's spare bytes, last frame
+constexpr uint32_t PagesOpenAddr = 0x80C0003Du;   // u8: a port page is up
+bool     g_pages_seen = false;
+uint32_t g_pages_peak = 0;
+uint32_t g_used_before_pages = 0;
 bool     g_overflowed[BufferKinds] = {};
 bool     g_heap_overflowed = false;
 
@@ -80,6 +92,30 @@ extern "C" void gtlCheckBuffers(uint8_t* rdram, recomp_context* ctx) {
         // frame by frame.
         const uint32_t used = pos - start;
         const uint32_t reportThreshold = (capacity / 10) * 9;
+        if (kind == 0) {
+            const uint32_t spare = (used < capacity) ? (capacity - used) : 0u;
+            *reinterpret_cast<uint32_t*>(rdram + (snap::DlSpareAddr - 0x80000000u)) = spare;
+            // What the pages cost, said once each time they close: the peak
+            // with them up against the frame before them.
+            const bool open = rdram[(snap::PagesOpenAddr ^ 3u) - 0x80000000u] != 0;
+            if (open) {
+                if (!snap::g_pages_seen) {
+                    snap::g_pages_seen = true;
+                    snap::g_pages_peak = 0;
+                }
+                if (used > snap::g_pages_peak) {
+                    snap::g_pages_peak = used;
+                }
+            } else {
+                if (snap::g_pages_seen) {
+                    snap::g_pages_seen = false;
+                    printf("[SNAP-DL] with the pages up the main buffer reached %u of %u bytes; the frame before them used %u\n",
+                           snap::g_pages_peak, capacity, snap::g_used_before_pages);
+                    fflush(stdout);
+                }
+                snap::g_used_before_pages = used;
+            }
+        }
         if ((used > snap::g_peak_used[kind]) && (used >= reportThreshold)) {
             snap::g_peak_used[kind] = used;
             printf("[SNAP-DL] kind %u peak %u / %u bytes (%.1f%% full, %d spare)\n",

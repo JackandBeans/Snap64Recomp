@@ -37,6 +37,19 @@ const std::filesystem::path& base_dir() {
             fprintf(stderr, "[SNAP] SNAP_DATA_DIR is not an absolute path; ignored" "\n");
             result.clear();
         }
+#if defined(__APPLE__)
+        // On a Mac the program is an application bundle whose contents its
+        // signature seals, so nothing is written beside the executable: the
+        // files live where macOS keeps an application's own,
+        // ~/Library/Application Support/Snap64 Recomp/ (SDL creates it), and
+        // the ROM is looked for there. The shipped, read-only files stay in
+        // the bundle (exe_dir below is its Resources folder).
+        if (char* pref = SDL_GetPrefPath("", "Snap64 Recomp")) {
+            result = std::filesystem::path(pref);
+            SDL_free(pref);
+            return result;
+        }
+#endif
 #if defined(__linux__)
         // Otherwise the executable's own folder when it can be written,
         // which is the unpacked tarball; when it cannot (a read-only mount,
@@ -89,6 +102,8 @@ std::filesystem::path base_path(std::string_view rel) {
 const std::filesystem::path& exe_dir() {
     static const std::filesystem::path dir = [] {
         std::filesystem::path result;
+        // The executable's folder; for a macOS bundle, its Contents/Resources,
+        // which is where tools/macos_bundle.py puts the shipped files.
         if (char* base = SDL_GetBasePath()) {
             result = std::filesystem::path(
                 std::u8string(reinterpret_cast<const char8_t*>(base)));

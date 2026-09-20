@@ -14,6 +14,11 @@ import sys
 HOOKED = [
     # Overlay residency tracking and the RSP memory probes.
     'dmaLoadOverlay',
+    # Where a scene's general heap is started again, which is every scene's
+    # set-up: the pages' arena cursor and the scene's age go back there
+    # (src/overlay_hook.cpp). One overlay can hold several scenes, so the
+    # overlay load alone misses some.
+    'gtlInitHeap',
     # The VPK0 segment loads. The main menu's segment carries the sprite font
     # the port harvests (src/menu_harvest.cpp); the wrapper in
     # src/overlay_hook.cpp is the moment that segment is resident.

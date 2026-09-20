@@ -87,6 +87,11 @@ void input_update_mouse_capture();
 // binding table says: Esc is the pause menu in a course and Start
 // everywhere else, for every settings file ever written. Main thread.
 void input_tap_start();
+// Esc, or the pad's Select: the port's Options from anywhere. The press is
+// taken on the game thread (menu_anywhere_tick), which decides whether it
+// goes to a course's pause code or opens the pages over the screen itself.
+void input_request_menu();
+bool input_take_menu_request();
 
 // True while the Steam Deck's own controller is attached: the keyboard's
 // Return and Escape are then ignored, because Steam's desktop layout sends

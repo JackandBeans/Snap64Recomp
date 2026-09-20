@@ -40,10 +40,13 @@
  * game frame so a tap between two of the game's reads is never lost, and
  * lands as exactly one press.
  *
- * Not an N64 button: SDL_CONTROLLER_BUTTON_BACK (Select on most pads) saves
- * the photo on screen, as the same button did on the Wii Virtual Console
- * release (src/photo_export.cpp). The keyboard's P does the same, through
- * the hotkey table in src/settings.cpp.
+ * Not N64 buttons: SDL_CONTROLLER_BUTTON_BACK (Select on most pads) opens
+ * the port's Options from anywhere, as it does in the other
+ * recompilations, and while they are up it is Start, which closes them;
+ * the right stick pressed in saves the photo on screen (src/photo_export.cpp;
+ * until 1.0.9 that was Select, as on the Wii Virtual Console release). The
+ * keyboard's Esc and P do the same, through main.cpp and the hotkey table
+ * in src/settings.cpp.
  */
 
 #include "input.h"
@@ -350,6 +353,8 @@ std::atomic<int64_t> g_mouse_press_until[8] = {};       // latched presses, micr
 std::atomic<int64_t> g_wheel_up_until{0};
 std::atomic<int64_t> g_wheel_down_until{0};
 std::atomic<int64_t> g_esc_start_until{0};
+// A press of the menu key not yet taken by the game thread.
+std::atomic<int> g_menu_request{0};
 
 // A press is reported for at least this long. The game samples its pad
 // once per frame (33 ms), so a click shorter than a frame could fall
@@ -1051,9 +1056,11 @@ bool capture_event(const SDL_Event& event) {
                 return true;
             }
             const SDL_GameControllerButton b = SDL_GameControllerButton(event.cbutton.button);
-            // Back saves the photo on screen and Guide is the platform's
-            // own; neither can be a game button.
-            if ((b == SDL_CONTROLLER_BUTTON_BACK) || (b == SDL_CONTROLLER_BUTTON_GUIDE)) {
+            // Back opens the port's Options, the right stick's click saves
+            // the photo on screen, and Guide is the platform's own; none
+            // can be a game button.
+            if ((b == SDL_CONTROLLER_BUTTON_BACK) || (b == SDL_CONTROLLER_BUTTON_GUIDE) ||
+                (b == SDL_CONTROLLER_BUTTON_RIGHTSTICK)) {
                 capture_end_with(CaptureState::RefusedJob, pad_source_name(b));
                 return true;
             }
@@ -1148,7 +1155,7 @@ std::string input_bind_display(const char* input, int device) {
         out = "Motion";
     }
     // Two names on a row are joined with "or": "B or X" says that either
-    // presses the button, where "B, X" read as a puzzle (the author, on the
+    // presses the button, where "B, X" read as a puzzle (me, on the
     // release's own screenshot, 2026-09-13).
     for (const std::string& s : it->second) {
         if (source_device(s) != device) {
@@ -1329,6 +1336,14 @@ bool input_capture_active() {
 
 void input_tap_start() {
     g_esc_start_until.store(now_us() + PressHoldUs, std::memory_order_relaxed);
+}
+
+void input_request_menu() {
+    g_menu_request.store(1, std::memory_order_relaxed);
+}
+
+bool input_take_menu_request() {
+    return g_menu_request.exchange(0, std::memory_order_relaxed) != 0;
 }
 
 void input_release_mouse() {
@@ -1526,8 +1541,8 @@ void input_handle_sdl_event(const SDL_Event& event) {
 void input_update_mouse_capture() {
     // A replayed run takes no input from the mouse (input_get), so it must
     // not take the cursor either: the release suite plays courses while
-    // the author is elsewhere on the same desktop, and a captured cursor
-    // locked them out of it.
+    // I am elsewhere on the same desktop, and a captured cursor locked me
+    // out of it.
     static const bool replaying = (getenv("SNAP_REPLAY") != nullptr);
     const bool wanted = !replaying &&
                         settings().mouse_aim &&
@@ -1578,9 +1593,18 @@ void input_update_mouse_capture() {
 // path on the main thread and this one never overlap. The return value of
 // a watch is ignored by SDL.
 static int SDLCALL photo_button_watch(void* /*userdata*/, SDL_Event* event) {
-    if ((event->type == SDL_CONTROLLERBUTTONDOWN) &&
-        (event->cbutton.button == SDL_CONTROLLER_BUTTON_BACK)) {
-        export_photo(g_rdram);
+    if (event->type == SDL_CONTROLLERBUTTONDOWN) {
+        if (event->cbutton.button == SDL_CONTROLLER_BUTTON_BACK) {
+            // Select: the port's Options, from anywhere; Start while they
+            // are up, which closes them.
+            if (menu_pages_open()) {
+                input_tap_start();
+            } else {
+                input_request_menu();
+            }
+        } else if (event->cbutton.button == SDL_CONTROLLER_BUTTON_RIGHTSTICK) {
+            export_photo(g_rdram);
+        }
     }
     return 1;
 }
@@ -2041,6 +2065,20 @@ static std::atomic<bool> g_pad_thread_quit{false};
 // answering, and the pad turns up when the driver is done.
 static void pad_thread_main() {
     ultramodern::set_native_thread_name("Pad Thread");
+#if defined(__APPLE__)
+    // Started here and not in SDL_Init on the main thread (main.cpp,
+    // create_gfx): SDL's IOKit driver schedules its device matching on the
+    // run loop of the thread that initialised the joystick subsystem and
+    // services that loop from SDL_GameControllerUpdate, which runs on this
+    // thread; on any other thread no pad on that driver is ever seen.
+    // Stopped at the end of this function for the same reason.
+    if (SDL_InitSubSystem(SDL_INIT_GAMECONTROLLER) != 0) {
+        printf("[SNAP-Input] SDL_InitSubSystem(GAMECONTROLLER) failed: %s; no controller this run\n", SDL_GetError());
+        fflush(stdout);
+        pad_publish();
+        return;
+    }
+#endif
     // Any extra mappings first, so a pad this file teaches SDL about is
     // recognised by the first open rather than on some later poll.
     load_controller_mappings();
@@ -2086,6 +2124,9 @@ static void pad_thread_main() {
     pad_close();
     sync_gyro();
     pad_publish();
+#if defined(__APPLE__)
+    SDL_QuitSubSystem(SDL_INIT_GAMECONTROLLER);
+#endif
 }
 
 void input_start_pad_thread() {
@@ -2239,6 +2280,35 @@ static void snap_input_tap(uint16_t* buttons, float* x, float* y) {
         printf("[SNAP-PCAP] armed %u presents at reading %u\n", pcapBurst, readingIndex);
         fflush(stdout);
     }
+    // SNAP_MENU_AT=a,b,c presses the menu key at those readings, so a replay
+    // can open the pages from anywhere: a replay carries N64 buttons only.
+    {
+        static std::vector<uint32_t> menuAt = [] {
+            std::vector<uint32_t> v;
+            if (const char* e = getenv("SNAP_MENU_AT")) {
+                const char* c = e;
+                while (*c != 0) {
+                    char* after = nullptr;
+                    const unsigned long value = strtoul(c, &after, 10);
+                    if (after == c) break;
+                    v.push_back(uint32_t(value));
+                    c = (*after == ',') ? (after + 1) : after;
+                }
+            }
+            return v;
+        }();
+        for (uint32_t at : menuAt) {
+            if (at == readingIndex) {
+                if (menu_pages_open()) {
+                    input_tap_start();
+                } else {
+                    input_request_menu();
+                }
+                printf("[SNAP-MENU] the menu key at reading %u\n", readingIndex);
+                fflush(stdout);
+            }
+        }
+    }
 
     if (replay != nullptr) {
         struct { uint16_t btn; float rx; float ry; } r;
@@ -2252,6 +2322,11 @@ static void snap_input_tap(uint16_t* buttons, float* x, float* y) {
             *buttons = 0;
             *x = 0.0f;
             *y = 0.0f;
+        }
+        // The menu key's Start reaches a replay too (SNAP_MENU_AT, or Esc
+        // during one): it is the host's, not the tape's.
+        if (now_us() < g_esc_start_until.load(std::memory_order_relaxed)) {
+            *buttons |= N64_BTN_START;
         }
     }
     else if (record != nullptr) {

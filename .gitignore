@@ -1,8 +1,11 @@
 # Build output
 build-win/
 build-linux/
+build-macos/
 # The packaging check's fresh build directory (BUILDING.md, step 13).
 build-fresh/
+# RecompModTool, built from the vendored N64Recomp for the mod kit (docs/MODS.md).
+build-modtool/
 *.obj
 *.pdb
 *.ilk

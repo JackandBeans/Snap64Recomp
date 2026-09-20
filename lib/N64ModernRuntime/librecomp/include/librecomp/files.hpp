@@ -1,3 +1,4 @@
+// Pokemon Snap port: this file is modified from upstream N64ModernRuntime; VENDORING.md lists the changes.
 #ifndef __RECOMP_FILES_H__
 #define __RECOMP_FILES_H__
 

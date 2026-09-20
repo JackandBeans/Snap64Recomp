@@ -2,7 +2,7 @@
 
 [[section]]
 name = ".main"
-rom = 0x20400
+rom = 0x1000
 vram = 0x80000400
 size = 0x45270
 functions = [
@@ -931,7 +931,7 @@ functions = [
 
 [[section]]
 name = ".app_render"
-rom = 0x6A8C0
+rom = 0x46270
 vram = 0x8009A8C0
 size = 0x15CB0
 functions = [
@@ -1171,7 +1171,7 @@ functions = [
 
 [[section]]
 name = ".more_funcs"
-rom = 0x8F080
+rom = 0x5BF20
 vram = 0x800BF080
 size = 0x3130
 functions = [
@@ -1250,7 +1250,7 @@ functions = [
 
 [[section]]
 name = ".world"
-rom = 0xA18A0
+rom = 0x5F050
 vram = 0x800E18A0
 size = 0x14160
 functions = [
@@ -1343,7 +1343,7 @@ functions = [
 
 [[section]]
 name = ".beach_assets"
-rom = 0xEB050
+rom = 0xA74E0
 vram = 0x8011B050
 size = 0x952A0
 functions = [
@@ -1352,7 +1352,7 @@ functions = [
 
 [[section]]
 name = ".tunnel_assets"
-rom = 0x1ACB50
+rom = 0x162CB0
 vram = 0x8011CB50
 size = 0x6F0E0
 functions = [
@@ -1361,7 +1361,7 @@ functions = [
 
 [[section]]
 name = ".cave_assets"
-rom = 0x24A0C0
+rom = 0x1F5E70
 vram = 0x8012A0C0
 size = 0x84D10
 functions = [
@@ -1370,7 +1370,7 @@ functions = [
 
 [[section]]
 name = ".river_assets"
-rom = 0x2FA0C0
+rom = 0x29A190
 vram = 0x8012A0C0
 size = 0x70E00
 functions = [
@@ -1379,7 +1379,7 @@ functions = [
 
 [[section]]
 name = ".volcano_assets"
-rom = 0x38FF90
+rom = 0x326C10
 vram = 0x800FFF90
 size = 0xA9950
 functions = [
@@ -1388,7 +1388,7 @@ functions = [
 
 [[section]]
 name = ".valley_assets"
-rom = 0x45FF90
+rom = 0x3F63D0
 vram = 0x800FFF90
 size = 0x86B60
 functions = [
@@ -1397,7 +1397,7 @@ functions = [
 
 [[section]]
 name = ".rainbow_assets"
-rom = 0x515D90
+rom = 0x4A8160
 vram = 0x800F5D90
 size = 0x43EA0
 functions = [
@@ -1406,7 +1406,7 @@ functions = [
 
 [[section]]
 name = ".app_level"
-rom = 0x560200
+rom = 0x4F0610
 vram = 0x80350200
 size = 0x5AFC0
 functions = [
@@ -1769,7 +1769,7 @@ functions = [
 
 [[section]]
 name = ".beach_code"
-rom = 0x5F40A0
+rom = 0x55C110
 vram = 0x802C40A0
 size = 0x834C0
 functions = [
@@ -2027,7 +2027,7 @@ functions = [
 
 [[section]]
 name = ".tunnel_code"
-rom = 0x682500
+rom = 0x5DF5D0
 vram = 0x802E2500
 size = 0x60BE0
 functions = [
@@ -2327,7 +2327,7 @@ functions = [
 
 [[section]]
 name = ".cave_code"
-rom = 0x6EDD00
+rom = 0x6401B0
 vram = 0x802BDD00
 size = 0x80430
 functions = [
@@ -2569,7 +2569,7 @@ functions = [
 
 [[section]]
 name = ".river_code"
-rom = 0x778800
+rom = 0x6C05E0
 vram = 0x802D8800
 size = 0x66D00
 functions = [
@@ -2857,7 +2857,7 @@ functions = [
 
 [[section]]
 name = ".volcano_code"
-rom = 0x7E60E0
+rom = 0x7272E0
 vram = 0x802D60E0
 size = 0x77ED0
 functions = [
@@ -3173,7 +3173,7 @@ functions = [
 
 [[section]]
 name = ".valley_code"
-rom = 0x865C20
+rom = 0x79F1B0
 vram = 0x802C5C20
 size = 0x86C80
 functions = [
@@ -3488,7 +3488,7 @@ functions = [
 
 [[section]]
 name = ".rainbow_code"
-rom = 0x8F66C0
+rom = 0x825E30
 vram = 0x803466C0
 size = 0x9AB0
 functions = [
@@ -3594,7 +3594,7 @@ functions = [
 
 [[section]]
 name = ".window"
-rom = 0x939F80
+rom = 0x83D730
 vram = 0x80369F80
 size = 0x3C980
 functions = [
@@ -3757,7 +3757,7 @@ functions = [
 
 [[section]]
 name = ".camera_check"
-rom = 0x97C8C0
+rom = 0x87A0B0
 vram = 0x801DC8C0
 size = 0x2D030
 functions = [
@@ -3873,7 +3873,7 @@ functions = [
 
 [[section]]
 name = ".oaks_lab"
-rom = 0x9B18C0
+rom = 0x8A70E0
 vram = 0x800E18C0
 size = 0xE5250
 functions = [
@@ -3951,7 +3951,7 @@ functions = [
 
 [[section]]
 name = ".photo_check"
-rom = 0xA9C8C0
+rom = 0x98C330
 vram = 0x801DC8C0
 size = 0x1A7E0
 functions = [
@@ -4018,7 +4018,7 @@ functions = [
 
 [[section]]
 name = ".pokemon_album"
-rom = 0xABC8C0
+rom = 0x9A6B10
 vram = 0x801DC8C0
 size = 0x2C720
 functions = [
@@ -4126,7 +4126,7 @@ functions = [
 
 [[section]]
 name = ".pokemon_report"
-rom = 0xAEC8C0
+rom = 0x9D3230
 vram = 0x801DC8C0
 size = 0x27350
 functions = [
@@ -4207,7 +4207,7 @@ functions = [
 
 [[section]]
 name = ".gallery"
-rom = 0xB1C8C0
+rom = 0x9FA580
 vram = 0x801DC8C0
 size = 0xDF30
 functions = [
@@ -4275,7 +4275,7 @@ functions = [
 
 [[section]]
 name = ".unk_end_level_8"
-rom = 0xB2C8C0
+rom = 0xA084B0
 vram = 0x801DC8C0
 size = 0x980
 functions = [
@@ -4290,7 +4290,7 @@ functions = [
 
 [[section]]
 name = ".main_menu"
-rom = 0xB318A0
+rom = 0xA08E30
 vram = 0x800E18A0
 size = 0x6A00
 functions = [
@@ -4392,7 +4392,7 @@ functions = [
 
 [[section]]
 name = ".menu_new_game"
-rom = 0xB918A0
+rom = 0xA5CC50
 vram = 0x800E18A0
 size = 0x36810
 functions = [
@@ -4434,7 +4434,7 @@ functions = [
 
 [[section]]
 name = ".credits"
-rom = 0xBCC8A0
+rom = 0xA93460
 vram = 0x801DC8A0
 size = 0xD1F0
 functions = [
@@ -4496,7 +4496,7 @@ functions = [
 
 [[section]]
 name = ".intro_code"
-rom = 0xBE18A0
+rom = 0xAA0650
 vram = 0x800E18A0
 size = 0x530
 functions = [
@@ -4511,7 +4511,7 @@ functions = [
 
 [[section]]
 name = ".unk_segment_AA18E0"
-rom = 0xBFC8A0
+rom = 0xAA18E0
 vram = 0x801DC8A0
 size = 0x8D30
 functions = [

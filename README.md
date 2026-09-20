@@ -34,7 +34,7 @@ does contain the game's code, translated from my own dump into C by
 N64Recomp and compiled, as every N64Recomp port does; `NOTICE.md` says
 exactly what is derived from the game and how.
 
-The credits line on the title screen, `JackandBeans (Snap64 Recomp) · v1.0.8`,
+The credits line on the title screen, `JackandBeans (Snap64 Recomp) · v1.0.9`,
 is my name, the port's name and its version. The name is the HAL team's
 that made the game ([the game's history](docs/HISTORY.md)); the people and
 projects this port stands on are under [Thanks](#thanks).
@@ -53,7 +53,7 @@ projects this port stands on are under [Thanks](#thanks).
 The full documentation is under `docs/`: [the manual](docs/MANUAL.md)
 (every control, page, hotkey and setting), [the Snap
 Station](docs/SNAP-STATION.md), [Linux and the Steam Deck](docs/STEAM-DECK.md),
-[what has been verified](docs/VERIFICATION.md),
+[what has been verified](docs/VERIFICATION.md), [mods](docs/MODS.md),
 [the game's history](docs/HISTORY.md) and [the screenshots](docs/SCREENSHOTS.md).
 
 ## Get it running
@@ -61,18 +61,19 @@ Station](docs/SNAP-STATION.md), [Linux and the Steam Deck](docs/STEAM-DECK.md),
 > **In a hurry?** The archive holds a `START HERE.txt` with the short version.
 > The one part people miss: this port has no launcher and no
 > overlay, so everything it adds lives inside the game's own **Options**
-> screen. Options > Graphics is where widescreen, the frame rate and the rest
-> of the enhancements are, and they all start off, set to what the console
-> did.
+> screen -- Esc, or Select on a pad, opens it anywhere: over the title, the
+> lab, a paused course, the Report. Options > Graphics is where widescreen, the frame rate and
+> the rest of the enhancements are, and they all start off, set to what the
+> console did.
 
 You need a 64-bit Windows 10 or 11 PC whose graphics driver provides
 Direct3D 12, and your own dump of the US cartridge; nothing has to be
 installed. Then:
 
-1. Download `Snap64Recomp-1.0.8-win64.zip` from the
+1. Download `Snap64Recomp-1.0.9-win64.zip` from the
    [Releases](https://github.com/JackandBeans/Snap64Recomp/releases/latest)
    page and unpack it anywhere; it holds one folder,
-   `Snap64Recomp-1.0.8-win64`, with `Snap64Recomp.exe` inside.
+   `Snap64Recomp-1.0.9-win64`, with `Snap64Recomp.exe` inside.
 2. Have your own dump of the US cartridge to hand (the ROM: the cartridge's
    contents read out into one file). Either put it next to
    `Snap64Recomp.exe` named `pokemonsnap.z64`, or just start the program:
@@ -89,15 +90,16 @@ installed. Then:
    start is quick.
 
 The window's maximize button switches to fullscreen and F11 switches it
-back, in a course or anywhere else. **Esc is the pause menu** in a course
-(Continue, Retry, Quit course) and Start elsewhere. To quit the program,
+back, in a course or anywhere else. **Esc opens the port's Options** on any
+screen, and closes them again; Enter is the game's Start, the pause menu in
+a course (Continue, Quit Course, Retry, Options). To quit the program,
 choose **Exit Game**, the last row of the game's Options screen (A asks,
 a second A closes, B stays), or **hold Esc for a second and let go**: a
 box asks, and Enter or Esc keeps you playing, so a hand resting on the key
 cannot end a run. Keyboard and
 controller mappings are under
 [Controls](#controls); the Graphics and Sound pages are on the game's own
-Options screen, reached from the title menu ([In-game
+Options screen, reached with Esc or a pad's Select on any screen ([In-game
 pages](docs/MANUAL.md#in-game-pages)); saves live in `saves/` next to the executable, so
 keep that folder when you update. If something goes wrong, the paragraphs
 under [Running](docs/MANUAL.md#running) say what Windows or an antivirus may object to
@@ -106,7 +108,7 @@ and what to attach to a bug report.
 ## Screenshots
 
 <table><tr>
-<td><a href="docs/screenshots/01i-title-108.png"><img src="docs/screenshots/01i-title-108.png" width="400" alt="The title screen"></a></td>
+<td><a href="docs/screenshots/01j-title-109.png"><img src="docs/screenshots/01j-title-109.png" width="400" alt="The title screen"></a></td>
 <td><a href="docs/screenshots/03-course-select.png"><img src="docs/screenshots/03-course-select.png" width="400" alt="Course select"></a></td>
 </tr><tr>
 <td><a href="docs/screenshots/04-beach.png"><img src="docs/screenshots/04-beach.png" width="400" alt="The Beach: Surfing Pikachu"></a></td>
@@ -155,7 +157,7 @@ has each in full.
 * **Fast forward and slow motion** on a held key: the console's own clocks
   run faster or slower, so the game steps through exactly the frames it
   would have anyway, with the same scores and the same saves.
-* **Photo export.** P, or the pad's Back button, saves the photo on screen
+* **Photo export.** P, or the pad's right stick pressed in, saves the photo on screen
   as a PNG at the game's own resolution, as the Wii Virtual Console could
   post it to the Message Board.
 * **Photo Detail** serves Oak's photos and the album from the renderer's
@@ -172,8 +174,10 @@ has each in full.
   Desktop Mode and Gaming Mode, and the Windows build under Proton
   ([STEAM-DECK.md](docs/STEAM-DECK.md)).
 * **Mods and texture packs.** The runtime's `.nrm` mod loader and RT64's
-  texture-pack loader are compiled in and run at every start; nothing
-  ships with them, and nothing made from another game's data ever will.
+  texture-pack loader are compiled in and run at every start, and the
+  game's Options screen has a Mods page for them
+  ([MODS.md](docs/MODS.md)); nothing ships with them, and nothing made
+  from another game's data ever will.
 
 ## What you need
 
@@ -240,16 +244,17 @@ Keyboard and mouse, as the port ships them:
 | C-Down | K | wheel down | the Poké Flute |
 | C-Up | I | wheel up | turn to face behind |
 | C-Left / C-Right | J / L | side buttons (back / forward) | turn left / right |
-| Start | Enter, or a tap of Esc | | pause |
+| Start | Enter | | pause |
 | D-pad | Arrow keys | | |
 
 A pad works as soon as it is plugged in: the left stick is the control
 stick, A is A, B or X is B, the left shoulder button is Z, the triggers are
-L and R, the right stick is the C buttons, and the Back button saves the
-photo on screen. Hold Tab, or the right shoulder button, for fast forward;
-hold Space, or press the left stick in, for slow motion. Esc tapped is
-Start; Esc held for a second and released asks whether to quit, and Exit
-Game, the last row of the Options screen, quits from a pad.
+L and R, the right stick is the C buttons and, pressed in, saves the photo
+on screen, and Select opens the port's Options. Hold Tab, or the right
+shoulder button, for fast forward; hold Space, or press the left stick in,
+for slow motion. Esc tapped opens the port's Options on any screen; held
+for a second and released it asks whether to quit, and Exit Game, the last
+row of the Options screen, quits from a pad.
 
 Every binding can be changed in the game, on the Controls page's Button
 Setup row, or in the settings file's `keys` table. The mouse's speed, the
@@ -317,14 +322,9 @@ in [STEAM-DECK.md](docs/STEAM-DECK.md).
 In the order it will be worked on; nothing here is a promise until it runs.
 
 1. **Reports from machines other than mine.** Each release from 1.0.1 to
-   1.0.8 was made of what players reported, and the next will be too. The
+   1.0.8 was made of what players reported, and later ones will be too. The
    issue form is the way to send one, with `snap64.log` attached.
-2. **The renderer and the runtime as patches on their upstreams.** RT64 and
-   N64ModernRuntime are edited in place today, and the runtime's base
-   commit is not recorded. Recording both and carrying the port's changes
-   as patches is what would let an upstream fix be taken rather than
-   ported by hand.
-3. **A Linux desktop.** The native build has run under WSL and on a Deck
+2. **A Linux desktop.** The native build has run under WSL and on a Deck
    and on no Linux desktop yet; the first report from one is wanted.
 
 The same list, with a place to reply, is pinned under
@@ -352,9 +352,9 @@ Every release goes through the headless suite in `tools/release_check.py`
 before it ships: the Beach replay under the player's own conditions, the
 recorded run to Oak's evaluation scoring every photo, the Options pages
 staged from the harvested font, the first start with no ROM, the archive's
-contents, the two speed keys, and the Snap Station's print through both
-relaunches. On the 1.0.8 executable the suite passed 26 of 26 checks and
-the station's 5 of 5. What each check does, what every release reported,
+contents, the two speed keys, the key that opens the pages from anywhere,
+and the Snap Station's print through both relaunches. On the 1.0.9
+executable the suite passed 28 of 28 checks and the station's 5 of 5. What each check does, what every release reported,
 and what has only been read from the code and not seen are in
 [VERIFICATION.md](docs/VERIFICATION.md).
 
@@ -365,7 +365,7 @@ under WSL, N64Recomp for the game and the patches, CMake and MSVC on
 Windows, and a list of things git does not carry
 ([What a clean checkout is missing](BUILDING.md#what-a-clean-checkout-is-missing)).
 `cpack -C Release` in the build directory then writes
-`Snap64Recomp-1.0.8-win64.zip` ([step 13](BUILDING.md#13-package)).
+`Snap64Recomp-1.0.9-win64.zip` ([step 13](BUILDING.md#13-package)).
 
 ## How I made it
 

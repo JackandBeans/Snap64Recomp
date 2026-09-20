@@ -30,7 +30,9 @@ std::filesystem::path base_path(std::string_view rel);
 // the seed of the seen-shader list. On Windows, and on a Linux install
 // whose folder can be written, this is base_dir(); on a read-only Linux
 // install base_dir() is the config home and the shipped files are still
-// beside the executable, which is where 1.0.3 failed to look for them.
+// beside the executable, which is where 1.0.3 failed to look for them. On
+// macOS base_dir() is ~/Library/Application Support/Snap64 Recomp/ and this
+// is the bundle's Resources folder (paths.cpp).
 const std::filesystem::path& exe_dir();
 std::filesystem::path exe_path(std::string_view rel);
 

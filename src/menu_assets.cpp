@@ -36,6 +36,7 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <functional>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -43,6 +44,10 @@
 #include "audio.h"
 #include "hle/rt64_snap_diag.h"
 #include "input.h"
+#include "librecomp/game.hpp"
+#include "librecomp/mods.hpp"
+#include "recomp.h"
+
 #include "paths.h"
 #include "settings.h"
 #include "snap_station.h"
@@ -167,10 +172,13 @@ constexpr uint32_t DirectoryAddr = 0x80C01000u;
 // pixel cursor must start beyond the LAST entry, not at a round number.
 // At 0x...1100 the entries for ids 31+ silently overwrote the first
 // staged tile's pixels (invisibly -- address bytes decode as near-black
-// texels on the black backdrop). 0x800 of directory seats 255 ids; the
-// 0x400 it had seated 127, and the 129 strings of 1.0.5 had already put
-// two entries into the black tile's pixels, which nothing drew.
-constexpr uint32_t PixelsAddr = 0x80C01800u;
+// texels on the black backdrop). 0x1000 of directory seats 511 ids; the
+// 0x800 it had seated 255, and the Mods page's 260 would have put five
+// entries into the first tile; the 0x400 before that seated 127, and the
+// 129 strings of 1.0.5 had already put two entries into the black tile's
+// pixels, which nothing drew. The patch reads each entry's own address, so
+// only this constant moves.
+constexpr uint32_t PixelsAddr = 0x80C02000u;
 constexpr uint32_t MailboxMagic = 0x53474658u;   // 'SGFX'
 constexpr uint32_t DirectoryMagic = 0x53474130u; // 'SGA0'
 constexpr uint32_t STR_ITEM_LABEL_ID = 1;        // "Graphics", the Option item
@@ -189,6 +197,33 @@ constexpr uint32_t DynStripBytes = uint32_t(DynChunks * 64 * StripHeight * 2);
 constexpr uint32_t kStringBaseCount = 30;   // the strings[] table below, asserted there
 constexpr uint32_t kBindDynBase = kStringBaseCount + 162;   // graphics_menu_patch.c STR_BIND_DYN
 constexpr int BindInputCount = 18;
+
+// The Mods page's rows (ids kModsDynBase on): two banks of six names and six
+// help lines, composed for the window the page shows while it is open, in
+// the same fixed home after the Button Setup page's slots. A name is a body
+// strip like a row value; a help line is two lines tall (compose_lines) and
+// up to four chunks wide, the help box's width, so its slots are bigger.
+constexpr uint32_t kModsDynBase = kStringBaseCount + 206;   // graphics_menu_patch.c STR_MODS_DYN
+constexpr int ModsVisible = 6;
+constexpr int ModsBank = 2 * ModsVisible;                   // ids per bank: names, then help lines
+constexpr int ModsHelpChunks = 4;
+constexpr int ModsHelpHeight = 12 + kMenuHlpCellH;          // compose_lines' height
+constexpr uint32_t ModsHelpBytes = uint32_t(ModsHelpChunks * 64 * ModsHelpHeight * 2);
+constexpr uint32_t ModsNamesAddr = DynPixelsAddr + uint32_t(2 * BindInputCount) * DynStripBytes;
+constexpr uint32_t ModsHelpsAddr = ModsNamesAddr + uint32_t(2 * ModsVisible) * DynStripBytes;
+constexpr int ModsNameInkWidth = 156;                       // the label column, before the page's values at x=212
+constexpr int ModsHelpInkWidth = 236;                       // the help box's text width (the stock sentences reach 238)
+// Where a Mods page id's pixels live: names in one run of slots, help lines
+// in another, both banks side by side.
+static uint32_t mods_dyn_addr(uint32_t id) {
+    const uint32_t k = id - kModsDynBase;
+    const uint32_t bank = k / uint32_t(ModsBank);
+    const uint32_t slot = k % uint32_t(ModsBank);
+    if (slot < uint32_t(ModsVisible)) {
+        return ModsNamesAddr + (bank * uint32_t(ModsVisible) + slot) * DynStripBytes;
+    }
+    return ModsHelpsAddr + (bank * uint32_t(ModsVisible) + (slot - uint32_t(ModsVisible))) * ModsHelpBytes;
+}
 
 struct Strip {
     int width = 0;
@@ -940,6 +975,349 @@ uint32_t g_last_applied_snd_seq = 0;
 bool g_staged = false;
 bool g_mailbox_seeded = false;
 
+// ---------------------------------------------------------------------------
+// The Option screen's dress for the pages over a course (graphics_menu_patch.c
+// snap_course_options_page), texel for texel the screen's own sprites as
+// they sit in the main menu's segment (src/main_menu/A0D4D0.c places them):
+// the rule, 240x3 IA16, one opaque row of intensity 217 between two clear
+// ones, drawn above and below the heading and as the help box's top and
+// bottom; the box's side, 3x30, the middle column. Both are simple enough to
+// write down; the header's legend is harvested whole instead
+// (menu_harvest.cpp), being 32-bit with 8-bit alpha in its lettering.
+// ---------------------------------------------------------------------------
+// The stock sprites, texel for texel: the rule is 240x3 IA16, one opaque row
+// of intensity 217 between two clear ones; the box's side 3x30, the middle
+// column. They read on any screen because every page is drawn over the
+// dim, which leaves at most 40 percent of what is behind: the line is
+// always the brightest thing on its row.
+Strip compose_rule() {
+    Strip s;
+    s.width = 256;
+    s.height = 3;
+    s.intensity.assign(size_t(s.width) * s.height, 217);
+    s.alpha.assign(size_t(s.width) * s.height, 0);
+    for (int x = 0; x < 240; x++) {
+        s.alpha[size_t(1) * s.width + x] = 255;
+    }
+    return s;
+}
+
+Strip compose_box_side() {
+    Strip s;
+    s.width = 64;
+    s.height = 30;
+    s.intensity.assign(size_t(s.width) * s.height, 217);
+    s.alpha.assign(size_t(s.width) * s.height, 0);
+    for (int y = 0; y < s.height; y++) {
+        s.alpha[size_t(y) * s.width + 1] = 255;
+    }
+    return s;
+}
+
+// ---------------------------------------------------------------------------
+// The pause menu's fourth pill (pause_menu_patch.inc).
+//
+// The pause menu's three items are 89x19 RGBA16 sprites in the level code's
+// data, each pill with its word baked in, a bright "selected" one and a dark
+// plain one per item: blue, yellow, red. The port's item is a fourth pill in
+// green -- the one colour of the set the menu does not use, and the B
+// button's -- made from the yellow pair: the pill kept texel for texel, its
+// word erased to the fill, every texel's hue turned by the one angle that
+// puts the fill at green, and "Options" set in the pills' own letters at the
+// pills' own centring (the left edge at (89 - core extent) / 2, which is
+// where all three stock words stand). The O is the Q of "Quit Course"
+// without its tail, its bottom the mirror of its top; the p is the n's stem
+// and arch closed the way the o closes, with the one-row descender the y
+// has; t, i, o, n and s are read off the words. Read from the ROM when the
+// strings are staged: the level's segment is not in RDRAM at the main menu.
+// ---------------------------------------------------------------------------
+struct Rgba16Art {
+    int w = 0;   // staged width: whole 64-texel blocks
+    int h = 0;
+    std::vector<uint16_t> texels;
+};
+
+namespace pill {
+
+struct Rgba {
+    uint8_t r = 0, g = 0, b = 0, a = 0;
+};
+
+// The level data segment's VRAM to ROM (asm/data/app_level/506FB0.data.s).
+constexpr uint32_t kVramToRom = 0x8037D2A0u - 0x51D6B0u;
+// The "Quit Course" pair's Sprite structs in the ROM: bright, then dark.
+constexpr uint32_t kSelectedRom = 0x51D6B0u;
+constexpr uint32_t kPlainRom = 0x51E4E8u;
+constexpr int W = 89;
+constexpr int H = 19;
+constexpr int StagedW = 128;
+// The word stands in rows 5..12 between the caps (columns 7..81), on a flat fill.
+constexpr int WordTop = 5;
+constexpr int WordBottom = 12;
+constexpr int WordLeft = 7;
+constexpr int WordRight = 81;
+constexpr float TargetHue = 120.0f;   // green
+
+// The letters as coverage in tenths, read off the three stock words: '9' is
+// the word's colour outright, a digit d is (d + 0.5) / 10 of the way from
+// the fill, '.' the fill. `top` is the glyph's first pill row, `core` its
+// width without the antialiasing column most letters carry on the right.
+struct Glyph {
+    char ch;
+    int top;
+    int core;
+    const char* rows[7];
+};
+constexpr Glyph kGlyphs[] = {
+    { 'O', 5, 5, { "29990", "96279", "90.19", "9...9", "90.19", "96279", "29990" } },
+    { 'p', 7, 3, { "996.", "9.91", "9092", "9.92", "9960", "9...", nullptr } },
+    { 't', 5, 3, { ".2..", ".92.", "9992", ".9..", ".9..", ".9..", ".99." } },
+    { 'i', 5, 1, { "9", "2", "9", "9", "9", "9", "9" } },
+    { 'o', 7, 3, { "696.", "9190", "9092", "9193", "6960", nullptr, nullptr } },
+    { 'n', 7, 3, { "996.", "9.91", "9092", "9.92", "9.92", nullptr, nullptr } },
+    { 's', 7, 3, { "692", "922", "660", "292", "961", nullptr, nullptr } },
+};
+constexpr int LetterGap = 2;   // columns from one letter's core to the next's
+
+const Glyph* glyph(char c) {
+    for (const Glyph& g : kGlyphs) {
+        if (g.ch == c) {
+            return &g;
+        }
+    }
+    return nullptr;
+}
+
+uint16_t rom_u16(std::span<const uint8_t> rom, uint32_t at) {
+    return uint16_t((rom[at] << 8) | rom[at + 1]);
+}
+
+uint32_t rom_u32(std::span<const uint8_t> rom, uint32_t at) {
+    return (uint32_t(rom[at]) << 24) | (uint32_t(rom[at + 1]) << 16) | (uint32_t(rom[at + 2]) << 8) | rom[at + 3];
+}
+
+// One stock pill out of the ROM: RGBA16, three bitmaps side by side,
+// pre-shuffled for TMEM (the odd rows' words swapped, undone here as
+// menu_harvest.cpp decode_sprite undoes it).
+bool decode(std::span<const uint8_t> rom, uint32_t spriteRom, std::vector<Rgba>& img) {
+    if (rom.size() < 0x530000u) {
+        return false;
+    }
+    const int width = int16_t(rom_u16(rom, spriteRom + 0x04));
+    const int height = int16_t(rom_u16(rom, spriteRom + 0x06));
+    const uint16_t attr = rom_u16(rom, spriteRom + 0x14);
+    const int nbitmaps = int16_t(rom_u16(rom, spriteRom + 0x28));
+    const int bmheight = int16_t(rom_u16(rom, spriteRom + 0x2C));
+    const uint16_t fmtsiz = rom_u16(rom, spriteRom + 0x30);
+    const uint32_t bitmapVram = rom_u32(rom, spriteRom + 0x34);
+    if ((width != W) || (height != H) || (nbitmaps <= 0) || (nbitmaps > 8) || (bmheight <= 0) ||
+        (fmtsiz != 0x0002) || (bitmapVram < kVramToRom)) {
+        return false;
+    }
+    const uint32_t bitmaps = bitmapVram - kVramToRom;
+    if (bitmaps + uint32_t(nbitmaps) * 0x10u > rom.size()) {
+        return false;
+    }
+    const bool shuffled = (attr & 0x200u) != 0;
+    img.assign(size_t(W) * H, Rgba{});
+    int x0 = 0;
+    int y0 = 0;
+    for (int bi = 0; bi < nbitmaps; bi++) {
+        const uint32_t b = bitmaps + uint32_t(bi) * 0x10u;
+        const int bw = int16_t(rom_u16(rom, b + 0x0));
+        const int bwImg = int16_t(rom_u16(rom, b + 0x2));
+        const uint32_t bufVram = rom_u32(rom, b + 0x8);
+        int rows = int16_t(rom_u16(rom, b + 0xC));
+        if (rows == 0) {
+            rows = bmheight;
+        }
+        if ((bw <= 0) || (bwImg < bw) || (rows <= 0) || (bufVram < kVramToRom)) {
+            return false;
+        }
+        const uint32_t buf = bufVram - kVramToRom;
+        const int rowBytes = bwImg * 2;
+        if (buf + uint32_t(rowBytes) * uint32_t(rows) > rom.size()) {
+            return false;
+        }
+        if (x0 >= W) {
+            x0 = 0;
+            y0 += bmheight;
+        }
+        for (int ry = 0; (ry < rows) && (y0 + ry < H); ry++) {
+            for (int p = 0; (p < bw) && (x0 + p < W); p++) {
+                int o = p * 2;
+                if (shuffled && (ry & 1) && (o < (rowBytes & ~7))) {
+                    o ^= 4;
+                }
+                const uint16_t v = rom_u16(rom, buf + uint32_t(ry * rowBytes + o));
+                Rgba& px = img[size_t(y0 + ry) * W + size_t(x0 + p)];
+                const int r = (v >> 11) & 31;
+                const int g = (v >> 6) & 31;
+                const int bl = (v >> 1) & 31;
+                px.r = uint8_t((r << 3) | (r >> 2));
+                px.g = uint8_t((g << 3) | (g >> 2));
+                px.b = uint8_t((bl << 3) | (bl >> 2));
+                px.a = (v & 1) ? 255 : 0;
+            }
+        }
+        x0 += bw;
+    }
+    return true;
+}
+
+void rgb_to_hsv(const Rgba& p, float& h, float& s, float& v) {
+    const float r = p.r / 255.0f;
+    const float g = p.g / 255.0f;
+    const float b = p.b / 255.0f;
+    const float mx = std::max(r, std::max(g, b));
+    const float mn = std::min(r, std::min(g, b));
+    const float d = mx - mn;
+    v = mx;
+    s = (mx > 0.0f) ? (d / mx) : 0.0f;
+    if (d <= 0.0f) {
+        h = 0.0f;
+    }
+    else if (mx == r) {
+        h = 60.0f * std::fmod((g - b) / d, 6.0f);
+    }
+    else if (mx == g) {
+        h = 60.0f * ((b - r) / d + 2.0f);
+    }
+    else {
+        h = 60.0f * ((r - g) / d + 4.0f);
+    }
+    if (h < 0.0f) {
+        h += 360.0f;
+    }
+}
+
+Rgba hsv_to_rgb8(float h, float s, float v, uint8_t a) {
+    h = std::fmod(h, 360.0f);
+    if (h < 0.0f) {
+        h += 360.0f;
+    }
+    const float c = v * s;
+    const float x = c * (1.0f - std::fabs(std::fmod(h / 60.0f, 2.0f) - 1.0f));
+    const float m = v - c;
+    float r = 0.0f;
+    float g = 0.0f;
+    float b = 0.0f;
+    if (h < 60.0f) { r = c; g = x; }
+    else if (h < 120.0f) { r = x; g = c; }
+    else if (h < 180.0f) { g = c; b = x; }
+    else if (h < 240.0f) { g = x; b = c; }
+    else if (h < 300.0f) { r = x; b = c; }
+    else { r = c; b = x; }
+    Rgba out;
+    out.r = uint8_t(std::lround((r + m) * 255.0f));
+    out.g = uint8_t(std::lround((g + m) * 255.0f));
+    out.b = uint8_t(std::lround((b + m) * 255.0f));
+    out.a = a;
+    return out;
+}
+
+Rgba turned(const Rgba& p, float delta) {
+    float h, s, v;
+    rgb_to_hsv(p, h, s, v);
+    return hsv_to_rgb8(h + delta, s, v, p.a);
+}
+
+} // namespace pill
+
+// One state of the pill: the stock "Quit Course" pill of that state, its
+// word erased, turned to green, "Options" set on it, staged as RGBA16 in
+// two 64-texel blocks (the pill's 89 columns, then clear). False when the
+// ROM is not there to read or its pill is not the sprite expected; the
+// pause menu then keeps the cartridge's three items.
+bool compose_pause_pill(bool selected, Rgba16Art& out) {
+    using namespace pill;
+    const std::span<const uint8_t> rom = recomp::get_rom();
+    std::vector<Rgba> img;
+    if (!decode(rom, selected ? kSelectedRom : kPlainRom, img)) {
+        return false;
+    }
+    auto at = [&](int x, int y) -> Rgba& { return img[size_t(y) * W + size_t(x)]; };
+
+    // The fill, and the word's own colour: white on the bright pill, a
+    // neutral grey on the dark one.
+    const Rgba fill = at(12, 9);
+    Rgba word = fill;
+    int brightest = -1;
+    for (int y = WordTop; y <= WordBottom; y++) {
+        for (int x = WordLeft; x <= WordRight; x++) {
+            const Rgba p = at(x, y);
+            const int sum = p.r + p.g + p.b;
+            if ((p.a != 0) && (sum > brightest)) {
+                brightest = sum;
+                word = p;
+            }
+        }
+    }
+    for (int y = WordTop; y <= WordBottom; y++) {
+        for (int x = WordLeft; x <= WordRight; x++) {
+            at(x, y) = fill;
+        }
+    }
+
+    // Yellow to green: the fill's hue to 120 degrees, every texel by the
+    // same turn, so the caps' shading, the rim and the outline follow.
+    float fh, fs, fv;
+    rgb_to_hsv(fill, fh, fs, fv);
+    const float delta = TargetHue - fh;
+    for (Rgba& p : img) {
+        if (p.a != 0) {
+            p = turned(p, delta);
+        }
+    }
+    const int spread = int(std::max(word.r, std::max(word.g, word.b))) - int(std::min(word.r, std::min(word.g, word.b)));
+    const Rgba ink = (spread < 24) ? word : turned(word, delta);
+
+    // "Options", centred as the stock words are.
+    const char* text = "Options";
+    int extent = -LetterGap;
+    for (const char* c = text; *c != 0; c++) {
+        const Glyph* g = glyph(*c);
+        if (g == nullptr) {
+            return false;
+        }
+        extent += g->core + LetterGap;
+    }
+    int x = (W - extent) / 2;
+    for (const char* c = text; *c != 0; c++) {
+        const Glyph* g = glyph(*c);
+        for (int dy = 0; (dy < 7) && (g->rows[dy] != nullptr); dy++) {
+            const char* row = g->rows[dy];
+            for (int dx = 0; row[dx] != 0; dx++) {
+                if (row[dx] == '.') {
+                    continue;
+                }
+                const int d = row[dx] - '0';
+                const float cov = (d >= 9) ? 1.0f : (float(d) + 0.5f) / 10.0f;
+                Rgba& p = at(x + dx, g->top + dy);
+                p.r = uint8_t(std::lround(p.r + cov * (int(ink.r) - int(p.r))));
+                p.g = uint8_t(std::lround(p.g + cov * (int(ink.g) - int(p.g))));
+                p.b = uint8_t(std::lround(p.b + cov * (int(ink.b) - int(p.b))));
+                p.a = 255;
+            }
+        }
+        x += g->core + LetterGap;
+    }
+
+    out.w = StagedW;
+    out.h = H;
+    out.texels.assign(size_t(StagedW) * H, 0);
+    for (int y = 0; y < H; y++) {
+        for (int xx = 0; xx < W; xx++) {
+            const Rgba& p = at(xx, y);
+            if (p.a != 0) {
+                out.texels[size_t(y) * StagedW + xx] =
+                    uint16_t(((p.r >> 3) << 11) | ((p.g >> 3) << 6) | ((p.b >> 3) << 1) | 1);
+            }
+        }
+    }
+    return true;
+}
+
 // The BUTTON SETUP page's bank of the mailbox, at +0xA0 (the byte map is in the
 // patch, SNAP_GFX_MAILBOX): the page writes a request word and the device
 // it shows; the host answers with an ack word, keeps the row values
@@ -950,6 +1328,77 @@ constexpr uint32_t BindGenAddr    = MailboxAddr + 0xA8;
 constexpr uint32_t BindDeviceAddr = MailboxAddr + 0xAC;
 constexpr uint32_t BindOpenAddr   = MailboxAddr + 0xAD;
 constexpr uint32_t BindPadAddr    = MailboxAddr + 0xAE;
+// The Mods page's bank (graphics_menu_patch.c, the MODS_ defines).
+constexpr uint32_t ModsReqAddr    = MailboxAddr + 0xB0;
+constexpr uint32_t ModsAckAddr    = MailboxAddr + 0xB4;
+constexpr uint32_t ModsGenAddr    = MailboxAddr + 0xB8;
+constexpr uint32_t ModsCountAddr  = MailboxAddr + 0xBC;
+constexpr uint32_t ModsOpenAddr   = MailboxAddr + 0xBE;
+constexpr uint32_t ModsTopAddr    = MailboxAddr + 0xBF;
+constexpr uint32_t ModsStateAddr  = MailboxAddr + 0xC0;
+constexpr uint32_t ModsHasOptAddr = MailboxAddr + 0xC2;   // + bank: the window's rows with options
+constexpr uint32_t ModsModCountAddr = MailboxAddr + 0xC4; // u16: the mods; the rows after are the actions
+constexpr int ModsActions = 2;                            // Open the mods folder, Restart the game
+
+// A mod's options page (graphics_menu_patch.c snap_mod_options_page): its
+// own bank of the mailbox and its own dynamic slots -- two banks of six
+// names, six values and six help lines for the window shown.
+constexpr uint32_t OptReqAddr   = MailboxAddr + 0xC8;
+constexpr uint32_t OptAckAddr   = MailboxAddr + 0xCC;
+constexpr uint32_t OptGenAddr   = MailboxAddr + 0xD0;
+constexpr uint32_t OptCountAddr = MailboxAddr + 0xD4;
+constexpr uint32_t OptOpenAddr  = MailboxAddr + 0xD6;
+constexpr uint32_t OptTopAddr   = MailboxAddr + 0xD7;
+constexpr uint32_t OptRowAddr   = MailboxAddr + 0xD8;
+constexpr uint32_t kOptDynBase = kStringBaseCount + 238;   // graphics_menu_patch.c STR_OPT_DYN
+constexpr int OptVisible = 6;
+constexpr int OptBank = 3 * OptVisible;
+constexpr uint32_t OptNamesAddr = ModsHelpsAddr + uint32_t(2 * ModsVisible) * ModsHelpBytes;
+constexpr uint32_t OptValuesAddr = OptNamesAddr + uint32_t(2 * OptVisible) * DynStripBytes;
+constexpr uint32_t OptHelpsAddr = OptValuesAddr + uint32_t(2 * OptVisible) * DynStripBytes;
+constexpr int OptNameInkWidth = 105;    // the label column, before the values at x=163
+constexpr int OptValueInkWidth = 110;   // the value column, to the right rail
+static uint32_t opt_dyn_addr(uint32_t id) {
+    const uint32_t k = id - kOptDynBase;
+    const uint32_t bank = k / uint32_t(OptBank);
+    const uint32_t slot = k % uint32_t(OptBank);
+    if (slot < uint32_t(OptVisible)) {
+        return OptNamesAddr + (bank * uint32_t(OptVisible) + slot) * DynStripBytes;
+    }
+    if (slot < uint32_t(2 * OptVisible)) {
+        return OptValuesAddr + (bank * uint32_t(OptVisible) + (slot - uint32_t(OptVisible))) * DynStripBytes;
+    }
+    return OptHelpsAddr + (bank * uint32_t(OptVisible) + (slot - uint32_t(2 * OptVisible))) * ModsHelpBytes;
+}
+// The pages from anywhere: the host's word that the menu key was pressed in
+// a course, for the pause code, and the patch's word that a page is up.
+constexpr uint32_t MenuReqAddr   = MailboxAddr + 0x39;
+constexpr uint32_t PagesOpenAddr = MailboxAddr + 0x3D;
+constexpr uint32_t PauseAliveAddr = MailboxAddr + 0x3E;   // the pause handler's heartbeat, counted down here
+constexpr uint32_t RunnerNoteAddr = MailboxAddr + 0x3F;   // the runner's word on a press, for the log
+
+// The pages' own memory (anywhere_patch.inc carries the same numbers). The
+// scene's general heap (sys/gtl.c) is a bump allocator the object manager
+// grows its pools from when a free list runs dry, and its overflow is the
+// game's panic, an endless loop the port parks with no message. A screen
+// that has spent its heap -- the lab's first frames, the photo screens --
+// cannot give the pages one object, so the heap is pointed at this arena,
+// in RDRAM beyond anything the cartridge addresses, while the runner is
+// made here and while its pages are up. The objects grown there stay in
+// the scene's free lists until the scene goes, when the cursor moves back.
+constexpr uint32_t ArenaStart   = 0x80E00000u;
+constexpr uint32_t ArenaEnd     = 0x80E40000u;
+constexpr uint32_t ArenaPtrAddr = MailboxAddr + 0xF0;   // u32: the arena's cursor
+constexpr uint32_t HeapFreeAddr = MailboxAddr + 0xF4;   // u32: the scene heap's free bytes at the press
+constexpr uint32_t ObjStatAddr  = MailboxAddr + 0xF8;   // u32: active objects << 16 | the limit
+constexpr uint32_t SceneAgeAddr = MailboxAddr + 0xFC;   // u32: the ticks this scene has run, for the runner
+// The room the screen's main display list buffer had left last frame
+// (src/dl_budget.cpp measures it), and what the pages may draw at most: the
+// same number as SNAP_PAGES_DL_NEED in graphics_menu_patch.c.
+constexpr uint32_t DlSpareAddr = MailboxAddr + 0xE8;
+constexpr uint32_t PagesDlNeed = 8192;
+constexpr uint32_t kGeneralHeap  = 0x8004A8C8u;   // sys/gtl.c sGeneralHeap: id, start, end, ptr
+constexpr uint32_t kOmMaxObjects = 0x8004AC02u;   // sys/om.c omMaxObjects, s16
 // The page's eighteen input rows, in its order (graphics_menu_patch.c
 // STR_BIND_INPUT): the names input.h gives them.
 const char* const kBindInputs[BindInputCount] = {
@@ -1447,7 +1896,7 @@ void stage_menu_strings(uint8_t* rdram) {
         { "Aims the camera left in a course, and", "walks the menus. A changes, Z clears." },
         { "Aims the camera right in a course, and", "walks the menus. A changes, Z clears." },
     };
-    constexpr uint32_t StringCount = BaseCount + 202;
+    constexpr uint32_t StringCount = BaseCount + 279;
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -1527,6 +1976,15 @@ void stage_menu_strings(uint8_t* rdram) {
             stbi_image_free(data);
             printf("[SNAP-MENU] recomp_logo.png staged at %dx%d\n", logo.w, logo.h);
         }
+    }
+
+    // The pause menu's fourth pill, plain and selected (pause_menu_patch.inc).
+    Rgba16Art pillPlain;
+    Rgba16Art pillSel;
+    const bool pills = compose_pause_pill(false, pillPlain) && compose_pause_pill(true, pillSel);
+    if (!pills) {
+        printf("[SNAP-MENU] the pause menu's pill was not composed (ROM %zu bytes); the pause menu keeps its three items\n",
+               recomp::get_rom().size());
     }
 
     uint32_t cursor = PixelsAddr;
@@ -1675,6 +2133,179 @@ void stage_menu_strings(uint8_t* rdram) {
         }
         else if (id == BaseCount + 201) {
             strip = compose_lines(slowDesc[0], slowDesc[1]);
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 233) {
+            // No V in the help face (its letters are the stock sentences' and
+            // a few of the port's); the line begins with a word it has.
+            strip = compose_help("The volumes, stereo or mono, background mute.");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 232) {
+            // The in-course list's Sound item; the Option screen's is the
+            // stock sprite (graphics_menu_patch.c, snap_course_options_page).
+            strip = add_item_dot(compose("Sound"));
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 231) {
+            // The in-course list's heading: the screen's own "Options"
+            // sprite, texel for texel (the header face was cut from it),
+            // which the patch places where the screen places it, 43,40.
+            // A composition from the face runs one column wider.
+            const MenuBitmap& word = g_font.hdrWord;
+            if (word.w > 0) {
+                strip = Strip();
+                strip.width = (word.w + 63) & ~63;
+                strip.height = word.h;
+                strip.intensity.assign(size_t(strip.width) * strip.height, 0);
+                strip.alpha.assign(size_t(strip.width) * strip.height, 0);
+                for (int y = 0; y < word.h; y++) {
+                    for (int x = 0; x < word.w; x++) {
+                        strip.intensity[size_t(y) * strip.width + x] = word.ia[(size_t(y) * word.w + x) * 2 + 0];
+                        strip.alpha[size_t(y) * strip.width + x] = word.ia[(size_t(y) * word.w + x) * 2 + 1];
+                    }
+                }
+            }
+            else {
+                strip = compose_hdr("Options");
+            }
+            w = strip.width;
+            h = strip.height;
+        }
+        else if ((id >= kOptDynBase) && (id < kOptDynBase + uint32_t(2 * OptBank))) {
+            // A row of a mod's options page: a fixed home of its own, blank
+            // until the page opens (opt_compose writes it then).
+            const uint32_t slot = (id - kOptDynBase) % uint32_t(OptBank);
+            const bool help = slot >= uint32_t(2 * OptVisible);
+            const uint32_t addr = opt_dyn_addr(id);
+            const uint32_t bytes = help ? ModsHelpBytes : DynStripBytes;
+            write_u32(DirectoryAddr + 0x8 + id * 8, addr);
+            write_u16(DirectoryAddr + 0xC + id * 8, 64);
+            write_u16(DirectoryAddr + 0xE + id * 8, uint16_t(help ? ModsHelpHeight : StripHeight));
+            for (uint32_t k = 0; k < bytes; k += 2) {
+                write_u16(addr + k, 0);
+            }
+            continue;
+        }
+        else if (id == BaseCount + 274) {
+            // The Mods page's hint at the header's right, in its three
+            // forms: both of the page's extra buttons apply, only Z, only
+            // the order.
+            strip = compose("Z options   L R order");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 275) {
+            strip = compose("Z opens its options");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 276) {
+            strip = compose("L and R move it");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 277) {
+            strip = compose_hdr("Mod Options");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 278) {
+            strip = compose_lines("This mod has no options.", "");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if ((id == BaseCount + 230) || (id == BaseCount + 234)) {
+            // The pause menu's OPTIONS pill, plain and selected
+            // (pause_menu_patch.inc): RGBA16, the pills' own format, and
+            // drawn by the patch as such -- so without the composition
+            // there is no entry, and the pause menu keeps the cartridge's
+            // three items.
+            if (!pills) {
+                write_u32(DirectoryAddr + 0x8 + id * 8, 0);
+                write_u16(DirectoryAddr + 0xC + id * 8, 0);
+                write_u16(DirectoryAddr + 0xE + id * 8, 0);
+                continue;
+            }
+            const Rgba16Art& art = (id == BaseCount + 230) ? pillPlain : pillSel;
+            w = art.w;
+            h = art.h;
+        }
+        else if (id == BaseCount + 235) {
+            // The Option screen's rule, for the pages over a course.
+            strip = compose_rule();
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 236) {
+            // The help box's side, likewise.
+            strip = compose_box_side();
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 237) {
+            // The header's "A OK  B Cancel" as the game keeps it: 117x11,
+            // 32-bit RGBA, its words' antialiasing in 8-bit alpha, in two
+            // 64-texel blocks of 32-bit texels (704 texels a block, within
+            // a 32-bit block load); the patch builds this one strip with
+            // 32-bit bitmaps (snap_make_strip_32). Not harvested: no entry.
+            const MenuArt& art = g_font.legend;
+            const int lw = (art.w > 0) ? ((art.w + 63) & ~63) : 0;
+            write_u32(DirectoryAddr + 0x8 + id * 8, (lw > 0) ? cursor : 0u);
+            write_u16(DirectoryAddr + 0xC + id * 8, uint16_t(lw));
+            write_u16(DirectoryAddr + 0xE + id * 8, uint16_t((lw > 0) ? art.h : 0));
+            uint32_t at = cursor;
+            for (int k = 0; k < lw / 64; k++) {
+                for (int y = 0; y < art.h; y++) {
+                    for (int x = 0; x < 64; x++) {
+                        const int sx = k * 64 + x;
+                        const uint32_t v = (sx < art.w) ? art.rgba[size_t(y) * size_t(art.w) + size_t(sx)] : 0u;
+                        write_u32(at + uint32_t((y * 64 + x) * 4), v);
+                    }
+                }
+                at += uint32_t(64 * art.h * 4);
+            }
+            cursor = (at + 7u) & ~7u;
+            continue;
+        }
+        else if (id >= kModsDynBase) {
+            // A row of the Mods page: a fixed home of its own, blank until
+            // the page opens (mods_compose writes it and the directory
+            // entry's width then).
+            const bool help = ((id - kModsDynBase) % uint32_t(ModsBank)) >= uint32_t(ModsVisible);
+            const uint32_t addr = mods_dyn_addr(id);
+            const uint32_t bytes = help ? ModsHelpBytes : DynStripBytes;
+            write_u32(DirectoryAddr + 0x8 + id * 8, addr);
+            write_u16(DirectoryAddr + 0xC + id * 8, 64);
+            write_u16(DirectoryAddr + 0xE + id * 8, uint16_t(help ? ModsHelpHeight : StripHeight));
+            for (uint32_t k = 0; k < bytes; k += 2) {
+                write_u16(addr + k, 0);
+            }
+            continue;
+        }
+        else if (id == BaseCount + 205) {
+            strip = compose_lines("No mods were found in the mods folder.",
+                                  "Put a mod there and start the game again.");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 204) {
+            // The page's heading, in the header face; its M and d are the
+            // port's (menu_harvest.cpp kHeaderSynth).
+            strip = compose_hdr("Mods");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 203) {
+            strip = compose_help("The mods in the mods folder, on or off.");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 202) {
+            strip = add_item_dot(compose("Mods"));
             w = strip.width;
             h = strip.height;
         }
@@ -1919,6 +2550,9 @@ void stage_menu_strings(uint8_t* rdram) {
                     else if (id == BaseCount + 22) {
                         texel = logo.texels[size_t(y) * w + (cx + x)];   // RGBA16
                     }
+                    else if ((id == BaseCount + 230) || (id == BaseCount + 234)) {
+                        texel = ((id == BaseCount + 230) ? pillPlain : pillSel).texels[size_t(y) * w + (cx + x)];   // RGBA16
+                    }
                     else if ((id == BaseCount + 23) || (id == BaseCount + 24) ||
                              (id == BaseCount + 25)) {
                         // Cores start white and are recoloured live by the
@@ -1960,12 +2594,12 @@ void stage_menu_strings(uint8_t* rdram) {
         StringCount, cursor - PixelsAddr);
 }
 
-// Writes a strip into a live row value's fixed pixels and its directory
-// entry (the address never moves; the width follows the text).
-static void stage_dynamic(uint32_t id, const Strip& strip) {
-    const uint32_t addr = DynPixelsAddr + (id - kBindDynBase) * DynStripBytes;
-    const int w = std::min(strip.width, DynChunks * 64);
-    const int h = strip.height;
+// Writes a strip into a dynamic id's fixed pixels and its directory entry
+// (the address never moves; the width and height follow the text, within
+// what the slot holds).
+static void stage_dynamic_at(uint32_t id, uint32_t addr, const Strip& strip, int maxChunks, int maxHeight) {
+    const int w = std::min(strip.width, maxChunks * 64);
+    const int h = std::min(strip.height, maxHeight);
     uint32_t at = addr;
     for (int k = 0; k < (w + 63) / 64; k++) {
         const int cx = k * 64;
@@ -1982,6 +2616,11 @@ static void stage_dynamic(uint32_t id, const Strip& strip) {
     write_u32(DirectoryAddr + 0x8 + id * 8, addr);
     write_u16(DirectoryAddr + 0xC + id * 8, uint16_t(w));
     write_u16(DirectoryAddr + 0xE + id * 8, uint16_t(h));
+}
+
+// A live row value of the Button Setup page.
+static void stage_dynamic(uint32_t id, const Strip& strip) {
+    stage_dynamic_at(id, DynPixelsAddr + (id - kBindDynBase) * DynStripBytes, strip, DynChunks, StripHeight);
 }
 
 // Composes the eighteen row values for a device into the bank the page is
@@ -2081,6 +2720,535 @@ static void poll_bind_bank() {
     }
     if (ack != 0) {
         write_u32(BindAckAddr, ack);
+    }
+}
+
+
+// ---------------------------------------------------------------------------
+// The MODS page's bank (graphics_menu_patch.c, snap_mods_page), once a tick.
+//
+// The list is taken from the runtime when the page opens: every mod the
+// folder holds for this game, in the runtime's order, with what mods.json
+// says of each. The window the page shows (MODS_TOP) is composed into the
+// bank not on show -- the name cut to the label column, a help line of the
+// mod's own short description over the port's sentence on when a change
+// takes effect -- and the generation turned; a toggle goes to the runtime,
+// which writes mods.json at once, and the window is recomposed ahead of the
+// answer so the row's value and line are new the frame the page wakes.
+// ---------------------------------------------------------------------------
+struct ModsRow {
+    std::string id;
+    std::string name;      // the display name, and its version after it
+    std::string desc;
+    std::string author;    // the first author, for the help line
+    std::string needs;     // an unmet dependency, said in the help line
+    int optCount = 0;      // the options its manifest declares, hidden ones aside
+    bool enabled = false;
+    bool live = false;   // runtime-toggleable content, in force at once
+};
+static std::vector<ModsRow> g_mods_rows;
+static int g_mods_shown_top = -1;
+static uint32_t g_mods_handled = 0;
+
+
+// The text a mod wrote, made safe for a face: a character the face has no
+// glyph for is left out of a help line (compose_help would count it and the
+// next staging would withhold every string for it) and left to the body
+// face's stand-in block in a name; line breaks and tabs become spaces.
+static std::string face_text(const std::string& text, bool help) {
+    std::string out;
+    for (char c : text) {
+        if ((c == '\n') || (c == '\r') || (c == '\t')) {
+            if (!out.empty() && (out.back() != ' ')) {
+                out += ' ';
+            }
+        }
+        else if (c == ' ') {
+            out += c;
+        }
+        else if (!help) {
+            out += c;
+        }
+        else if ((c > 0x20) && (c < 0x7F) && (g_font.hlp.find(c) != nullptr)) {
+            out += c;
+        }
+    }
+    while (!out.empty() && (out.back() == ' ')) {
+        out.pop_back();
+    }
+    return out;
+}
+
+// The rightmost column with any ink, for a fit the rounded strip width
+// cannot give.
+static int ink_width(const Strip& strip) {
+    int right = 0;
+    for (int y = 0; y < strip.height; y++) {
+        for (int x = strip.width - 1; x >= right; x--) {
+            if (strip.alpha[size_t(y) * strip.width + size_t(x)] != 0) {
+                right = x + 1;
+                break;
+            }
+        }
+    }
+    return right;
+}
+
+// Text cut to fit: character by character until the composed ink fits the
+// width, then back to the last word break when one lies in the second half
+// of what is left, so a cut reads as a cut and not as a misspelling.
+static std::string cut_to_fit(const std::string& text, int maxInk, const std::function<int(const std::string&)>& inkOf) {
+    std::string cut = text;
+    if (inkOf(cut) <= maxInk) {
+        return cut;
+    }
+    while (!cut.empty() && (inkOf(cut) > maxInk)) {
+        cut.pop_back();
+    }
+    const size_t space = cut.rfind(' ');
+    if ((space != std::string::npos) && (space >= cut.size() / 2)) {
+        cut.erase(space);
+    }
+    while (!cut.empty() && (cut.back() == ' ')) {
+        cut.pop_back();
+    }
+    return cut;
+}
+
+// A mod's name in the label column, cut to end before the values.
+static Strip compose_mod_name(const std::string& text) {
+    const std::string cut = cut_to_fit(text, ModsNameInkWidth,
+        [](const std::string& s) { return ink_width(compose(s.c_str(), true)); });
+    return compose(cut.c_str(), true);
+}
+
+// A mod's help line: its short description over the state sentence, each
+// cut to the help box's width.
+static std::string cut_help(const std::string& text) {
+    return cut_to_fit(text, ModsHelpInkWidth,
+        [](const std::string& s) { return ink_width(compose_help(s.c_str())); });
+}
+
+static Strip compose_mod_help(const std::string& desc, const std::string& state) {
+    const std::string cut1 = cut_help(desc);
+    const std::string cut2 = cut_help(state);
+    return compose_lines(cut1.c_str(), cut2.c_str());
+}
+
+// The state sentence, and who made the mod when the line has room for it.
+static std::string mods_state_line(const ModsRow& row) {
+    std::string line;
+    if (!row.needs.empty()) {
+        return row.needs;
+    }
+    if (row.live) {
+        line = row.enabled ? "This mod is on. A turns it off." : "This mod is off. A turns it on.";
+    } else {
+        line = row.enabled ? "This mod is on. A turns it off at the next start."
+                           : "This mod is off. A turns it on at the next start.";
+    }
+    if (!row.author.empty()) {
+        line += " By " + row.author + ".";
+    }
+    return line;
+}
+
+// The two rows under the mods, as the other recompilations' mod menus have
+// them as buttons.
+static const char* const kModsActionNames[ModsActions] = { "Open the mods folder", "Restart the game" };
+static const char* const kModsActionHelps[ModsActions][2] = {
+    { "Shows the folder in the file browser. Drop a mod there,", "or on the window, and restart the game to load it." },
+    { "Closes the game and starts it again, loading", "the mods as they are set here." },
+};
+
+// The runtime's list, in its order, and what mods.json says of each.
+static void mods_gather() {
+    g_mods_rows.clear();
+    size_t index = 0;
+    for (const recomp::mods::ModDetails& d : recomp::mods::get_all_mod_details("pokemonsnap")) {
+        ModsRow row;
+        row.id = d.mod_id;
+        // The runtime's list runs in its own index order; a mod whose
+        // required dependency is missing or the wrong version says so in
+        // place of its state, as the other recompilations' menus flag it.
+        if (recomp::mods::get_mod_id(index) == d.mod_id) {
+            for (const recomp::mods::Dependency& dep : d.dependencies) {
+                if (dep.optional) {
+                    continue;
+                }
+                const recomp::mods::DependencyStatus st = recomp::mods::is_dependency_met(index, dep.mod_id);
+                if (st == recomp::mods::DependencyStatus::NotFound) {
+                    row.needs = face_text("Needs " + dep.mod_id + ", which is not in the folder.", true);
+                    break;
+                }
+                if (st == recomp::mods::DependencyStatus::WrongVersion) {
+                    row.needs = face_text("Needs another version of " + dep.mod_id + ".", true);
+                    break;
+                }
+            }
+        }
+        index++;
+        row.name = face_text(d.display_name.empty() ? d.mod_id : d.display_name, false);
+        if ((d.version.major >= 0) && (d.version.minor >= 0) && (d.version.patch >= 0)) {
+            char v[48];
+            snprintf(v, sizeof(v), "  %d.%d.%d", d.version.major, d.version.minor, d.version.patch);
+            row.name += v;
+        }
+        row.desc = face_text(d.short_description.empty() ? d.description : d.short_description, true);
+        if (!d.authors.empty()) {
+            row.author = face_text(d.authors[0], true);
+        }
+        row.enabled = recomp::mods::is_mod_enabled(d.mod_id);
+        row.live = d.runtime_toggleable;
+        for (const recomp::config::ConfigOption& o : recomp::mods::get_mod_config_schema(d.mod_id).options) {
+            if (!o.hidden) {
+                row.optCount++;
+            }
+        }
+        g_mods_rows.push_back(row);
+    }
+    const size_t mods = std::min<size_t>(g_mods_rows.size(), 250 - ModsActions);
+    write_u16(ModsModCountAddr, uint16_t(mods));
+    write_u16(ModsCountAddr, uint16_t(mods + ModsActions));
+    printf("[SNAP-MENU] Mods page: %zu mod%s in the folder\n", g_mods_rows.size(), (g_mods_rows.size() == 1) ? "" : "s");
+    fflush(stdout);
+}
+
+// Composes the window at top into the bank the page is not showing, sets
+// the bank's state byte, then turns the page to it.
+static void mods_compose(int top) {
+    const uint32_t gen = read_u32_mail(ModsGenAddr);
+    const uint32_t bank = (gen + 1) & 1;
+    const size_t mods = std::min<size_t>(g_mods_rows.size(), 250 - ModsActions);
+    uint8_t state = 0;
+    uint8_t hasOpt = 0;
+    for (int i = 0; i < ModsVisible; i++) {
+        const size_t row = size_t(top) + size_t(i);
+        const uint32_t nameId = kModsDynBase + bank * uint32_t(ModsBank) + uint32_t(i);
+        const uint32_t helpId = nameId + uint32_t(ModsVisible);
+        Strip name;
+        Strip help;
+        if (row < mods) {
+            const ModsRow& r = g_mods_rows[row];
+            name = compose_mod_name(r.name);
+            help = compose_mod_help(r.desc, mods_state_line(r));
+            if (r.enabled) {
+                state |= uint8_t(1u << i);
+            }
+            if (r.optCount > 0) {
+                hasOpt |= uint8_t(1u << i);
+            }
+        }
+        else if (row < mods + size_t(ModsActions)) {
+            const size_t action = row - mods;
+            name = compose(kModsActionNames[action], true);
+            help = compose_lines(kModsActionHelps[action][0], kModsActionHelps[action][1]);
+        }
+        else {
+            name = compose("", true);
+            help = compose_lines("", "");
+        }
+        stage_dynamic_at(nameId, mods_dyn_addr(nameId), name, DynChunks, StripHeight);
+        stage_dynamic_at(helpId, mods_dyn_addr(helpId), help, ModsHelpChunks, ModsHelpHeight);
+    }
+    write_u8(ModsStateAddr + bank, state);
+    write_u8(ModsHasOptAddr + bank, hasOpt);
+    write_u32(ModsGenAddr, gen + 1);
+    g_mods_shown_top = top;
+}
+
+static void poll_mods_bank() {
+    if (read_u8_mail(ModsOpenAddr) == 0) {
+        g_mods_shown_top = -1;
+        g_mods_handled = 0;
+        return;
+    }
+    if (g_mods_shown_top < 0) {
+        mods_gather();
+    }
+    const int top = int(read_u8_mail(ModsTopAddr));
+    const uint32_t req = read_u32_mail(ModsReqAddr);
+    bool recompose = (top != g_mods_shown_top);
+    uint32_t ack = 0;
+    if (req == 0) {
+        g_mods_handled = 0;
+    }
+    else if (req != g_mods_handled) {
+        const int op = int((req >> 16) & 0xFF);
+        const size_t row = size_t(req & 0xFFFF);
+        uint32_t result = 3;
+        if ((op == 1) && (row < g_mods_rows.size())) {
+            ModsRow& r = g_mods_rows[row];
+            recomp::mods::enable_mod(r.id, !r.enabled);
+            r.enabled = recomp::mods::is_mod_enabled(r.id);
+            result = r.enabled ? 1 : 2;
+            recompose = true;
+            printf("[SNAP-MENU] Mods page: %s is %s in mods.json%s\n", r.id.c_str(),
+                   r.enabled ? "on" : "off", r.live ? "" : "; in force at the next start");
+            fflush(stdout);
+        }
+        else if (((op == 2) || (op == 3)) && (row < g_mods_rows.size())) {
+            // The mod one place up or down the load order, which the
+            // runtime keeps in mods.json; the list is read again in the
+            // new order.
+            const std::string id = g_mods_rows[row].id;
+            const size_t at = recomp::mods::get_mod_order_index(id);
+            const size_t to = (op == 2) ? ((at > 0) ? at - 1 : 0) : at + 1;
+            if (to != at) {
+                recomp::mods::set_mod_index("pokemonsnap", id, to);
+                mods_gather();
+                result = 4;
+                recompose = true;
+                printf("[SNAP-MENU] Mods page: %s moved %s in the load order\n", id.c_str(), (op == 2) ? "up" : "down");
+                fflush(stdout);
+            }
+        }
+        else if (op == 4) {
+            const std::filesystem::path dir = recomp::mods::get_mods_directory();
+            std::error_code ec;
+            std::filesystem::create_directories(dir, ec);
+            mods_open_folder(reinterpret_cast<const char*>(dir.u8string().c_str()));
+            result = 4;
+            printf("[SNAP-MENU] Mods page: opening the mods folder\n");
+            fflush(stdout);
+        }
+        else if (op == 5) {
+            printf("[SNAP-MENU] Mods page: restarting the game\n");
+            fflush(stdout);
+            mods_restart_game();
+            result = 4;
+        }
+        g_mods_handled = req;
+        ack = (result << 24) | req;
+    }
+    if (recompose) {
+        mods_compose(top);
+    }
+    if (ack != 0) {
+        write_u32(ModsAckAddr, ack);
+    }
+}
+
+// ---------------------------------------------------------------------------
+// A mod's options page. The runtime keeps each mod's options as its
+// manifest declares them -- an enum, a number with a range and a step, a
+// yes-or-no, a text -- and their values in the mod's own settings file,
+// which the other recompilations' mod menus edit. The page shows the
+// window of six the patch asks for, in the body face, and each Left or
+// Right is written through set_mod_config_value at once.
+// ---------------------------------------------------------------------------
+struct OptRow {
+    recomp::config::ConfigOption option;
+    std::string name;
+    std::string desc;
+    std::string hint;   // what Left and Right do to it
+};
+static std::vector<OptRow> g_opt_rows;
+static std::string g_opt_mod_id;
+static int g_opt_shown_top = -1;
+static uint32_t g_opt_handled = 0;
+
+static std::string number_text(double v, int precision) {
+    char buf[48];
+    snprintf(buf, sizeof(buf), "%.*f", std::clamp(precision, 0, 6), v);
+    return buf;
+}
+
+static std::string opt_value_text(const OptRow& r) {
+    using namespace recomp::config;
+    const ConfigValueVariant v = recomp::mods::get_mod_config_value(g_opt_mod_id, r.option.id);
+    std::string text;
+    switch (r.option.type) {
+        case ConfigOptionType::Enum: {
+            const ConfigOptionEnum& e = std::get<ConfigOptionEnum>(r.option.variant);
+            const uint32_t val = std::holds_alternative<uint32_t>(v) ? std::get<uint32_t>(v) : e.default_value;
+            const auto it = e.find_option_from_value(val);
+            text = (it != e.options.end()) ? it->name : std::to_string(val);
+            break;
+        }
+        case ConfigOptionType::Bool: {
+            const ConfigOptionBool& b = std::get<ConfigOptionBool>(r.option.variant);
+            const bool on = std::holds_alternative<bool>(v) ? std::get<bool>(v) : b.default_value;
+            text = on ? "On" : "Off";
+            break;
+        }
+        case ConfigOptionType::Number: {
+            const ConfigOptionNumber& n = std::get<ConfigOptionNumber>(r.option.variant);
+            const double d = std::holds_alternative<double>(v) ? std::get<double>(v) : n.default_value;
+            text = number_text(d, n.precision);
+            break;
+        }
+        case ConfigOptionType::String: {
+            const ConfigOptionString& s = std::get<ConfigOptionString>(r.option.variant);
+            text = std::holds_alternative<std::string>(v) ? std::get<std::string>(v) : s.default_value;
+            break;
+        }
+        default:
+            break;
+    }
+    text = face_text(text, false);
+    return "< " + text + " >";
+}
+
+static void opt_gather(const std::string& mod_id) {
+    using namespace recomp::config;
+    g_opt_rows.clear();
+    g_opt_mod_id = mod_id;
+    for (const ConfigOption& o : recomp::mods::get_mod_config_schema(mod_id).options) {
+        if (o.hidden) {
+            continue;
+        }
+        OptRow row;
+        row.option = o;
+        row.name = face_text(o.name.empty() ? o.id : o.name, false);
+        row.desc = face_text(o.description, true);
+        switch (o.type) {
+            case ConfigOptionType::Enum: {
+                const size_t n = std::get<ConfigOptionEnum>(o.variant).options.size();
+                row.hint = (n > 1) ? "Left and Right pick the next one." : "This one has a single choice.";
+                break;
+            }
+            case ConfigOptionType::Bool:
+                row.hint = "Left and Right turn it on or off.";
+                break;
+            case ConfigOptionType::Number:
+                row.hint = "Left and Right change it a step at a time.";
+                break;
+            default:
+                row.hint = "Text: set in the mod's own settings file.";
+                break;
+        }
+        g_opt_rows.push_back(row);
+    }
+    write_u16(OptCountAddr, uint16_t(std::min<size_t>(g_opt_rows.size(), 250)));
+    printf("[SNAP-MENU] Mod options: %s has %zu option%s\n", mod_id.c_str(), g_opt_rows.size(),
+           (g_opt_rows.size() == 1) ? "" : "s");
+    fflush(stdout);
+}
+
+static void opt_change(size_t row, int delta) {
+    using namespace recomp::config;
+    if (row >= g_opt_rows.size()) {
+        return;
+    }
+    const OptRow& r = g_opt_rows[row];
+    const ConfigValueVariant v = recomp::mods::get_mod_config_value(g_opt_mod_id, r.option.id);
+    switch (r.option.type) {
+        case ConfigOptionType::Enum: {
+            const ConfigOptionEnum& e = std::get<ConfigOptionEnum>(r.option.variant);
+            if (e.options.empty()) {
+                return;
+            }
+            const uint32_t val = std::holds_alternative<uint32_t>(v) ? std::get<uint32_t>(v) : e.default_value;
+            size_t idx = 0;
+            for (size_t i = 0; i < e.options.size(); i++) {
+                if (e.options[i].value == val) {
+                    idx = i;
+                    break;
+                }
+            }
+            idx = (idx + e.options.size() + size_t((delta > 0) ? 1 : -1)) % e.options.size();
+            recomp::mods::set_mod_config_value(g_opt_mod_id, r.option.id, ConfigValueVariant(e.options[idx].value));
+            break;
+        }
+        case ConfigOptionType::Bool: {
+            const ConfigOptionBool& b = std::get<ConfigOptionBool>(r.option.variant);
+            const bool on = std::holds_alternative<bool>(v) ? std::get<bool>(v) : b.default_value;
+            recomp::mods::set_mod_config_value(g_opt_mod_id, r.option.id, ConfigValueVariant(!on));
+            break;
+        }
+        case ConfigOptionType::Number: {
+            const ConfigOptionNumber& n = std::get<ConfigOptionNumber>(r.option.variant);
+            double d = std::holds_alternative<double>(v) ? std::get<double>(v) : n.default_value;
+            const double step = (n.step > 0.0) ? n.step : 1.0;
+            d += (delta > 0) ? step : -step;
+            if (n.max > n.min) {
+                d = std::clamp(d, n.min, n.max);
+            }
+            const double scale = std::pow(10.0, std::clamp(n.precision, 0, 6));
+            d = std::round(d * scale) / scale;
+            recomp::mods::set_mod_config_value(g_opt_mod_id, r.option.id, ConfigValueVariant(d));
+            break;
+        }
+        default:
+            break;
+    }
+}
+
+static void opt_compose(int top) {
+    const uint32_t gen = read_u32_mail(OptGenAddr);
+    const uint32_t bank = (gen + 1) & 1;
+    for (int i = 0; i < OptVisible; i++) {
+        const size_t row = size_t(top) + size_t(i);
+        const uint32_t nameId = kOptDynBase + bank * uint32_t(OptBank) + uint32_t(i);
+        const uint32_t valueId = nameId + uint32_t(OptVisible);
+        const uint32_t helpId = nameId + uint32_t(2 * OptVisible);
+        Strip name;
+        Strip value;
+        Strip help;
+        if (row < g_opt_rows.size()) {
+            const OptRow& r = g_opt_rows[row];
+            const std::string nameCut = cut_to_fit(r.name, OptNameInkWidth,
+                [](const std::string& s) { return ink_width(compose(s.c_str(), true)); });
+            const std::string valueCut = cut_to_fit(opt_value_text(r), OptValueInkWidth,
+                [](const std::string& s) { return ink_width(compose(s.c_str(), true)); });
+            name = compose(nameCut.c_str(), true);
+            value = compose(valueCut.c_str(), true);
+            help = compose_mod_help(r.desc, r.hint);
+        }
+        else {
+            name = compose("", true);
+            value = compose("", true);
+            help = compose_lines("", "");
+        }
+        stage_dynamic_at(nameId, opt_dyn_addr(nameId), name, DynChunks, StripHeight);
+        stage_dynamic_at(valueId, opt_dyn_addr(valueId), value, DynChunks, StripHeight);
+        stage_dynamic_at(helpId, opt_dyn_addr(helpId), help, ModsHelpChunks, ModsHelpHeight);
+    }
+    write_u32(OptGenAddr, gen + 1);
+    g_opt_shown_top = top;
+}
+
+static void poll_opt_bank() {
+    if (read_u8_mail(OptOpenAddr) == 0) {
+        g_opt_shown_top = -1;
+        g_opt_handled = 0;
+        return;
+    }
+    if (g_opt_shown_top < 0) {
+        const size_t modRow = read_u8_mail(OptRowAddr);
+        if (modRow < g_mods_rows.size()) {
+            opt_gather(g_mods_rows[modRow].id);
+        } else {
+            g_opt_rows.clear();
+            write_u16(OptCountAddr, 0);
+        }
+    }
+    const int top = int(read_u8_mail(OptTopAddr));
+    const uint32_t req = read_u32_mail(OptReqAddr);
+    bool recompose = (top != g_opt_shown_top);
+    uint32_t ack = 0;
+    if (req == 0) {
+        g_opt_handled = 0;
+    }
+    else if (req != g_opt_handled) {
+        const int op = int((req >> 16) & 0xFF);
+        const int delta = int(int8_t((req >> 8) & 0xFF));
+        const size_t row = size_t(req & 0xFF);
+        uint32_t result = 3;
+        if ((op == 6) && (row < g_opt_rows.size())) {
+            opt_change(row, delta);
+            result = 4;
+            recompose = true;
+        }
+        g_opt_handled = req;
+        ack = (result << 24) | req;
+    }
+    if (recompose) {
+        opt_compose(top);
+    }
+    if (ack != 0) {
+        write_u32(OptAckAddr, ack);
     }
 }
 
@@ -2222,6 +3390,8 @@ void poll_menu_mailbox(uint8_t* rdram) {
 
     // The BUTTON SETUP page's bank: its requests and its live row values.
     poll_bind_bank();
+    poll_mods_bank();
+    poll_opt_bank();
 
     const uint32_t seq = read_u32_mail(MailboxAddr + 0x4);
     if (seq == g_last_applied_seq) {
@@ -2273,6 +3443,285 @@ void poll_menu_mailbox(uint8_t* rdram) {
 
     apply_graphics_settings();
     settings_mark_dirty();
+}
+
+// ---------------------------------------------------------------------------
+// The pages from anywhere. A press of Esc or Select (input_request_menu) is
+// taken here, on the game thread, once per frame's update. In a course the
+// pause menu's code takes it from the mailbox and pauses the ride straight
+// into the pages (patches/src/pause_menu_patch.inc). On any other screen
+// there is no pause to lean on, so the press becomes an object with one
+// process on it, made through the game's own omAddGObj and omCreateProcess
+// with the update's own context -- exactly what the game does to start a
+// screen's coroutines -- and the process is the patch's runner
+// (patches/src/anywhere_patch.inc), which holds the screen still, dims it
+// and runs the list. A press nobody takes (the attract demo, a course's
+// intro with its input disabled) is dropped after a moment rather than
+// kept until it would surprise.
+// ---------------------------------------------------------------------------
+extern std::atomic<bool> g_app_level_resident;   // overlay_hook.cpp: a course's code is loaded
+extern std::atomic<uint32_t> g_scene_overlay_rom;   // overlay_hook.cpp: the scene overlay loaded last
+
+// The screens the pages open on: each holds still without harm. A ride
+// with its pause handler alive goes through the pause instead; a ride
+// without one (the attract demo), the credits and an unknown scene are
+// scripted to their music, or unknown, and the key is dropped there.
+static bool scene_takes_the_pages(uint32_t rom) {
+    switch (rom) {
+        case 0x87A0B0u:   // camera_check
+        case 0x8A70E0u:   // oaks_lab
+        case 0x98C330u:   // photo_check
+        case 0x9A6B10u:   // pokemon_album
+        case 0x9D3230u:   // pokemon_report
+        case 0x9FA580u:   // gallery
+        case 0xA08E30u:   // main_menu
+        case 0xA5CC50u:   // menu_new_game
+            return true;
+        default:
+            return false;
+    }
+}
+
+namespace {
+constexpr uint32_t kRunnerObjectId = 0x534E4150u;   // 'SNAP': the runner's GObj id
+constexpr uint32_t kOhUpdateDefault = 0x8000BC84u;  // the object's update: the game's default
+constexpr uint32_t kRunnerFunction = 0x800BF444u;   // func_800BF444_5C2E4, replaced by the patch
+constexpr uint32_t kGObjListHead = 0x8004A9E8u;     // omGObjListHead[32]
+uint32_t g_menu_req_age = 0;
+
+uint32_t rd32(const uint8_t* rdram, uint32_t addr) {
+    uint32_t v;
+    std::memcpy(&v, rdram + (addr - 0x80000000u), sizeof(v));
+    return v;
+}
+
+// The runner object of this scene, if an earlier press made one: it stays
+// on the scene's list, empty, until the scene goes.
+uint32_t find_runner_object(const uint8_t* rdram) {
+    for (int link = 0; link < 32; link++) {
+        uint32_t obj = rd32(rdram, kGObjListHead + uint32_t(link) * 4u);
+        int guard = 0;
+        while ((obj >= 0x80000000u) && (obj < 0x80800000u) && (guard++ < 4096)) {
+            if (rd32(rdram, obj) == kRunnerObjectId) {
+                return obj;
+            }
+            obj = rd32(rdram, obj + 4u);
+        }
+    }
+    return 0;
+}
+} // namespace
+
+extern "C" void omAddGObj(uint8_t* rdram, recomp_context* ctx);
+extern "C" void omCreateProcess(uint8_t* rdram, recomp_context* ctx);
+
+bool menu_pages_open() {
+    if ((g_menu_rdram == nullptr) || !g_staged) {
+        return false;
+    }
+    return read_u8_mail(PagesOpenAddr) != 0;
+}
+
+static uint16_t read_u16_mail(uint32_t addr) {
+    return *reinterpret_cast<uint16_t*>(g_menu_rdram + ((addr ^ 2u) - 0x80000000u));
+}
+
+// The scene heap's three pointers and the object limit, as they were before
+// the arena took their place.
+struct ArenaSwap {
+    uint32_t start = 0;
+    uint32_t end = 0;
+    uint32_t ptr = 0;
+    uint16_t maxObjects = 0;
+};
+
+static bool arena_enter(ArenaSwap& s) {
+    uint32_t cursor = read_u32_mail(ArenaPtrAddr);
+    if ((cursor < ArenaStart) || (cursor > ArenaEnd)) {
+        cursor = ArenaStart;
+    }
+    if ((ArenaEnd - cursor) < 0x4000u) {
+        return false;
+    }
+    s.start = read_u32_mail(kGeneralHeap + 4);
+    s.end = read_u32_mail(kGeneralHeap + 8);
+    s.ptr = read_u32_mail(kGeneralHeap + 12);
+    s.maxObjects = read_u16_mail(kOmMaxObjects);
+    write_u32(kGeneralHeap + 4, ArenaStart);
+    write_u32(kGeneralHeap + 8, ArenaEnd);
+    write_u32(kGeneralHeap + 12, cursor);
+    write_u16(kOmMaxObjects, uint16_t(0xFFFFu));
+    return true;
+}
+
+static void arena_leave(const ArenaSwap& s) {
+    write_u32(ArenaPtrAddr, read_u32_mail(kGeneralHeap + 12));
+    write_u32(kGeneralHeap + 4, s.start);
+    write_u32(kGeneralHeap + 8, s.end);
+    write_u32(kGeneralHeap + 12, s.ptr);
+    write_u16(kOmMaxObjects, s.maxObjects);
+}
+
+// The ticks the scene has run since its overlay was loaded. A screen's
+// entrance -- a dissolve, panels sliding in -- is a process like any other,
+// and the freeze would hold it half-way with the pages drawn through it;
+// the runner leaves a screen its first moments (anywhere_patch.inc).
+static uint32_t g_scene_age = 0;
+
+void menu_arena_reset(uint8_t* rdram) {
+    if (rdram == nullptr) {
+        return;
+    }
+    g_menu_rdram = rdram;
+    // The object manager reads a grown object's `next` before it writes it
+    // (sys/om.c, omGetGObj), so the arena must read as zero wherever the
+    // cursor will pass again.
+    uint32_t cursor = read_u32_mail(ArenaPtrAddr);
+    if ((cursor > ArenaStart) && (cursor <= ArenaEnd)) {
+        memset(rdram + (ArenaStart - 0x80000000u), 0, size_t(cursor - ArenaStart));
+    }
+    write_u32(ArenaPtrAddr, ArenaStart);
+    g_scene_age = 0;
+    write_u32(SceneAgeAddr, 0);
+}
+
+void menu_anywhere_tick(uint8_t* rdram, void* ctxIn) {
+    if ((rdram == nullptr) || (ctxIn == nullptr) || !g_staged) {
+        return;
+    }
+    g_menu_rdram = rdram;
+    if (g_scene_age < 0x7FFFFFFFu) {
+        g_scene_age++;
+    }
+    write_u32(SceneAgeAddr, g_scene_age);
+    {
+        const uint8_t note = read_u8_mail(RunnerNoteAddr);
+        if (note != 0) {
+            write_u8(RunnerNoteAddr, 0);
+            if (note == 3) {
+                const uint32_t stat = read_u32_mail(ObjStatAddr);
+                printf("[SNAP-MENU] the pages from here: opened on scene %06X, %u ticks old (its heap had %u bytes free, %u objects of a limit of %d, its display list %u bytes to spare)\n",
+                       g_scene_overlay_rom.load(std::memory_order_relaxed), g_scene_age,
+                       read_u32_mail(HeapFreeAddr), stat >> 16, int(int16_t(stat & 0xFFFFu)),
+                       read_u32_mail(DlSpareAddr));
+            } else {
+                printf("[SNAP-MENU] the pages from here: %s\n",
+                       (note == 2) ? "a page was already up"
+                       : (note == 4) ? "not opened, a fade stayed over the screen"
+                       : (note == 5) ? "not opened, their memory is spent on this screen" : "no staged strings");
+            }
+            fflush(stdout);
+        }
+    }
+    // The pause handler's heartbeat, counted down: a ride is on while it
+    // is above zero. The level's code is loaded on the title and in its
+    // demo too, so residency alone would send the key to a handler that is
+    // not there.
+    const uint8_t alive = read_u8_mail(PauseAliveAddr);
+    if (alive != 0) {
+        write_u8(PauseAliveAddr, uint8_t(alive - 1));
+    }
+    // A request the pause code has not taken ages out.
+    if (read_u8_mail(MenuReqAddr) != 0) {
+        if (++g_menu_req_age > 45) {
+            write_u8(MenuReqAddr, 0);
+            g_menu_req_age = 0;
+        }
+    } else {
+        g_menu_req_age = 0;
+    }
+    if (!input_take_menu_request()) {
+        return;
+    }
+    if (read_u8_mail(PagesOpenAddr) != 0) {
+        // A page is up: the press is Start, which closes it.
+        input_tap_start();
+        return;
+    }
+    if (alive != 0) {
+        write_u8(MenuReqAddr, 1);
+        g_menu_req_age = 0;
+        return;
+    }
+    {
+        const uint32_t scene = g_scene_overlay_rom.load(std::memory_order_relaxed);
+        if (!scene_takes_the_pages(scene)) {
+            printf("[SNAP-MENU] the pages do not open here (%s)\n",
+                   (scene == 0x4F0610u) ? "a ride without its pause: the demo, or an intro"
+                   : (scene == 0xA93460u) ? "the credits" : "a scene the port does not know");
+            fflush(stdout);
+            return;
+        }
+    }
+    {
+        const uint32_t spare = read_u32_mail(DlSpareAddr);
+        if (spare < PagesDlNeed) {
+            printf("[SNAP-MENU] the pages do not open here: this screen's display list had %u bytes to spare last frame, and the pages may draw %u\n",
+                   spare, PagesDlNeed);
+            fflush(stdout);
+            return;
+        }
+    }
+    recomp_context* ctx = static_cast<recomp_context*>(ctxIn);
+    // The runner's object, thread, stack and process come from the scene's
+    // pools, which grow from the heap when a free list is dry: the arena
+    // takes the heap's place for these two calls, as it does for the pages.
+    ArenaSwap swap;
+    if (!arena_enter(swap)) {
+        printf("[SNAP-MENU] the pages could not open here: their memory is spent on this screen\n");
+        fflush(stdout);
+        return;
+    }
+    uint32_t obj = find_runner_object(rdram);
+    if (obj == 0) {
+        recomp_context c = *ctx;
+        c.r4 = gpr(kRunnerObjectId);
+        c.r5 = gpr(int32_t(kOhUpdateDefault));
+        c.r6 = 0;
+        c.r7 = gpr(int32_t(0x80000000));
+        omAddGObj(rdram, &c);
+        obj = uint32_t(c.r2);
+    }
+    if (obj == 0) {
+        arena_leave(swap);
+        printf("[SNAP-MENU] the pages could not open here: the scene gave no object\n");
+        fflush(stdout);
+        return;
+    }
+    recomp_context c = *ctx;
+    c.r4 = gpr(int32_t(obj));
+    c.r5 = gpr(int32_t(kRunnerFunction));
+    c.r6 = 0;   // a coroutine of its own
+    c.r7 = 9;
+    omCreateProcess(rdram, &c);
+    arena_leave(swap);
+}
+
+void mods_drop_file(const char* path) {
+    if (path == nullptr) {
+        return;
+    }
+    const std::filesystem::path src = std::filesystem::u8path(path);
+    std::string ext = src.extension().string();
+    for (char& c : ext) {
+        c = char(tolower(uint8_t(c)));
+    }
+    if ((ext != ".nrm") && (ext != ".zip")) {
+        printf("[SNAP-MENU] dropped %s: not a mod (.nrm); ignored\n", path);
+        fflush(stdout);
+        return;
+    }
+    const std::filesystem::path dir = recomp::mods::get_mods_directory();
+    std::error_code ec;
+    std::filesystem::create_directories(dir, ec);
+    const std::filesystem::path dst = dir / src.filename();
+    std::filesystem::copy_file(src, dst, std::filesystem::copy_options::overwrite_existing, ec);
+    if (ec) {
+        printf("[SNAP-MENU] dropped %s: could not copy it into the mods folder (%s)\n", path, ec.message().c_str());
+    } else {
+        printf("[SNAP-MENU] dropped %s: copied into the mods folder; it loads at the next start\n", path);
+    }
+    fflush(stdout);
 }
 
 } // namespace snap

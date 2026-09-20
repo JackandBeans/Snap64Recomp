@@ -10,4 +10,9 @@
 #define HLSLPP_SCALAR
 #endif
 
+// Pokemon Snap port: the C standard library before hlsl++, which uses it
+// without including it; Apple's libc++ does not bring it in on its own (the
+// community's macOS build found this).
+#include <cstdlib>
+
 #include "hlsl++.h"

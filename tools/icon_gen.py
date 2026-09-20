@@ -17,11 +17,21 @@
 # of the canister is cut; its left side, where the filmstrip lay against it
 # in the logo, is the clean right side mirrored, so the two sides match.
 #
+# The macOS bundle's icon, src/snap64.icns, from the same pieces: the tile
+# at 32 px and above with the Retina doubles Finder asks for, up to 512
+# (the 1024 entry would be half the file again, for a size macOS scales
+# the 512 to), and the canister alone at 16 px and its Retina double, as
+# the .ico's small entries. Written by hand, because Pillow's own writer
+# wants macOS's tool: an .icns is a header and a list of typed chunks, each
+# a PNG here.
+#
 # Every entry is reduced from the full-resolution logo with a Lanczos
 # filter, so no entry is an upscaled or blurred copy of another. Run from
-# anywhere; needs Pillow and NumPy. The .ico is tracked, so this only needs
-# running when the logo changes.
+# anywhere; needs Pillow and NumPy. The .ico and the .icns are tracked, so
+# this only needs running when the logo changes.
+import io
 import os
+import struct
 from collections import deque
 
 import numpy as np
@@ -40,6 +50,22 @@ PNG_OUT = os.path.join(ROOT, 'src', 'snap64.png')
 # takes one image for every size, and the tile is a purple square at 16 px
 # where Windows shows the canister from the .ico's small entries.
 CANISTER_OUT = os.path.join(ROOT, 'src', 'snap64-window.png')
+# The bundle's icon (CMakeLists.txt installs it; tools/macos_bundle.py puts it
+# in Contents/Resources). Chunk type, pixel size, and which art: the @2x
+# types are the Retina renderings of the point size they double.
+ICNS_OUT = os.path.join(ROOT, 'src', 'snap64.icns')
+ICNS_ENTRIES = [
+    (b'icp4', 16, 'canister'),    # 16 pt
+    (b'ic11', 32, 'canister'),    # 16 pt @2x
+    (b'icp5', 32, 'tile'),        # 32 pt
+    (b'ic12', 64, 'tile'),        # 32 pt @2x
+    (b'icp6', 64, 'tile'),        # 64 pt
+    (b'ic07', 128, 'tile'),       # 128 pt
+    (b'ic13', 256, 'tile'),       # 128 pt @2x
+    (b'ic08', 256, 'tile'),       # 256 pt
+    (b'ic14', 512, 'tile'),       # 256 pt @2x
+    (b'ic09', 512, 'tile'),       # 512 pt
+]
 
 TILE_TOP = (104, 86, 156)       # a little lighter than the logo's outline blue
 TILE_BOTTOM = (76, 61, 118)     # a little darker
@@ -158,6 +184,25 @@ def alone(art, s):
     return out
 
 
+def write_icns(path, logo, canister):
+    """The .icns: 'icns', the file's length, then one chunk per entry (its
+    type, its length including the eight-byte chunk header, its PNG)."""
+    rendered = {}
+    chunks = []
+    for kind, size, art in ICNS_ENTRIES:
+        key = (art, size)
+        if key not in rendered:
+            rendered[key] = on_tile(logo, size, 1.16) if art == 'tile' else alone(canister, size)
+        buf = io.BytesIO()
+        rendered[key].save(buf, format='PNG', optimize=True)
+        png = buf.getvalue()
+        chunks.append(kind + struct.pack('>I', 8 + len(png)) + png)
+    body = b''.join(chunks)
+    with open(path, 'wb') as f:
+        f.write(b'icns' + struct.pack('>I', 8 + len(body)) + body)
+    return len(body) + 8
+
+
 def main():
     logo = Image.open(LOGO).convert('RGBA')
     canister = cut_canister(logo)
@@ -167,7 +212,9 @@ def main():
                    append_images=frames[1:])
     frames[0].save(PNG_OUT, format='PNG')
     alone(canister, 128).save(CANISTER_OUT, format='PNG')
+    icns_bytes = write_icns(ICNS_OUT, logo, canister)
     print('wrote', OUT, [f.size for f in frames], 'canister', canister.size, 'and', PNG_OUT, CANISTER_OUT)
+    print('wrote', ICNS_OUT, '%d entries, %d bytes' % (len(ICNS_ENTRIES), icns_bytes))
     return canister
 
 

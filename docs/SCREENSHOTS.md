@@ -10,13 +10,13 @@ them.
 
 ## The title
 
-<a href="screenshots/01i-title-108.png"><img src="screenshots/01i-title-108.png" width="640" alt="The title screen"></a>
+<a href="screenshots/01j-title-109.png"><img src="screenshots/01j-title-109.png" width="640" alt="The title screen"></a>
 
 **The title screen.** The game's own title with the port's "Recomp" wordmark
 under it, the copyright block, and the port's credits line
-(`JackandBeans (Snap64 Recomp) · v1.0.8`) set in the game's own lettering.
+(`JackandBeans (Snap64 Recomp) · v1.0.9`) set in the game's own lettering.
 The same picture from each earlier release, `01-title.png` for 1.0.0 and
-`01b` to `01h` for 1.0.1 to 1.0.7, stays in the folder for that release's
+`01b` to `01i` for 1.0.1 to 1.0.8, stays in the folder for that release's
 page.
 
 <a href="screenshots/02-title-menu.png"><img src="screenshots/02-title-menu.png" width="640" alt="The title menu with the Snap Station entry"></a>
@@ -144,6 +144,13 @@ help box says what the row does and what holds it.
 **The Controls page, 1.0.8: Slow Motion.** The page scrolled one row to
 its seventh, **Slow Motion**, the same thing run the other way: Off as
 shipped, 2x or 4x slower while Space, or the left stick pressed in, is held.
+
+<a href="screenshots/20-pause-options-109.png"><img src="screenshots/20-pause-options-109.png" width="640" alt="The pause menu, 1.0.9: Options"></a>
+
+**The pause menu, 1.0.9: Options.** A fourth pill under Retry, in green,
+the one colour of the set the menu did not use. It is composed from the
+game's own pill artwork and lettering, and it opens the port's pages over
+the paused ride; Esc, or Select on a pad, opens them from any screen.
 
 ## The Snap Station
 

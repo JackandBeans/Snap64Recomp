@@ -26,7 +26,10 @@ title screen, as the cartridge did.
 --------------------------------------------------
 This is the part people miss. The port has no launcher and no overlay: every
 addition lives inside the game's own Options screen, drawn in the game's own
-font. From the title screen, choose OPTIONS.
+font. Press Esc (or Select on a pad) on any screen: the title, the lab, a
+course, the Report. The pages open over it, held still; Esc again closes
+them and the game goes on. The same list is on the title's OPTIONS, and in
+a course on the pause menu's Options (Enter is Start, the pause menu).
 
     Screen     the cartridge's own screen position and size
     Graphics   the port's additions (see below)
@@ -34,6 +37,8 @@ font. From the title screen, choose OPTIONS.
     Controls   the game's own Z Button and Control Stick settings, then
                button setup, pad sticks, dead zone, fast forward, slow
                motion, mouse aim, zoom speed, camera tilt and gyro aim
+    Mods       the mods in the mods folder, each On or Off (the row
+               where Return was; B returns)
 
 GRAPHICS holds, in the order the page shows them: Render Scale, Super
 Sampling, Anti-Aliasing, Widescreen, Frame Rate, 2D Detail, Filter, Texture
@@ -58,7 +63,8 @@ The key on the left, the N64 control it stands for on the right.
     I J K L        the C buttons
     Arrow keys     the D-pad (which also moves the stick in menus)
     Return         Start
-    Esc            pause menu; hold it for a second to quit
+    Esc            the port's Options, anywhere; hold it for a second to quit
+    Enter          Start (the pause menu in a course)
     F11            fullscreen
     F10            widescreen
     F8             frame interpolation

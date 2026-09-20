@@ -45,6 +45,13 @@ namespace snap {
     // exactly what a player feels as a stutter.
     std::atomic<bool> g_app_level_resident = { false };
 
+    // The ROM start of the scene overlay loaded last: the title's, the
+    // lab's, the Report's, a ride's level code, the credits'. The pages from
+    // anywhere open only on screens that hold still without harm
+    // (menu_assets.cpp, menu_anywhere_tick); a ride's demo and the credits
+    // are scripted to their music and stay closed to the key.
+    std::atomic<uint32_t> g_scene_overlay_rom = { 0 };
+
     // Lets a frame be held inside a course, which the gate below otherwise
     // forbids. Off by default, because that is the behaviour every measurement
     // so far was taken against.
@@ -68,6 +75,17 @@ namespace snap {
 static inline uint32_t read_u32(uint8_t* rdram, uint32_t addr) {
     // Same addressing the generated code uses for 32-bit loads.
     return *reinterpret_cast<uint32_t*>(rdram + (addr - 0x80000000u));
+}
+
+// A scene's set-up starts the general heap again (sys/gtl.c) and rebuilds
+// the object manager's pools right after, which forgets whatever objects
+// the pages' arena lent them: the arena's cursor and the scene's age go back
+// here. The evaluation that follows Oak's check is set up inside the check's
+// overlay, so the overlay load alone would miss it.
+extern "C" void __real_gtlInitHeap(uint8_t* rdram, recomp_context* ctx);
+extern "C" void gtlInitHeap(uint8_t* rdram, recomp_context* ctx) {
+    __real_gtlInitHeap(rdram, ctx);
+    snap::menu_arena_reset(rdram);
 }
 
 extern "C" void dmaLoadOverlay(uint8_t* rdram, recomp_context* ctx) {
@@ -117,6 +135,23 @@ extern "C" void dmaLoadOverlay(uint8_t* rdram, recomp_context* ctx) {
         // mouse stayed captured there and, once the picture's width
         // followed this flag, the title would have stayed wide.
         constexpr uint32_t TitleRomStart = 0xA08E30u;
+        switch (rom_start) {
+            case 0x4F0610u:   // the level code: a ride, or its demo
+            case 0x87A0B0u:   // camera_check
+            case 0x8A70E0u:   // oaks_lab
+            case 0x98C330u:   // photo_check
+            case 0x9A6B10u:   // pokemon_album
+            case 0x9D3230u:   // pokemon_report
+            case 0x9FA580u:   // gallery
+            case 0xA084B0u:   // the end-of-level screen
+            case 0xA08E30u:   // main_menu
+            case 0xA5CC50u:   // menu_new_game
+            case 0xA93460u:   // credits
+                snap::g_scene_overlay_rom.store(rom_start, std::memory_order_relaxed);
+                break;
+            default:
+                break;
+        }
         if (rom_start == 0x4F0610u) {
             snap::g_app_level_resident.store(true, std::memory_order_relaxed);
         }

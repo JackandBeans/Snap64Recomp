@@ -19,7 +19,7 @@
 #include <cstdlib>
 #include <mutex>
 #include <stdexcept>
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
 #include <cerrno>
 #include <fcntl.h>
 #include <sys/file.h>
@@ -45,6 +45,7 @@
 #include "fast_forward.h"
 #include "snap_station.h"
 #include "steam_deck.h"
+#include "mod_api.h"
 namespace snap { extern uint8_t* g_rdram; }
 extern "C" void snap_publish_ai_len(uint8_t* rdram);
 // The stall report's three sources (update_gfx): the game's logic-step
@@ -94,7 +95,7 @@ static constexpr const char* SNAP_INTERNAL_NAME  = "POKEMON SNAP";
 // SDL2 window / gfx callbacks
 // ---------------------------------------------------------------------------
 #include <SDL2/SDL.h>
-#if defined(_WIN32)
+#if defined(_WIN32) || defined(__APPLE__)
 #include <SDL2/SDL_syswm.h>
 #endif
 
@@ -133,7 +134,16 @@ static void* create_gfx() {
     // the game. Off, SDL_PumpEvents leaves the joystick state alone and the
     // pad thread's SDL_GameControllerUpdate is the only thing that touches it.
     SDL_SetHint(SDL_HINT_AUTO_UPDATE_JOYSTICKS, "0");
-    if (SDL_Init(SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER) != 0) {
+#if defined(__APPLE__)
+    // On macOS the controller subsystem is not started here: SDL's IOKit
+    // driver binds its device matching to the run loop of the thread that
+    // initialised it, and the pad thread is the thread that polls, so it
+    // starts and stops the subsystem itself (input.cpp, pad_thread_main).
+    const Uint32 sdlSubsystems = SDL_INIT_VIDEO | SDL_INIT_AUDIO;
+#else
+    const Uint32 sdlSubsystems = SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER;
+#endif
+    if (SDL_Init(sdlSubsystems) != 0) {
         // Nothing downstream can work without SDL, and the failures it would
         // produce (no window, no native handle, no renderer) all read as
         // unrelated bugs. Say what actually happened and stop.
@@ -161,16 +171,22 @@ static ultramodern::renderer::WindowHandle create_window(void* /*gfx_data*/) {
         SNAP_PORT_NAME,
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         windowW, windowH,
+#if defined(__APPLE__)
+        // RT64 draws with Metal on a Mac; the layer is taken from SDL below.
+        SDL_WINDOW_METAL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI
+#else
         SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI
+#endif
     );
 #if defined(__linux__)
     if (sdl_window != nullptr) {
         SDL_StopTextInput();
     }
 #endif
-#if !defined(_WIN32)
+#if defined(__linux__)
     // The icon a Windows executable carries as a resource; a Linux binary
-    // has none, so it comes from the file beside it.
+    // has none, so it comes from the file beside it. (A macOS bundle's icon
+    // is its own .icns, and the launcher is the bundle itself.)
     if ((sdl_window != nullptr) && !snap::set_window_icon(sdl_window)) {
         printf("[SNAP] window icon: Snap64Recomp-window.png not found beside the executable" "\n");
     }
@@ -193,6 +209,25 @@ static ultramodern::renderer::WindowHandle create_window(void* /*gfx_data*/) {
 
     snap_update_window_title();
     wh.window = wmInfo.info.win.window; wh.thread_id = GetCurrentThreadId(); return wh;
+#elif defined(__APPLE__)
+    // The same care as above. RT64's Metal backend takes the window and the
+    // CAMetalLayer SDL attaches to its view (ultramodern's WindowHandle on
+    // Apple is those two pointers), which is what the community's Apple
+    // Silicon build handed it.
+    ultramodern::renderer::WindowHandle wh{};
+    SDL_SysWMinfo wmInfo;
+    SDL_VERSION(&wmInfo.version);
+    if (!sdl_window || SDL_GetWindowWMInfo(sdl_window, &wmInfo) != SDL_TRUE) {
+        fprintf(stderr, "[SNAP] Unable to obtain a native window handle: %s\n", SDL_GetError());
+        return wh;
+    }
+    snap_update_window_title();
+    wh.window = wmInfo.info.cocoa.window;
+    wh.view = SDL_Metal_GetLayer(SDL_Metal_CreateView(sdl_window));
+    if (wh.view == nullptr) {
+        fprintf(stderr, "[SNAP] SDL_Metal_CreateView gave no layer: %s\n", SDL_GetError());
+    }
+    return wh;
 #else
 #if defined(__linux__)
     // A Steam Deck in Gaming Mode: gamescope sizes this window's screen to
@@ -476,14 +511,23 @@ static void update_gfx(void* /*gfx_data*/) {
                 }
                 if ((event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) && !event.key.repeat &&
                     !snap::input_deck_keys_ignored()) {
-                    // A tap is Start: the pause menu in a course, with its
-                    // Continue, Retry and Quit, and Start on every other
-                    // screen. Holding Esc for a second and letting go asks
+                    // A tap opens the port's Options, on any screen: over
+                    // a paused course, over the title, the lab, the Report
+                    // or the Gallery held still (the key every PC game uses
+                    // for "menu", and the other recompilations too). While
+                    // they are up the tap is Start, which closes them; on
+                    // the game's own Option screen it is Start as well.
+                    // Enter is the game's Start, the pause menu in a
+                    // course. Holding Esc for a second and letting go asks
                     // whether to quit (below); an instant quit on the key
-                    // every PC game uses for "menu" threw a course away
-                    // with no way back, and a silent hold-to-quit would
-                    // have done the same to a hand resting on the key.
-                    snap::input_tap_start();
+                    // threw a course away with no way back, and a silent
+                    // hold-to-quit would have done the same to a hand
+                    // resting on the key.
+                    if (snap::menu_pages_open()) {
+                        snap::input_tap_start();
+                    } else {
+                        snap::input_request_menu();
+                    }
                     escDownAt = std::chrono::steady_clock::now();
                     escHeld = true;
                     escArmed = false;
@@ -496,6 +540,15 @@ static void update_gfx(void* /*gfx_data*/) {
                         escArmed = false;
                         snap_confirm_quit();
                     }
+                }
+                break;
+            case SDL_DROPFILE:
+                // A mod dropped on the window goes into the mods folder,
+                // as the other recompilations take one; it loads at the
+                // next start (menu_assets.cpp).
+                if (event.drop.file != nullptr) {
+                    snap::mods_drop_file(event.drop.file);
+                    SDL_free(event.drop.file);
                 }
                 break;
             case SDL_AUDIODEVICEREMOVED:
@@ -570,7 +623,7 @@ static void gfx_init_callback() {
         std::this_thread::sleep_for(std::chrono::milliseconds(200));
         std::u8string game_id = u8"pokemonsnap";
         if (recomp::is_rom_valid(game_id)) {
-            recomp::start_game(game_id);
+            recomp::start_game(game_id, std::string());
         } else {
             // The ROM check in recomp::start already told the player exactly
             // what is wrong with pokemonsnap.z64 (missing, unreadable, not a
@@ -624,7 +677,9 @@ static void error_message_box(const char* msg) {
     // shows MessageBoxW straight from any thread and has done since 1.0.0, so
     // deferring it there would only delay a dialog, or lose it if the game is
     // already wedged, for no gain.
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
+    // (On macOS SDL shows the box on the main thread through dispatch_sync,
+    // which waits on a main thread that may be the one blocked: same rule.)
     if ((s_main_thread_id != 0) && (SDL_ThreadID() != s_main_thread_id) &&
         s_defer_boxes.load(std::memory_order_relaxed)) {
         // Repeats say nothing new -- a failing save fails for a reason that
@@ -911,7 +966,7 @@ static void snap_bind_stdio() {
 }
 #endif
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
 // Where the log goes, decided once before the first line is printed.
 // snap64.log in the data directory is written on every launch: Steam, the
 // Deck's Gaming Mode and a desktop entry give a game nowhere to print that
@@ -1125,7 +1180,7 @@ static bool snap_take_instance_lock(std::string& note) {
 // On a Steam Deck the Mesa driver (RADV) drops one triangle of a course's
 // sky dome at the ride's first frames in Widescreen: a chunk at the top-left
 // showing the previous picture, black bands and all, until the next camera
-// cut repaints it (the port's author, from 1.0.1 to 1.0.4, 2026-09-06 to
+// cut repaints it (seen by me from 1.0.1 to 1.0.4, 2026-09-06 to
 // 2026-09-12). The triangle has a vertex on the camera plane, which the
 // port's vertex shader nudges a hair in front of it (RT64, RSPProcessCS);
 // the hardware clipper handles the enormous projected coordinate that makes,
@@ -1159,7 +1214,7 @@ int main(int argc, char* argv[]) {
     (void)argc;
     (void)argv;
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
     std::string lock_note;
     if (!snap_take_instance_lock(lock_note)) {
         error_message_box("Snap64 Recomp is already running. Close the other window first.");
@@ -1172,7 +1227,9 @@ int main(int argc, char* argv[]) {
         fputs(lock_note.c_str(), stdout);
         fflush(stdout);
     }
+#if defined(__linux__)
     snap_radv_debug_nonggc();
+#endif
     if (snap::base_dir() != snap::exe_dir()) {
         // paths.cpp said why on stderr when it decided (the executable's
         // folder cannot be written, or SNAP_DATA_DIR), before the log was
@@ -1261,6 +1318,9 @@ int main(int argc, char* argv[]) {
     recomp::GameEntry snap_entry {
         .rom_hash            = SNAP_ROM_HASH,
         .internal_name       = SNAP_INTERNAL_NAME,
+        // Required by the runtime since its August 2026 update; shown by a
+        // mod menu or a launcher that lists games.
+        .display_name        = "Pokemon Snap",
         .game_id             = u8"pokemonsnap",
         .mod_game_id         = "pokemonsnap",
         .save_type           = recomp::SaveType::AllowAll, // boot probes FlashRAM before using EEPROM
@@ -1277,12 +1337,16 @@ int main(int argc, char* argv[]) {
            snap_entry.internal_name.c_str(),
            (unsigned long long)snap_entry.rom_hash);
 
+    // The functions a mod imports from the port (src/mod_api.cpp), before
+    // the runtime scans mods/ and resolves their imports.
+    snap::register_mod_exports();
+
     // -----------------------------------------------------------------------
     // 3. Build the Configuration and start
     // -----------------------------------------------------------------------
     recomp::Configuration config {
-        .project_version = { .major = SNAP_VERSION_MAJOR, .minor = SNAP_VERSION_MINOR,
-                             .patch = SNAP_VERSION_PATCH, .suffix = SNAP_VERSION_SUFFIX },
+        .project_version = recomp::Version(SNAP_VERSION_MAJOR, SNAP_VERSION_MINOR,
+                                           SNAP_VERSION_PATCH, SNAP_VERSION_SUFFIX),
 
         .window_handle = ultramodern::renderer::WindowHandle{},
 

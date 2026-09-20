@@ -1,4 +1,5 @@
-﻿cmake_minimum_required(VERSION 3.20)
+# Pokemon Snap port: modified from upstream N64ModernRuntime; VENDORING.md lists the changes.
+cmake_minimum_required(VERSION 3.20)
 
 project(librecomp)
 set(CMAKE_CXX_STANDARD 20)
@@ -9,6 +10,8 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 add_library(librecomp STATIC
     "${CMAKE_CURRENT_SOURCE_DIR}/src/ai.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/cont.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/config_option.cpp"
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/config.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/dp.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/eep.cpp"
     "${CMAKE_CURRENT_SOURCE_DIR}/src/euc-jp.cpp"

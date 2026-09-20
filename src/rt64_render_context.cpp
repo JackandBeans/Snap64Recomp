@@ -236,12 +236,16 @@ public:
 
         // The backend, chosen before setup creates the device: Direct3D 12
         // unless the settings file asks for Vulkan (settings.h, graphics_api).
-        // Off Windows there is only Vulkan, whatever the file says.
+        // Off Windows there is one backend, whatever the file says: Metal on
+        // a Mac, Vulkan elsewhere.
 #if defined(_WIN32)
         app_->userConfig.graphicsAPI = (snap::settings().graphics_api == 1)
             ? RT64::UserConfiguration::GraphicsAPI::Vulkan
             : RT64::UserConfiguration::GraphicsAPI::D3D12;
         printf("[SNAP] graphics API: %s\n", (snap::settings().graphics_api == 1) ? "Vulkan (settings)" : "Direct3D 12");
+#elif defined(__APPLE__)
+        app_->userConfig.graphicsAPI = RT64::UserConfiguration::GraphicsAPI::Metal;
+        printf("[SNAP] graphics API: Metal\n");
 #else
         app_->userConfig.graphicsAPI = RT64::UserConfiguration::GraphicsAPI::Vulkan;
         printf("[SNAP] graphics API: Vulkan\n");
@@ -376,6 +380,15 @@ public:
         }
     }
 
+    // Before the game has started, the runtime ticks a dummy VI and asks for a
+    // workload drawn into that framebuffer, so a launcher rendered by RT64 has
+    // frames to present. This port boots straight into the game and draws no
+    // launcher, so there is nothing to render; when a front end is added it
+    // goes here.
+    void send_dummy_workload(uint32_t fb_address) override {
+        (void)fb_address;
+    }
+
     bool valid() override {
         return setup_result == ultramodern::renderer::SetupResult::Success && app_ != nullptr;
     }
@@ -487,7 +500,17 @@ public:
         app_->updateEnhancementConfig();
     }
 
+    // Until August 2026 the runtime called enable_instant_present at the
+    // first task after the game had started; since then it leaves the
+    // presentation mode to the port, so the port does the same thing at the
+    // same moment. The pacing work (rt64_present_queue.cpp) assumes it.
+    bool instant_present_on_ = false;
+
     void send_dl(const OSTask* task) override {
+        if (!instant_present_on_) {
+            instant_present_on_ = true;
+            enable_instant_present();
+        }
         if (!app_) return;
 
         // task->t.ucode / ucode_data / data_ptr are PTR(u64) = int32_t holding
@@ -547,7 +570,7 @@ public:
             // The surface's size, said whenever it changes, and kept for
             // the window's thread (snap_render_surface_size). On a Steam Deck
             // in Gaming Mode the port draws into whatever screen gamescope
-            // gave the shortcut -- a 3840x2160 one on the author's OLED Deck
+            // gave the shortcut -- a 3840x2160 one on my OLED Deck
             // until the port asked for the display's own size (main.cpp,
             // create_window), which gamescope answers by resizing the screen
             // and then the fullscreen window, each a moment after the other.

@@ -140,6 +140,9 @@ extern "C" void gtlUpdate(uint8_t* rdram, recomp_context* ctx) {
     // Anything the in-game GRAPHICS page published since the last tick is
     // applied here, on the thread the page runs on. One word read when idle.
     snap::poll_menu_mailbox(rdram);
+    // A press of the menu key: to the pause code in a course, or the runner
+    // process on any other screen (menu_assets.cpp).
+    snap::menu_anywhere_tick(rdram, ctx);
 
     const bool on = snapdiag::statsEnabled();
     if (!on) {

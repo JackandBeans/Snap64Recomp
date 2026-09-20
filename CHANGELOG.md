@@ -1,5 +1,281 @@
 # Changelog
 
+## 1.0.9 -- 2026-09-20
+
+* The runtime is upstream's current one, and the port's changes to it are a
+  patch. `lib/N64ModernRuntime` had been a copy of N64Recomp/N64ModernRuntime
+  from a commit nobody had recorded, edited in place in thirteen files. It
+  is upstream's `cdf5abb` (2026-08-30) now, with the port's changes carried
+  as `lib/N64ModernRuntime/SNAP64-CHANGES.patch`, fourteen files that applied
+  to that commit reproduce the tree byte for byte; the old base turned out
+  to be the tree of 2026-05-17, and three files conflicted. What the update
+  brings is the runtime's configuration system and its current mod loader,
+  with dependency checks, deprecated-mod handling and game modes, which the
+  mod tooling and the shared front end need. Two of upstream's changes since
+  the old base are not taken, on purpose. The runtime no longer switches
+  present-early on for the port at the first task, so the port does it
+  there itself, where the runtime used to. And the runtime now shapes every
+  stick through an N64-style octagon, full deflection about 82 rather than
+  127, which reshaped the port's own mouse, gyro and keyboard values and
+  took the scoring replay from 45 photos to 21; the linear mapping stays,
+  and a physical stick's gate remains the port's to add in its own layer,
+  as a choice. Verified: the scoring replay scores the same 45 photos and
+  exports the same 55; the release suite passed 26 of 26 checks
+  in 1104 seconds and the Snap Station's 5 of 5 in 487 on this executable,
+  the 1.0.8 numbers to the second.
+* The renderer is upstream's current one, and the port's changes to it are a
+  patch too. `lib/rt64` had been rt64/rt64 `a012a23` (2026-07-22) edited in
+  place; it is `4337374` (2026-09-02) now, eleven upstream commits later,
+  with the port's changes carried as `lib/rt64/SNAP64-CHANGES.patch`, and
+  the four plume files the port changes carried the same way against the
+  plume commit that RT64 pins, which moved with it and brings plume's
+  Metal-leak fix. The rebase applied with no textual conflict. What the
+  eleven commits bring: VIs with inverted regions are no longer treated as
+  valid, draw-area detection considers the viewport's clip rectangle, tile
+  synchronisation detection is improved, and a Vulkan workaround for RDNA4
+  cards. That last one is taken differently: upstream forces Vulkan on an
+  RX 90 card with a driver up to `0x200000794103EC` whatever the player
+  chose, and my own RX 9060 XT is on exactly that driver, on which this
+  port's whole suite and a full playthrough have run in D3D12 without the
+  fault; so the port applies that
+  clause only in Automatic mode, which it never uses, and leaves the API
+  where the Graphics page put it. Verified: the scoring replay scores the same 45 photos, and
+  the release suite passed 26 of 26 checks in 1104 seconds and the Snap
+  Station's 5 of 5 in 487 on this executable, still on Direct3D 12.
+* The port is ready for mods to be written for it. The loader has been in
+  since 1.0.0; what was missing was everything a mod author needs and one
+  thing the port owed the loader. The kit is two repositories of their own,
+  not public at the time of this release: a template
+  (Snap64RecompModTemplate: an example hook behind an option, the MIPS
+  build with clang and lld against the decompilation's headers, the
+  manifest, the modding headers) and the game's symbols
+  (Snap64RecompSyms), both in the form N64Recomp's mod tool reads;
+  `docs/MODS.md` says how they fit. `tools/gen_reference_syms.py` writes
+  the symbols: it now also emits the data symbols a mod names variables
+  with (12,754 across 156 sections, the code sections included, because
+  this game keeps most of its globals beside its code), and it writes
+  each section's ROM address where it had written its file offset in the
+  ELF, which the port's own patch build never noticed and a mod's hook
+  cannot survive, since the runtime matches hooks by section ROM address;
+  the tracked `patches/pokemonsnap.syms.toml` carries the corrected
+  addresses, and the patch build's output is byte-identical either way.
+  The thing the port owed: a mod imports `recomp_printf` from the port,
+  which the other recompilations provide as game-side code their patch
+  toolchain exports; this port's patches are compiled with IDO and cannot,
+  so `src/mod_api.cpp` provides it as a host function that formats the
+  guest's call itself, reading the arguments as the o32 convention lays
+  them out, and registers it before the runtime scans `mods/`. Verified:
+  the example mod, built in WSL with clang 18 and packed with a
+  RecompModTool built from the vendored N64Recomp, loads in the port and
+  its hook on the game's scene set-up ran four times in forty seconds of
+  the Beach replay; the scoring replay still scores the same 45 photos and exports the same 55.
+  The collections the other recompilations' `recompdata.h` gives a mod
+  (hashmaps, hashsets and slotmaps kept by the port between calls) are
+  provided too, `src/mod_data_api.cpp`, ported from Zelda64Recomp's data
+  API on Sergey Makeev's SlotMap with three of that file's faults put
+  right (a slotmap read, write or erase of a missing key went on to touch
+  a null element; a memory slotmap's erase freed the wrong address); the
+  template's example keeps a set in one, and its counts came out right in
+  the log across four scene set-ups of the Beach replay.
+* A Mods page in the game's Options screen, on the row the stock Return
+  held (B returns from the screen, as Return's own help line said, and the
+  list has no seventh slot above the help box). One row per mod in the
+  `mods/` folder, six on screen, On or Off beside each; A turns the
+  selected mod on or off, `mods.json` records it at once, and the change
+  takes effect at the next start, which the help line says under the mod's
+  own short description. The page is the Button Setup page's arrangement
+  turned to a list the host composes: the names and help lines of the six
+  rows on screen are drawn by the port into a bank the page is not showing
+  and the page turns to the bank (`patches/src/graphics_menu_patch.c`,
+  `src/menu_assets.cpp`); the string directory grew past 255 entries for
+  it. One line of the runtime changed for it (`librecomp/src/mods.cpp`, in
+  the port's patch): upstream refuses to turn a loaded code mod on or off,
+  which suits a launcher that toggles mods before the game starts; the
+  port's copy takes the change for the next start, which is what the page
+  says. Verified by a scripted visit with two example mods in the folder:
+  the page opened with both rows, the second was turned off and on again,
+  `mods.json` followed each press, and the presented frames show the page
+  as described.
+* The pages open anywhere, on one key. Until now Graphics, Sound, Controls
+  and Mods lived only in the title's Options screen, so a frame-rate or
+  button change mid-ride meant quitting the course, which is the one thing
+  every other recompilation's menu gets right by opening on a key anywhere.
+  Esc, or Select on a pad, now opens the list on any screen -- the title,
+  the lab, the map, a paused course, the Report, the Gallery -- over the
+  screen as it stands: on a screen without a pause of its own, the port
+  makes an object with one coroutine on it through the game's own object
+  manager (a dead function of the resident code, replaced, is the coroutine
+  the runtime can dispatch), and that coroutine freezes every other object
+  the way the level's pause freezes the player's, dims the picture at the
+  pause's own 153 of 255, runs the list in the Options screen's dress, and
+  wakes exactly what it froze when Esc, Select or Start closes it. In a
+  course the key pauses the ride as Start does and opens the pages at once,
+  with no menu in between. Enter stays the game's Start: the pause menu,
+  which has a fourth pill under Retry, Options, which opens the Options
+  screen's list over the paused, dimmed course; B brings the pause menu
+  back, and Start on the list or on any page closes everything and resumes
+  the ride at once, keeping what is on screen. The key stays out of what
+  a held screen would break, and four things decide that. The scene: the
+  attract demo and the credits are scripted to their music and the freeze
+  would leave them behind it, so the key is dropped there (a ride with no
+  pause handler is the demo: the game makes the handler only when no idle
+  script runs). The fade: its veil is drawn over everything by a process
+  the freeze would hold, and the first version, opened under the title's
+  fade in, showed a white screen for as long as the pages were up. The
+  press now waits while a fade step is under way, or while a veil object is
+  in the scene with an alpha to draw, four seconds at most, and is dropped
+  under a veil that stays. Neither half is enough alone: a fade out leaves
+  the alpha at 255, and the screens that follow without a fade of their own
+  -- the photo check after a ride, the evaluation -- keep that number with
+  no veil drawn, while the title keeps a veil object long after its fade in
+  has brought the alpha to nothing. A screen's first two seconds are left
+  to its entrance in the same wait. The display list: the pages are
+  sprites drawn into the screen's main display list buffer, which is the
+  cartridge's own size, and the photo check after a ride fills its 53,248
+  bytes to within 176 on its own. The list on top overran it by 712, which
+  is the game's panic -- a loop the recompiler turns into a parked thread,
+  and the port's hang report ten seconds later. The room that buffer had
+  left is measured every frame now (`src/dl_budget.cpp`) and the pages stay
+  shut below 8,192 bytes of it, from the key and from the pause menu's pill
+  alike, with a line in the log; the list and the Graphics page together
+  drew 5,432 bytes over the title, and the pages 2,016 to 4,040 over a
+  paused ride whose buffer is 20,480. The camera: the pages sat on the draw
+  link the title's and the course's sprite cameras cover, and on the other
+  screens they were drawn, where they were drawn at all, by the fade
+  system's 3D camera with whatever render state the screen had left -- the
+  evaluation and the lab came out as static with the list in pieces, and
+  the photo check showed nothing while the list took every press. The
+  runner makes a sprite camera of its own now, as the title screen makes
+  its, on a draw link no screen uses and at the lowest draw priority, which
+  is the last to draw. Two faults of my own the same tapes found. I had
+  declared the object manager's limit as 32 bits where the game's is 16
+  (`omMaxObjects`, sys/om.c), so the store that lifts the limit went to the
+  wrong bytes and put 65535 into the object size beside it; every other
+  extern in the patches was then checked against the decompilation's
+  declarations (a hundred, no other mismatch). And the patch Makefile did
+  not list the `.inc` files the page sources include, so three rebuilds
+  "with the fix" carried the old code; an `.inc` edit rebuilds its object
+  now. The pools that limit lifts grow from the screen's general heap, a
+  bump allocator with no free, so the pages bring their own memory as well:
+  the heap's pointers are turned towards an arena of the port's own, in
+  RDRAM beyond anything the cartridge addresses, while the runner's object
+  and thread are made and while its pages are up, and turned back after;
+  the arena is cleared and its cursor moved back where the game starts a
+  scene's heap (`gtlInitHeap`, hooked). Every heap the tapes met had room
+  (390,680 bytes at the least), so the arena is a guard, not a cure I can
+  show. The runner's log line says what the screen had to give: the scene,
+  its age, the heap's free bytes, the objects and their limit, the display
+  list's room. On the pad, the photo save moved from Select to the right
+  stick pressed in for it. Photographed, each opened and closed by the key:
+  the title during its intro (the press waited out the fade), the New Game
+  question, the course map, the evaluation, the lab, and a paused ride by
+  the key and by the pill; and the attract demo with the key dropped and
+  the photo check with the pages refused. The PKMN Report, the Album and
+  the Gallery run the same code and are not yet photographed. The release
+  suite presses the key now (`tools/release_check.py`, the `pages` check:
+  the title tape with the key at two readings, the runner's line and the
+  display list's read from the log, nothing hung or overrun); the released
+  executable passed the suite's 28 checks in 1154 seconds and the Snap
+  Station's 5 in 488. The pill is the pause menu's
+  own artwork: the three stock pills are 89x19 full-colour sprites with
+  their words baked in, so the port composes a fourth pair, plain and
+  selected, out of the yellow pair in the ROM -- the word erased to the
+  fill, every texel's hue turned so the fill sits at green (the one colour
+  of the set the menu does not use), and Options set in the pills' own
+  letters at the pills' own centring, the O being the Q of Quit Course
+  without its tail and the p the n's stem closed like the o. The list wears
+  the Options screen's own dress at the screen's own coordinates -- the
+  rules above and below the heading, A OK and B Cancel, the help box --
+  from strips of the very same sprites (the rule and the box's side written
+  down texel for texel, the heading and the legend harvested whole, the
+  legend as 32-bit RGBA, the one 32-bit strip the pages draw; the rules,
+  sides, heading and legend of the two screens measure the same to the
+  pixel in the captured frames), kept under every page as the title's
+  screen keeps its own, and has five rows, Graphics, Sound,
+  Controls, Mods and Exit Game, from the first row down as the stock list
+  runs. The dim behind it is the game's own pause dim, black at 153/255,
+  which leaves the same 40 percent of the picture the title's Options
+  screen leaves (its backdrop is tinted 0x66). The HUD's item icons step
+  aside while the pause menu is up, as the game itself takes them down for
+  its cutscenes: the fourth pill stands where the balls are, and even the
+  cartridge's Retry pill lay over the B ball's badge; the film counter goes
+  only behind the pages, whose header rule runs under it. Four functions of
+  the level code are replaced with their original bodies plus the item
+  (`patches/src/pause_menu_patch.inc`); the pages lost their dependence on
+  the main menu overlay, whose little sprite helpers they had been calling
+  and which is not loaded in a course, and learned where they are open, so
+  over the pause menu they touch none of the Options screen's sprites and
+  use the course's sounds, and the Controls page's Z Button and Control
+  Stick rows write the player flags directly rather than the overlay's
+  mirrors. Verified by two scripted visits on the Beach, photographed at
+  each step: the pause menu with the pill plain and selected, the dressed
+  list, the Graphics and Mods pages over the course, Exit Game's question
+  asked and withdrawn, the pause menu back on B, and the ride resumed both
+  from the pause menu and by Start from a page; the first attempt crashed
+  in the Graphics page's own walk over the Options screen's sprite chains,
+  which is why the chain accessor now returns nothing outside that screen.
+* The Mods page does what the other recompilations' mod menus do. Their
+  menus toggle, reorder and configure mods, install one from a file and
+  open the folder; ours toggled. Now: L and R move the selected mod up or
+  down the load order (`set_mod_index`, kept in `mods.json`); Z opens a
+  mod's options page when its manifest declares any, one row per option
+  with Left and Right changing it -- an enum to its next choice, a bool on
+  or off, a number a step at a time within its range, a text shown and left
+  to its file -- each change written to the mod's own settings file at once
+  through the runtime's `set_mod_config_value`; the rows show the version
+  after the name and the help line the author; two rows under the mods,
+  Open the mods folder and Restart the game, do what their buttons do; a
+  `.nrm` dropped on the window is copied into the folder for the next
+  start; and a hint at the header's right says which of Z, L and R apply to
+  the row; a mod whose required dependency is missing or the wrong version
+  says so in its help line. Verified by a scripted visit with the example
+  mod in the folder twice under two ids. Two smaller things from the
+  screenshots: the header face's drawn lowercase -- the d of Mods above
+  all, whose stem rose two rows past the t's -- was measured against the
+  stock word and resized to its x-height; and the title's Options list
+  left its Mods row on screen under the Graphics and Sound pages, over
+  the Frame Rate row, because those two pages hide the list's staged rows
+  with their own older copy of the code that never learned the row
+  (photographed, then fixed and photographed again).
+* macOS, in the tree and not yet run. The community's Apple Silicon build
+  of 1.0.0 (pull request #2, by appleforever11), which drew with Metal and
+  reached a course on an Apple M3 Pro, is ported onto today's tree behind
+  `__APPLE__` and `if (APPLE)`: Metal through plume's backend, with RT64's
+  shaders compiled to Metal libraries; the window's Metal layer handed to
+  RT64; SDL static inside the executable; the data directory in
+  `~/Library/Application Support/Snap64 Recomp/`; the Linux log, lock and
+  relaunch made POSIX; the controller subsystem owned by the pad thread,
+  because SDL's IOKit driver only sees pads from the thread that
+  initialised it; and `tools/macos_bundle.py`, which lays out the
+  application bundle, signs it ad hoc and zips it with a START HERE text.
+  A workflow, `.github/workflows/macos.yml`, builds the bundle on GitHub's
+  Mac from a private repository of the ROM-derived inputs, as the other
+  recompilations' workflows do, and runs the bundle once for its log and
+  frames. I have no Mac: none of this has run on one, and the README does
+  not offer it until it has; BUILDING.md, step 15, is the whole account.
+  Windows and Linux compile what they did; the scoring replay scores the
+  same 45 photos on the rebuilt Windows executable.
+* The documentation, rebuilt. The README had grown to fourteen thousand
+  words, six times the size of the other recompilations' pages, and in
+  several places contradicted itself: it said every run had been on one
+  machine while listing three players' GPUs, that Vulkan had never been
+  run while its own settings table said where it had, that the Deck's
+  Gaming Mode and the corner flicker remained after both were done. It is
+  a front page now -- what the port is, how to run it, what it adds, the
+  rule, the controls, what is known not to work -- and the manual lives
+  under `docs/`: MANUAL.md, SNAP-STATION.md, STEAM-DECK.md,
+  VERIFICATION.md and HISTORY.md, the text moved rather than rewritten and
+  the stale sentences corrected where they stood. The section on how the
+  port was made now says what it is, my project made with Claude Code,
+  with the commit trailers as the record, in place of the account of the
+  models that had stood there. `START HERE.txt` no longer promises the
+  rebinding page that 1.0.6 shipped; NOTICE.md counts the screenshots as
+  they are; the bug report form asks which system rather than which
+  Windows, and points requests at Discussions; and a GitHub workflow runs
+  `tools/check_docs.py`, which follows every relative link and anchor in
+  the Markdown, and compiles the Python tools on every push, the only
+  check a build that needs the ROM can have.
+
 ## 1.0.8 -- 2026-09-15
 
 * Fast forward: hold Tab, or the pad's right shoulder button, and the game

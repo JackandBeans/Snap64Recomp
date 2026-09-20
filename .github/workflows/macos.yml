@@ -1,0 +1,107 @@
+# The macOS build, on GitHub's Apple Silicon runner: the one Mac this
+# project has. It needs the inputs the ROM produces, which no public tree may
+# hold (BUILDING.md, "What a clean checkout is missing"): they come from a
+# private repository of mine, cloned with a token kept in this repository's
+# secrets (SNAP64_INPUTS_TOKEN), so the job builds only where that secret
+# exists -- a manual run of mine -- and a fork's pull request builds
+# nothing here. What it leaves: the application bundle as a zip with
+# its checksum, and the log and captured frames of a first run of that
+# bundle on the runner, which is the closest thing to a Mac I can look at.
+name: macos
+
+# On request only, until the private inputs repository and its token
+# exist: a push would stop at the inputs step with a failure. The push
+# trigger (snap-port and main, the source paths) comes back with them.
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: macos-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Apple Silicon bundle
+    runs-on: macos-15
+    timeout-minutes: 150
+    env:
+      SNAP_INPUTS_REPO: JackandBeans/Snap64RecompInputs
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The toolchain
+        run: |
+          xcodebuild -version
+          cmake --version | head -1
+          ninja --version
+          python3 --version
+          # RT64 compiles its Metal shaders with Xcode's metal compiler. The
+          # runner's default Xcode ships it; Xcode 26 keeps it as a separate
+          # download, fetched only when it is missing.
+          xcrun -sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
+
+      - name: The vendored trees
+        run: python3 tools/fetch_deps.py
+
+      - name: The inputs the ROM produces
+        env:
+          TOKEN: ${{ secrets.SNAP64_INPUTS_TOKEN }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::SNAP64_INPUTS_TOKEN is not set; the build needs the private inputs repository (BUILDING.md, step 15)"
+            exit 1
+          fi
+          git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/${SNAP_INPUTS_REPO}.git" inputs
+          cp -R inputs/RecompiledFuncs inputs/RecompiledPatches .
+          mkdir -p patches/build
+          cp inputs/patches/build/patches.bin patches/build/
+          cp inputs/pokemonsnap.z64 .
+          rm -rf inputs
+          echo "$(ls RecompiledFuncs | wc -l | tr -d ' ') recompiled function files"
+
+      - name: Configure
+        run: >
+          cmake -S . -B build-macos -G Ninja
+          -DCMAKE_BUILD_TYPE=Release
+          -DCMAKE_OSX_ARCHITECTURES=arm64
+          -DSNAP_ROM="$PWD/pokemonsnap.z64"
+
+      - name: Build
+        run: cmake --build build-macos --target Snap64Recomp
+
+      - name: Bundle
+        run: python3 tools/macos_bundle.py build-macos
+
+      - name: A first run of the bundle
+        # Best effort: the runner has a display and a Metal device, so the
+        # port should reach its title screen; the log and the frames say what
+        # it did, and a failure here does not lose the bundle above.
+        continue-on-error: true
+        run: |
+          mkdir -p smoke
+          cp pokemonsnap.z64 smoke/
+          SNAP_DATA_DIR="$PWD/smoke" SNAP_MUTE=1 SNAP_WINDOW=640x480 SNAP_ROM_PICK=cancel \
+          SNAP_PCAP_ATFRAME=300,900,1500 SNAP_PCAP_AT=9999999 \
+          perl -e 'alarm shift; exec @ARGV' 90 build-macos/Snap64Recomp.app/Contents/MacOS/Snap64Recomp || true
+          echo "--- frames ---"
+          ls -la snap_frame_dumps 2>/dev/null || echo "none captured"
+          echo "--- the log's last lines ---"
+          tail -n 60 smoke/snap64.log || true
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Snap64Recomp-macos-arm64
+          path: |
+            build-macos/*.zip
+            build-macos/*.zip.sha256
+          if-no-files-found: error
+
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: first-run
+          path: |
+            smoke/snap64.log
+            smoke/snap64.prev.log
+            snap_frame_dumps/
+          if-no-files-found: ignore

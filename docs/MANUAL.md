@@ -19,17 +19,20 @@ and so do [Linux and the Steam Deck](STEAM-DECK.md).
 Start `Snap64Recomp.exe`; a shortcut works from anywhere, because the port
 reads and writes the folder the executable is in, whatever the working
 directory (`src/paths.cpp`). It opens a 1280x960 window titled
-`Snap64 Recomp 1.0.8`; `SNAP_WINDOW=WxH` in the environment opens it at
+`Snap64 Recomp 1.0.9`; `SNAP_WINDOW=WxH` in the environment opens it at
 an exact size instead (at least 320x240). The window's maximize button is the
 fullscreen switch; the in-game Graphics page and F11 do the same, and F11
-is the way out of fullscreen from anywhere. **A tap of Esc is Start** (the
-game's own pause menu in a course, Start on any other screen). **Holding
+is the way out of fullscreen from anywhere. **A tap of Esc opens the port's
+Options** on any screen (in a course it pauses the ride and opens them at
+once); Enter is the game's Start. **Holding
 Esc for a second and letting go asks whether to quit**; Keep playing is
 the answer to Enter and to Esc, and Quit takes a click or Tab and Enter.
 **Exit Game**, the last row of the game's Options screen, closes the
 program from a pad: A turns its help line into the question, a second A
 closes, B stays. The window's close button and Alt+F4 quit at once, as
-any window's do.
+any window's do. On a pad, Select opens the port's Options anywhere and the
+right stick pressed in saves the photo on screen (until 1.0.9 that was
+Select, as on the Wii Virtual Console release).
 
 Saves go to `saves/` and settings to `snapsettings.json`, both next to the
 executable. No console opens: the log is `snap64.log` next to the
@@ -84,7 +87,7 @@ use.
 | `pokemonsnap.z64` | your ROM (you provide it) |
 | `snapsettings.json`, `snapsettings.json.bak` | settings, written by the in-game Graphics and Sound pages and by the hotkeys |
 | `saves/pokemonsnap.bin`, `saves/pokemonsnap.bin.bak` | the game's save data, one file (a raw image of the cartridge's save memory) |
-| `photos/` | the photos you save with P or the controller's Back button (see "Photos"); created on the first save |
+| `photos/` | the photos you save with P or the pad's right stick pressed in (see "Photos"); created on the first save |
 | `cache/` | RT64's compiled shaders and the driver's pipeline cache, built on your machine, and `rt64-seen-shaders.bin`, the list of every shader the game is known to ask for -- shipped with 623 entries from a full playthrough, so the first start compiles them all during the boot logos rather than the first time each appears in play; the game adds any it meets that are not on it. Safe to delete; the next start is slower |
 | `snap64.log`, `snap64.prev.log` | the log of this run and of the one before it; on Windows written when the port was not started from a terminal, on Linux on every launch |
 | `mods/`, `mod_config/` | the runtime's mod folders; the loader runs at every start, no mod ships with this release, and there is no in-game mod manager (see "Mods and texture packs") |
@@ -153,7 +156,7 @@ Keyboard and mouse (`src/input.cpp`), as the port ships them:
 | C-Down | K | wheel down | the Poké Flute |
 | C-Up | I | wheel up | turn to face behind |
 | C-Left / C-Right | J / L | side buttons (back / forward) | turn left / right |
-| Start | Enter, or a tap of Esc | | pause |
+| Start | Enter | | pause |
 | D-pad | Arrow keys | | |
 
 The mouse's buttons work whenever the window has focus: a click is A, so
@@ -277,8 +280,9 @@ in the settings file), and **Dead Zone** is how far the aiming stick moves
 before the game sees it, 15 percent as shipped and up to 40 for a pad whose
 stick drifts at rest (`pad_deadzone`); it is radial, and the travel past it
 is rescaled so the first movement the game sees is the smallest. The Back button (Select, View or Share on most pads) is not
-an N64 button: it saves the photo on screen, as P does on the keyboard (see
-"Photos"). The eight buttons -- A, B, Z, Start, the D-pad's four, L and R --
+an N64 button: it opens the port's Options on any screen, as Esc does on
+the keyboard, and the right stick pressed in saves the photo on screen, as
+P does (see "Photos"; until 1.0.9 that was the Back button). The eight buttons -- A, B, Z, Start, the D-pad's four, L and R --
 are each a row of the Button Setup page and of the settings file's `keys`
 table and can be moved; the two sticks can only be swapped, and the Back
 button keeps its job.
@@ -341,12 +345,63 @@ percent of natural). Thirteen rows, six on screen; the page scrolls for the
 last seven, as the Graphics page does. Every change applies as it is made;
 B puts the page back as it was opened.
 
-Options > **Exit Game**: the list's sixth row, under Return, in the
-screen's own font and rhythm. Its help line says what it does; A turns the
-help line into "Press A again to close the game, B to stay", and the
-second A closes the program the way the window's close button does. B, or
-moving off the row, withdraws the question. It is the way to quit from a
-pad, on a Steam Deck in particular.
+**From anywhere**: Esc on a keyboard, or Select (View, Back, Minus: the
+small left button) on a pad, opens the same list on any screen -- the
+title, Oak's lab, the map, a course, the Report, the Gallery -- over the
+screen as it stands, held still and dimmed, in the Options screen's own
+dress: the rules above and below the heading, A OK and B Cancel, the help
+box, under the list and under every page. Five rows: Graphics, Sound,
+Controls (with Button Setup), Mods and Exit Game, each the row the title's
+screen has (Screen, the cartridge's picture-position page, is main menu code
+and stays on the title's screen). **Esc, Select or Start on the list or on
+any page closes everything and the screen goes on** exactly where it was,
+keeping what is on screen (not on Button Setup, where Start is a button to
+bind); B leaves a page for the list and the list for the screen. In a course
+the same key pauses the ride first, as Start does, and closing resumes it.
+Enter is the game's Start: in a course, the pause menu, which has a fourth
+pill under Retry, **Options**, green, in the pause menu's own artwork and
+letters, opening the same list; from there B brings the pause menu back.
+The HUD's item icons step aside while the pause is up; the film counter goes
+only behind the pages. Every change applies as it does from the title
+screen, with one difference: the Controls page's Z Button and Control Stick
+rows, which the title's Options screen applies when it closes, take effect
+the moment they are changed here. The key waits out a fade and a screen's
+first two seconds, and does not open the pages at all where they would
+break something: the attract demo and the credits, which are scripted to
+their music, and the photo check after a ride, whose screen fills its
+display list on its own and has no room for them (`snap64.log` says so
+when it happens). In a course the key follows the game's own rule for
+Start. Holding Esc for a second still asks whether to quit.
+
+Options > **Mods**: the list's fifth row, where the stock Return row was
+(B returns from the screen, as Return's own help line said, and the list
+has no seventh slot above the help box). One row per mod in the `mods/`
+folder, its name and version, six on screen, the page scrolling for the
+rest; each row's value is On or Off. A, Left or Right turns the selected
+mod on or off: the change is written to `mods.json` at once and takes
+effect the next time the game starts, and the help line says so under the
+mod's own short description, with its author. **L and R move the selected
+mod up or down the load order**, which is the order the runtime runs mods'
+hooks in. **Z opens a mod's options** when its manifest declares any: one
+row per option, Left and Right changing it (an enum to its next choice, a
+yes-or-no on or off, a number a step at a time within its range; a text
+option is shown and left to its file), each written to the mod's own
+settings file at once. The hint at the header's right says which of those
+apply to the row. Under the mods, two rows the other recompilations' mod
+menus have as buttons: **Open the mods folder**, which shows it in the file
+browser, and **Restart the game**, which closes the game and starts it again
+with the mods as set. A mod file (`.nrm`) dropped onto the window is copied
+into the folder and loads at the next start. With an empty folder the page
+says that instead. B leaves; nothing is undone, and there is nothing to
+cancel ([Mods](MODS.md)).
+
+Options > **Exit Game**: the list's sixth row, under Mods, in the
+screen's own font and rhythm, and the fifth row of the list the pause menu
+opens in a course. Its help line says what it does; A turns the help line
+into "Press A again to close the game, B to stay", and the second A closes
+the program the way the window's close button does. B, or moving off the
+row, withdraws the question. It is the way to quit from a pad, on a Steam
+Deck in particular.
 
 ## Hotkeys
 
@@ -374,14 +429,14 @@ investigating the renderer and are not features.
 | End | *diagnostic* Effect-sprite naming on/off |
 | [ / ] | Mouse Speed down / up, through the Controls page's steps |
 | P | Save the photo on screen as a PNG in `photos/` (see "Photos") |
-| Esc | Tap: Start (the pause menu in a course). Held a second and released: the quit question |
+| Esc | Tap: the port's Options, on any screen (Esc, Select or Start closes them). Held a second and released: the quit question |
 | Tab (held) | Fast forward, at the Controls page's Fast Forward speed; the `fast_forward` entry of `keys` moves it, and names a pad button too (the right shoulder as shipped) |
 | Space (held) | Slow motion, at the Controls page's Slow Motion speed, Off as shipped; the `slow_motion` entry of `keys` moves it (the left stick pressed in, on a pad) |
 
 ## Photos
 
 
-**P**, or the controller's **Back** button, saves the photo on screen as a PNG:
+**P**, or the pad's **right stick pressed in**, saves the photo on screen as a PNG:
 the photo at the game's own resolution, pixel for pixel, with no scaling, no
 frame and no text over it. Files go to `photos/` next to the executable, named
 `snap_YYYYMMDD_HHMMSS_<course>_NN.png` (the course is left out if the game's
@@ -403,6 +458,8 @@ Board), so this is an enhancement with a precedent, and one that draws nothing
 on screen. The code is `src/photo_export.cpp`.
 
 ## Mods and texture packs
+
+Writing a mod, and what the port does with one, has [its own page](MODS.md).
 
 
 Two loaders are compiled in, and both run on every start; neither has any

@@ -32,12 +32,16 @@
 #include <windows.h>
 #include <shellapi.h>
 #include <objbase.h>
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__APPLE__)
 #include <cerrno>
 #include <signal.h>
 #include <sys/types.h>
 #include <sys/wait.h>
 #include <unistd.h>
+#if defined(__APPLE__)
+#include <cstdlib>          // realpath
+#include <mach-o/dyld.h>   // _NSGetExecutablePath, for the relaunch
+#endif
 #endif
 
 #include "ultramodern/ultramodern.hpp"
@@ -62,7 +66,7 @@
 // diagnostic environment nor a schedule.
 extern "C" std::atomic<int32_t> snap_frame_dump_pending;
 extern "C" std::atomic<int32_t> snap_frame_dump_station;
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
 extern "C" void snap_log_before_exec();   // main.cpp
 #endif
 
@@ -340,7 +344,7 @@ void write_marker(const char* mode, const std::string& extra) {
     }
 #if defined(_WIN32)
     const unsigned long pid = GetCurrentProcessId();
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__APPLE__)
     const unsigned long pid = static_cast<unsigned long>(getpid());
 #else
     const unsigned long pid = 0;
@@ -400,18 +404,29 @@ bool relaunch_self(const char* why) {
     freopen_s(&sink, "NUL", "w", stderr);
     ultramodern::quit();
     return true;
-#elif defined(__linux__)
+#elif defined(__linux__) || defined(__APPLE__)
     // The same boot the Windows path starts: this executable, no arguments,
     // in the data directory, with the run's own diagnostics out of its
     // environment. /proc/self/exe is this process's image whatever argv[0]
-    // or the working directory say, an AppImage's inner binary included.
+    // or the working directory say, an AppImage's inner binary included; on
+    // macOS the image dyld loaded is asked for by name, which inside a
+    // bundle is Contents/MacOS/Snap64Recomp.
     char exe[4096];
+#if defined(__linux__)
     const ssize_t len = readlink("/proc/self/exe", exe, sizeof(exe) - 1);
     if (len <= 0) {
         say("could not find this executable's path; not relaunching (%s)", why);
         return false;
     }
     exe[len] = '\0';
+#else
+    char image[4096];
+    uint32_t imageLen = sizeof(image);
+    if ((_NSGetExecutablePath(image, &imageLen) != 0) || (realpath(image, exe) == nullptr)) {
+        say("could not find this executable's path; not relaunching (%s)", why);
+        return false;
+    }
+#endif
     for (const char* name : { "SNAP_REPLAY", "SNAP_RECORD", "SNAP_PCAP_AT", "SNAP_PCAP_EVERY",
                               "SNAP_PCAP_START", "SNAP_PCAP_BURST", "SNAP_PCAP_FX", "SNAP_PHOTO_AUTOEXPORT" }) {
         unsetenv(name);
@@ -503,11 +518,16 @@ void schedule_relaunch(const char* mode, const char* why, int delayMs, bool sett
     }).detach();
 }
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
 // The kiosk handed the player the sheet; the port opens its folder as the
 // normal boot after a print gets under way. xdg-open is the desktop's own
-// opener; in Steam's gaming mode there is no file manager to open and the
-// call fails quietly, so the log line carries the path.
+// opener (open, on macOS); in Steam's gaming mode there is no file manager
+// to open and the call fails quietly, so the log line carries the path.
+#if defined(__APPLE__)
+static const char* const kFolderOpener = "open";
+#else
+static const char* const kFolderOpener = "xdg-open";
+#endif
 void open_folder(const std::string& utf8) {
     std::error_code ec;
     if (!std::filesystem::is_directory(std::filesystem::path(utf8), ec)) {
@@ -516,7 +536,7 @@ void open_folder(const std::string& utf8) {
     const pid_t child = fork();
     if (child == 0) {
         if (fork() == 0) {
-            execlp("xdg-open", "xdg-open", utf8.c_str(), (char*)nullptr);
+            execlp(kFolderOpener, kFolderOpener, utf8.c_str(), (char*)nullptr);
             _exit(127);
         }
         _exit(0);
@@ -836,6 +856,16 @@ void run_printing_display(const std::vector<uint8_t>& grid, const std::filesyste
 }
 
 } // namespace
+
+// For the Mods page (menu_assets.cpp): its two action rows.
+void mods_open_folder(const std::string& utf8) {
+    open_folder(utf8);
+}
+
+void mods_restart_game() {
+    schedule_relaunch("restart", "the Mods page's Restart row", 300, false);
+}
+
 } // namespace snap
 
 namespace snap {
@@ -1123,7 +1153,7 @@ void on_message(uint8_t* rdram, Station& s, uint8_t msg) {
                     // The stickers are handed over by this process, before it
                     // goes: the folder opens whether or not the relaunch after
                     // it comes up.
-#if defined(_WIN32) || defined(__linux__)
+#if defined(_WIN32) || defined(__linux__) || defined(__APPLE__)
                     open_folder(sheet);
 #endif
                     say("display finished; relaunching into a normal boot");
@@ -1153,7 +1183,7 @@ bool present_now() {
     return s.jobPending.load() || s.everPresent.load();
 }
 
-#if defined(__linux__)
+#if defined(__linux__) || defined(__APPLE__)
 // The previous run is gone when a signal-less kill no longer finds it; a
 // pid that belongs to someone else's process is a marker from a past boot
 // and the 15-second cap covers that too.
@@ -1216,7 +1246,7 @@ void station_init() {
     std::string window;
     std::getline(in, window);  // "fullscreen" or "windowed": the run that relaunched
     in.close();
-#if defined(_WIN32) || defined(__linux__)
+#if defined(_WIN32) || defined(__linux__) || defined(__APPLE__)
     wait_for_process(pid);
 #endif
     const long long age = static_cast<long long>(std::time(nullptr)) - when;
@@ -1234,7 +1264,7 @@ void station_init() {
         // "restart", or a job too old to trust. The marker goes first, so
         // nothing that follows can leave it behind for the next boot.
         remove_marker();
-#if defined(_WIN32) || defined(__linux__)
+#if defined(_WIN32) || defined(__linux__) || defined(__APPLE__)
         if (mode == "restart" && !extra.empty()) {
             open_folder(extra);
         }

@@ -1,0 +1,1931 @@
+diff --git a/librecomp/CMakeLists.txt b/librecomp/CMakeLists.txt
+index 716d48b..e8bbf60 100644
+--- a/librecomp/CMakeLists.txt
++++ b/librecomp/CMakeLists.txt
+@@ -1,3 +1,4 @@
++# Pokemon Snap port: modified from upstream N64ModernRuntime; VENDORING.md lists the changes.
+ cmake_minimum_required(VERSION 3.20)
+ 
+ project(librecomp)
+@@ -50,11 +51,10 @@ target_include_directories(librecomp PRIVATE
+     "${CMAKE_CURRENT_SOURCE_DIR}/include/librecomp"
+ )
+ 
+-target_compile_options(librecomp PRIVATE
+-#    -Wall
+-#    -Wextra
+-    -Wno-unused-parameter
+-)
++if (NOT MSVC)
++    target_compile_options(librecomp PRIVATE -Wno-unused-parameter)
++endif()
++set_target_properties(librecomp PROPERTIES C_STANDARD 11)
+ 
+ if (WIN32)
+     add_compile_definitions(NOMINMAX)
+@@ -65,3 +65,6 @@ add_subdirectory(${PROJECT_SOURCE_DIR}/../N64Recomp ${CMAKE_CURRENT_BINARY_DIR}/
+ 
+ target_link_libraries(librecomp PRIVATE ultramodern N64Recomp LiveRecomp)
+ target_link_libraries(librecomp PUBLIC miniz)
++
++
++
+diff --git a/librecomp/include/librecomp/files.hpp b/librecomp/include/librecomp/files.hpp
+index 63e3e9d..ac9842f 100644
+--- a/librecomp/include/librecomp/files.hpp
++++ b/librecomp/include/librecomp/files.hpp
+@@ -1,14 +1,36 @@
++// Pokemon Snap port: this file is modified from upstream N64ModernRuntime; VENDORING.md lists the changes.
+ #ifndef __RECOMP_FILES_H__
+ #define __RECOMP_FILES_H__
+ 
+ #include <filesystem>
+ #include <fstream>
++#include <span>
+ 
+ namespace recomp {
++    // Opens filepath, or its backup when filepath cannot be opened. A filepath that exists but is
++    // incomplete opens fine and is returned as-is; fixed-size images should use read_file_with_backup.
+     std::ifstream open_input_file_with_backup(const std::filesystem::path& filepath, std::ios_base::openmode mode = std::ios_base::in);
+     std::ifstream open_input_backup_file(const std::filesystem::path& filepath, std::ios_base::openmode mode = std::ios_base::in);
++    // Fills contents from filepath when it is exactly contents.size() bytes and reads in full, otherwise
++    // from its backup under the same test, logging which file was used and why when it is not filepath.
++    // Returns false when neither is usable; contents is then unspecified. used_backup, when given, says
++    // whether the backup had to stand in, which tells the caller that what sits at filepath is not a
++    // usable image and must not be rotated into the backup by the next write.
++    bool read_file_with_backup(const std::filesystem::path& filepath, std::span<char> contents, bool* used_backup = nullptr);
++    // Opens filepath's temporary file for writing. Close the stream, then call
++    // finalize_output_file_with_backup to publish it.
+     std::ofstream open_output_file_with_backup(const std::filesystem::path& filepath, std::ios_base::openmode mode = std::ios_base::out);
++    // Publishes the temporary file: filepath is renamed to its backup and the temporary file is renamed
++    // to filepath, each atomically. The temporary file is not forced to disk first.
+     bool finalize_output_file_with_backup(const std::filesystem::path& filepath);
++    // Writes contents to filepath's temporary file, forces it to disk, then publishes it. A crash at any
++    // point leaves filepath and its backup each either absent or a whole copy of some contents that was
++    // passed in; neither ever holds a half-written file.
++    // rotate_backup says whether what is currently at filepath may become the new backup. Pass false when
++    // the caller does not know that file to be usable -- it was never read, or it was read and rejected --
++    // so that a bad copy cannot push the last good one out of the backup. The temporary file then replaces
++    // filepath by a single rename and the backup is left exactly as it is.
++    bool write_file_with_backup(const std::filesystem::path& filepath, std::span<const char> contents, bool rotate_backup = true);
+ };
+ 
+ #endif
+diff --git a/librecomp/src/files.cpp b/librecomp/src/files.cpp
+index af6f18d..2f6d9ef 100644
+--- a/librecomp/src/files.cpp
++++ b/librecomp/src/files.cpp
+@@ -1,8 +1,169 @@
++// Pokemon Snap port: this file is modified from upstream N64ModernRuntime; VENDORING.md lists the changes.
++#include <cstdio>
++#include <string>
++#include <system_error>
+ #include "files.hpp"
+ 
++#ifdef _WIN32
++#    define WIN32_LEAN_AND_MEAN
++#    include <Windows.h>
++#    define PATHFMT "%ls"
++#else
++#    include <cerrno>
++#    include <fcntl.h>
++#    include <unistd.h>
++#    define PATHFMT "%s"
++#endif
++
+ constexpr std::u8string_view backup_suffix = u8".bak";
+ constexpr std::u8string_view temp_suffix = u8".temp";
+ 
++static std::error_code last_error() {
++#ifdef _WIN32
++    return std::error_code{static_cast<int>(GetLastError()), std::system_category()};
++#else
++    return std::error_code{errno, std::generic_category()};
++#endif
++}
++
++// Reads exactly contents.size() bytes from path. Returns false, with why describing the problem,
++// when the file is missing, is not that size, cannot be opened, or reads short.
++static bool read_exact_file(const std::filesystem::path& path, std::span<char> contents, std::string& why) {
++    std::error_code ec;
++    const std::uintmax_t size = std::filesystem::file_size(path, ec);
++    if (ec) {
++        why = ec.message();
++        return false;
++    }
++    if (size != contents.size()) {
++        why = std::to_string(size) + " bytes, expected " + std::to_string(contents.size());
++        return false;
++    }
++    std::ifstream file{path, std::ios_base::binary};
++    if (!file.is_open()) {
++        why = "could not be opened";
++        return false;
++    }
++    if (!file.read(contents.data(), static_cast<std::streamsize>(contents.size()))) {
++        why = "read failed after " + std::to_string(file.gcount()) + " bytes";
++        return false;
++    }
++    return true;
++}
++
++// Creates path with contents and forces it to disk before closing, so the bytes are on the medium
++// before anything is renamed over them. Sets ec on failure.
++static bool write_file_to_disk(const std::filesystem::path& path, std::span<const char> contents, std::error_code& ec) {
++    ec.clear();
++#ifdef _WIN32
++    HANDLE file = CreateFileW(path.c_str(), GENERIC_WRITE, 0, nullptr, CREATE_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
++    if (file == INVALID_HANDLE_VALUE) {
++        ec = last_error();
++        return false;
++    }
++    // WriteFile counts in DWORDs; the loop keeps this correct for any size.
++    size_t offset = 0;
++    while (offset < contents.size()) {
++        const size_t remaining = contents.size() - offset;
++        const DWORD chunk = remaining < MAXDWORD ? static_cast<DWORD>(remaining) : MAXDWORD;
++        DWORD written = 0;
++        if (!WriteFile(file, contents.data() + offset, chunk, &written, nullptr)) {
++            ec = last_error();
++            break;
++        }
++        if (written == 0) {
++            // No progress and no error would spin forever; report it as an I/O error instead.
++            ec = std::make_error_code(std::errc::io_error);
++            break;
++        }
++        offset += written;
++    }
++    if (!ec && !FlushFileBuffers(file)) {
++        ec = last_error();
++    }
++    if (!CloseHandle(file) && !ec) {
++        ec = last_error();
++    }
++#else
++    int fd = ::open(path.c_str(), O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC, 0666);
++    if (fd < 0) {
++        ec = last_error();
++        return false;
++    }
++    size_t offset = 0;
++    while (offset < contents.size()) {
++        const ssize_t written = ::write(fd, contents.data() + offset, contents.size() - offset);
++        if (written < 0) {
++            if (errno == EINTR) {
++                continue;
++            }
++            ec = last_error();
++            break;
++        }
++        if (written == 0) {
++            // No progress and no error would spin forever; report it as an I/O error instead.
++            ec = std::make_error_code(std::errc::io_error);
++            break;
++        }
++        offset += static_cast<size_t>(written);
++    }
++    if (!ec && ::fsync(fd) != 0) {
++        ec = last_error();
++    }
++    if (::close(fd) != 0 && !ec) {
++        ec = last_error();
++    }
++#endif
++    return !ec;
++}
++
++// Renames from over to. On Windows std::filesystem::rename cannot ask for a write-through move, so
++// MoveFileExW is called directly: REPLACE_EXISTING swaps the name atomically and WRITE_THROUGH
++// makes the swap durable before returning. POSIX rename(2) is already atomic.
++static void rename_file(const std::filesystem::path& from, const std::filesystem::path& to, std::error_code& ec) {
++#ifdef _WIN32
++    if (MoveFileExW(from.c_str(), to.c_str(), MOVEFILE_REPLACE_EXISTING | MOVEFILE_WRITE_THROUGH)) {
++        ec.clear();
++    }
++    else {
++        ec = last_error();
++    }
++#else
++    std::filesystem::rename(from, to, ec);
++#endif
++}
++
++// Publishes filepath's temporary file: the current file becomes the backup and the temporary file
++// becomes the current file, each by one atomic rename, so every name on disk always refers to a
++// whole file. With rotate_backup clear the first rename is skipped: the temporary file replaces the
++// current file in place and the backup keeps whatever it already held. The caller asks for that when
++// the file being replaced is not known to be usable, so that rotating it cannot destroy the last
++// good copy.
++static bool publish_temp_file(const std::filesystem::path& filepath, bool rotate_backup) {
++    std::filesystem::path temp_path{filepath};
++    temp_path += temp_suffix;
++
++    std::error_code ec;
++    if (rotate_backup) {
++        std::filesystem::path backup_path{filepath};
++        backup_path += backup_suffix;
++
++        rename_file(filepath, backup_path, ec);
++        // No current file means this is the first publish, or the previous one stopped between its two
++        // renames. Either way the backup is left as it is and the new file simply takes the name.
++        if (ec && ec != std::errc::no_such_file_or_directory) {
++            fprintf(stderr, "[files] Failed to move " PATHFMT " to " PATHFMT ": %s\n", filepath.c_str(), backup_path.c_str(), ec.message().c_str());
++            return false;
++        }
++    }
++    rename_file(temp_path, filepath, ec);
++    if (ec) {
++        fprintf(stderr, "[files] Failed to move " PATHFMT " to " PATHFMT ": %s\n", temp_path.c_str(), filepath.c_str(), ec.message().c_str());
++        return false;
++    }
++    return true;
++}
++
+ std::ifstream recomp::open_input_backup_file(const std::filesystem::path& filepath, std::ios_base::openmode mode) {
+     std::filesystem::path backup_path{filepath};
+     backup_path += backup_suffix;
+@@ -20,6 +181,32 @@ std::ifstream recomp::open_input_file_with_backup(const std::filesystem::path& f
+     return ret;
+ }
+ 
++bool recomp::read_file_with_backup(const std::filesystem::path& filepath, std::span<char> contents, bool* used_backup) {
++    if (used_backup != nullptr) {
++        *used_backup = false;
++    }
++
++    std::string why;
++    if (read_exact_file(filepath, contents, why)) {
++        return true;
++    }
++
++    std::filesystem::path backup_path{filepath};
++    backup_path += backup_suffix;
++
++    std::string backup_why;
++    if (read_exact_file(backup_path, contents, backup_why)) {
++        if (used_backup != nullptr) {
++            *used_backup = true;
++        }
++        fprintf(stderr, "[files] " PATHFMT " unusable (%s); loaded backup " PATHFMT "\n", filepath.c_str(), why.c_str(), backup_path.c_str());
++        return true;
++    }
++
++    fprintf(stderr, "[files] No usable copy of " PATHFMT " (%s; backup: %s)\n", filepath.c_str(), why.c_str(), backup_why.c_str());
++    return false;
++}
++
+ std::ofstream recomp::open_output_file_with_backup(const std::filesystem::path& filepath, std::ios_base::openmode mode) {
+     std::filesystem::path temp_path{filepath};
+     temp_path += temp_suffix;
+@@ -29,23 +216,17 @@ std::ofstream recomp::open_output_file_with_backup(const std::filesystem::path&
+ }
+ 
+ bool recomp::finalize_output_file_with_backup(const std::filesystem::path& filepath) {
+-    std::filesystem::path backup_path{filepath};
+-    backup_path += backup_suffix;
++    return publish_temp_file(filepath, true);
++}
+ 
++bool recomp::write_file_with_backup(const std::filesystem::path& filepath, std::span<const char> contents, bool rotate_backup) {
+     std::filesystem::path temp_path{filepath};
+     temp_path += temp_suffix;
+ 
+     std::error_code ec;
+-    if (std::filesystem::exists(filepath, ec)) {
+-        std::filesystem::copy_file(filepath, backup_path, std::filesystem::copy_options::overwrite_existing, ec);
+-        if (ec) {
+-            return false;
+-        }
+-    }
+-    std::filesystem::copy_file(temp_path, filepath, std::filesystem::copy_options::overwrite_existing, ec);
+-    if (ec) {
++    if (!write_file_to_disk(temp_path, contents, ec)) {
++        fprintf(stderr, "[files] Failed to write " PATHFMT ": %s\n", temp_path.c_str(), ec.message().c_str());
+         return false;
+     }
+-    std::filesystem::remove(temp_path, ec);
+-    return true;
++    return publish_temp_file(filepath, rotate_backup);
+ }
+diff --git a/librecomp/src/mods.cpp b/librecomp/src/mods.cpp
+index 0f7de83..308ac78 100644
+--- a/librecomp/src/mods.cpp
++++ b/librecomp/src/mods.cpp
+@@ -1032,10 +1032,12 @@ void recomp::mods::ModContext::enable_mod(const std::string& mod_id, bool enable
+ 
+     bool mods_loaded = active_game != (size_t)-1;
+ 
+-    // Do nothing if mods have already been loaded and this mod isn't runtime toggleable.
+-    if (!mod.is_runtime_toggleable() && mods_loaded) {
+-        return;
+-    }
++    // Pokemon Snap port: a mod whose content cannot change while it is loaded
++    // (code, loaded before the game runs) takes the change for the next start
++    // instead of refusing it, below. Upstream returned here, which suits a
++    // launcher that toggles mods before the game starts; this port's Mods page
++    // is inside the game, and says the change applies at the next start.
++    bool deferred = !mod.is_runtime_toggleable() && mods_loaded;
+ 
+     // Do nothing if mods have already been loaded and this mod isn't for the active game.
+     if (mods_loaded && !mod.is_for_game(active_game)) {
+@@ -1047,6 +1049,23 @@ void recomp::mods::ModContext::enable_mod(const std::string& mod_id, bool enable
+         return;
+     }
+ 
++    if (deferred) {
++        // The set is what the save writes and the next load reads; nothing
++        // that is running reads it, and the loaded content is left as it is
++        // (no callbacks). The dependencies of what is enabled are worked out
++        // again by the next load from the saved list.
++        if (enabled) {
++            enabled_mods.emplace(mod_id);
++        }
++        else {
++            enabled_mods.erase(mod_id);
++        }
++        if (trigger_save) {
++            mod_configuration_thread_queue.enqueue(ModConfigQueueSave());
++        }
++        return;
++    }
++
+     if (enabled) {
+         bool was_enabled = enabled_mods.emplace(mod_id).second;
+ 
+diff --git a/librecomp/src/pi.cpp b/librecomp/src/pi.cpp
+index 43509ba..d006ec8 100644
+--- a/librecomp/src/pi.cpp
++++ b/librecomp/src/pi.cpp
+@@ -1,5 +1,7 @@
+ #include <memory>
+ #include <fstream>
++#include <atomic>
++#include <chrono>
+ #include <array>
+ #include <cstring>
+ #include <string>
+@@ -61,8 +63,18 @@ extern "C" void osCreatePiManager_recomp(uint8_t* rdram, recomp_context* ctx) {
+     ;
+ }
+ 
++// Pokemon Snap port: how long the game thread spent copying out of the ROM,
++// read and cleared once a tick by the slow-frame report. On the console this
++// was DMA the CPU did not wait on; here it is a memcpy the calling thread
++// performs, so it lands inside whatever frame asked for it.
++extern "C" {
++    std::atomic<int64_t> snap_rom_read_nanos{0};
++    std::atomic<uint64_t> snap_rom_read_bytes{0};
++    std::atomic<uint32_t> snap_rom_read_count{0};
++}
++
+ void recomp::do_rom_read(uint8_t* rdram, gpr ram_address, uint32_t physical_addr, size_t num_bytes) {
+-    // TODO use word copies when possible
++    const auto snapReadStart = std::chrono::steady_clock::now();
+ 
+     // TODO handle misaligned DMA
+     assert((physical_addr & 0x1) == 0 && "Only PI DMA from aligned ROM addresses is currently supported");
+@@ -72,6 +84,13 @@ void recomp::do_rom_read(uint8_t* rdram, gpr ram_address, uint32_t physical_addr
+         MEM_B(i, ram_address) = *rom_addr;
+         rom_addr++;
+     }
++
++    snap_rom_read_nanos.fetch_add(
++        std::chrono::duration_cast<std::chrono::nanoseconds>(
++            std::chrono::steady_clock::now() - snapReadStart).count(),
++        std::memory_order_relaxed);
++    snap_rom_read_bytes.fetch_add(num_bytes, std::memory_order_relaxed);
++    snap_rom_read_count.fetch_add(1, std::memory_order_relaxed);
+ }
+ 
+ void recomp::do_rom_pio(uint8_t* rdram, gpr ram_address, uint32_t physical_addr) {
+@@ -112,53 +131,157 @@ void set_save_file_path(const std::u8string& subfolder, const std::u8string& nam
+     save_context.save_file_path = save_folder_path / (name + u8".bin");
+ }
+ 
+-void update_save_file() {
+-    bool saving_failed = false;
+-    {
+-        std::ofstream save_file = recomp::open_output_file_with_backup(ultramodern::get_save_file_path(), std::ios_base::binary);
++// Cleared when a save exists on disk that could not be read. The buffer then holds zeros that are
++// not the player's data, and writing them back would destroy a save that is very likely still
++// intact, so no publish happens for the rest of the run.
++static std::atomic_bool save_writable{true};
+ 
+-        if (save_file.good()) {
+-            std::lock_guard lock{ save_context.save_buffer_mutex };
+-            save_file.write(save_context.save_buffer.data(), save_context.save_buffer.size());
+-        }
+-        else {
+-            saving_failed = true;
+-        }
++// Whether what currently sits at the save file's own name is known to be a whole record. Only such
++// a file may be rotated into the backup; rotating a partial or unread one would push the last good
++// copy out. Atomic because read_save_file sets it from a game thread when a mod swaps save files.
++static std::atomic_bool current_save_file_complete{true};
++
++// One dialog per run. The saving thread would otherwise raise one on every publish, and a folder
++// that cannot be written to fails for a reason that does not change between attempts.
++static bool reported_save_write_failure = false;
++
++// Copies the buffer out under the lock so the game's writes only wait for a memcpy, not for the
++// disk write and flush. rotate_backup says whether the file being replaced is known to be whole and
++// may therefore become the new backup.
++bool update_save_file(bool rotate_backup) {
++    // A save that could not be read at boot is still on disk. Never write over it.
++    if (!save_writable.load(std::memory_order_acquire)) {
++        return false;
+     }
+-    if (!saving_failed) {
+-        saving_failed = !recomp::finalize_output_file_with_backup(ultramodern::get_save_file_path());
++
++    std::vector<char> save_contents;
++    {
++        std::lock_guard lock{ save_context.save_buffer_mutex };
++        save_contents = save_context.save_buffer;
+     }
+-    if (saving_failed) {
+-        ultramodern::error_handling::message_box("Failed to write to the save file. Check your file permissions and whether the save folder has been moved to Dropbox or similar, as this can cause issues.");
++
++    if (!recomp::write_file_with_backup(ultramodern::get_save_file_path(), save_contents, rotate_backup)) {
++        if (!reported_save_write_failure) {
++            reported_save_write_failure = true;
++            ultramodern::error_handling::message_box("Failed to write to the save file. Check your file permissions and whether the save folder has been moved to Dropbox or similar, as this can cause issues.");
++        }
++        return false;
+     }
++
++    reported_save_write_failure = false;
++    return true;
+ }
+ 
+ extern std::atomic_bool exited;
+ 
++// Set by join_saving_thread to bring the saving thread down. This is deliberately not `exited`.
++// The game's threads are pooled host threads that are never joined, so when `exited` is set they
++// can still be part-way through writing a save; a saving thread that stopped there would drop the
++// whole thing. The thread instead waits for the writes to stop, with a bound so a wedged game
++// cannot hold the exit open.
++static std::atomic_bool saving_thread_stop{false};
++
+ void saving_thread_func(RDRAM_ARG1) {
+-    while (!exited) {
+-        bool save_buffer_updated = false;
+-        // Repeatedly wait for a new action to be sent.
+-        constexpr int64_t wait_time_microseconds = 10000;
+-        constexpr int max_actions = 128;
+-        int num_actions = 0;
+-
+-        // Wait up to the given timeout for a write to come in. Allow multiple writes to coalesce together into a single save.
+-        // Cap the number of coalesced writes to guarantee that the save buffer eventually gets written out to the file even if the game
+-        // is constantly sending writes.
+-        while (save_context.write_sempahore.wait(wait_time_microseconds) && num_actions < max_actions) {
+-            save_buffer_updated = true;
+-            num_actions++;
++    using clock = std::chrono::steady_clock;
++
++    // The game does not hand its save over in one piece. Pokemon Snap rewrites the image a 16 KB
++    // sector at a time -- one osFlashSectorErase and then 128 osFlashWriteArray pages per sector,
++    // across the eight sectors its 0x1F2A4-byte record spans (decomp func_800C09C0_5D860 and
++    // func_800C08DC_5D77C) -- which is over a thousand separate writes into the buffer for a full
++    // save. The record carries a checksum over the whole image, so a copy taken part-way through
++    // that run is not merely stale: it fails the game's own check and the save is thrown away. A
++    // publish therefore only ever happens once the writes have stopped for this long.
++    constexpr auto quiet_period = std::chrono::milliseconds(250);
++    // How long the exit waits for a save that is still in flight when the player quits.
++    constexpr auto shutdown_grace = std::chrono::seconds(3);
++    // A game that never pauses would never get a save to disk at all. Reaching this only produces a
++    // warning: nothing partial is published, because a stale save the game accepts is worth more
++    // than a fresh one it rejects.
++    constexpr auto stuck_warning_after = std::chrono::seconds(10);
++    // The longest the drain below may run before the checks after it get a turn.
++    constexpr auto drain_slice = std::chrono::milliseconds(250);
++    constexpr int64_t poll_microseconds = 10000;
++
++    bool pending = false;
++    bool stopping = false;
++    bool warned_stuck = false;
++    clock::time_point first_write{};
++    clock::time_point last_write{};
++    clock::time_point stop_deadline{};
++    clock::duration widest_gap{};
++
++    while (true) {
++        if (!stopping && saving_thread_stop.load(std::memory_order_acquire)) {
++            stopping = true;
++            stop_deadline = clock::now() + shutdown_grace;
+         }
+ 
+-        // If an action came through that affected the save file, save the updated contents.
+-        if (save_buffer_updated) {
+-            update_save_file();
++        // Take every write the game has queued. There is deliberately no cap on the *count*: cutting
++        // a burst short at a fixed number of writes is exactly what puts a half-written record on
++        // disk. Only wall-clock time bounds this, and only so the shutdown check keeps running.
++        const auto drain_start = clock::now();
++        while (save_context.write_sempahore.wait(poll_microseconds)) {
++            const auto now = clock::now();
++            if (!pending) {
++                first_write = now;
++                widest_gap = clock::duration::zero();
++                warned_stuck = false;
++            }
++            else if (now - last_write > widest_gap) {
++                widest_gap = now - last_write;
++            }
++            pending = true;
++            last_write = now;
++            // Hand control back to the checks below at least this often. Nothing is published by
++            // leaving here -- the quiet test still has to pass -- but a game that never stops
++            // writing would otherwise pin this thread and hold the exit open forever.
++            if (now - drain_start >= drain_slice) {
++                break;
++            }
++        }
++
++        const auto now = clock::now();
++
++        if (pending) {
++            if (now - last_write >= quiet_period) {
++                // The gap this burst went quiet on is the one thing that decides whether the image
++                // is whole. If the game's own pauses ever get close to the window, say so: the next
++                // run would publish in the middle of a record and nothing else would report it.
++                if (widest_gap >= quiet_period / 2) {
++                    fprintf(stderr, "[save] Warning: the game paused for %lld ms in the middle of a save burst, "
++                                    "close to the %lld ms window used to decide the record is finished.\n",
++                            (long long)std::chrono::duration_cast<std::chrono::milliseconds>(widest_gap).count(),
++                            (long long)std::chrono::duration_cast<std::chrono::milliseconds>(quiet_period).count());
++                }
++                if (update_save_file(current_save_file_complete.load(std::memory_order_acquire))) {
++                    // What was just written was written at a rest point, so it is whole and may
++                    // become the backup at the next publish.
++                    current_save_file_complete.store(true, std::memory_order_release);
++                }
++                pending = false;
++            }
++            else if (!warned_stuck && now - first_write >= stuck_warning_after) {
++                fprintf(stderr, "[save] The game has been writing to the save without a pause for %lld s; "
++                                "the last complete save on disk is being kept until it stops.\n",
++                        (long long)std::chrono::duration_cast<std::chrono::seconds>(now - first_write).count());
++                warned_stuck = true;
++            }
+         }
+ 
+         if (save_context.swap_file_pending_sempahore.tryWait()) {
+             save_context.swap_file_ready_sempahore.signal();
+         }
++
++        if (stopping) {
++            if (!pending) {
++                break;
++            }
++            if (now >= stop_deadline) {
++                fprintf(stderr, "[save] Quit while the game was still writing its save; that save was not finished "
++                                "and has not been written, so the last complete one on disk is untouched.\n");
++                break;
++            }
++        }
+     }
+ }
+ 
+@@ -227,17 +350,57 @@ void read_save_file() {
+     std::filesystem::path save_file_path = ultramodern::get_save_file_path();
+ 
+     // Ensure the save file directory exists.
+-    std::filesystem::create_directories(save_file_path.parent_path());
+-
+-    // Read the save file if it exists.
+-    std::ifstream save_file = recomp::open_input_file_with_backup(save_file_path, std::ios_base::binary);
+-    if (save_file.good()) {
+-        save_file.read(save_context.save_buffer.data(), save_context.save_buffer.size());
++    std::error_code ec;
++    std::filesystem::create_directories(save_file_path.parent_path(), ec);
++
++    // Read the save file, or its backup when the save file is missing or not a complete image.
++    bool used_backup = false;
++    if (recomp::read_file_with_backup(save_file_path, save_context.save_buffer, &used_backup)) {
++        // When the backup had to stand in, what is at the save's own name is something this build
++        // could not use. The first publish must replace it in place rather than rotate it over the
++        // backup that just supplied the player's data.
++        current_save_file_complete.store(!used_backup, std::memory_order_release);
++        save_writable.store(true, std::memory_order_release);
++        return;
+     }
+-    else {
+-        // Otherwise clear the save file to all zeroes.
+-        std::fill(save_context.save_buffer.begin(), save_context.save_buffer.end(), 0);
++
++    // Nothing readable. Two very different situations arrive here and they must not be treated the
++    // same way, because one of them still has the player's save sitting on the disk.
++    std::filesystem::path backup_path{save_file_path};
++    backup_path += u8".bak";
++    ec.clear();
++    const bool primary_exists = std::filesystem::exists(save_file_path, ec) && !ec;
++    ec.clear();
++    const bool backup_exists = std::filesystem::exists(backup_path, ec) && !ec;
++
++    std::fill(save_context.save_buffer.begin(), save_context.save_buffer.end(), 0);
++
++    if (primary_exists || backup_exists) {
++        // A save is there and could not be read: a lock held by antivirus or a cloud sync client, a
++        // permissions problem, a file something else truncated. These zeros did not come from the
++        // player, so nothing may be written back over what is still on disk. Saving is disarmed for
++        // this run and the player is told now, before they play, rather than after an hour of
++        // progress has been committed over the save they still have.
++        current_save_file_complete.store(false, std::memory_order_release);
++        save_writable.store(false, std::memory_order_release);
++
++        std::u8string path_u8 = save_file_path.u8string();
++        std::string message =
++            "Your save file is there but could not be read, so this session will not write to it.\n\n"
++            + std::string(reinterpret_cast<const char*>(path_u8.c_str())) + "\n\n"
++            "Nothing on disk has been changed. Close anything that may be holding the file open "
++            "(antivirus, OneDrive or Dropbox sync, a backup tool), or move the save folder out of a "
++            "synced directory, then start the game again.\n\n"
++            "If you play on, the game will act as though there is no save and none of this session's "
++            "progress will be kept.";
++        ultramodern::error_handling::message_box(message.c_str());
++        return;
+     }
++
++    // No save file and no backup: a first run. An all-zero buffer is the right starting state and
++    // there is nothing on disk to lose by writing it.
++    current_save_file_complete.store(true, std::memory_order_release);
++    save_writable.store(true, std::memory_order_release);
+ }
+ 
+ void ultramodern::init_saving(RDRAM_ARG1) {
+@@ -262,8 +425,15 @@ void ultramodern::change_save_file(const std::u8string& subfolder, const std::u8
+ 
+ void ultramodern::join_saving_thread() {
+     if (save_context.saving_thread.joinable()) {
++        // The thread stops on this rather than on `exited` so that a save the game is still writing
++        // when the player quits gets finished and written out. It waits for the writes to go quiet,
++        // then publishes once, then returns; shutdown_grace bounds how long that can take.
++        saving_thread_stop.store(true, std::memory_order_release);
+         save_context.saving_thread.join();
+     }
++    // Nothing is left to answer a swap request, so release anyone already waiting on one instead of
++    // leaving them blocked through the rest of the exit.
++    save_context.swap_file_ready_sempahore.signal();
+ }
+ 
+ void do_dma(RDRAM_ARG PTR(OSMesgQueue) mq, gpr rdram_address, uint32_t physical_addr, uint32_t size, uint32_t direction) {
+diff --git a/librecomp/src/recomp.cpp b/librecomp/src/recomp.cpp
+index 850689d..d209833 100644
+--- a/librecomp/src/recomp.cpp
++++ b/librecomp/src/recomp.cpp
+@@ -1,3 +1,4 @@
++// Pokemon Snap port: this file is modified from upstream N64ModernRuntime; VENDORING.md lists the changes.
+ #include <cstdio>
+ #include <cstdlib>
+ #include <cstring>
+@@ -194,16 +195,111 @@ bool write_file(const std::filesystem::path& path, const std::vector<uint8_t>& d
+     return true;
+ }
+ 
+-bool check_stored_rom(const recomp::GameEntry& game_entry) {
+-    std::vector stored_rom_data = read_file(config_path / game_entry.stored_filename());
++const std::array<uint8_t, 4> first_rom_bytes { 0x80, 0x37, 0x12, 0x40 };
+ 
+-    if (!check_hash(stored_rom_data, game_entry.rom_hash)) {
+-        // Incorrect hash, remove the stored ROM file if it exists.
+-        std::filesystem::remove(config_path / game_entry.stored_filename());
+-        return false;
++enum class ByteswapType {
++    NotByteswapped,
++    Byteswapped4,
++    Byteswapped2,
++    Invalid
++};
++
++ByteswapType check_rom_start(const std::vector<uint8_t>& rom_data) {
++    if (rom_data.size() < 4) {
++        return ByteswapType::Invalid;
+     }
+ 
+-    return true;
++    auto check_match = [&](uint8_t index0, uint8_t index1, uint8_t index2, uint8_t index3) {
++        return
++            rom_data[0] == first_rom_bytes[index0] &&
++            rom_data[1] == first_rom_bytes[index1] &&
++            rom_data[2] == first_rom_bytes[index2] &&
++            rom_data[3] == first_rom_bytes[index3];
++    };
++
++    // Check if the ROM is already in the correct byte order.
++    if (check_match(0,1,2,3)) {
++        return ByteswapType::NotByteswapped;
++    }
++
++    // Check if the ROM has been byteswapped in groups of 4 bytes.
++    if (check_match(3,2,1,0)) {
++        return ByteswapType::Byteswapped4;
++    }
++
++    // Check if the ROM has been byteswapped in groups of 2 bytes.
++    if (check_match(1,0,3,2)) {
++        return ByteswapType::Byteswapped2;
++    }
++
++    // No match found.
++    return ByteswapType::Invalid;
++}
++
++void byteswap_data(std::vector<uint8_t>& rom_data, size_t index_xor) {
++    for (size_t rom_pos = 0; rom_pos < rom_data.size(); rom_pos += 4) {
++        uint8_t temp0 = rom_data[rom_pos + 0];
++        uint8_t temp1 = rom_data[rom_pos + 1];
++        uint8_t temp2 = rom_data[rom_pos + 2];
++        uint8_t temp3 = rom_data[rom_pos + 3];
++
++        rom_data[rom_pos + (0 ^ index_xor)] = temp0;
++        rom_data[rom_pos + (1 ^ index_xor)] = temp1;
++        rom_data[rom_pos + (2 ^ index_xor)] = temp2;
++        rom_data[rom_pos + (3 ^ index_xor)] = temp3;
++    }
++}
++
++// Reads a ROM image into memory in the byte order the runtime uses (big-endian,
++// the .z64 order). Byteswapped (.v64) and little-endian (.n64) dumps are put in
++// that order in memory only; the file on disk is never written to.
++static recomp::RomValidationError read_rom_file(const std::filesystem::path& rom_path, std::vector<uint8_t>& rom_data) {
++    rom_data = read_file(rom_path);
++
++    if (rom_data.empty()) {
++        return recomp::RomValidationError::FailedToOpen;
++    }
++
++    // Pad the rom to the nearest multiple of 4 bytes.
++    rom_data.resize((rom_data.size() + 3) & ~3);
++
++    switch (check_rom_start(rom_data)) {
++        case ByteswapType::Invalid:
++            return recomp::RomValidationError::NotARom;
++        case ByteswapType::Byteswapped2:
++            byteswap_data(rom_data, 1);
++            break;
++        case ByteswapType::Byteswapped4:
++            byteswap_data(rom_data, 3);
++            break;
++        case ByteswapType::NotByteswapped:
++            break;
++    }
++
++    return recomp::RomValidationError::Good;
++}
++
++// Checks the ROM at config_path / stored_filename(). In this port that file is
++// the player's own dump, placed there by hand (select_rom, which would copy a
++// chosen file into that spot, has no caller), so it is only ever read: whatever
++// is wrong with it is reported by the caller, and the file is never removed or
++// rewritten. On IncorrectRom, actual_hash is the hash of the byte-order
++// normalized image so the report can show it next to the expected one.
++recomp::RomValidationError check_stored_rom(const recomp::GameEntry& game_entry, uint64_t& actual_hash) {
++    std::vector<uint8_t> stored_rom_data;
++    recomp::RomValidationError error = read_rom_file(config_path / game_entry.stored_filename(), stored_rom_data);
++
++    if (error != recomp::RomValidationError::Good) {
++        return error;
++    }
++
++    actual_hash = XXH3_64bits(stored_rom_data.data(), stored_rom_data.size());
++
++    if (actual_hash != game_entry.rom_hash) {
++        return recomp::RomValidationError::IncorrectRom;
++    }
++
++    return recomp::RomValidationError::Good;
+ }
+ 
+ static std::unordered_set<std::u8string> valid_game_roms;
+@@ -214,9 +310,60 @@ bool recomp::is_rom_valid(const std::u8string& game_id) {
+ 
+ void recomp::check_all_stored_roms() {
+     for (const auto& cur_rom_entry: game_roms) {
+-        if (check_stored_rom(cur_rom_entry.second)) {
++        const recomp::GameEntry& game_entry = cur_rom_entry.second;
++        std::filesystem::path rom_path = config_path / game_entry.stored_filename();
++        uint64_t actual_hash = 0;
++        recomp::RomValidationError error = check_stored_rom(game_entry, actual_hash);
++
++        if (error == recomp::RomValidationError::Good) {
+             valid_game_roms.insert(cur_rom_entry.first);
++            printf("[Recomp] ROM " PATHFMT ": ok (hash %016" PRIX64 ")\n", rom_path.c_str(), actual_hash);
++            continue;
++        }
++
++        // Name the exact failure. Missing, unreadable, not a ROM and wrong dump
++        // each call for a different fix, and a wrong dump is only diagnosable
++        // with both hashes in front of the player.
++        auto hex64 = [](uint64_t value) {
++            char buf[17];
++            snprintf(buf, sizeof(buf), "%016" PRIX64, value);
++            return std::string(buf);
++        };
++        std::string problem;
++        switch (error) {
++            case recomp::RomValidationError::FailedToOpen: {
++                std::error_code ec;
++                if (std::filesystem::exists(rom_path, ec)) {
++                    problem = "The file exists but could not be read.";
++                }
++                else {
++                    problem = "The file does not exist.";
++                }
++                break;
++            }
++            case recomp::RomValidationError::NotARom:
++                problem = "The file is not an N64 ROM: its first bytes match none of the .z64, .v64 or .n64 byte orders.";
++                break;
++            default:
++                problem = "The file is an N64 ROM, but not the expected one.\nExpected hash: " + hex64(game_entry.rom_hash) +
++                    "\nThis file's hash: " + hex64(actual_hash) + " (XXH3-64 of the image in big-endian byte order)";
++                break;
+         }
++
++        printf("[Recomp] ROM " PATHFMT ": %s\n", rom_path.c_str(), problem.c_str());
++        fflush(stdout);
++
++        // This is what the player sees; stdout is not visible on the launch
++        // path they use. The callback that draws the dialog is registered
++        // before this runs (see recomp::start).
++        std::u8string rom_path_u8 = rom_path.u8string();
++        std::ostringstream message;
++        message << "Could not load the ROM for " << game_entry.internal_name << ".\n\n"
++            << "Expected file:\n" << reinterpret_cast<const char*>(rom_path_u8.c_str()) << "\n\n"
++            << problem << "\n\n"
++            << "Big-endian (.z64), byteswapped (.v64) and little-endian (.n64) dumps are all accepted under that filename. "
++            << "Fix the file and start the game again.";
++        ultramodern::error_handling::message_box(message.str().c_str());
+     }
+ }
+ 
+@@ -227,11 +374,14 @@ bool recomp::load_stored_rom(const std::u8string& game_id) {
+         return false;
+     }
+     
+-    std::vector<uint8_t> stored_rom_data = read_file(config_path / find_it->second.stored_filename());
++    std::vector<uint8_t> stored_rom_data;
++    if (read_rom_file(config_path / find_it->second.stored_filename(), stored_rom_data) != recomp::RomValidationError::Good) {
++        return false;
++    }
+ 
++    // The file is the player's own; if it changed since check_all_stored_roms
++    // accepted it, the caller reports the failure and the file is left alone.
+     if (!check_hash(stored_rom_data, find_it->second.rom_hash)) {
+-        // The ROM no longer has the right hash, delete it.
+-        std::filesystem::remove(config_path / find_it->second.stored_filename());
+         return false;
+     }
+ 
+@@ -302,61 +452,6 @@ bool recomp::Version::from_string(const std::string& str, Version& out) {
+     return true;
+ }
+ 
+-const std::array<uint8_t, 4> first_rom_bytes { 0x80, 0x37, 0x12, 0x40 };
+-
+-enum class ByteswapType {
+-    NotByteswapped,
+-    Byteswapped4,
+-    Byteswapped2,
+-    Invalid
+-};
+-
+-ByteswapType check_rom_start(const std::vector<uint8_t>& rom_data) {
+-    if (rom_data.size() < 4) {
+-        return ByteswapType::Invalid;
+-    }
+-
+-    auto check_match = [&](uint8_t index0, uint8_t index1, uint8_t index2, uint8_t index3) {
+-        return
+-            rom_data[0] == first_rom_bytes[index0] &&
+-            rom_data[1] == first_rom_bytes[index1] &&
+-            rom_data[2] == first_rom_bytes[index2] &&
+-            rom_data[3] == first_rom_bytes[index3];
+-    };
+-
+-    // Check if the ROM is already in the correct byte order.
+-    if (check_match(0,1,2,3)) {
+-        return ByteswapType::NotByteswapped;
+-    }
+-
+-    // Check if the ROM has been byteswapped in groups of 4 bytes.
+-    if (check_match(3,2,1,0)) {
+-        return ByteswapType::Byteswapped4;
+-    }
+-
+-    // Check if the ROM has been byteswapped in groups of 2 bytes.
+-    if (check_match(1,0,3,2)) {
+-        return ByteswapType::Byteswapped2;
+-    }
+-
+-    // No match found.
+-    return ByteswapType::Invalid;
+-}
+-
+-void byteswap_data(std::vector<uint8_t>& rom_data, size_t index_xor) {
+-    for (size_t rom_pos = 0; rom_pos < rom_data.size(); rom_pos += 4) {
+-        uint8_t temp0 = rom_data[rom_pos + 0];
+-        uint8_t temp1 = rom_data[rom_pos + 1];
+-        uint8_t temp2 = rom_data[rom_pos + 2];
+-        uint8_t temp3 = rom_data[rom_pos + 3];
+-
+-        rom_data[rom_pos + (0 ^ index_xor)] = temp0;
+-        rom_data[rom_pos + (1 ^ index_xor)] = temp1;
+-        rom_data[rom_pos + (2 ^ index_xor)] = temp2;
+-        rom_data[rom_pos + (3 ^ index_xor)] = temp3;
+-    }
+-}
+-
+ recomp::RomValidationError recomp::select_rom(const std::filesystem::path& rom_path, const std::u8string& game_id) {
+     auto find_it = game_roms.find(game_id);
+ 
+@@ -366,28 +461,11 @@ recomp::RomValidationError recomp::select_rom(const std::filesystem::path& rom_p
+ 
+     const recomp::GameEntry& game_entry = find_it->second;
+ 
+-    std::vector<uint8_t> rom_data = read_file(rom_path);
+-
+-    if (rom_data.empty()) {
+-        return recomp::RomValidationError::FailedToOpen;
+-    }
+-
+-    // Pad the rom to the nearest multiple of 4 bytes.
+-    rom_data.resize((rom_data.size() + 3) & ~3);
+-
+-    ByteswapType byteswap_type = check_rom_start(rom_data);
++    std::vector<uint8_t> rom_data;
++    recomp::RomValidationError read_error = read_rom_file(rom_path, rom_data);
+ 
+-    switch (byteswap_type) {
+-        case ByteswapType::Invalid:
+-            return recomp::RomValidationError::NotARom;
+-        case ByteswapType::Byteswapped2:
+-            byteswap_data(rom_data, 1);
+-            break;
+-        case ByteswapType::Byteswapped4:
+-            byteswap_data(rom_data, 3);
+-            break;
+-        case ByteswapType::NotByteswapped:
+-            break;
++    if (read_error != recomp::RomValidationError::Good) {
++        return read_error;
+     }
+ 
+     if (!check_hash(rom_data, game_entry.rom_hash)) {
+@@ -496,7 +574,10 @@ void init(uint8_t* rdram, recomp_context* ctx, gpr entrypoint) {
+     recomp::overlays::init_overlays();
+ 
+     // Load overlays in the first 1MB
+-    load_overlays(0x1000, (int32_t)entrypoint, 1024 * 1024);
++    // Pokemon Snap: only .main (rom 0x1000, size 0x45270) is ROM-contiguous from
++    // the entrypoint. The rest of the 1MB window maps to different VRAMs and is
++    // registered by the dmaLoadOverlay hook in src/overlay_hook.cpp instead.
++    load_overlays(0x1000, (int32_t)entrypoint, 0x45270);
+ 
+     // Initial 1MB DMA (rom address 0x1000 = physical address 0x10001000)
+     recomp::do_rom_read(rdram, entrypoint, 0x10001000, 0x100000);
+@@ -897,8 +978,6 @@ void parse_cli(int argc, char **argv) {
+ void recomp::start(const recomp::Configuration& cfg) {
+     project_version = cfg.project_version;
+ 
+-    recomp::check_all_stored_roms();
+-
+     recomp::rsp::set_callbacks(cfg.rsp_callbacks);
+ 
+     static const ultramodern::rsp::callbacks_t ultramodern_rsp_callbacks {
+@@ -908,6 +987,9 @@ void recomp::start(const recomp::Configuration& cfg) {
+ 
+     ultramodern::set_callbacks(ultramodern_rsp_callbacks, cfg.renderer_callbacks, cfg.audio_callbacks, cfg.input_callbacks, cfg.gfx_callbacks, cfg.events_callbacks, cfg.error_handling_callbacks, cfg.threads_callbacks);
+ 
++    // After the callbacks so a failed check can reach the message_box callback.
++    recomp::check_all_stored_roms();
++
+     ultramodern::gfx_callbacks_t gfx_callbacks = cfg.gfx_callbacks;
+ 
+     ultramodern::gfx_callbacks_t::gfx_data_t gfx_data{};
+@@ -992,9 +1074,16 @@ void recomp::start(const recomp::Configuration& cfg) {
+     graphics_shutdown_ready.signal();
+ 
+     game_thread.join();
++    // The saving thread comes down before the event threads, not after. It
++    // waits for the game's write burst to go quiet so that a save is never
++    // published half-written, and join_event_threads takes down the VI and
++    // graphics threads -- the ones that deliver retrace messages to guest
++    // threads. Joined in the old order, that wait could be spent behind a
++    // guest thread blocked on a queue nothing was left alive to feed, so the
++    // grace expired and the save was dropped for want of a message.
++    ultramodern::join_saving_thread();
+     ultramodern::join_event_threads();
+     ultramodern::join_thread_cleaner_thread();
+-    ultramodern::join_saving_thread();
+     
+     // Free rdram.
+     bool free_failed;
+diff --git a/librecomp/src/rsp.cpp b/librecomp/src/rsp.cpp
+index 1cb3f6a..131e4aa 100644
+--- a/librecomp/src/rsp.cpp
++++ b/librecomp/src/rsp.cpp
+@@ -53,9 +53,14 @@ bool recomp::rsp::run_task(uint8_t* rdram, const OSTask* task) {
+ 
+     // Ensure that the ucode exited correctly
+     if (exit_reason != RspExitReason::Broke) {
+-        fprintf(stderr, "RSP ucode %" PRIu32 " exited unexpectedly. exit_reason: %i\n", task->t.type, static_cast<int>(exit_reason));
+-        assert(exit_reason == RspExitReason::Broke);
+-        return false;
++        // Pokemon Snap port: a malformed audio frame is dropped rather than
++        // fatal; log and carry on so boot can proceed.
++        static int rsp_fail_count = 0;
++        if (rsp_fail_count < 8) {
++            fprintf(stderr, "RSP ucode %" PRIu32 " exited unexpectedly (reason %i); dropping frame\n", task->t.type, static_cast<int>(exit_reason));
++            rsp_fail_count++;
++        }
++        return true;
+     }
+ 
+     return true;
+diff --git a/ultramodern/CMakeLists.txt b/ultramodern/CMakeLists.txt
+index 5593172..59acf58 100644
+--- a/ultramodern/CMakeLists.txt
++++ b/ultramodern/CMakeLists.txt
+@@ -1,3 +1,4 @@
++# Pokemon Snap port: modified from upstream N64ModernRuntime; VENDORING.md lists the changes.
+ cmake_minimum_required(VERSION 3.20)
+ 
+ project(ultramodern)
+@@ -30,12 +31,12 @@ target_include_directories(ultramodern PUBLIC
+     "${PROJECT_SOURCE_DIR}/../thirdparty/sse2neon"
+ )
+ 
+-target_compile_options(ultramodern PRIVATE
+-#    -Wall
+-#    -Wextra
+-    -Wno-unused-parameter
+-)
++if (NOT MSVC)
++    target_compile_options(ultramodern PRIVATE -Wno-unused-parameter)
++endif()
+ 
+ if (WIN32)
+     add_compile_definitions(NOMINMAX)
+ endif()
++
++
+diff --git a/ultramodern/include/ultramodern/input.hpp b/ultramodern/include/ultramodern/input.hpp
+index 1dab1b8..5bdcc3f 100644
+--- a/ultramodern/include/ultramodern/input.hpp
++++ b/ultramodern/include/ultramodern/input.hpp
+@@ -15,7 +15,11 @@ namespace ultramodern {
+         enum class Pak {
+             None,
+             RumblePak,
+-            // ControllerPak,
++            // Pokemon Snap port: a pak that is not a Rumble Pak, so that a
++            // port can report a pak present without the rumble path
++            // claiming it (src/snap_station.cpp puts the Snap Station on
++            // port 4 this way).
++            ControllerPak,
+             // TransferPak
+         };
+ 
+diff --git a/ultramodern/include/ultramodern/ultramodern.hpp b/ultramodern/include/ultramodern/ultramodern.hpp
+index 46aea61..afbf473 100644
+--- a/ultramodern/include/ultramodern/ultramodern.hpp
++++ b/ultramodern/include/ultramodern/ultramodern.hpp
+@@ -37,6 +37,9 @@ void init_saving(RDRAM_ARG1);
+ void init_events(RDRAM_ARG renderer::WindowHandle window_handle);
+ void init_timers(RDRAM_ARG1);
+ void init_thread_cleanup();
++// Pokemon Snap port: park this many pooled host threads ahead of demand,
++// so the first course's spawn bursts find workers already breathing.
++void prewarm_thread_pool(uint32_t count);
+ 
+ // Saving
+ void change_save_file(const std::u8string& subfolder, const std::u8string& name);
+@@ -102,6 +105,13 @@ bool is_game_thread();
+ void submit_rsp_task(RDRAM_ARG PTR(OSTask) task);
+ void send_si_message();
+ uint32_t get_speed_multiplier();
++// Pokemon Snap port: from the call on, the game's clocks (the counter,
++// osGetTime, the OS timers, the VI retraces) run at num/den times the wall
++// clock; 1/1 is the console's speed, 3/1 fast forward, 1/2 slow motion.
++// Any thread.
++void set_speed_ratio(uint32_t num, uint32_t den);
++void get_speed_ratio(uint32_t& num, uint32_t& den);
++void set_speed_multiplier(uint32_t multiplier);   // set_speed_ratio(multiplier, 1)
+ 
+ // Time
+ std::chrono::high_resolution_clock::time_point get_start();
+diff --git a/ultramodern/src/events.cpp b/ultramodern/src/events.cpp
+index 17d7a47..a2fc449 100644
+--- a/ultramodern/src/events.cpp
++++ b/ultramodern/src/events.cpp
+@@ -72,11 +72,13 @@ static struct {
+         void update_vi() {
+             ViState* next_state = get_next_state();
+             const OSViMode* next_mode = next_state->mode;
++            // Pokemon Snap port: the VI thread can tick before the game
++            // has chosen its first mode; there is nothing to show yet, and
++            // the registers and the state swap wait for the next tick.
++            // Found by appleforever11 on a macOS build (pull request #2).
+             if (next_mode == nullptr) {
+-                // Skip the update if the next mode hasn't been set yet.
+                 return;
+             }
+-
+             const OSViCommonRegs* common_regs = &next_mode->comRegs;
+             const OSViFieldRegs* field_regs = &next_mode->fldRegs[field];
+             PTR(void) framebuffer = osVirtualToPhysical(next_state->framebuffer);
+@@ -192,10 +194,30 @@ void vi_thread_func() {
+     using namespace std::chrono_literals;
+ 
+     int remaining_retraces = 1;
++    // Pokemon Snap port: the retrace schedule is anchored on the instant the
++    // speed ratio last changed (set_speed_ratio), not on the program's
++    // start, so a change moves the cadence from that instant on with no
++    // burst of retraces and no stall to catch the count up.
++    uint32_t vi_num = 1;
++    uint32_t vi_den = 1;
++    ultramodern::get_speed_ratio(vi_num, vi_den);
++    auto vi_origin = ultramodern::get_start();
++    uint64_t vi_origin_vis = 0;
+ 
+     while (!exited) {
++        {
++            uint32_t num_now = 1;
++            uint32_t den_now = 1;
++            ultramodern::get_speed_ratio(num_now, den_now);
++            if ((num_now != vi_num) || (den_now != vi_den)) {
++                vi_num = num_now;
++                vi_den = den_now;
++                vi_origin = std::chrono::high_resolution_clock::now();
++                vi_origin_vis = total_vis;
++            }
++        }
+         // Determine the next VI time (more accurate than adding 16ms each VI interrupt)
+-        auto next = ultramodern::get_start() + (total_vis * 1000000us) / (60 * ultramodern::get_speed_multiplier());
++        auto next = vi_origin + ((total_vis - vi_origin_vis) * 1000000us * vi_den) / (60 * vi_num);
+         //if (next > std::chrono::high_resolution_clock::now()) {
+         //    printf("Sleeping for %" PRIu64 " us to get from %" PRIu64 " us to %" PRIu64 " us \n",
+         //        (next - std::chrono::high_resolution_clock::now()) / 1us,
+@@ -210,9 +232,9 @@ void vi_thread_func() {
+             next = std::chrono::high_resolution_clock::now();
+         }
+         ultramodern::sleep_until(next);
+-        auto time_now = ultramodern::time_since_start();
++        auto time_now = std::chrono::high_resolution_clock::now() - vi_origin;
+         // Calculate how many VIs have passed
+-        uint64_t new_total_vis = (time_now * (60 * ultramodern::get_speed_multiplier()) / 1000ms) + 1;
++        uint64_t new_total_vis = vi_origin_vis + (time_now * (60 * vi_num) / (1000ms * vi_den)) + 1;
+         if (new_total_vis > total_vis + 1) {
+             //printf("Skipped % " PRId64 " frames in VI interupt thread!\n", new_total_vis - total_vis - 1);
+         }
+diff --git a/ultramodern/src/input.cpp b/ultramodern/src/input.cpp
+index 23228c7..2064b68 100644
+--- a/ultramodern/src/input.cpp
++++ b/ultramodern/src/input.cpp
+@@ -1,3 +1,4 @@
++// Pokemon Snap port: this file is modified from upstream N64ModernRuntime; VENDORING.md lists the changes.
+ #include <cassert>
+ #include <cmath>
+ 
+@@ -173,7 +174,13 @@ extern "C" void osContGetReadData(OSContPad *data) {
+         }
+ 
+         if (got_response) {
+-            convert_to_n64_range(x, y, data[controller].stick_x, data[controller].stick_y);
++            // Pokemon Snap port: the linear mapping the port's mouse, gyro and
++            // keyboard values are scaled for (src/input.cpp) and its replays
++            // were recorded against. Upstream's octagonal gate above
++            // (convert_to_n64_range) is left unused here; a physical stick's
++            // gate is the port's to apply, as a choice, in its own layer.
++            data[controller].stick_x = (int8_t)(127 * x);
++            data[controller].stick_y = (int8_t)(127 * y);
+ 
+             data[controller].button = buttons;
+             data[controller].err_no = 0;
+diff --git a/ultramodern/src/mesgqueue.cpp b/ultramodern/src/mesgqueue.cpp
+index 9944a02..45e1e87 100644
+--- a/ultramodern/src/mesgqueue.cpp
++++ b/ultramodern/src/mesgqueue.cpp
+@@ -1,5 +1,7 @@
+ #include <bitset>
+ #include <thread>
++#include <atomic>
++#include <chrono>
+ 
+ #include "blockingconcurrentqueue.h"
+ 
+@@ -11,6 +13,9 @@ struct QueuedMessage {
+     OSMesg mesg;
+     bool jam;
+     bool requeue_if_blocked;
++    // Pokemon Snap port: a retrace or an audio tick, the messages the VI
++    // thread posts on a clock. See dequeue_external_messages.
++    bool periodic;
+ };
+ 
+ static moodycamel::BlockingConcurrentQueue<QueuedMessage> external_messages {};
+@@ -28,11 +33,12 @@ void ultramodern::set_message_queue_control(const ultramodern::MessageQueueContr
+ }
+ 
+ void ultramodern::enqueue_external_message_src(PTR(OSMesgQueue) mq, OSMesg msg, bool jam, EventMessageSource src) {
+-    external_messages.enqueue({mq, msg, jam, requeue_enabled[static_cast<int>(src)]});
++    const bool periodic = (src == EventMessageSource::Vi) || (src == EventMessageSource::Ai);
++    external_messages.enqueue({mq, msg, jam, requeue_enabled[static_cast<int>(src)], periodic});
+ }
+ 
+ void ultramodern::enqueue_external_message(PTR(OSMesgQueue) mq, OSMesg msg, bool jam, bool requeue_if_blocked) {
+-    external_messages.enqueue({mq, msg, jam, requeue_if_blocked});
++    external_messages.enqueue({mq, msg, jam, requeue_if_blocked, false});
+ }
+ 
+ bool do_send(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, bool jam, bool block);
+@@ -41,6 +47,26 @@ void dequeue_external_messages(RDRAM_ARG1) {
+     QueuedMessage to_send;
+     std::vector<QueuedMessage> requeued_messages{};
+     while (external_messages.try_dequeue(to_send)) {
++        // Pokemon Snap port: a periodic message -- a retrace, an audio tick --
++        // never takes the last free slot of its queue. These pile up here
++        // while a game thread sits in host code (a controller driver's
++        // handshake, issue #7) and are all delivered at that thread's next OS
++        // call, ahead of whatever that call itself sends. The console never
++        // has more than one such interrupt pending, and its scheduler thread
++        // services each before the next, so no game queue is ever filled by
++        // them; filled here, the game's own non-blocking send that follows
++        // the drain fails -- scExecuteBlocking waits forever for the answer
++        // to a task that was never queued -- and the boot stops on a black
++        // window. The slot kept free is the least that keeps that send
++        // alive; the retraces dropped for it are the ones a full queue
++        // dropped anyway. Queues of one slot are left alone: there the rule
++        // would drop every message.
++        if (to_send.periodic) {
++            OSMesgQueue* mq = TO_PTR(OSMesgQueue, to_send.mq);
++            if ((mq->msgCount >= 2) && (mq->validCount + 1 >= mq->msgCount)) {
++                continue;
++            }
++        }
+         if (!do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false) && to_send.requeue_if_blocked) {
+             requeued_messages.push_back(to_send);
+         }
+@@ -50,9 +76,17 @@ void dequeue_external_messages(RDRAM_ARG1) {
+     }
+ }
+ 
++// Pokemon Snap port: the per-guest-thread run clock (threads.cpp) must not
++// bill these blocking host dequeues as running -- this is where the game
++// waits for vblank.
++extern "C" void snap_run_clock_pause();
++extern "C" void snap_run_clock_resume();
++
+ void ultramodern::wait_for_external_message(RDRAM_ARG1) {
+     QueuedMessage to_send;
++    snap_run_clock_pause();
+     external_messages.wait_dequeue(to_send);
++    snap_run_clock_resume();
+     if (!do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false) && to_send.requeue_if_blocked) {
+         external_messages.enqueue(to_send);
+     }
+@@ -60,7 +94,10 @@ void ultramodern::wait_for_external_message(RDRAM_ARG1) {
+ 
+ void ultramodern::wait_for_external_message_timed(RDRAM_ARG u32 millis) {
+     QueuedMessage to_send;
+-    if (external_messages.wait_dequeue_timed(to_send, std::chrono::milliseconds{millis})) {
++    snap_run_clock_pause();
++    const bool got = external_messages.wait_dequeue_timed(to_send, std::chrono::milliseconds{millis});
++    snap_run_clock_resume();
++    if (got) {
+         if (!do_send(PASS_RDRAM to_send.mq, to_send.mesg, to_send.jam, false) && to_send.requeue_if_blocked) {
+             external_messages.enqueue(to_send);
+         }
+@@ -175,7 +212,48 @@ extern "C" s32 osSendMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags)
+ 
+     // Try to send the message.
+     bool sent = do_send(PASS_RDRAM mq_, msg, jam, flags == OS_MESG_BLOCK);
+-    
++
++    // Pokemon Snap port: a message the game sent without blocking and the
++    // queue had no room for is gone, and the game never learns it. Some
++    // queues are meant to work that way -- one- and two-slot queues used as
++    // flags, where "full" means "already signalled" -- but the scheduler's
++    // task queue is not: the game sends every graphics task into it without
++    // blocking and then waits for the completion, so a drop there is a
++    // frozen picture with the music still playing (issue #7 at boot; the
++    // Volcano freeze at the shutter). Report the first two drops of each
++    // queue, for the first dozen queues, with enough to name queue and
++    // sender; the flag queues cost two lines each and nothing more.
++    if (!sent) {
++        static uint32_t seenQueues[12] = {};
++        static int seenDrops[12] = {};
++        static int seenCount = 0;
++        int slot = -1;
++        for (int i = 0; i < seenCount; i++) {
++            if (seenQueues[i] == (uint32_t)mq_) { slot = i; break; }
++        }
++        if ((slot < 0) && (seenCount < 12)) {
++            slot = seenCount++;
++            seenQueues[slot] = (uint32_t)mq_;
++        }
++        if ((slot >= 0) && (seenDrops[slot] < 2)) {
++            seenDrops[slot]++;
++            // A game thread always has a self here (the send from any other
++            // thread went to the external queue above); the check costs
++            // nothing and TO_PTR of a null offset is not null.
++            const PTR(OSThread) self = ultramodern::this_thread();
++            OSThread *t = (self != NULLPTR) ? TO_PTR(OSThread, self) : nullptr;
++            // A queue of one or two slots is a flag: full means already
++            // signalled, and the drop is the game's own design. Said so,
++            // since these two lines appear in every log.
++            printf("[SNAP-OS] osSendMesg dropped a message: queue 0x%08X full (%d of %d), msg 0x%08X, from thread %d (pri %d)%s%s\n",
++                   (uint32_t)mq_, (int)mq->validCount, (int)mq->msgCount, (uint32_t)msg,
++                   t ? (int)t->id : -1, t ? (int)t->priority : -1,
++                   (mq->msgCount <= 2) ? " -- a flag queue, expected" : "",
++                   (seenDrops[slot] == 2) ? " -- this queue's further drops not reported" : "");
++            fflush(stdout);
++        }
++    }
++
+     // Check the queue to see if this thread should swap execution to another.
+     ultramodern::check_running_queue(PASS_RDRAM1);
+ 
+@@ -204,6 +282,26 @@ extern "C" s32 osJamMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, OSMesg msg, s32 flags)
+     return sent ? 0 : -1;
+ }
+ 
++// Pokemon Snap port: time THIS game thread spent blocked waiting for a
++// message. Per-thread on purpose: several game threads are blocked at the
++// same time and their waits overlap in wall-clock, so a total across all of
++// them routinely exceeds the frame it is meant to describe. Only the thread
++// that owns the frame can say how much of that frame it spent waiting.
++static thread_local int64_t snap_tls_recv_nanos = 0;
++static thread_local uint32_t snap_tls_recv_count = 0;
++
++extern "C" int64_t snap_recv_block_take_nanos() {
++    const int64_t taken = snap_tls_recv_nanos;
++    snap_tls_recv_nanos = 0;
++    return taken;
++}
++
++extern "C" uint32_t snap_recv_block_take_count() {
++    const uint32_t taken = snap_tls_recv_count;
++    snap_tls_recv_count = 0;
++    return taken;
++}
++
+ extern "C" s32 osRecvMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, s32 flags) {
+     OSMesgQueue *mq = TO_PTR(OSMesgQueue, mq_);
+     
+@@ -212,8 +310,22 @@ extern "C" s32 osRecvMesg(RDRAM_ARG PTR(OSMesgQueue) mq_, PTR(OSMesg) msg_, s32
+     // Handle any messages that have been received from an external thread.
+     dequeue_external_messages(PASS_RDRAM1);
+ 
++    // Pokemon Snap port: a blocking receive is where a game thread waits --
++    // for the video retrace that paces the whole game, for the audio thread,
++    // for another process. Wall-clock spent here is the game being PACED, not
++    // the game being slow, and without separating the two a frame report
++    // cannot tell a heavy tick from a late signal.
++    const bool snapBlocking = (flags == OS_MESG_BLOCK);
++    const auto snapRecvStart = snapBlocking ? std::chrono::steady_clock::now() : std::chrono::steady_clock::time_point{};
++
+     // Try to receive a message.
+     bool received = do_recv(PASS_RDRAM mq_, msg_, flags == OS_MESG_BLOCK);
++
++    if (snapBlocking) {
++        snap_tls_recv_nanos += std::chrono::duration_cast<std::chrono::nanoseconds>(
++            std::chrono::steady_clock::now() - snapRecvStart).count();
++        snap_tls_recv_count++;
++    }
+     
+     // Check the queue to see if this thread should swap execution to another.
+     ultramodern::check_running_queue(PASS_RDRAM1);
+diff --git a/ultramodern/src/threads.cpp b/ultramodern/src/threads.cpp
+index 6e3ed18..754d558 100644
+--- a/ultramodern/src/threads.cpp
++++ b/ultramodern/src/threads.cpp
+@@ -2,6 +2,11 @@
+ #include <thread>
+ #include <cassert>
+ #include <string>
++#include <atomic>
++#include <chrono>
++#include <functional>
++#include <mutex>
++#include <vector>
+ 
+ #include "ultramodern/ultra64.h"
+ #include "ultramodern/ultramodern.hpp"
+@@ -9,6 +14,17 @@
+ 
+ #include "ultramodern/threads.hpp"
+ 
++// Pokemon Snap port: how long the game thread spent blocked inside
++// osCreateThread, read and cleared once a tick by the slow-frame report in
++// src/rt64_render_context.cpp. On the console this call was a struct fill
++// and a queue link; here it starts a real operating system thread and waits
++// for it to come up, and the game starts one per object that runs its own
++// process -- several at once whenever a course block is entered.
++extern "C" {
++    std::atomic<int64_t> snap_thread_create_nanos{0};
++    std::atomic<uint32_t> snap_thread_create_count{0};
++}
++
+ // Native APIs only used to set thread names for easier debugging
+ #ifdef _WIN32
+ #include <Windows.h>
+@@ -34,6 +50,13 @@ thread_local bool is_entrypoint_thread = false;
+ thread_local bool is_game_thread = false;
+ thread_local PTR(OSThread) thread_self = NULLPTR;
+ 
++// Pokemon Snap port: every guest thread created, for the stall report
++// (src/main.cpp, update_gfx): which thread is running, which are queued,
++// which wait on a message queue and on which. The structs live in RDRAM
++// for the life of the game; a thread that ended reads as stopped.
++static std::mutex snap_thread_registry_mutex;
++static std::vector<PTR(OSThread)> snap_thread_registry;
++
+ void ultramodern::set_entrypoint_thread() {
+     ::is_game_thread = true;
+     ::is_entrypoint_thread = true;
+@@ -150,8 +173,110 @@ void ultramodern::set_native_thread_name(const std::string& name) {
+ void ultramodern::set_native_thread_priority(ThreadPriority pri) {}
+ #endif
+ 
++// Pokemon Snap port: how long THIS thread spent handed off to another guest
++// thread, and how many times. On the console a context switch was a register
++// save and a queue link; here every guest thread is an operating system thread
++// and a switch is a semaphore handoff plus two trips through the OS scheduler.
++// This game runs a process per object, so a frame performs a great many. Taken
++// and reset by the slow-frame report.
++static thread_local int64_t snap_tls_switch_nanos = 0;
++static thread_local uint32_t snap_tls_switch_count = 0;
++
++extern "C" int64_t snap_switch_take_nanos() {
++    const int64_t taken = snap_tls_switch_nanos;
++    snap_tls_switch_nanos = 0;
++    return taken;
++}
++
++extern "C" uint32_t snap_switch_take_count() {
++    const uint32_t taken = snap_tls_switch_count;
++    snap_tls_switch_count = 0;
++    return taken;
++}
++
++// Pokemon Snap port: which guest thread the tick's time actually belongs to.
++// The slow-frame report meters the main thread's update and draw, but the
++// game runs a process per object on its own guest thread, and their work --
++// spawning, block loading, decompression -- lands in no meter. Every guest
++// thread passes through wait_for_resumed to run, so the span from one wake to
++// the next wait is exactly the time that thread held the (cooperative) CPU.
++// Buckets are keyed by guest entrypoint; the low bit tags a claimed slot so
++// the adopted main thread (entrypoint zero) still gets one. Blocking host
++// dequeues in wait_for_external_message pause the clock through the exported
++// pause/resume pair, so vblank idle is not billed as running.
++struct SnapRunBucket {
++    std::atomic<uint32_t> entry{0};
++    std::atomic<int64_t> nanos{0};
++    std::atomic<uint32_t> wakes{0};
++};
++static SnapRunBucket snap_run_buckets[48];
++static thread_local uint32_t snap_tls_entrypoint = 0;
++static thread_local std::chrono::steady_clock::time_point snap_tls_run_start{};
++
++static void snap_run_mark_stop(std::chrono::steady_clock::time_point now) {
++    if (snap_tls_run_start.time_since_epoch().count() == 0) {
++        return;
++    }
++    const int64_t ns = std::chrono::duration_cast<std::chrono::nanoseconds>(now - snap_tls_run_start).count();
++    snap_tls_run_start = {};
++    const uint32_t tag = snap_tls_entrypoint | 1u;
++    for (auto& bucket : snap_run_buckets) {
++        uint32_t e = bucket.entry.load(std::memory_order_relaxed);
++        if (e == 0) {
++            uint32_t expected = 0;
++            if (bucket.entry.compare_exchange_strong(expected, tag, std::memory_order_relaxed)) {
++                e = tag;
++            }
++            else {
++                e = expected;
++            }
++        }
++        if (e != tag) {
++            continue;
++        }
++        bucket.nanos.fetch_add(ns, std::memory_order_relaxed);
++        bucket.wakes.fetch_add(1, std::memory_order_relaxed);
++        return;
++    }
++}
++
++static void snap_run_mark_start(std::chrono::steady_clock::time_point now) {
++    snap_tls_run_start = now;
++}
++
++extern "C" void snap_run_clock_pause() {
++    snap_run_mark_stop(std::chrono::steady_clock::now());
++}
++
++extern "C" void snap_run_clock_resume() {
++    snap_run_mark_start(std::chrono::steady_clock::now());
++}
++
++extern "C" uint32_t snap_run_table_take(uint32_t* entries, int64_t* nanos, uint32_t* wakes, uint32_t cap) {
++    uint32_t written = 0;
++    for (auto& bucket : snap_run_buckets) {
++        const uint32_t e = bucket.entry.exchange(0, std::memory_order_relaxed);
++        const int64_t ns = bucket.nanos.exchange(0, std::memory_order_relaxed);
++        const uint32_t w = bucket.wakes.exchange(0, std::memory_order_relaxed);
++        if (e != 0 && written < cap) {
++            entries[written] = e & ~1u;
++            nanos[written] = ns;
++            wakes[written] = w;
++            written++;
++        }
++    }
++    return written;
++}
++
+ void wait_for_resumed(RDRAM_ARG UltraThreadContext* thread_context) {
++    const auto snapSwitchStart = std::chrono::steady_clock::now();
++    snap_run_mark_stop(snapSwitchStart);
+     thread_context->running.wait();
++    const auto snapSwitchEnd = std::chrono::steady_clock::now();
++    snap_tls_switch_nanos += std::chrono::duration_cast<std::chrono::nanoseconds>(
++        snapSwitchEnd - snapSwitchStart).count();
++    snap_tls_switch_count++;
++    snap_run_mark_start(snapSwitchEnd);
+     // If this thread's context was replaced by another thread or deleted, destroy it again from its own context.
+     // This will trigger thread cleanup instead.
+     if (TO_PTR(OSThread, ultramodern::this_thread())->context != thread_context) {
+@@ -191,14 +316,28 @@ static void _thread_func(RDRAM_ARG PTR(OSThread) self_, PTR(thread_func_t) entry
+     debug_printf("[Thread] Thread created: %d\n", self->id);
+     thread_self = self_;
+     is_game_thread = true;
++    // Attribute this guest thread's running time to its entrypoint. Cleared
++    // start so a pooled worker's park time is never billed to the coroutine
++    // it picks up next.
++    snap_tls_entrypoint = (uint32_t)entrypoint;
++    snap_tls_run_start = {};
++
++    // Signal the initialized semaphore to indicate that this thread can be started.
++    //
++    // Signalled before the thread is named and prioritised, not after. The
++    // creating thread is blocked on this semaphore, so everything ahead of it
++    // is charged to whoever called osCreateThread -- and this game creates a
++    // process per object, so entering a course block calls it a dozen times in
++    // one frame. Naming builds a wide string and calls into the debugger
++    // interface; both are the new thread's own business and nothing observes
++    // them. The thread still cannot run until osStartThread, so moving them
++    // after the signal changes no ordering the guest can see.
++    thread_context->initialized.signal();
+ 
+     // Set the thread name
+     ultramodern::set_native_thread_name(ultramodern::threads::get_game_thread_name(self));
+     ultramodern::set_native_thread_priority(ultramodern::ThreadPriority::High);
+ 
+-    // Signal the initialized semaphore to indicate that this thread can be started.
+-    thread_context->initialized.signal();
+-
+     debug_printf("[Thread] Thread waiting to be started: %d\n", self->id);
+ 
+     // Wait until the thread is marked as running.
+@@ -227,10 +366,109 @@ static void _thread_func(RDRAM_ARG PTR(OSThread) self_, PTR(thread_func_t) entry
+         run_next_thread(PASS_RDRAM1);
+     }
+ 
++    // Close this coroutine's final running leg (wake to return) before the
++    // worker parks, so the time is charged to the thread that spent it.
++    snap_run_mark_stop(std::chrono::steady_clock::now());
++
+     // Dispose of this thread now that it's completed or terminated.
+     ultramodern::cleanup_thread(thread_context);
+ }
+ 
++// Pokemon Snap port: a pool of parked host threads for the game's
++// coroutines. This game creates an OS thread per object process, and a
++// course block boundary creates a dozen in one tick; a real host thread
++// birth plus its initialization handshake measured ~3ms apiece, which put
++// 37ms of thread creation inside single game ticks -- the largest single
++// component of the block-crossing stutter. A parked worker turns the same
++// handshake into a semaphore wake. Workers are detached and live for the
++// process: a parked thread costs a stack, and destroying one buys nothing.
++struct PooledHostThread {
++    moodycamel::LightweightSemaphore taskReady;
++    std::function<void()> task;
++    std::thread thread;
++};
++static std::mutex pool_mutex;
++static std::vector<PooledHostThread*> pool_parked;
++// Course coroutines hold their workers for as long as the object lives, and
++// a block crossing spawns the new block's objects before the old block's
++// despawns return theirs -- so the parked supply can run dry mid-course (a
++// later crossing measured 22 synchronous creates in one tick, 36ms). The
++// replenisher keeps a float of parked workers topped up from its own thread:
++// every take pokes it, and creation cost lands here instead of on a game
++// thread. The synchronous path below remains only as a fallback for a burst
++// deeper than the float.
++static constexpr size_t pool_float_target = 32;
++static moodycamel::LightweightSemaphore pool_replenish_wake;
++
++static void _pooled_thread_main(PooledHostThread* self) {
++    while (true) {
++        self->taskReady.wait();
++        self->task();
++        std::lock_guard<std::mutex> lock(pool_mutex);
++        pool_parked.push_back(self);
++    }
++}
++
++static PooledHostThread* pool_make_worker() {
++    PooledHostThread* worker = new PooledHostThread();
++    worker->thread = std::thread{_pooled_thread_main, worker};
++    worker->thread.detach();
++    return worker;
++}
++
++static void _pool_replenisher_main() {
++    ultramodern::set_native_thread_name("Pool Replenisher");
++    while (true) {
++        pool_replenish_wake.wait();
++        while (true) {
++            {
++                std::lock_guard<std::mutex> lock(pool_mutex);
++                if (pool_parked.size() >= pool_float_target) {
++                    break;
++                }
++            }
++            PooledHostThread* worker = pool_make_worker();
++            std::lock_guard<std::mutex> lock(pool_mutex);
++            pool_parked.push_back(worker);
++        }
++    }
++}
++
++static PooledHostThread* pool_take_or_create() {
++    PooledHostThread* worker = nullptr;
++    {
++        std::lock_guard<std::mutex> lock(pool_mutex);
++        if (!pool_parked.empty()) {
++            worker = pool_parked.back();
++            pool_parked.pop_back();
++        }
++    }
++    pool_replenish_wake.signal();
++    if (worker != nullptr) {
++        return worker;
++    }
++    return pool_make_worker();
++}
++
++void ultramodern::prewarm_thread_pool(uint32_t count) {
++    // Detached like the workers: it parks in a semaphore wait for the life of
++    // the process, and a joinable static thread would terminate() at exit.
++    static const bool replenisher_started = [] {
++        std::thread{_pool_replenisher_main}.detach();
++        return true;
++    }();
++    (void)replenisher_started;
++    std::vector<PooledHostThread*> made;
++    made.reserve(count);
++    for (uint32_t i = 0; i < count; i++) {
++        made.push_back(pool_make_worker());
++    }
++    std::lock_guard<std::mutex> lock(pool_mutex);
++    for (PooledHostThread* worker : made) {
++        pool_parked.push_back(worker);
++    }
++}
++
+ extern "C" void osStartThread(RDRAM_ARG PTR(OSThread) t_) {
+     OSThread* t = TO_PTR(OSThread, t_);
+     debug_printf("[os] Start Thread %d\n", t->id);
+@@ -250,6 +488,7 @@ extern "C" void osStartThread(RDRAM_ARG PTR(OSThread) t_) {
+ 
+ extern "C" void osCreateThread(RDRAM_ARG PTR(OSThread) t_, OSId id, PTR(thread_func_t) entrypoint, PTR(void) arg, PTR(void) sp, OSPri pri) {
+     debug_printf("[os] Create Thread %d\n", id);
++    const auto snapCreateStart = std::chrono::steady_clock::now();
+     OSThread *t = TO_PTR(OSThread, t_);
+     
+     t->next = NULLPTR;
+@@ -259,15 +498,75 @@ extern "C" void osCreateThread(RDRAM_ARG PTR(OSThread) t_, OSId id, PTR(thread_f
+     t->state = OSThreadState::STOPPED;
+     t->sp = sp - 0x10; // Set up the first stack frame
+ 
+-    // Spawn a new thread, which will immediately pause itself and wait until it's been started.
+-    // Pass the context as an argument to the thread function to ensure that it can't get cleared before the thread captures its value.
++    {
++        std::lock_guard<std::mutex> lock(snap_thread_registry_mutex);
++        bool known = false;
++        for (PTR(OSThread) seen : snap_thread_registry) {
++            known = known || (seen == t_);
++        }
++        if (!known) {
++            snap_thread_registry.push_back(t_);
++        }
++    }
++
++    // Hand the thread body to a parked pool worker instead of birthing a
++    // host thread: the handshake below used to include a real thread
++    // creation and measured ~3ms; a semaphore wake is microseconds. The
++    // context's host_thread member stays default-constructed -- pooled
++    // workers are never owned by a context and never joined.
+     UltraThreadContext* context = new UltraThreadContext{};
+     t->context = context;
+-    context->host_thread = std::thread{_thread_func, PASS_RDRAM t_, entrypoint, arg, t->context};
++    PooledHostThread* worker = pool_take_or_create();
++    worker->task = [=]() {
++        _thread_func(PASS_RDRAM t_, entrypoint, arg, context);
++    };
++    worker->taskReady.signal();
+ 
+     // Wait until the thread is initialized to indicate that it's ready to be started.
+     context->initialized.wait();
+     debug_printf("[os] Thread %d is ready to be started\n", t->id);
++
++    snap_thread_create_nanos.fetch_add(
++        std::chrono::duration_cast<std::chrono::nanoseconds>(
++            std::chrono::steady_clock::now() - snapCreateStart).count(),
++        std::memory_order_relaxed);
++    snap_thread_create_count.fetch_add(1, std::memory_order_relaxed);
++}
++
++// Pokemon Snap port: one line per guest thread, for the stall report. The
++// structs are read as they are, without the scheduler's locks: the report
++// runs when the game has stopped, and a lock a stuck thread holds would
++// stop the reporter too. A message queue's list of threads blocked on
++// receiving is at the queue's own address, the list blocked on sending
++// four bytes in (OSMesgQueue, ultra64.h), which is how a queue is named.
++extern "C" void snap_dump_game_threads(uint8_t* rdram) {
++    std::vector<PTR(OSThread)> threads;
++    {
++        std::lock_guard<std::mutex> lock(snap_thread_registry_mutex);
++        threads = snap_thread_registry;
++    }
++    for (PTR(OSThread) t_ : threads) {
++        const OSThread* t = TO_PTR(OSThread, t_);
++        const char* state = "in an unknown state";
++        switch (t->state) {
++            case OSThreadState::STOPPED: state = "stopped"; break;
++            case OSThreadState::QUEUED: state = "queued to run"; break;
++            case OSThreadState::RUNNING: state = "running"; break;
++            case OSThreadState::BLOCKED: state = "blocked"; break;
++        }
++        if (t->queue == ultramodern::running_queue) {
++            printf("[SNAP-HANG]   thread %d (pri %d) %s, in the running queue\n", (int)t->id, (int)t->priority, state);
++        }
++        else if (t->queue != NULLPTR) {
++            const uint32_t list = (uint32_t)t->queue;
++            printf("[SNAP-HANG]   thread %d (pri %d) %s on message queue 0x%08X (%s)\n", (int)t->id, (int)t->priority, state,
++                   list & ~7u, ((list & 7u) == 4u) ? "send" : "receive");
++        }
++        else {
++            printf("[SNAP-HANG]   thread %d (pri %d) %s\n", (int)t->id, (int)t->priority, state);
++        }
++    }
++    fflush(stdout);
+ }
+ 
+ extern "C" void osStopThread(RDRAM_ARG PTR(OSThread) t_) {
+@@ -352,7 +651,11 @@ void thread_cleaner_func() {
+         if (deleted_threads.wait_dequeue_timed(to_delete, 10ms)) {
+             debug_printf("[Cleanup] Deleting thread context %p\n", to_delete);
+ 
+-            to_delete->host_thread.join();
++            // Pooled contexts never own a host thread; joining a default
++            // std::thread throws.
++            if (to_delete->host_thread.joinable()) {
++                to_delete->host_thread.join();
++            }
+             delete to_delete;
+         }
+     }
+@@ -360,6 +663,9 @@ void thread_cleaner_func() {
+ 
+ void ultramodern::init_thread_cleanup() {
+     thread_cleaner_thread = std::thread{thread_cleaner_func};
++    // The game creates a dozen coroutine threads at every course block
++    // boundary; have that many workers parked before it ever asks.
++    ultramodern::prewarm_thread_pool(48);
+ }
+ 
+ void ultramodern::cleanup_thread(UltraThreadContext *cur_context) {
+diff --git a/ultramodern/src/timer.cpp b/ultramodern/src/timer.cpp
+index ee26c45..9039b1b 100644
+--- a/ultramodern/src/timer.cpp
++++ b/ultramodern/src/timer.cpp
+@@ -1,3 +1,5 @@
++// Pokemon Snap port: this file is modified from upstream N64ModernRuntime; VENDORING.md lists the changes.
++#include <mutex>
+ #include <thread>
+ #include <variant>
+ #include <set>
+@@ -15,10 +17,21 @@
+ static std::chrono::high_resolution_clock::time_point start_time = std::chrono::high_resolution_clock::now();
+ // Offset of the duration since program start used to calculate the value for osGetTime. 
+ static int64_t ostime_offset = 0;
+-// Game speed multiplier (1 means no speedup)
+-constexpr uint32_t speed_multiplier = 1;
+-// N64 CPU counter ticks per millisecond
+-constexpr uint32_t counter_per_ms = 46'875 * speed_multiplier;
++// N64 CPU counter ticks per millisecond, at the console's own speed.
++constexpr uint32_t counter_per_ms = 46'875;
++// Game speed, as a ratio of the console's (1/1 means no change). Pokemon Snap
++// port: set while the program runs (set_speed_ratio, held by the player's
++// fast-forward or slow-motion key: 3/1, 1/2), so every clock the game can
++// read -- this counter, osGetTime, the OS timers and the VI retraces in
++// events.cpp -- runs at that ratio of the wall clock. The game sees a faster
++// or slower console and nothing else. The counter is piecewise linear: a
++// change rebases it on the instant of the change, so it never jumps and
++// never runs backwards.
++static std::mutex clock_mutex;
++static uint32_t speed_num = 1;
++static uint32_t speed_den = 1;
++static uint64_t clock_base_ticks = 0;                                               // the counter at the last change
++static std::chrono::high_resolution_clock::time_point clock_base_time = start_time; // the instant of the last change
+ 
+ struct OSTimer {
+     PTR(OSTimer) unused1;
+@@ -44,26 +57,36 @@ struct {
+     moodycamel::BlockingConcurrentQueue<Action> action_queue{};
+ } timer_context;
+ 
+-uint64_t duration_to_ticks(std::chrono::high_resolution_clock::duration duration) {
++// Counts at num/den times the console's rate over a wall-clock span.
++uint64_t duration_to_ticks(std::chrono::high_resolution_clock::duration duration, uint32_t num, uint32_t den) {
+     uint64_t delta_micros = std::chrono::duration_cast<std::chrono::microseconds>(duration).count();
+     // More accurate than using a floating point timer, will only overflow after running for 12.47 years
++    // (at 1x; the counter is rebased at every speed change, so a span here is one speed's)
+     // Units: (micros * (counts/millis)) / (micros/millis) = counts
+-    uint64_t total_count = (delta_micros * counter_per_ms) / 1000;
++    uint64_t total_count = (delta_micros * counter_per_ms * num) / (1000 * den);
+ 
+     return total_count;
+ }
+ 
+-std::chrono::microseconds ticks_to_duration(uint64_t ticks) {
++std::chrono::microseconds ticks_to_duration(uint64_t ticks, uint32_t num, uint32_t den) {
+     using namespace std::chrono_literals;
+-    return ticks * 1000us / counter_per_ms;
++    return ticks * 1000us * den / (counter_per_ms * num);
+ }
+ 
++// The wall-clock instant a counter value falls on, at the speed in force. A
++// timer set before a speed change is not recomputed: it fires where the old
++// speed put it, at most one of its own periods off.
+ std::chrono::high_resolution_clock::time_point ticks_to_timepoint(uint64_t ticks) {
+-    return start_time + ticks_to_duration(ticks);
++    std::lock_guard lock{ clock_mutex };
++    if (ticks < clock_base_ticks) {
++        return clock_base_time - ticks_to_duration(clock_base_ticks - ticks, speed_num, speed_den);
++    }
++    return clock_base_time + ticks_to_duration(ticks - clock_base_ticks, speed_num, speed_den);
+ }
+ 
+ uint64_t time_now() {
+-    return duration_to_ticks(std::chrono::high_resolution_clock::now() - start_time);
++    std::lock_guard lock{ clock_mutex };
++    return clock_base_ticks + duration_to_ticks(std::chrono::high_resolution_clock::now() - clock_base_time, speed_num, speed_den);
+ }
+ 
+ void timer_thread(RDRAM_ARG1) {
+@@ -146,7 +169,38 @@ void ultramodern::init_timers(RDRAM_ARG1) {
+ }
+ 
+ uint32_t ultramodern::get_speed_multiplier() {
+-    return speed_multiplier;
++    std::lock_guard lock{ clock_mutex };
++    return (speed_den == 1) ? speed_num : 1;
++}
++
++void ultramodern::get_speed_ratio(uint32_t& num, uint32_t& den) {
++    std::lock_guard lock{ clock_mutex };
++    num = speed_num;
++    den = speed_den;
++}
++
++void ultramodern::set_speed_ratio(uint32_t num, uint32_t den) {
++    if (num == 0) {
++        num = 1;
++    }
++    if (den == 0) {
++        den = 1;
++    }
++    std::lock_guard lock{ clock_mutex };
++    if ((num == speed_num) && (den == speed_den)) {
++        return;
++    }
++    // Rebase: the counter keeps its value at this instant and runs at the
++    // new rate from here on.
++    const auto now = std::chrono::high_resolution_clock::now();
++    clock_base_ticks += duration_to_ticks(now - clock_base_time, speed_num, speed_den);
++    clock_base_time = now;
++    speed_num = num;
++    speed_den = den;
++}
++
++void ultramodern::set_speed_multiplier(uint32_t multiplier) {
++    set_speed_ratio(multiplier, 1);
+ }
+ 
+ std::chrono::high_resolution_clock::time_point ultramodern::get_start() {

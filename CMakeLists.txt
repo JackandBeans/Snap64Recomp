@@ -1,5 +1,15 @@
 ﻿cmake_minimum_required(VERSION 3.20)
-project(Snap64Recomp VERSION 1.0.8 LANGUAGES C CXX)
+# The oldest macOS a build runs on. CMake reads it at project(), so it is set
+# before; every other platform ignores it. 14.0 is what the community's Apple
+# Silicon build was proved on; -DCMAKE_OSX_DEPLOYMENT_TARGET on the command
+# line wins over this.
+set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "The oldest macOS the build runs on")
+project(Snap64Recomp VERSION 1.0.9 LANGUAGES C CXX)
+if (APPLE)
+    # Objective-C for RT64's Apple sources and SDL's Cocoa back end; the
+    # port's own sources stay C++ (main.cpp takes the Metal layer through SDL).
+    enable_language(OBJC OBJCXX)
+endif()
 
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -49,14 +59,30 @@ message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 # =============================================================================
 # Find dependencies
 # =============================================================================
-if (WIN32)
+# SDL2: built from the vendored tree on Windows and macOS, the system's on
+# Linux. SNAP_SDL_TARGET is what the port links; rt64 links SDL2_LIBRARIES.
+if (WIN32 OR APPLE)
     set(SDL_TEST OFF CACHE BOOL "" FORCE)
     set(SDL2_DISABLE_INSTALL ON CACHE BOOL "" FORCE)
+    if (APPLE)
+        # Static, inside the executable: the application bundle then carries
+        # no dylib of its own to re-path or sign, and the Cocoa, IOKit, audio
+        # and GameController frameworks come with the target.
+        set(SDL_SHARED OFF CACHE BOOL "" FORCE)
+        set(SDL_STATIC ON CACHE BOOL "" FORCE)
+    endif()
     add_subdirectory(lib/SDL EXCLUDE_FROM_ALL)
     set(SDL2_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/lib/SDL/include")
-    set(SDL2_LIBRARIES SDL2)
+    if (APPLE)
+        set(SDL2_LIBRARIES SDL2-static)
+        set(SNAP_SDL_TARGET SDL2::SDL2-static)
+    else()
+        set(SDL2_LIBRARIES SDL2)
+        set(SNAP_SDL_TARGET SDL2::SDL2)
+    endif()
 else()
     find_package(SDL2 REQUIRED)
+    set(SNAP_SDL_TARGET SDL2::SDL2)
 endif()
 
 # =============================================================================
@@ -246,6 +272,8 @@ set(SNAP_SOURCES
     src/rom_picker.cpp
     src/fast_forward.cpp
     src/steam_deck.cpp
+    src/mod_api.cpp
+    src/mod_data_api.cpp
     src/rt64_render_context.cpp
     src/rsp_microcode.cpp
     src/audio.cpp
@@ -271,8 +299,17 @@ set(SNAP_SOURCES
     "${SNAP_ASPMAIN_CPP}"
 )
 
-# librecomp's RSP vector-unit implementation uses SSSE3 intrinsics.
-if (NOT MSVC)
+# The machine the build is for: the one CMake runs on, unless a macOS build
+# names another (-DCMAKE_OSX_ARCHITECTURES=arm64). Also the package name's.
+if (APPLE AND CMAKE_OSX_ARCHITECTURES)
+    set(SNAP_TARGET_ARCH "${CMAKE_OSX_ARCHITECTURES}")
+else()
+    set(SNAP_TARGET_ARCH "${CMAKE_SYSTEM_PROCESSOR}")
+endif()
+# librecomp's RSP vector-unit implementation uses SSSE3 intrinsics on x86; on
+# ARM (an Apple Silicon Mac) the same header goes through sse2neon, which the
+# runtime's include path provides, and the flag would be refused.
+if (NOT MSVC AND SNAP_TARGET_ARCH MATCHES "x86_64|AMD64|amd64")
     set_source_files_properties("${SNAP_ASPMAIN_CPP}" PROPERTIES COMPILE_OPTIONS "-msse4.1")
 endif()
 
@@ -341,7 +378,7 @@ target_link_libraries(Snap64Recomp PRIVATE
     recomp_funcs
     librecomp
     ultramodern
-    SDL2::SDL2
+    ${SNAP_SDL_TARGET}
 )
 
 if (MSVC)
@@ -353,12 +390,15 @@ if (MSVC)
     # ld, which also covers symbols such as guMtxF2L appearing in several
     # overlay sections.
     target_link_options(Snap64Recomp PRIVATE /FORCE:MULTIPLE /IGNORE:4006 /IGNORE:4088)
-else()
+elseif (NOT APPLE)
     target_link_options(Snap64Recomp PRIVATE
         -Wl,--start-group
         -Wl,--end-group
         -Wl,--allow-multiple-definition
     )
+    # macOS's ld64 has neither switch and needs neither: under Clang the
+    # recompiler declares every game function weak (N64Recomp's recomp.h,
+    # RECOMP_FUNC), so a patch's own definition simply wins.
 endif()
 
 if (BUILD_RT64)
@@ -368,6 +408,8 @@ if (BUILD_RT64)
     target_link_libraries(Snap64Recomp PRIVATE nfd)
     target_include_directories(Snap64Recomp PRIVATE
         "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/nativefiledialog-extended/src/include")
+    # The slot map the mod data API keeps its collections in (lib/SlotMap).
+    target_include_directories(Snap64Recomp PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/lib/SlotMap")
 endif()
 
 # Platform-specific link flags
@@ -419,9 +461,10 @@ if (WIN32)
         COMMENT "Placing the runtime DLLs, menu_text/ and the seen-shader list next to Snap64Recomp.exe"
         VERBATIM)
 else()
-    # Linux: no runtime libraries of the port's own (SDL2 is the system's and
-    # RT64 specialises its Vulkan shaders with re-spirv, needing no compiler
-    # at run time); the badge and the seen-shader list.
+    # Linux and macOS: no runtime libraries of the port's own (SDL2 is the
+    # system's on Linux and inside the executable on macOS, and off Windows
+    # RT64 needs no shader compiler at run time); the badge and the
+    # seen-shader list.
     add_custom_command(TARGET Snap64Recomp POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:Snap64Recomp>/menu_text"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -451,6 +494,11 @@ else()
         VERBATIM)
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/snap64.png" DESTINATION . RENAME Snap64Recomp.png)
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/snap64-window.png" DESTINATION . RENAME Snap64Recomp-window.png)
+    if (APPLE)
+        # The application bundle's icon, written by tools/icon_gen.py beside
+        # the .ico; tools/macos_bundle.py moves it into Contents/Resources.
+        install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/src/snap64.icns" DESTINATION . RENAME Snap64Recomp.icns)
+    endif()
 endif()
 
 # =============================================================================
@@ -537,7 +585,13 @@ set(SNAP_THIRD_PARTY_LICENSES
     "fmt|lib/N64ModernRuntime/N64Recomp/lib/fmt/LICENSE"
     "rabbitizer|lib/N64ModernRuntime/N64Recomp/lib/rabbitizer/LICENSE"
     "tomlplusplus|lib/N64ModernRuntime/N64Recomp/lib/tomlplusplus/LICENSE"
+    "SlotMap|lib/SlotMap/LICENSE"
 )
+if (APPLE)
+    # Apple's C++ Metal headers, inside plume's tree: compiled into plume's
+    # Metal backend and so into the macOS executable only (NOTICE.md).
+    list(APPEND SNAP_THIRD_PARTY_LICENSES "metal-cpp|lib/rt64/src/contrib/plume/contrib/metal-cpp/LICENSE.txt")
+endif()
 foreach(_entry IN LISTS SNAP_THIRD_PARTY_LICENSES)
     string(REPLACE "|" ";" _pair "${_entry}")
     list(GET _pair 0 _name)
@@ -581,6 +635,12 @@ set(CPACK_PACKAGE_VERSION "${SNAP_VERSION_FULL}")
 if (WIN32)
     set(CPACK_GENERATOR "ZIP")
     set(CPACK_PACKAGE_FILE_NAME "Snap64Recomp-${SNAP_VERSION_FULL}-win64")
+elseif (APPLE)
+    # The macOS release is the application bundle tools/macos_bundle.py
+    # builds from the install tree; cpack here is the same flat folder, for
+    # a run from the Terminal, named for the machine it was built for.
+    set(CPACK_GENERATOR "TGZ")
+    set(CPACK_PACKAGE_FILE_NAME "Snap64Recomp-${SNAP_VERSION_FULL}-macos-${SNAP_TARGET_ARCH}")
 else()
     # The same flat folder as a tarball (permissions kept, so the binary is
     # executable when unpacked); the Linux name says which machine it runs on.

@@ -68,6 +68,7 @@
 #define SNAP_STATION_H
 
 #include <cstdint>
+#include <string>
 
 #include "recomp.h"
 
@@ -113,6 +114,13 @@ bool station_port4_present();
 // station and *result holds the libultra return value (0 on success).
 bool station_ram_write(uint8_t* rdram, int32_t channel, uint32_t address, gpr buffer, int32_t* result);
 bool station_ram_read(uint8_t* rdram, int32_t channel, uint32_t address, gpr buffer, int32_t* result);
+
+// For the Mods page's two action rows (menu_assets.cpp): the mods folder in
+// the file browser, and the relaunch the Snap Station's print uses, so a
+// mod turned on or off takes effect without the player finding the
+// executable again.
+void mods_open_folder(const std::string& utf8);
+void mods_restart_game();
 
 } // namespace snap
 

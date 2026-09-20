@@ -1,0 +1,360 @@
+diff --git a/plume_d3d12.cpp b/plume_d3d12.cpp
+index 2cdcf18..ce12298 100644
+--- a/plume_d3d12.cpp
++++ b/plume_d3d12.cpp
+@@ -1389,9 +1389,16 @@ namespace plume {
+     }
+ 
+     bool D3D12SwapChain::present(uint32_t textureIndex, RenderCommandSemaphore **waitSemaphores, uint32_t waitSemaphoreCount) {
+-        // If using present wait, we prefer using a SyncInterval of 0 even when Vsync is enabled. Tearing won't happen if DXGI_PRESENT_ALLOW_TEARING is not specified.
++        // Pokemon Snap port: vsync means vsync, present wait or not. Enabling
++        // present wait used to silently drop the sync interval to zero, which
++        // leaves the caller's own timer deciding when frames go out. Two
++        // clocks at almost the same rate and never in step beat against each
++        // other, so frames are periodically shown twice or not at all -- a
++        // stutter that no frame counter can see because every frame really was
++        // delivered on time. Present wait is a latency control and composes
++        // with the sync interval; it is not a substitute for it.
+         const bool tearingAllowed = (swapChainFlags & DXGI_SWAP_CHAIN_FLAG_ALLOW_TEARING) != 0U;
+-        UINT syncInterval = (vsyncEnabled && !desc.enablePresentWait) ? 1 : 0;
++        UINT syncInterval = vsyncEnabled ? 1 : 0;
+         UINT flags = (!vsyncEnabled && tearingAllowed) ? DXGI_PRESENT_ALLOW_TEARING : 0;
+         HRESULT res = d3d->Present(syncInterval, flags);
+         return SUCCEEDED(res);
+@@ -1803,6 +1810,24 @@ namespace plume {
+ 
+     void D3D12QueryPool::queryResults() {
+         void *readbackData = readbackBuffer->map();
++        // Pokemon Snap port: Map hands back null once the device is gone
++        // (DXGI_ERROR_DEVICE_REMOVED), and 1.0.3 died on the memcpy below,
++        // in the render thread, at a switch to fullscreen on Oak's check
++        // (issue #12's trigger; the GPU had faulted on a tile left unset).
++        // The results keep their last values and the reason is said once,
++        // so a lost device reads as what it is in the log.
++        if (readbackData == nullptr) {
++            static bool reported = false;
++            if (!reported) {
++                reported = true;
++                const HRESULT reason = device->d3d->GetDeviceRemovedReason();
++                fprintf(stderr, "[SNAP-D3D12] query readback could not be mapped; device removed reason 0x%lX\n", static_cast<unsigned long>(reason));
++                fflush(stderr);
++            }
++
++            return;
++        }
++
+         memcpy(results.data(), readbackData, sizeof(uint64_t) * results.size());
+         readbackBuffer->unmap();
+ 
+@@ -2481,7 +2506,17 @@ namespace plume {
+     }
+     
+     void D3D12CommandList::setSamplePositions(const RenderTexture *texture) {
+-        assert(texture != nullptr);
++        // A texture copy can have a buffer as its destination, in which case
++        // the location's texture is null and there are no sample positions to
++        // set. The assert this replaces was compiled out in release, and the
++        // dereference below read a null pointer instead. Custom positions
++        // still have to be reset before the copy executes -- a non-MSAA
++        // destination would have taken the else branch below and reset them,
++        // and a buffer destination needs the same treatment.
++        if (texture == nullptr) {
++            resetSamplePositions();
++            return;
++        }
+ 
+         const D3D12Texture *interfaceTexture = static_cast<const D3D12Texture *>(texture);
+         if (interfaceTexture->desc.multisampling.sampleLocationsEnabled) {
+@@ -3074,6 +3109,67 @@ namespace plume {
+ 
+     // D3D12GraphicsPipeline
+ 
++// Pokemon Snap port: pipelines the driver handed back from its own store versus
++// ones it had to build. Reported once at shutdown; without it, whether the store
++// is doing anything is a matter of opinion.
++extern "C" {
++    std::atomic<uint32_t> snap_pipeline_reused{0};
++    std::atomic<uint32_t> snap_pipeline_built{0};
++}
++
++    // FNV-1a rather than a real hash library: plume must not grow a dependency
++    // on RT64's contrib tree, and this value is only a lookup name whose
++    // correctness the runtime re-validates against the full description.
++    static void hashAppend(uint64_t &hash, const void *data, size_t size) {
++        const uint8_t *bytes = reinterpret_cast<const uint8_t *>(data);
++        for (size_t i = 0; i < size; i++) {
++            hash ^= uint64_t(bytes[i]);
++            hash *= 1099511628211ull;
++        }
++    }
++
++    static uint64_t hashGraphicsPipelineDesc(const D3D12_GRAPHICS_PIPELINE_STATE_DESC &psoDesc, const std::vector<D3D12_INPUT_ELEMENT_DESC> &inputElements) {
++        uint64_t hash = 14695981039346656037ull;
++
++        // The shader bytecode is the bulk of a pipeline's identity.
++        const D3D12_SHADER_BYTECODE *stages[] = { &psoDesc.VS, &psoDesc.PS, &psoDesc.DS, &psoDesc.HS, &psoDesc.GS };
++        for (const D3D12_SHADER_BYTECODE *stage : stages) {
++            const uint64_t stageSize = stage->BytecodeLength;
++            hashAppend(hash, &stageSize, sizeof(stageSize));
++            if ((stage->pShaderBytecode != nullptr) && (stageSize > 0)) {
++                hashAppend(hash, stage->pShaderBytecode, size_t(stageSize));
++            }
++        }
++
++        hashAppend(hash, &psoDesc.BlendState, sizeof(psoDesc.BlendState));
++        hashAppend(hash, &psoDesc.SampleMask, sizeof(psoDesc.SampleMask));
++        hashAppend(hash, &psoDesc.RasterizerState, sizeof(psoDesc.RasterizerState));
++        hashAppend(hash, &psoDesc.DepthStencilState, sizeof(psoDesc.DepthStencilState));
++        hashAppend(hash, &psoDesc.IBStripCutValue, sizeof(psoDesc.IBStripCutValue));
++        hashAppend(hash, &psoDesc.PrimitiveTopologyType, sizeof(psoDesc.PrimitiveTopologyType));
++        hashAppend(hash, &psoDesc.NumRenderTargets, sizeof(psoDesc.NumRenderTargets));
++        hashAppend(hash, psoDesc.RTVFormats, sizeof(psoDesc.RTVFormats));
++        hashAppend(hash, &psoDesc.DSVFormat, sizeof(psoDesc.DSVFormat));
++        hashAppend(hash, &psoDesc.SampleDesc, sizeof(psoDesc.SampleDesc));
++        hashAppend(hash, &psoDesc.NodeMask, sizeof(psoDesc.NodeMask));
++        hashAppend(hash, &psoDesc.Flags, sizeof(psoDesc.Flags));
++
++        for (const D3D12_INPUT_ELEMENT_DESC &element : inputElements) {
++            if (element.SemanticName != nullptr) {
++                hashAppend(hash, element.SemanticName, strlen(element.SemanticName));
++            }
++
++            hashAppend(hash, &element.SemanticIndex, sizeof(element.SemanticIndex));
++            hashAppend(hash, &element.Format, sizeof(element.Format));
++            hashAppend(hash, &element.InputSlot, sizeof(element.InputSlot));
++            hashAppend(hash, &element.AlignedByteOffset, sizeof(element.AlignedByteOffset));
++            hashAppend(hash, &element.InputSlotClass, sizeof(element.InputSlotClass));
++            hashAppend(hash, &element.InstanceDataStepRate, sizeof(element.InstanceDataStepRate));
++        }
++
++        return hash;
++    }
++
+     D3D12GraphicsPipeline::D3D12GraphicsPipeline(D3D12Device *device, const RenderGraphicsPipelineDesc &desc) : D3D12Pipeline(device, Type::Graphics) {
+         assert(desc.pipelineLayout != nullptr);
+ 
+@@ -3199,7 +3295,35 @@ namespace plume {
+ 
+         psoDesc.InputLayout = { inputElements.data(), UINT(inputElements.size()) };
+ 
++        // Ask the driver for a pipeline it already built, in a previous run if
++        // need be. Compiling the shader and building the pipeline from it are
++        // separate costs; caching the bytecode removes the first and leaves this
++        // one, which is the driver's own work and can only be skipped by the
++        // driver. Names collide harmlessly: LoadGraphicsPipeline validates the
++        // full description against the stored one and refuses any mismatch,
++        // which falls through to building it normally below.
++        wchar_t libraryName[24] = {};
++        if (device->pipelineLibrary != nullptr) {
++            const uint64_t libraryKey = hashGraphicsPipelineDesc(psoDesc, inputElements);
++            swprintf_s(libraryName, L"%016llX", (unsigned long long)(libraryKey));
++
++            const std::lock_guard<std::mutex> lock(device->pipelineLibraryMutex);
++            if (SUCCEEDED(device->pipelineLibrary->LoadGraphicsPipeline(libraryName, &psoDesc, IID_PPV_ARGS(&d3d))) && (d3d != nullptr)) {
++                snap_pipeline_reused.fetch_add(1, std::memory_order_relaxed);
++                return;
++            }
++
++            d3d = nullptr;
++        }
++
+         device->d3d->CreateGraphicsPipelineState(&psoDesc, IID_PPV_ARGS(&d3d));
++
++        if ((device->pipelineLibrary != nullptr) && (d3d != nullptr)) {
++            snap_pipeline_built.fetch_add(1, std::memory_order_relaxed);
++            const std::lock_guard<std::mutex> lock(device->pipelineLibraryMutex);
++            // A duplicate name returns E_INVALIDARG and is not worth reporting.
++            device->pipelineLibrary->StorePipeline(libraryName, d3d);
++        }
+     }
+ 
+     D3D12GraphicsPipeline::~D3D12GraphicsPipeline() {
+@@ -4126,6 +4250,74 @@ namespace plume {
+         return description;
+     }
+ 
++    bool D3D12Device::setPipelineCacheData(const void *data, uint64_t size) {
++        if (d3d == nullptr) {
++            return false;
++        }
++
++        D3D12_FEATURE_DATA_SHADER_CACHE shaderCache = {};
++        if (FAILED(d3d->CheckFeatureSupport(D3D12_FEATURE_SHADER_CACHE, &shaderCache, sizeof(shaderCache)))) {
++            return false;
++        }
++
++        if ((shaderCache.SupportFlags & D3D12_SHADER_CACHE_SUPPORT_LIBRARY) == 0) {
++            return false;
++        }
++
++        const std::lock_guard<std::mutex> lock(pipelineLibraryMutex);
++        if (pipelineLibrary != nullptr) {
++            pipelineLibrary->Release();
++            pipelineLibrary = nullptr;
++        }
++
++        // The library reads from this buffer for its whole life, so it is stored
++        // before use and never touched afterwards.
++        pipelineLibraryBlob.clear();
++        if ((data != nullptr) && (size > 0)) {
++            const uint8_t *bytes = reinterpret_cast<const uint8_t *>(data);
++            pipelineLibraryBlob.assign(bytes, bytes + size);
++        }
++
++        // A driver update, a different adapter, or a corrupt blob all show up
++        // here as a failure, and all get the same answer: throw it away and
++        // start an empty library, which costs a warm-up and nothing else.
++        HRESULT result = d3d->CreatePipelineLibrary(
++            pipelineLibraryBlob.empty() ? nullptr : pipelineLibraryBlob.data(),
++            SIZE_T(pipelineLibraryBlob.size()), IID_PPV_ARGS(&pipelineLibrary));
++        if (FAILED(result)) {
++            pipelineLibraryBlob.clear();
++            pipelineLibrary = nullptr;
++            result = d3d->CreatePipelineLibrary(nullptr, 0, IID_PPV_ARGS(&pipelineLibrary));
++            if (FAILED(result)) {
++                pipelineLibrary = nullptr;
++            }
++
++            return false;
++        }
++
++        return true;
++    }
++
++    std::vector<uint8_t> D3D12Device::getPipelineCacheData() const {
++        std::vector<uint8_t> data;
++        const std::lock_guard<std::mutex> lock(pipelineLibraryMutex);
++        if (pipelineLibrary == nullptr) {
++            return data;
++        }
++
++        const SIZE_T serializedSize = pipelineLibrary->GetSerializedSize();
++        if (serializedSize == 0) {
++            return data;
++        }
++
++        data.resize(serializedSize);
++        if (FAILED(pipelineLibrary->Serialize(data.data(), serializedSize))) {
++            data.clear();
++        }
++
++        return data;
++    }
++
+     RenderSampleCounts D3D12Device::getSampleCountsSupported(RenderFormat format) const {
+         HRESULT res;
+         RenderSampleCounts countsSupported = RenderSampleCount::COUNT_0;
+@@ -4149,6 +4341,18 @@ namespace plume {
+     }
+ 
+     void D3D12Device::release() {
++        // Released before the device it belongs to, and before the blob it reads
++        // from goes away with this object.
++        {
++            const std::lock_guard<std::mutex> lock(pipelineLibraryMutex);
++            if (pipelineLibrary != nullptr) {
++                pipelineLibrary->Release();
++                pipelineLibrary = nullptr;
++            }
++
++            pipelineLibraryBlob.clear();
++        }
++
+         if (d3d != nullptr) {
+             d3d->Release();
+             d3d = nullptr;
+diff --git a/plume_d3d12.h b/plume_d3d12.h
+index 4827452..ec65aa9 100644
+--- a/plume_d3d12.h
++++ b/plume_d3d12.h
+@@ -433,6 +433,14 @@ namespace plume {
+ 
+     struct D3D12Device : RenderDevice {
+         ID3D12Device8 *d3d = nullptr;
++        // Pipelines the driver has already built, carried between runs. The
++        // library does NOT copy the blob it is created from, so the blob has to
++        // stay alive and untouched for as long as the library does.
++        ID3D12PipelineLibrary *pipelineLibrary = nullptr;
++        std::vector<uint8_t> pipelineLibraryBlob;
++        // ID3D12PipelineLibrary is not internally synchronized, and Load and
++        // Store are both called from the shader compilation threads.
++        mutable std::mutex pipelineLibraryMutex;
+         D3D12Interface *renderInterface = nullptr;
+         IDXGIAdapter1 *adapter = nullptr;
+         D3D12MA::Allocator *allocator = nullptr;
+@@ -473,6 +481,8 @@ namespace plume {
+         const RenderDeviceCapabilities &getCapabilities() const override;
+         const RenderDeviceDescription &getDescription() const override;
+         RenderSampleCounts getSampleCountsSupported(RenderFormat format) const override;
++        bool setPipelineCacheData(const void *data, uint64_t size) override;
++        std::vector<uint8_t> getPipelineCacheData() const override;
+         void release();
+         bool isValid() const;
+         bool beginCapture() override;
+diff --git a/plume_render_interface.h b/plume_render_interface.h
+index 2048557..9b90449 100644
+--- a/plume_render_interface.h
++++ b/plume_render_interface.h
+@@ -247,6 +247,12 @@ namespace plume {
+         virtual const RenderDeviceCapabilities &getCapabilities() const = 0;
+         virtual const RenderDeviceDescription &getDescription() const = 0;
+         virtual RenderSampleCounts getSampleCountsSupported(RenderFormat format) const = 0;
++
++        // Persistent pipeline cache. Optional: a backend that does not implement
++        // these reports no support and every pipeline is built exactly as before.
++        // Handing a backend data it rejects is a no-op, never a failure.
++        virtual bool setPipelineCacheData(const void *data, uint64_t size) { (void)data; (void)size; return false; }
++        virtual std::vector<uint8_t> getPipelineCacheData() const { return std::vector<uint8_t>(); }
+         virtual bool beginCapture() = 0;
+         virtual bool endCapture() = 0;
+     };
+diff --git a/plume_vulkan.cpp b/plume_vulkan.cpp
+index f1dd503..6cf3b9d 100644
+--- a/plume_vulkan.cpp
++++ b/plume_vulkan.cpp
+@@ -3229,6 +3229,45 @@ namespace plume {
+             imageCopy.imageExtent.depth = srcLocation.placedFootprint.depth;
+             vkCmdCopyBufferToImage(vk, srcBuffer->vk, dstTexture->vk, toImageLayout(dstTexture->textureLayout), 1, &imageCopy);
+         }
++        else if ((dstLocation.type == RenderTextureCopyType::PLACED_FOOTPRINT) && (srcLocation.type == RenderTextureCopyType::SUBRESOURCE)) {
++            // Snap64 Recomp: a texture-to-buffer copy, the mirror of the
++            // branch above. The D3D12 backend has it and the port's
++            // presented-frame capture and the Snap Station's sheet capture
++            // (rt64_present_queue.cpp) rely on it; upstream's Vulkan backend
++            // fell through to the image-to-image path and dereferenced the
++            // null destination texture. dstX/Y/Z are offsets into the
++            // footprint and the port passes zero; the box, when given,
++            // selects the source region.
++            assert(dstBuffer != nullptr);
++            assert(srcTexture != nullptr);
++
++            const uint32_t blockWidth = RenderFormatBlockWidth(srcTexture->desc.format);
++            VkBufferImageCopy imageCopy = {};
++            imageCopy.bufferOffset = dstLocation.placedFootprint.offset;
++            imageCopy.bufferRowLength = ((dstLocation.placedFootprint.rowWidth + blockWidth - 1) / blockWidth) * blockWidth;
++            imageCopy.bufferImageHeight = ((dstLocation.placedFootprint.height + blockWidth - 1) / blockWidth) * blockWidth;
++            imageCopy.imageSubresource.aspectMask = toAspectFlags(srcTexture->desc.format, srcTexture->desc.flags);
++            imageCopy.imageSubresource.baseArrayLayer = srcLocation.subresource.arrayIndex;
++            imageCopy.imageSubresource.layerCount = 1;
++            imageCopy.imageSubresource.mipLevel = srcLocation.subresource.mipLevel;
++            if (srcBox != nullptr) {
++                imageCopy.imageOffset.x = srcBox->left;
++                imageCopy.imageOffset.y = srcBox->top;
++                imageCopy.imageOffset.z = srcBox->front;
++                imageCopy.imageExtent.width = srcBox->right - srcBox->left;
++                imageCopy.imageExtent.height = srcBox->bottom - srcBox->top;
++                imageCopy.imageExtent.depth = srcBox->back - srcBox->front;
++            }
++            else {
++                imageCopy.imageOffset.x = 0;
++                imageCopy.imageOffset.y = 0;
++                imageCopy.imageOffset.z = 0;
++                imageCopy.imageExtent.width = dstLocation.placedFootprint.width;
++                imageCopy.imageExtent.height = dstLocation.placedFootprint.height;
++                imageCopy.imageExtent.depth = dstLocation.placedFootprint.depth;
++            }
++            vkCmdCopyImageToBuffer(vk, srcTexture->vk, toImageLayout(srcTexture->textureLayout), dstBuffer->vk, 1, &imageCopy);
++        }
+         else {
+             VkImageCopy imageCopy = {};
+             imageCopy.srcSubresource.aspectMask = toAspectFlags(srcTexture->desc.format, srcTexture->desc.flags);

@@ -18,9 +18,11 @@ Two machines are involved:
 
 Steps 1 to 9 are the same on every platform. Steps 10 to 13 are the Windows
 build; [step 14](#14-linux-build-experimental) is the Linux one, which has
-been built and started under WSL and not yet run on real Linux hardware.
-macOS is not built here (a community pull request carries an Apple Silicon
-port).
+been built and started under WSL and not yet run on real Linux hardware;
+[step 15](#15-macos-build-unverified) is the macOS one, which carries the
+glue a community Apple Silicon build proved and is built by a workflow on
+GitHub's Mac, because I have no Mac: no build of this tree has run on one
+yet.
 
 ## Prerequisites
 
@@ -188,7 +190,12 @@ Both outputs are tracked. They contain only names, addresses and sizes: 4,268
 functions across 32 code sections, and 14,100 `PROVIDE(name = 0x...)` lines for
 data. Use `build/pokemonsnap.elf` (the plain link that matches the ROM); the
 relocatable ELF carries the same symbols only if it was linked from the same
-tree.
+tree. A fourth argument writes the data symbols a mod build needs, in the
+mod tool's form (`docs/MODS.md`); the Snap64RecompSyms repository is the
+functions file and that data file, regenerated together whenever these are.
+Each section's `rom` is its ROM address, the LOAD segment's physical address
+plus the offset inside it, which is what the runtime's section table and the
+mod tool agree on.
 
 ### 8. Build and recompile the game-side patches
 
@@ -231,8 +238,8 @@ microcode on the next build.
 
 ### 10. Vendored trees on the Windows side
 
-`lib/SDL`, `lib/DirectX-Headers` and `lib/rt64/src/contrib` are **not in
-git** and must exist before CMake runs. One command puts them there, at the
+`lib/SDL`, `lib/DirectX-Headers` and `lib/rt64/src/contrib`
+are **not in git** and must exist before CMake runs. One command puts them there, at the
 upstream commits recorded in `VENDORING.md`:
 
     python tools/fetch_deps.py
@@ -454,6 +461,107 @@ and never plays them; the port drops the queue and says so
 covers a Deck's sleep or a Bluetooth switch. Running the game on a Linux
 desktop or a Steam Deck is [unverified](docs/STEAM-DECK.md).
 
+### 15. macOS build (unverified)
+
+I have no Mac, so this section is different in kind from the two above: it
+describes what the tree carries and what the workflow does, not a build I
+have run. The glue is the community's Apple Silicon build of 1.0.0 (pull
+request #2, by appleforever11, which started, drew with Metal and reached a
+course on an Apple M3 Pro), ported onto today's tree piece by piece behind
+`__APPLE__` and `if (APPLE)`, so Windows and Linux compile exactly what they
+did: the Windows build was rebuilt with these changes and the suite's
+scoring check passed on it. Nothing here has been compiled on a Mac. The
+first evidence will be the workflow's own first run, and this section will
+say so when it exists.
+
+What a Mac needs: Apple Silicon and macOS 14 or newer (the deployment
+target, `CMAKE_OSX_DEPLOYMENT_TARGET` in `CMakeLists.txt`; an Intel build is
+not ruled out by the code, only untried), Xcode with its Metal compiler (the
+command-line tools alone have no `metal`; Xcode 26 keeps the Metal toolchain
+as a separate download, `xcodebuild -downloadComponent MetalToolchain`),
+CMake 3.20 or newer, Ninja and Python 3, and the same generated inputs as
+every other build (steps 1 to 9: `RecompiledFuncs/`, `RecompiledPatches/`,
+`patches/build/patches.bin` and the ROM; the pull request made them on the
+Mac itself, with Homebrew's `mips-linux-gnu-binutils` and clang as the
+decompilation's preprocessor). Then, in the port root:
+
+    python3 tools/fetch_deps.py
+    cmake -S . -B build-macos -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 -DSNAP_ROM=/path/to/pokemonsnap.z64
+    cmake --build build-macos --target Snap64Recomp
+    python3 tools/macos_bundle.py build-macos
+
+The last line installs the flat folder into `build-macos/bundle-stage`, lays
+`build-macos/Snap64Recomp.app` out from it, writes its `Info.plist`, signs
+it ad hoc (no developer account and no notarisation, which is how the other
+recompilations ship too: the first launch is a right-click and Open, or on
+macOS 15 System Settings > Privacy & Security > Open Anyway) and zips it as
+`Snap64Recomp-<version>-macos-arm64.zip` with a `.sha256` beside it and a
+START HERE text for macOS inside.
+
+What differs from the other two builds, all in `#if` branches of the same
+files and `if (APPLE)` blocks of the same `CMakeLists.txt`:
+
+* Rendering is Metal, through plume's Metal backend; RT64's build compiles
+  its shaders to Metal libraries (`dxc-macos` to SPIR-V, RT64's
+  `spirv_cross_msl` tool to MSL, Xcode's `metal` to a `.metallib`).
+  `graphics_api` in the settings file is ignored
+  (`src/rt64_render_context.cpp`). The Metal headers, metal-cpp, are plain
+  files inside plume's tree, so `fetch_deps.py` needed no new pin.
+* The window is created with `SDL_WINDOW_METAL`, and RT64 is handed the
+  `NSWindow` and the `CAMetalLayer` SDL attaches to it (`src/main.cpp`,
+  `create_window`), the pair ultramodern's `WindowHandle` holds on Apple.
+* SDL2 is built from the vendored tree, as on Windows, but static: the
+  bundle then carries no dylib of its own to re-path or sign.
+* The data directory is `~/Library/Application Support/Snap64 Recomp/`
+  (`SDL_GetPrefPath`), always: a bundle's contents are sealed by its
+  signature. The shipped, read-only files are read from the bundle's
+  `Contents/Resources`, which is what `SDL_GetBasePath` returns to a bundled
+  program and so what `snap::exe_dir()` is (`src/paths.cpp`). The ROM is
+  looked for in the data directory, and the first run's chooser copies it
+  there.
+* The log, the single-instance lock and the message-box deferral are the
+  Linux ones (POSIX). The Snap Station's relaunch `execv`s the image
+  `_NSGetExecutablePath` names, and the sheet's folder opens with `open`
+  (`src/snap_station.cpp`).
+* The controller subsystem is started and stopped by the pad thread, not by
+  `SDL_Init` on the main thread (`src/input.cpp`, `pad_thread_main`): SDL's
+  IOKit driver binds its device matching to the run loop of the thread that
+  initialised it and services that loop from `SDL_GameControllerUpdate`,
+  which the pad thread calls; on any other thread no pad on that driver is
+  ever seen. HIDAPI pads (Xbox, PlayStation, Switch Pro) do not depend on it
+  either way.
+* ld64 gets neither `--allow-multiple-definition` nor the group switches:
+  under Clang the recompiler declares every game function weak
+  (`RECOMP_FUNC`), so a patch's definition wins on its own. The `-msse4.1`
+  flag on the audio microcode's source applies to x86 only; on ARM the
+  runtime's `sse2neon` serves.
+* `lib/rt64/src/common/rt64_hlslpp.h` includes the C standard library before
+  hlsl++, which the pull request needed under Apple's libc++ (one more file
+  in `SNAP64-CHANGES.patch`).
+* Not done: the runtime's mod support patches game functions inside the
+  executable's own code, which macOS forbids unless the code segment is
+  linked with a writable maximum protection; the other recompilations wrap
+  ld64 for it (Zelda64Recomp's `.github/macos/ld64`). Until this port does
+  the same, a mod is expected not to load on a Mac; the base game does not
+  need it.
+
+The workflow, `.github/workflows/macos.yml`, runs the four commands above on
+GitHub's `macos-15` runner (Apple Silicon; Xcode 16.4, CMake and Ninja
+preinstalled) on request; it will run on every push to `snap-port` or
+`main` that touches the sources once the repository and the secret below
+exist, and not before, since without them a push would only record a
+failure. The inputs the ROM produces come from a private
+repository, `JackandBeans/Snap64RecompInputs`, holding `RecompiledFuncs/`,
+`RecompiledPatches/`, `patches/build/patches.bin` and `pokemonsnap.z64`,
+cloned with a fine-grained token limited to that repository's contents and
+kept as this repository's `SNAP64_INPUTS_TOKEN` secret; that is what the
+other recompilations' workflows do with their own private repositories. The
+job never runs for a pull request, so it never needs a fork's secrets,
+and without the secret it stops at that step. It
+uploads two artifacts: the zip with its checksum, and the log and captured
+frames of a first run of the bundle on the runner (90 seconds,
+`SNAP_PCAP_ATFRAME`), which is the nearest thing to a Mac I can look at.
+
 ## What a clean checkout is missing
 
 A `git clone` of this repository today contains the port's sources, the
@@ -463,7 +571,7 @@ the two symbol files. It does **not** contain:
 
 1. `lib/SDL` and `lib/DirectX-Headers` -- ignored; `python tools/fetch_deps.py`
    fetches them at the recorded pins (step 10).
-2. `lib/rt64/src/contrib` -- ignored except for the port's three plume files;
+2. `lib/rt64/src/contrib` -- ignored except for the port's four plume files;
    the same script fetches all of it at the pins recovered in VENDORING.md.
    CMake cannot configure without it.
 3. `RecompiledFuncs/` and `RecompiledPatches/` -- generated (steps 4-5, 8);
@@ -478,12 +586,14 @@ the two symbol files. It does **not** contain:
 submodules without ever committing a gitlink; it has been removed, and
 VENDORING.md records what those directories actually are.
 
-The only CI is a documentation check: `.github/workflows/docs.yml` runs
+Two workflows run on GitHub. `.github/workflows/docs.yml` runs
 `tools/check_docs.py`, which follows every relative link and anchor in the
-Markdown files, and compiles the Python tools, on every push. A build
-cannot run there, because the ROM is a build input (step 9) that no
-workflow may hold, and the recompiled game depends on it too. The headless
-suite, `tools/release_check.py`, is described under
+Markdown files, and compiles the Python tools, on every push.
+`.github/workflows/macos.yml` builds the macOS bundle (step 15): the ROM and
+what is made from it are build inputs no public workflow may hold, so it
+takes them from a private repository through a secret, as the other
+recompilations' workflows do, and runs only for pushes to this repository.
+The headless suite, `tools/release_check.py`, is described under
 [Replays and the headless suite](#replays-and-the-headless-suite).
 Packaging is `cpack` (step 13): the
 `install()` rules lay out the portable folder, and the build stages the DLLs

@@ -14,17 +14,19 @@ as submodules of <https://github.com/N64Recomp/N64ModernRuntime.git> and
 not configure. Both directories are ordinary tracked files that have been
 edited in place, so the declaration was fiction and has been deleted. If they
 are ever turned back into submodules, the local modifications below have to be
-carried as patches on top of the upstream commit: RT64's is known (below),
-N64ModernRuntime's is not.
+carried as patches on top of the upstream commit. N64ModernRuntime's are, since
+2026-09-16: `lib/N64ModernRuntime/SNAP64-CHANGES.patch` applied to upstream
+`cdf5abb` reproduces the tracked tree byte for byte. RT64's base is known
+(below) and its changes are still edited in place.
 
 ## How each tree is tracked
 
 | Path | In git? | State |
 | --- | --- | --- |
-| `lib/N64ModernRuntime` | yes, 1041 plain files | forked; no git directory; upstream commit unrecorded |
+| `lib/N64ModernRuntime` | yes, plain files | upstream `cdf5abb` (2026-08-30) plus the port's changes, fifteen files, carried as `lib/N64ModernRuntime/SNAP64-CHANGES.patch`; no git directory |
 | `lib/N64ModernRuntime/N64Recomp` | yes (part of the above) | the runtime's bundled copy of N64Recomp's headers and sources; its `RSPRecomp` target is built by the port's CMake to recompile the audio microcode at build time (BUILDING.md step 9); upstream commit unrecorded |
 | `lib/rt64` (outside `src/contrib`) | yes, 300 files | forked from rt64/rt64 `a012a23` (established by content, below); `lib/rt64/.git` is an orphaned gitfile pointing at a deleted `.git/modules/lib/rt64` |
-| `lib/rt64/src/contrib/` | **no** (ignored), except the port's three plume files (below) | RT64's third-party trees, 396 MB; fetched by `tools/fetch_deps.py` at the pins below |
+| `lib/rt64/src/contrib/` | **no** (ignored), except the port's four plume files (below) | RT64's third-party trees, 396 MB; fetched by `tools/fetch_deps.py` at the pins below |
 | `lib/SDL` | no (ignored) | fetched by `tools/fetch_deps.py` at the pin below (my copy is a full clone with a live `.git`) |
 | `lib/DirectX-Headers` | no (ignored) | fetched by `tools/fetch_deps.py` at the pin below (same) |
 
@@ -37,7 +39,8 @@ pinned in BUILDING.md (N64Recomp `ffb39cd`, decomp `3a236dc`).
 
 | Path | Upstream | Commit | What it is | Confidence |
 | --- | --- | --- | --- | --- |
-| `lib/rt64` (fork base; not fetched, tracked) | https://github.com/rt64/rt64.git | `a012a2301908b130f9251dd3ec0aaeebf9678d80` | main, 2026-07-22, "Improve synchronization detection for tiles being sampled. (#254)" | high (inferred from content; no gitlink was ever recorded) |
+| `lib/N64ModernRuntime` (fork base; not fetched, tracked) | https://github.com/N64Recomp/N64ModernRuntime.git | `cdf5abbd5026fef5c364c676e4667c45e42b6863` | main, 2026-08-30, "Add CLI options to select games and game modes. (#153)"; the port's changes are `SNAP64-CHANGES.patch` beside it | exact: the patch applied to this commit reproduces the tree (checked 2026-09-16) |
+| `lib/rt64` (fork base; not fetched, tracked) | https://github.com/rt64/rt64.git | `43373749dac9bbc1b653e6a02aed40a9e1783bed` | main, 2026-09-02, "Don't consider VIs with inverted regions as valid. (#264)"; the port's changes are `lib/rt64/SNAP64-CHANGES.patch` | exact: the tree is that commit plus the patch (rebased 2026-09-16; the earlier base `a012a23` had been inferred from content) |
 | `lib/SDL` | https://github.com/libsdl-org/SDL.git | `fa24d868ac2f8fd558e4e914c9863411245db8fd` | `release-2.30.11` | exact |
 | `lib/DirectX-Headers` | https://github.com/microsoft/DirectX-Headers.git | `ee479f0bd5f7b884f202bcf0c3f076cc050dd256` | `v1.619.5` | exact |
 | `contrib/ddspp` | https://github.com/redorav/ddspp.git | `21ca0c4319dfd5a161c5f2a0c406e8f60194ea6c` | tag 1.11, 2024-08-07 | exact |
@@ -155,24 +158,74 @@ marks most changed sites (grep for it), but not all of them.
 
 ### N64ModernRuntime
 
-* `ultramodern/src/threads.cpp` -- pooled host threads, the replenisher, and
-  the per-guest-thread run clock.
+The tree is upstream commit `cdf5abb` (2026-08-30) with the port's changes on
+top, and those changes are one file, `lib/N64ModernRuntime/SNAP64-CHANGES.patch`
+(`git diff` from that commit to this tree, fifteen files). Every changed
+file carries a `Pokemon Snap port` marker. To take a newer upstream: clone
+N64ModernRuntime, check out `cdf5abb`, branch, `git apply` the patch, commit,
+rebase onto the new upstream head, resolve, then copy `librecomp`,
+`ultramodern` and `CMakeLists.txt` back here and regenerate the patch from the
+new base. That is how the 2026-09-16 update was made, from a copy whose base
+had never been recorded (it matched the tree of `03c3bd8`, 2026-05-17; three
+files conflicted).
+
+* `ultramodern/src/threads.cpp` -- pooled host threads, the replenisher, the
+  per-guest-thread run clock, and the thread registry the stall report reads.
 * `ultramodern/src/mesgqueue.cpp` -- run-clock pauses.
+* `ultramodern/src/timer.cpp` -- the speed ratio behind fast forward and slow
+  motion.
+* `ultramodern/src/events.cpp` -- the VI tick before the game has chosen a
+  mode does nothing (found on a macOS build, pull request #2; upstream has the
+  same guard now).
+* `ultramodern/src/input.cpp` -- the linear stick mapping (127 times the
+  axis) the port's mouse, gyro and keyboard values are scaled for. Upstream
+  gates every stick through an N64-shaped octagon since August 2026; with it,
+  the scoring replay reached 21 photos instead of 45. A physical stick's gate
+  is the port's to add in its own layer.
 * `ultramodern/include/ultramodern/ultramodern.hpp`, `librecomp/src/pi.cpp`,
   `librecomp/src/rsp.cpp` -- the matching interface and I/O changes.
 * `ultramodern/include/ultramodern/input.hpp` -- `Pak::ControllerPak`
   uncommented, so a port can report a pak that the rumble path does not
   claim (the Snap Station on port 4, `src/snap_station.cpp`).
+* `librecomp/src/recomp.cpp` -- the ROM check names the exact fault (missing,
+  unreadable, not a ROM, the wrong dump with both hashes) and never rewrites
+  or removes the player's file; byte-swapped dumps are corrected in memory.
+* `librecomp/src/files.cpp`, `librecomp/include/librecomp/files.hpp` -- the
+  data directory and file handling the port's paths need.
+* `librecomp/CMakeLists.txt`, `ultramodern/CMakeLists.txt` -- build options.
+* `librecomp/src/mods.cpp` -- a mod whose content cannot change while it
+  is loaded (a code mod, loaded before the game runs) takes an enable or
+  disable for the next start instead of refusing it: the port's Mods page
+  is inside the game, where upstream's launcher toggles mods before the
+  game starts.
+
+Two things upstream changed after the old base are answered on the port's
+side rather than in the runtime: the runtime no longer switches present-early
+on for the port at the first task, so `src/rt64_render_context.cpp` does it
+there itself; and `recomp::GameEntry` requires a display name, which
+`src/main.cpp` sets.
 
 ### RT64
 
-Against rt64/rt64 `a012a23`, 70 of the 301 tracked files differ (blob hash
-comparison of 2026-09-05 against the index's blob ids and
-`git ls-tree -r a012a23`, repeatable that way; `shaders/TextureDecodeCS.hlsl`
-joined the list on 2026-09-10).
+The tree is rt64/rt64 `4337374` (2026-09-02) with the port's changes on top,
+and those changes are `lib/rt64/SNAP64-CHANGES.patch` (`git diff` from that
+commit to this tree outside `src/contrib`, 74 files). To take a newer upstream: clone rt64, check out `4337374`,
+branch, `git apply` the patch, commit, rebase onto the new head, resolve,
+copy the tracked files back and regenerate the patch; plume is done the same
+way against its own pin (`SNAP64-PLUME-CHANGES.patch`). The 2026-09-16 rebase
+from `a012a23` (eleven upstream commits: the RDNA4 Vulkan workaround, VIs
+with inverted regions, the viewport clip rect in draw-area detection, tile
+synchronisation, and the plume bump that fixes Metal leaks) applied with no
+textual conflict. One upstream change is taken differently: RT64 now forces
+Vulkan on RDNA4 cards with a driver up to `0x200000794103EC` whatever API the
+player chose; this port's suite and a full playthrough ran on an RX 9060 XT
+at exactly that driver in D3D12, and the API is the player's choice, so in `hle/rt64_application.cpp` that clause
+applies only in Automatic mode, which the port never uses. The lists below
+describe the changes by area as they were catalogued against `a012a23`;
+`shaders/TextureDecodeCS.hlsl` joined them on 2026-09-10.
 
-**Forty-seven files carry the marker**: forty-six under `lib/rt64/src` and
-`lib/rt64/include/rt64_extended_gbi.h`. Forty-two are modified upstream
+**Forty-eight files carry the marker**: forty-seven under `lib/rt64/src` and
+`lib/rt64/include/rt64_extended_gbi.h`. Forty-three are modified upstream
 files and five are new (`hle/rt64_snap_diag.h`, `hle/rt64_snap_overlay.h`,
 `hle/rt64_snap_photo_detail.h`, `render/rt64_shader_blob_cache.h`,
 `render/rt64_snap_recolor.h`). By area:
@@ -197,7 +250,8 @@ per-call parameters the pixel stage reads (`shaders/RasterPS.hlsl`,
 `shared/rt64_framebuffer_params.h`), the Snap Station's overlay
 (`hle/rt64_snap_overlay.h`), the port's diagnostics header
 (`hle/rt64_snap_diag.h`), and configuration fields
-(`common/rt64_user_configuration.h`, `rt64_enhancement_configuration.h`).
+(`common/rt64_user_configuration.h`, `rt64_enhancement_configuration.h`). The macOS build adds one line to `common/rt64_hlslpp.h`, the C standard
+library included before hlsl++.
 
 **Twenty-three more files differ without the marker**; a grep for the marker
 does not find them. Twenty-two are modified upstream files: `CMakeLists.txt`
@@ -219,9 +273,12 @@ above (#259, #262).
 
 ### plume (inside the ignored contrib tree)
 
-Four files differ from plume `51b1ad4`, none of their contents exists
-anywhere in plume's history, and all four are **force-tracked** in this
-repository (`git add -f`; the directory around them stays ignored):
+Four files differ from plume `d890ac8` (the commit rt64 `4337374` pins;
+until 2026-09-16 the base was `51b1ad4`, on a side branch), none of their
+contents exists anywhere in plume's history, and all four are
+**force-tracked** in this repository (`git add -f`; the directory around
+them stays ignored). Their difference from that commit is
+`lib/rt64/SNAP64-PLUME-CHANGES.patch`:
 
 * `plume_d3d12.cpp` (tracked since commit `7d704d4`, which was `35bcba0`
   before the history rewrite of 2026-09-02). It carries four changes: the
