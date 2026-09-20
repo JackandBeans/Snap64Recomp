@@ -90,7 +90,7 @@ use.
 | `photos/` | the photos you save with P or the pad's right stick pressed in (see "Photos"); created on the first save |
 | `cache/` | RT64's compiled shaders and the driver's pipeline cache, built on your machine, and `rt64-seen-shaders.bin`, the list of every shader the game is known to ask for -- shipped with 623 entries from a full playthrough, so the first start compiles them all during the boot logos rather than the first time each appears in play; the game adds any it meets that are not on it. Safe to delete; the next start is slower |
 | `snap64.log`, `snap64.prev.log` | the log of this run and of the one before it; on Windows written when the port was not started from a terminal, on Linux on every launch |
-| `mods/`, `mod_config/` | the runtime's mod folders; the loader runs at every start, no mod ships with this release, and there is no in-game mod manager (see "Mods and texture packs") |
+| `mods/`, `mod_config/`, `mods.json` | the runtime's mod folders and its list of the mods that are on; the loader runs at every start, no mod ships with this release, and the game's Options screen has a Mods page for them (see "Mods and texture packs") |
 | `texture_packs/` | HD texture packs you install yourself, scanned once at start-up; created empty, none ships with this port (see "Mods and texture packs") |
 | `stickers/` | the sticker sheets the Snap Station prints (see [SNAP-STATION.md](SNAP-STATION.md)); created on the first print |
 | `menu_text/recomp_logo.png` | the "Recomp" wordmark on the title screen |
@@ -465,9 +465,10 @@ Writing a mod, and what the port does with one, has [its own page](MODS.md).
 Two loaders are compiled in, and both run on every start; neither has any
 content attached. The runtime this port is built on scans `mods/` for `.nrm`
 mod containers, the format the other N64 recompilation projects use, and
-loads the ones enabled in `mod_config/mods.json`; a mod must target the game
-id `pokemonsnap`, and there is no in-game manager, so `mods.json` is the
-whole of the control. The renderer scans `texture_packs/` for RT64
+loads the ones enabled in `mods.json` beside the executable; a mod must
+target the game id `pokemonsnap`, and the game's Options screen has a Mods
+page that turns each one on or off, orders them and opens their options
+([MODS.md](MODS.md)). The renderer scans `texture_packs/` for RT64
 replacement packs, a `.rtz` archive or a folder carrying an `rt64.json`,
 loads them in alphabetical order with later packs winning, and does it once
 at start-up, so the folder's contents are the switch. `README` files in both

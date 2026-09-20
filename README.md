@@ -174,10 +174,12 @@ has each in full.
   Desktop Mode and Gaming Mode, and the Windows build under Proton
   ([STEAM-DECK.md](docs/STEAM-DECK.md)).
 * **Mods and texture packs.** The runtime's `.nrm` mod loader and RT64's
-  texture-pack loader are compiled in and run at every start, and the
-  game's Options screen has a Mods page for them
-  ([MODS.md](docs/MODS.md)); nothing ships with them, and nothing made
-  from another game's data ever will.
+  texture-pack loader are compiled in and run at every start, the game's
+  Options screen has a Mods page for them, and a
+  [mod template](https://github.com/JackandBeans/Snap64RecompModTemplate)
+  and the game's [symbol files](https://github.com/JackandBeans/Snap64RecompSyms)
+  let anyone write one ([MODS.md](docs/MODS.md)); nothing ships with them,
+  and nothing made from another game's data ever will.
 
 ## What you need
 

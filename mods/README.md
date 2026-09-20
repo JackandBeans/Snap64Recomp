@@ -9,8 +9,10 @@ ones and is the way to turn one off (`mod_config/` holds each mod's own
 settings file). A mod must target the game id `pokemonsnap`. Writing one
 starts from the template and the symbol files named in `docs/MODS.md`.
 
-There is no in-game mod manager in this release: `mods.json` and a mod's own
-manifest decide. No mod is bundled and none is endorsed. Mods run inside the
+The game's Options screen has a Mods page (Esc, or Select on a pad, opens the
+Options anywhere): it lists the mods in this folder, turns each one on or off,
+orders them and opens their options, and `mods.json` records it; a change
+takes effect at the next start. No mod is bundled and none is endorsed. Mods run inside the
 recompiled game with the game's own memory and the port's patches, so a mod can
 change anything; the port's promise of console behaviour by default holds only
 for a `mods/` folder that is empty.

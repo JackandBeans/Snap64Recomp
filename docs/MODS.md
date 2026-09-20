@@ -30,14 +30,14 @@ something this project hosts, links or helps install.
 
 ## Writing a mod
 
-The kit is two repositories of their own, written and tested against this
-release. Neither is public at the time of 1.0.9; this page says what they
-hold, and will link them when they are up.
+Start from the template, which is a working mod. The kit is two
+repositories of their own, public since 2026-09-20 and checked against the
+released 1.0.9, which is the oldest release a mod built from them runs on:
 
-* Snap64RecompModTemplate, a working mod to start from:
+* [Snap64RecompModTemplate](https://github.com/JackandBeans/Snap64RecompModTemplate):
   an example hook behind an option, the MIPS build (clang and lld, with
   the decompilation's headers), the manifest, and the modding headers.
-* Snap64RecompSyms:
+* [Snap64RecompSyms](https://github.com/JackandBeans/Snap64RecompSyms):
   the game's function and variable names with their addresses, which the
   mod tool resolves a mod against. Generated from the decompilation's ELF
   by this repository's `tools/gen_reference_syms.py`; the functions file
