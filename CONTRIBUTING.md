@@ -27,7 +27,7 @@ For code, these are the things that keep the port what it is:
   (`BUILDING.md`, "To cut a release").
 * **Say how a change was made.** I made this port with Claude Code
   (README, "How I made it"), and every commit made that way names the
-  model in a `Co-Authored-By` trailer; a contribution made with an AI tool
+  model in a `Co-Authored-By` trailer. A contribution made with an AI tool
   is welcome on the same terms: name the tool in the trailer.
 
 Build instructions are in `BUILDING.md`; the automated suite is
