@@ -30,14 +30,15 @@ This project is not affiliated with, endorsed by or connected to Nintendo,
 Creatures Inc., GAME FREAK inc., HAL Laboratory or The Pokémon Company;
 Pokémon and Pokémon Snap are their trademarks, and the game is theirs. No
 game data is included: you supply your own cartridge dump. The executable
-does contain the game's code, translated from my own dump into C by
-N64Recomp and compiled, as every N64Recomp port does; `NOTICE.md` says
-exactly what is derived from the game and how.
+is compiled from the game's code, which N64Recomp translated from my own
+dump into C -- that is how a static recompilation works -- and `NOTICE.md`
+says what is derived from the game and how.
 
 The credits line on the title screen, `JackandBeans (Snap64 Recomp) · v1.0.9`,
-is my name, the port's name and its version. The name is the HAL team's
-that made the game ([the game's history](docs/HISTORY.md)); the people and
-projects this port stands on are under [Thanks](#thanks).
+is my name, the port's name and its version. I took the name from Jack and
+Beans, the team at HAL Laboratory who made the game ([the game's
+history](docs/HISTORY.md)); the people and projects this port stands on
+are under [Thanks](#thanks).
 
 **Contents:** [Get it running](#get-it-running) ·
 [Screenshots](#screenshots) · [What the port adds](#what-the-port-adds) ·
@@ -46,6 +47,7 @@ projects this port stands on are under [Thanks](#thanks).
 [Controls](#controls) · [Linux and Steam Deck](#linux-and-steam-deck) ·
 [Known limitations](#known-limitations) ·
 [What's next](#whats-next) · [Reporting a bug](#reporting-a-bug) ·
+[Contributing](#contributing) ·
 [What has been verified](#what-has-been-verified) ·
 [Building](#building) · [How I made it](#how-i-made-it) ·
 [Thanks](#thanks) · [License](#license)
@@ -123,8 +125,8 @@ and what to attach to a bug report.
 
 Every picture is the port's own render at 1440p with Render Scale and
 Anti-Aliasing both at 8x on the Graphics page, cropped to the game's
-picture; each caption names the release it was taken from. Every one of them,
-with a caption (the title and its menu, the courses, the lab, every
+picture; each caption names the release it was taken from. All of them,
+each with a caption (the title and its menu, the courses, the lab, every
 page of the Options screen including Button Setup, the printer's marks,
 Oak's check from the photo choice to the score sheet, the Camera Check and
 the Beach in Widescreen), are in [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md).
@@ -178,8 +180,8 @@ has each in full.
   Options screen has a Mods page for them, and a
   [mod template](https://github.com/JackandBeans/Snap64RecompModTemplate)
   and the game's [symbol files](https://github.com/JackandBeans/Snap64RecompSyms)
-  let anyone write one ([MODS.md](docs/MODS.md)); nothing ships with them,
-  and nothing made from another game's data ever will.
+  let anyone write one ([MODS.md](docs/MODS.md)). No mods or packs ship
+  with the port.
 
 ## What you need
 
@@ -321,7 +323,7 @@ in [STEAM-DECK.md](docs/STEAM-DECK.md).
 
 ## What's next
 
-In the order it will be worked on; nothing here is a promise until it runs.
+Roughly in the order I plan to work on it.
 
 1. **Reports from machines other than mine.** Each release from 1.0.1 to
    1.0.8 was made of what players reported, and later ones will be too. The
@@ -339,10 +341,20 @@ Open an issue at
 and attach `snap64.log` from the run that went wrong (it is written next
 to the executable), `Snap64Recomp.map` if the log has `[SNAP-AV]` lines,
 your `snapsettings.json`, and what you were doing. Say which system, GPU
-and driver you have. The issue form asks for these;
-[CONTRIBUTING.md](CONTRIBUTING.md) has the ground rules for code. What
-Windows or an antivirus may object to, and where the port's files live,
-are under [Running](docs/MANUAL.md#running) in the manual.
+and driver you have; the issue form asks for these. What Windows or an
+antivirus may object to, and where the port's files live, are under
+[Running](docs/MANUAL.md#running) in the manual.
+
+## Contributing
+
+Bug reports, pull requests and mods are all welcome. Most of the releases
+since the first were made of what players reported, and the
+[changelog](CHANGELOG.md) names who reported each fault beside its fix.
+For code, [CONTRIBUTING.md](CONTRIBUTING.md) says what a pull request
+needs; for a mod, [MODS.md](docs/MODS.md) and the
+[mod template](https://github.com/JackandBeans/Snap64RecompModTemplate)
+are the way in. Questions and requests have a place under
+[Discussions](https://github.com/JackandBeans/Snap64Recomp/discussions).
 
 ## What has been verified
 
@@ -371,37 +383,30 @@ Windows, and a list of things git does not carry
 
 ## How I made it
 
-Two answers, because the question has two parts.
+### How the port works
 
-**What the port is, mechanically.** N64Recomp reads the game's code out of
-my own cartridge dump and writes it out as C, one function at a time, at
-build time; none of that output is in this repository. That C is compiled
-and linked with three other things: librecomp and ultramodern, which give
-it the console's operating system calls; RT64, which turns the game's
-display lists into Direct3D 12 or Vulkan; and the port's own code under
-`src/`. That code is the window, input, audio and settings, the identity
-the frame interpolation pairs objects and sprites by, the menu pages
-composed from the game's own sprite font, the photo export and the Snap
-Station. Where the game's own behaviour had to change for a feature (the
-Graphics page on its Options screen, the fifth title entry, the intro's
-camera fix), the changed function is a copy of its decompiled source under
-`patches/src`, compiled with the decompilation's own IDO toolchain and
-loaded over the original. The whole chain, with the tools and inputs at
-each step, is `BUILDING.md`.
+N64Recomp reads the game's code out of my own cartridge dump and writes it
+out as C, one function at a time, at build time; none of that output is in
+this repository. That C is compiled and linked with three other things:
+librecomp and ultramodern, which give it the console's operating system
+calls; RT64, which turns the game's display lists into Direct3D 12 or
+Vulkan; and the port's own code under `src/`. That code is the window,
+input, audio and settings, the identity the frame interpolation pairs
+objects and sprites by, the menu pages composed from the game's own sprite
+font, the photo export and the Snap Station. Where the game's own behaviour
+had to change for a feature (the Graphics page on its Options screen, the
+fifth title entry, the intro's camera fix), the changed function is a copy
+of its decompiled source under `patches/src`, compiled with the
+decompilation's own IDO toolchain and loaded over the original. The whole
+chain, with the tools and inputs at each step, is `BUILDING.md`.
 
-**Who made it.** I made this port with Claude Code. I am one person, with
-no team behind it. I set the rule it follows, decided what it would and
-would not do, researched the Snap Station down to its protocol, played
-every build on my own hardware and on a Steam Deck, and shipped nine
-releases from the reports players sent. Claude wrote the code, the tools
-and the documentation in sessions I directed, and every commit made that
-way names the model in its trailer, so the record is in the history and
-not in this paragraph. Judge the port by what it does and by the
-changelog, which says what each fault was and why.
+### Made with Claude Code
 
-None of this asks to be taken on trust. The code is here, the commit
-history is here with its reasoning, and the suite's replays are tracked
-so its checks can be re-run.
+I made this port with Claude Code. Claude wrote the code, the tools and the
+documentation in sessions I directed, and every commit made that way names
+the model in its `Co-Authored-By` trailer. My part is deciding what the port
+does, playing it on my own PC and Steam Deck, and turning what players
+report into the next release.
 
 ## Thanks
 

@@ -1,13 +1,21 @@
 # Contributing
 
-Bug reports are the most useful thing: open an issue with the files the
-template asks for. For code, the ground rules that shaped the port:
+Bug reports, pull requests and mods are all welcome. Most of the releases
+so far were made of what players reported, so a report is the most useful
+thing you can send: open an issue with the files the template asks for. A
+mod needs nothing from me: [docs/MODS.md](docs/MODS.md) and the
+[mod template](https://github.com/JackandBeans/Snap64RecompModTemplate)
+are the way in. If you are not sure whether a change fits, ask under
+[Discussions](https://github.com/JackandBeans/Snap64Recomp/discussions)
+first; I would rather talk it over than turn a finished pull request away.
+
+For code, these are the things that keep the port what it is:
 
 * **The cartridge's behaviour is the default.** Anything that changes how
   the game looks, sounds or plays is opt-in and off until the player turns
   it on, and the README's tables get a row for it. A fix for something the
   console itself got wrong (see Cutscene Fix) is still opt-in.
-* **No game data, ever.** No ROM, no extracted assets, no save files with
+* **No game data.** No ROM, no extracted assets, no save files with
   someone else's photos, in the repository or in an issue.
 * **Patches are the game's own functions, changed.** `patches/src` holds
   copies of decompiled functions from the
@@ -20,8 +28,7 @@ template asks for. For code, the ground rules that shaped the port:
 * **Say how a change was made.** I made this port with Claude Code
   (README, "How I made it"), and every commit made that way names the
   model in a `Co-Authored-By` trailer; a contribution made with an AI tool
-  is welcome on the same terms: say so in the trailer, and read what it
-  wrote before you send it.
+  is welcome on the same terms: name the tool in the trailer.
 
 Build instructions are in `BUILDING.md`; the automated suite is
 `tools/release_check.py`, and a pull request should say what it reported.

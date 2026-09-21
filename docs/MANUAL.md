@@ -70,7 +70,7 @@ that went wrong, `Snap64Recomp.map` if the log has `[SNAP-AV]` lines, your
 have, and which operating system; the port has run on my PC, on a Steam
 Deck, and on the machines of the players who have reported, and each new
 one has taught it something. The issue form asks for
-these; [CONTRIBUTING.md](../CONTRIBUTING.md) has the ground rules for code.
+these; [CONTRIBUTING.md](../CONTRIBUTING.md) says what a pull request needs.
 
 ## Where things live
 
