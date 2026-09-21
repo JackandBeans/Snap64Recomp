@@ -83,7 +83,7 @@ cartridge kept here live on the Controls page now. Exit Game asks once
 Scale, Super Sampling, Anti-Aliasing, Widescreen, Frame Rate, 2D Detail and
 the rest, each with the game's style of help line. Every enhancement here is
 off by default; Render Scale, 2D Detail and Filter start one setting from the
-console's (README, "The rule the port follows").
+console's (README, "Faithful by default").
 
 <a href="screenshots/10-sound.png"><img src="screenshots/10-sound.png" width="640" alt="The Sound page"></a>
 

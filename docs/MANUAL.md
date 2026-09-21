@@ -11,6 +11,7 @@ and so do [Linux and the Steam Deck](STEAM-DECK.md).
 [What you need, in detail](#what-you-need-in-detail) · [Controls](#controls) ·
 [In-game pages](#in-game-pages) · [Hotkeys](#hotkeys) · [Photos](#photos) ·
 [Mods and texture packs](#mods-and-texture-packs) ·
+[Faithful by default](#faithful-by-default) ·
 [Settings file](#settings-file) · [Every course open](#every-course-open)
 
 ## Running
@@ -64,7 +65,7 @@ somewhere else before updating the port or trying a Snap Station print.
 
 Open an issue at
 [github.com/JackandBeans/Snap64Recomp/issues](https://github.com/JackandBeans/Snap64Recomp/issues)
-(the repository this README came from) and attach `snap64.log` from the run
+and attach `snap64.log` from the run
 that went wrong, `Snap64Recomp.map` if the log has `[SNAP-AV]` lines, your
 `snapsettings.json`, and what you were doing. Say which GPU and driver you
 have, and which operating system; the port has run on my PC, on a Steam
@@ -488,6 +489,44 @@ that is the whole of it. Assets taken from another game's data, models from
 another title, or a pack made from them are not something this project will
 host, link, or help install.
 
+## Faithful by default
+
+The port behaves like the console by default, and every enhancement is
+something you turn on, on the in-game **Graphics** page or with the
+[hotkeys](#hotkeys). Three defaults are not literally the console's. Each is
+one setting away from the original; the name in parentheses is its key in
+the [settings file](#settings-file).
+
+* The 3D picture is drawn at the window's resolution (`resolution_scale` 0;
+  set 1 for 320x240).
+* 2D content that would be scaled anyway is drawn sharp (`upscale_2d` 1;
+  set 0 for the original pixels).
+* The finished frame is put on screen with RT64's anti-aliased pixel
+  scaling, not raw nearest pixels (`present_filter` 2; set 0 for the
+  blocks).
+
+### Higher frame rates and photo scoring
+
+Two parts of the game read back the frame it has just drawn. Photo scoring
+draws the photographed Pokémon again and counts its pixels. The
+viewfinder's red focus dot is found by copying tiles of the colour buffer.
+
+Frame interpolation (Frame Rate set to Display or Manual) shows frames the
+game never drew. While it is on, the window title says
+`interpolation ON (F8)`. Colours the game steps once per frame are blended
+too. The fade to black between screens is one: it is a full-screen
+rectangle whose transparency the game moves once per tick. When the
+interpolation matches that draw to the same draw in the frame before, it
+blends the colour between the two, so the fade moves at the display's rate
+like everything behind it.
+
+Photo scoring was measured with interpolation on: five photos, and the
+game's own pixel counts came out exactly the same. The readback uses the
+frames the game draws, not the ones made in between. The focus dot has not
+been measured again under interpolation, so it is still unverified.
+Original, the Frame Rate row's first choice, is the default because it is
+the console's rate.
+
 ## Settings file
 
 
@@ -500,7 +539,7 @@ the defaults below are that file's.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `fullscreen` | `false` | saved as set; the window opens windowed and goes fullscreen a moment later when the file says so (a window created fullscreen comes up with broken chrome), and the Snap Station's own relaunches return in the state the print started in |
-| `widescreen` | `false` | RT64 Expand: a true 16:9 field of view, not a stretch, in a course; the title, the lab and the other 4:3 screens sit in black bars. Pokémon and effect sprites at the edges are kept ([Known limitations](../README.md#known-limitations)) |
+| `widescreen` | `false` | RT64 Expand: a true 16:9 field of view, not a stretch, in a course; the title, the lab and the other 4:3 screens sit in black bars. Pokémon and effect sprites at the edges are kept ([Known issues](KNOWN-ISSUES.md)) |
 | `msaa` | `0` | 0, 2, 4 or 8 |
 | `fps_mode` | `0` | 0 Original, 1 Display refresh, 2 Manual (`fps_manual_target`) |
 | `fps_manual_target` | `120` | the rate a number on the Frame Rate row holds; a value not on the row shows as the nearest of its eight and becomes it once the page is edited |

@@ -86,7 +86,7 @@ does. No pad rumbles: the cartridge never asks for it. "pad_enabled": false
 in snapsettings.json makes the port ignore every pad. If yours does nothing,
 snap64.log will name it; a newer copy of that file, from
 github.com/mdqinc/SDL_GameControllerDB, dropped over the shipped one is the
-first thing to try (README, "Which controllers work").
+first thing to try (docs/MANUAL.md, "Which controllers work").
 
 On a Steam Deck the port takes the Deck's own defaults and can aim the camera
 by tilting the console (Options > Controls > Gyro Aim). Gyro needs a pad with

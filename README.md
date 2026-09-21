@@ -9,64 +9,39 @@
 
 # Snap64 Recomp
 
-Pokémon Snap, running natively on Windows and Linux. This is my port of
-the Nintendo 64 game (US release). The game's own code was translated to C
-and compiled for the PC, a method called static recompilation. You bring
-the game's data yourself, as a ROM made from your own cartridge.
+Snap64 Recomp is a native PC port of Pokémon Snap (Nintendo 64, US release)
+for Windows, Linux and the Steam Deck. It is made with
+[N64: Recompiled](https://github.com/N64Recomp/N64Recomp), which translates
+the game's own code so that it runs directly on a PC. The method is called
+static recompilation. [RT64](https://github.com/rt64/rt64) draws the picture.
 
-Out of the box it plays like the cartridge. I have added widescreen, higher
-frame rates, mouse and gyro aim, button rebinding, fast forward, photo
-export and the Snap Station's printer. Each stays off until you turn it on,
-from the game's own Options screen or with a key. There are builds for
-Linux and the Steam Deck too.
+Out of the box it plays like the cartridge. Widescreen, higher frame rates,
+mouse and gyro aim, button rebinding, fast forward, photo export and the
+Snap Station's printer are there when you want them, and each stays off
+until you turn it on.
 
-The port stands on other people's work:
+### [Download the latest release](https://github.com/JackandBeans/Snap64Recomp/releases/latest)
 
-* [N64Recomp](https://github.com/N64Recomp/N64Recomp) translates the game's
-  MIPS code into C.
-* [N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime)
-  (`librecomp` + `ultramodern`) stands in for the console's operating
-  system.
-* [RT64](https://github.com/rt64/rt64) draws the picture.
-* SDL2 provides the window, the input and the sound.
+**This repository and its releases contain no game assets. You need your own
+ROM of the US cartridge to play.**
 
-The game's own code runs; the port changes how it is hosted.
-
-This project is not affiliated with, endorsed by or connected to Nintendo,
-Creatures Inc., GAME FREAK inc., HAL Laboratory or The Pokémon Company.
-Pokémon and Pokémon Snap are their trademarks, and the game is theirs. No
-game data is included; you supply your own ROM. The program itself is
-compiled from the game's code, which N64Recomp translated from my own
-cartridge dump into C. That is how a static recompilation works, and
-[NOTICE.md](NOTICE.md) says what is derived from the game and how.
-
-The credits line on the title screen, `JackandBeans (Snap64 Recomp) · v1.0.9`,
-is my name, the port's name and its version. I took my name from Jack and
-Beans, the team at HAL Laboratory who made the game ([the game's
-history](docs/HISTORY.md)). The people and projects this port stands on are
-under [Thanks](#thanks).
+The [Releases](https://github.com/JackandBeans/Snap64Recomp/releases) page
+of this repository is the only official download.
 
 **Contents:** [Get it running](#get-it-running) ·
-[Screenshots](#screenshots) · [What the port adds](#what-the-port-adds) ·
-[What you need](#what-you-need) ·
-[The rule the port follows](#the-rule-the-port-follows) ·
-[Controls](#controls) · [Linux and Steam Deck](#linux-and-steam-deck) ·
-[Known limitations](#known-limitations) ·
+[Screenshots](#screenshots) ·
+[System requirements](#system-requirements) · [Features](#features) ·
+[Faithful by default](#faithful-by-default) · [Controls](#controls) ·
+[Linux and Steam Deck](#linux-and-steam-deck) ·
+[FAQ](#faq) · [Known issues](#known-issues) ·
 [What's next](#whats-next) · [Reporting a bug](#reporting-a-bug) ·
 [Contributing](#contributing) ·
 [What has been verified](#what-has-been-verified) ·
-[Building](#building) · [How I made it](#how-i-made-it) ·
-[Thanks](#thanks) · [License](#license)
+[Building](#building) · [How it was made](#how-it-was-made) ·
+[Thanks](#thanks) · [Documentation](#documentation) · [License](#license)
 
-The full documentation is under `docs/`:
-
-* [The manual](docs/MANUAL.md) -- every control, page, hotkey and setting
-* [The Snap Station](docs/SNAP-STATION.md)
-* [Linux and the Steam Deck](docs/STEAM-DECK.md)
-* [What has been verified](docs/VERIFICATION.md)
-* [Mods](docs/MODS.md)
-* [The game's history](docs/HISTORY.md)
-* [The screenshots](docs/SCREENSHOTS.md)
+[The manual](docs/MANUAL.md) has every control, page, hotkey and setting.
+The rest of the documentation is listed [near the end](#documentation).
 
 ## Get it running
 
@@ -78,23 +53,20 @@ The full documentation is under `docs/`:
 > the other enhancements are under Options > Graphics. They all start off,
 > set to what the console did.
 
-You need a 64-bit Windows 10 or 11 PC with a graphics driver that supports
-Direct3D 12, and your own ROM of the US cartridge. Nothing has to be
-installed. (Linux and the Steam Deck are [further
-down](#linux-and-steam-deck).) Then:
+These steps are for Windows. Linux and the Steam Deck are [further
+down](#linux-and-steam-deck).
 
 1. Download `Snap64Recomp-1.0.9-win64.zip` from the
    [Releases](https://github.com/JackandBeans/Snap64Recomp/releases/latest)
    page and unpack it anywhere. It holds one folder,
-   `Snap64Recomp-1.0.9-win64`, with `Snap64Recomp.exe` inside.
+   `Snap64Recomp-1.0.9-win64`, with `Snap64Recomp.exe` inside. Nothing has
+   to be installed.
 2. Have your ROM of the US cartridge ready. (A ROM is the cartridge's
    contents, read out into one file.) Put it next to `Snap64Recomp.exe`
    with the name `pokemonsnap.z64`, or just start the program. If no ROM is
    there, the program asks for the file, checks it, and copies it into
    place under that name. It only asks once. You do not have to check the
-   file yourself: a wrong one is refused, and the message shows the
-   checksum it expected and the one your file has. (That checksum is a
-   64-bit hash of the file, not the SHA-1 under "What you need".)
+   file yourself: a wrong one is refused, with a message that says why.
 3. Start `Snap64Recomp.exe`. The program is not signed, so Windows may
    first show a "Windows protected your PC" box (SmartScreen). Click "More
    info", then "Run anyway", and it will not ask again. The first start
@@ -141,129 +113,99 @@ bug report.
 
 Every picture is the port's own render at 1440p, with Render Scale and
 Anti-Aliasing both at 8x on the Graphics page, cropped to the game's
-picture. The full set is in [docs/SCREENSHOTS.md](docs/SCREENSHOTS.md),
-and each caption there names the release the picture was taken from. It
-covers the title and its menu, the courses, the lab, and every page of the
-Options screen, Button Setup included. It also has the printer's marks,
-Oak's check from the photo choice to the score sheet, the Camera Check, and
-the Beach in Widescreen.
+picture. The full set, with a caption for each, is in
+[docs/SCREENSHOTS.md](docs/SCREENSHOTS.md).
 
-## What the port adds
+<a id="what-you-need"></a>
+## System requirements
+
+* **Windows:** 64-bit Windows 10 or 11, and a GPU whose driver supports
+  Direct3D 12 with Shader Model 6.0.
+* **Linux and Steam Deck:** an x86_64 system with a Vulkan 1.2 driver, SDL2
+  and GTK 3. The Linux build is experimental.
+* **CPU:** a 64-bit x86 processor with SSE4.1. That is Intel from 2008
+  (Penryn), AMD from 2011 (Bulldozer), or anything newer.
+* **Your own ROM of the US cartridge.** Its SHA-1 checksum is
+  `edc7c49cc568c045fe48be0d18011c30f393cbaf`, the value the
+  [decompilation project](https://github.com/ethteck/pokemonsnap)
+  publishes. `.z64`, `.v64` and `.n64` files all work. The port checks the
+  file for you, and refuses a wrong one with both checksums shown.
+
+Nothing has to be installed. The download holds everything but the game.
+
+No oldest graphics card has been measured for this port.
+[Zelda 64: Recompiled](https://github.com/Zelda64Recomp/Zelda64Recomp),
+which uses the same renderer, names the GeForce GT 630, the Radeon HD 7750
+and the Intel HD 510 as the oldest that should work. This port has run on an
+AMD Radeon RX 9060 XT, an NVIDIA GeForce RTX 4070 Ti Super, an Intel UHD 630
+and the Steam Deck. If it closes at start, update the graphics driver
+first. The detail is in
+[the manual](docs/MANUAL.md#what-you-need-in-detail).
+
+<a id="what-the-port-adds"></a>
+## Features
 
 Each of these is a row on the game's own Options screen, or a key. Each
 starts off, or at the console's setting. [The manual](docs/MANUAL.md) has
 every one in full.
 
-* **The Graphics page** is a new item on the game's Options screen, drawn
-  in the game's own font. Its rows: Render Scale, Super Sampling,
-  Anti-Aliasing up to 8x, Widescreen, Frame Rate, 2D Detail, Filter,
-  Texture Filter, Color Depth, Buffering, Dither, Fullscreen, Overscan
-  Crop, Cutscene Fix, Photo Detail and Jynx Recolor.
+* **Settings inside the game.** The port adds Graphics, Sound, Controls and
+  Mods pages to the game's own Options screen, drawn in the game's own
+  font. The Graphics page has sixteen rows, from Render Scale and
+  Anti-Aliasing to Widescreen and Frame Rate.
 * **Widescreen** shows more of the course: a wider 16:9 field of view, not
-  a stretched picture. Pokémon and effect sprites are kept at the wider
-  edges, where the cartridge would have cut them. The title, the lab and
-  the menus stay 4:3.
+  a stretched picture. The title, the lab and the menus stay 4:3.
 * **Higher frame rates**, matched to your display or set to a rate you
   choose. The game's own logic still runs at its thirty frames a second;
   the renderer draws the frames in between (frame interpolation).
 * **Keyboard and mouse.** W A S D and the mouse aim the camera in a course,
-  the way a mouse does in any first-person game. Every key, mouse button
-  and pad button can be changed on the Button Setup page, or in the
-  settings file.
-* **Pads.** Anything SDL has a mapping for works, and the community's list
-  of more pads ships beside the program. The Switch Online N64 controller
-  is recognised by name. A DualSense, a DualShock 4, a Switch Pro
-  controller and the Steam Deck can aim by gyro: turn the pad and the view
-  turns with it.
+  the way a mouse does in any first-person game.
+* **Controllers and gyro.** Anything SDL has a mapping for works, and the
+  community's list of more pads ships beside the program. A DualSense, a
+  DualShock 4, a Switch Pro controller and the Steam Deck can aim by gyro.
+* **Button rebinding in the game.** Every key, mouse button and pad button
+  can be changed on the Button Setup page, or in the settings file.
 * **Fast forward and slow motion**, each while a key is held. The console's
   own clocks run faster or slower, so the game steps through the same
   frames it would have anyway, with the same scores and the same saves.
 * **Photo export.** P, or the pad's right stick pressed in, saves the photo
-  on screen as a PNG at the game's own resolution. The Wii Virtual Console
-  release could post a photo to the Message Board in much the same way.
+  on screen as a PNG at the game's own resolution.
 * **Photo Detail** shows Oak's photos and the album from the renderer's
   full-resolution render, instead of the console's 320x210 pixels.
 * **The Snap Station** was the 1999 kiosk that printed your photos as a
   sheet of sixteen stickers. The port emulates it on controller port 4,
-  from the cartridge's own code for it. Print gives you the sheet as PNG
-  files, with the printer's own display on the way
-  ([SNAP-STATION.md](docs/SNAP-STATION.md)).
+  from the cartridge's own code for it, and Print gives you the sheet as
+  PNG files ([SNAP-STATION.md](docs/SNAP-STATION.md)).
 * **Two things the re-releases changed**, reproduced and off by default.
   One is the Virtual Console's Jynx recolour. The other is a Cutscene Fix
   for the one frame the console drew from inside the player model, at the
   end of two intros.
-* **Linux and the Steam Deck.** There is a native Linux build, which I have
-  played on a Deck in Desktop Mode and in Gaming Mode. The Windows build
-  also runs under Proton ([STEAM-DECK.md](docs/STEAM-DECK.md)).
+* **Linux and the Steam Deck.** A native Linux build, played on a Deck in
+  Desktop Mode and in Gaming Mode. The Windows build also runs under Proton
+  ([STEAM-DECK.md](docs/STEAM-DECK.md)).
 * **Mods and texture packs.** The runtime's `.nrm` mod loader and RT64's
-  texture-pack loader are built in, and run at every start. The game's
-  Options screen has a Mods page for them. A
+  texture-pack loader are built in, and the Options screen has a Mods page
+  for them. A
   [mod template](https://github.com/JackandBeans/Snap64RecompModTemplate)
   and the game's [symbol files](https://github.com/JackandBeans/Snap64RecompSyms)
   let anyone write a mod ([MODS.md](docs/MODS.md)). No mods or packs ship
   with the port.
 
-## What you need
-
-* One of these three. Nothing has to be installed, and the download holds
-  everything but the game.
-  * A 64-bit Windows 10 or 11 PC with a graphics driver that supports
-    Direct3D 12.
-  * A Linux x86_64 machine with a Vulkan 1.2 driver. The Linux build is
-    experimental.
-  * A Steam Deck.
-* **Your own ROM of the US cartridge.** Its SHA-1 checksum is
-  `edc7c49cc568c045fe48be0d18011c30f393cbaf`, the value the
-  [decompilation project](https://github.com/ethteck/pokemonsnap)
-  publishes. `.z64`, `.v64` and `.n64` files all work. The port checks the
-  file for you, and refuses a wrong one with both checksums shown. The ROM
-  is not included with this project.
-
-What the executable imports, which GPUs it has run on, and the files that
-sit beside it are in [the manual](docs/MANUAL.md#what-you-need-in-detail).
-
-## The rule the port follows
+<a id="the-rule-the-port-follows"></a>
+## Faithful by default
 
 The port behaves like the console by default, and every enhancement is
 something you turn on. Frame rate, aspect ratio, anti-aliasing, overscan,
-the intro's camera hand-off, texture filtering and dithering all start as
-the console had them. Only what you turn on changes, on the in-game
-**Graphics** page (a new item on the game's own Options screen) or with the
-hotkeys.
+texture filtering and dithering all start as the console had them. Only
+what you turn on changes.
 
-Three defaults are not literally the console's, so they are worth knowing
-about. Each is one setting away from the original. The name in parentheses
-is its key in [the settings file](docs/MANUAL.md#settings-file).
-
-* The 3D picture is drawn at the window's resolution (`resolution_scale` 0;
-  set 1 for 320x240).
-* 2D content that would be scaled anyway is drawn sharp (`upscale_2d` 1;
-  set 0 for the original pixels).
-* The finished frame is put on screen with RT64's anti-aliased pixel
-  scaling, not raw nearest pixels (`present_filter` 2; set 0 for the
-  blocks).
-
-### Higher frame rates and photo scoring
-
-Two parts of the game read back the frame it has just drawn. Photo scoring
-draws the photographed Pokémon again and counts its pixels. The
-viewfinder's red focus dot is found by copying tiles of the colour buffer.
-
-Frame interpolation (Frame Rate set to Display or Manual) shows frames the
-game never drew. While it is on, the window title says
-`interpolation ON (F8)`. Colours the game steps once per frame are blended
-too. The fade to black between screens is one: it is a full-screen
-rectangle whose transparency the game moves once per tick. When the
-interpolation matches that draw to the same draw in the frame before, it
-blends the colour between the two, so the fade moves at the display's rate
-like everything behind it.
-
-I measured photo scoring with interpolation on: five photos, and the game's
-own pixel counts came out exactly the same. The readback uses the frames
-the game draws, not the ones made in between. The focus dot has not been
-measured again under interpolation, so it is still unverified. Original,
-the Frame Rate row's first choice, is the default because it is the
-console's rate.
+Three defaults are not the console's own. The 3D picture is drawn at the
+window's resolution. 2D content that would be scaled anyway is drawn sharp.
+The finished frame is scaled with anti-aliasing. Each is one setting away
+from the original, and
+[Faithful by default](docs/MANUAL.md#faithful-by-default) in the manual
+names the setting for each. It also says how higher frame rates sit with
+the game's photo scoring.
 
 ## Controls
 
@@ -300,7 +242,8 @@ opens the port's Options.
 Hold Tab, or the right shoulder button, for fast forward. Hold Space, or
 press the left stick in, for slow motion. A tap on Esc opens the port's
 Options on almost any screen. Esc held for a second and released asks
-whether to quit. From a pad, Exit Game, the last row of the Options screen, quits.
+whether to quit. From a pad, Exit Game, the last row of the Options screen,
+quits.
 
 Every binding can be changed in the game, on the Controls page's Button
 Setup row, or in the settings file's `keys` table. The mouse's speed, the
@@ -311,71 +254,99 @@ in [the manual](docs/MANUAL.md#controls).
 
 The release page has a native Linux build, marked experimental, beside the
 Windows one. On a Steam Deck either route works. Players ran the Windows
-build through Proton on the day of the first release. I have played the
-native build on my own Deck, in Desktop Mode and in Gaming Mode. The native
-build needs the system's SDL2, GTK 3 and a Vulkan 1.2 driver, and renders
-through Vulkan only. [STEAM-DECK.md](docs/STEAM-DECK.md) has the steps for
-each route, the Deck's controls and gyro, its screen, quitting from a pad,
-and the icon.
+build through Proton on the day of the first release. The native build has
+been played on a Deck, in Desktop Mode and in Gaming Mode. It needs the
+system's SDL2, GTK 3 and a Vulkan 1.2 driver, and renders through Vulkan
+only. [STEAM-DECK.md](docs/STEAM-DECK.md) has the steps for each route, the
+Deck's controls and gyro, its screen, quitting from a pad, and the icon.
 
-## Known limitations
+## FAQ
 
-* **Some 2D pictures still move at the game's rate** when the frame rate is
-  raised. The interpolation pairs what it draws by name, and a few things
-  are drawn without one: the photo panels, Oak's thumbnails, and
-  full-screen backgrounds while they slide during a transition. Named
-  sprites and menu frames, the HUD and the fades do interpolate.
-* **Parts of the Snap Station printer's look are estimates.** No source
-  records the printer's own character set, so its lettering is set from a
-  typeface of the same construction. Its pass timings are estimated from
-  footage without a clock.
-* **A Pokémon can pop out of the picture before it has fully left it.** The
-  console does the same. Each frame, the cartridge decides whether to draw
-  a Pokémon. It projects the Pokémon's collision point and tests it against
-  a box 1.5 times the half-screen each way (±240 by ±180 pixels around the
-  centre; `func_80364618_504A28`). The seven `renderPokemonModelType*`
-  wrappers skip any Pokémon that fails. A big, close one still has part of
-  its body in the picture when its centre crosses that line. Snorlax on the
-  Beach shows it: with the camera pitched up to the 45-degree limit, it
-  vanishes, and returns as the camera comes down. A television's overscan
-  hid part of the last sliver. The port keeps the rule as the cartridge has
-  it; the Widescreen patch widens its horizontal bound to the wider
-  picture, and nothing else.
-* **A Nintendo pad over Bluetooth may answer a moment late after a pause.**
-  The Switch Online N64 controller is one of these. SDL's own driver
-  handles them. It puts the pad in the report mode that only speaks when a
-  button or stick moves. After three seconds of silence it declares the pad
-  gone, and at the next touch it takes it back with a handshake of several
-  commands.
-  Since 1.0.2 that runs on the port's pad thread and holds nothing else.
-  Even so, the first press after a pause may arrive a moment late, and each
-  return is a fresh `Opened game controller` line in `snap64.log`. I read
-  this from SDL's code and have not seen it on such a pad here; a report
-  from one would settle it.
-* **Vulkan on Windows is lightly tested.** Vulkan (`graphics_api` 1) is
-  RT64's other backend, and the one the Linux build uses. On Windows I have
-  run it through the replays on my AMD card, and not played it through by
-  hand. It exists for a machine whose Direct3D 12 path fails. To try it,
-  add `"graphics_api": 1` to `snapsettings.json` next to the executable,
-  and start the port again. If the file does not exist, create it with just
-  `{"graphics_api": 1}` in it; a key the file lacks keeps its default.
-* **With Overscan Crop off, a thin light strip shows at the left of the
-  lab's translucent panel.** With the crop off, the whole 320x240 frame is
-  on screen, including the columns and rows a television hid, and some of
-  the game's own art has edges there. The lab backdrop's leftmost pixel
-  column and top row are pale in the picture itself. The console drew the
-  same pixels; I checked them against the picture as the game holds it in
-  memory. Overscan Crop (F2) is the television's view.
+### What is static recompilation?
+
+The game's own program code is translated into C and compiled for the PC.
+The translation is done once, ahead of time, and not while you play.
+[N64: Recompiled](https://github.com/N64Recomp/N64Recomp) does it.
+[N64ModernRuntime](https://github.com/N64Recomp/N64ModernRuntime) stands in
+for the console's operating system, [RT64](https://github.com/rt64/rt64)
+draws the picture, and SDL2 provides the window, the input and the sound.
+
+### How is this related to the decompilation project?
+
+The game's code is recompiled from the ROM, not built from the
+[decompilation](https://github.com/ethteck/pokemonsnap)'s source. The port
+still depends on that project. The functions the port changes are copies of
+their decompiled source, compiled against its headers and symbols, and what
+is known about the game's code was learned there.
+
+### Where is the settings menu? Is there a launcher?
+
+There is no launcher. Everything is inside the game's own Options screen:
+press Esc, or Select on a pad. [In-game pages](docs/MANUAL.md#in-game-pages)
+in the manual shows every page.
+
+### Where are my save and my settings?
+
+Next to the program. The save is `saves/pokemonsnap.bin` and the settings
+are `snapsettings.json`; keep both when you update. Everything the port
+writes is in that folder, so the folder can be moved as it is. On Linux, if
+the folder cannot be written, the files go to `~/.config/Snap64Recomp`.
+
+### How do I use a different ROM file?
+
+The port uses `pokemonsnap.z64` next to the program. Remove or replace that
+file. With none there, the port asks for one at the next start.
+
+### How do I set up gyro aim on a Steam Deck?
+
+In Desktop Mode, or with Steam Input off for the shortcut, turn on Options >
+Controls > Gyro Aim. In Gaming Mode the game cannot read the Deck's gyro
+itself. Set Steam's Gyro Behavior to As Mouse there, and the port's mouse
+aim follows it. [STEAM-DECK.md](docs/STEAM-DECK.md) has the steps.
+
+### Windows warns me about the program. Is that normal?
+
+Yes. The program is not signed, so SmartScreen may show "Windows protected
+your PC" the first time: "More info", then "Run anyway". Download it only
+from this repository's Releases page, where each file comes with a SHA-256
+checksum. The port opens no network connection at all.
+
+### Can I use mods or HD texture packs?
+
+Yes. Mods go in `mods/` and texture packs in `texture_packs/`, and Options >
+Mods turns mods on and off. [MODS.md](docs/MODS.md) says how to install
+them, and how to write one.
+
+<a id="known-limitations"></a>
+## Known issues
+
+* Some 2D pictures still move at the game's rate when the frame rate is
+  raised: the photo panels, Oak's thumbnails, and full-screen backgrounds
+  while they slide.
+* Parts of the Snap Station printer's look are estimates: its lettering,
+  and the timing of its passes.
+* A Pokémon can pop out of the picture before it has fully left it. The
+  console does the same, and the port keeps the cartridge's rule.
+* A Nintendo pad over Bluetooth may answer a moment late after a pause.
+  This is read from SDL's code and has not been seen on such a pad; a
+  report from one would settle it.
+* Vulkan on Windows is lightly tested. It is there for a machine whose
+  Direct3D 12 path fails.
+* With Overscan Crop off, a thin light strip shows at the left of the lab's
+  panel. The console drew the same pixels; Overscan Crop (F2) is the
+  television's view.
+
+[KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md) explains each one in full.
 
 ## What's next
 
-Roughly in the order I plan to work on it.
+Planned, roughly in this order.
 
-1. **Reports from machines other than mine.** Each release from 1.0.1 to
-   1.0.8 was made of what players reported, and later ones will be too. The
-   issue form is the way to send one, with `snap64.log` attached.
+1. **Reports from other machines.** Releases 1.0.1 to 1.0.8 were made of
+   what players reported, and later ones will be too. The issue form is the
+   way to send one, with `snap64.log` attached.
 2. **A Linux desktop.** The native build has run under WSL and on a Deck,
-   and on no Linux desktop yet. I would welcome the first report from one.
+   and on no Linux desktop yet. The first report from one would be welcome.
 
 The same list, with a place to reply, is pinned under
 [Discussions](https://github.com/JackandBeans/Snap64Recomp/discussions/1).
@@ -408,28 +379,16 @@ are the way in. Questions and requests have a place under
 
 ## What has been verified
 
-I have play-tested the entire game on my own PC. That is every course from
-the Beach to Rainbow Cloud, and every course again with Widescreen on. It
-is also Oak's evaluations, the report, the album, the Gallery and a Snap
-Station print. On a Steam Deck I have played the Beach, the menus, the
-settings and the station.
+The whole game has been played through on a Windows PC. That is every
+course, every course again with Widescreen on, Oak's evaluations, the
+Report, the album, the Gallery and a Snap Station print. On a Steam Deck,
+the Beach, the menus, the settings and the station have been played.
 
-Every release also goes through the automated suite in
-`tools/release_check.py` before it ships. The suite runs:
-
-* the Beach replay, under the player's own conditions
-* the recorded run to Oak's evaluation, scoring every photo
-* the Options pages, staged from the harvested font
-* the first start with no ROM
-* the archive's contents
-* the two speed keys
-* the key that opens the pages from anywhere
-* the Snap Station's print, through both relaunches
-
-On the 1.0.9 executable the suite passed 28 of 28 checks, and the station's
-5 of 5. [VERIFICATION.md](docs/VERIFICATION.md) says what each check does,
-what every release reported, and what has only been read from the code and
-not seen.
+Every release also passes an automated suite before it ships
+(`tools/release_check.py`). On the 1.0.9 executable it passed 28 of 28
+checks, and the station's 5 of 5. [VERIFICATION.md](docs/VERIFICATION.md) says what
+each check does, what every release reported, and what has only been read
+from the code and not seen.
 
 ## Building
 
@@ -440,23 +399,20 @@ Windows, and a list of things git does not carry
 `cpack -C Release` in the build directory then writes
 `Snap64Recomp-1.0.9-win64.zip` ([step 13](BUILDING.md#13-package)).
 
-## How I made it
+<a id="how-i-made-it"></a>
+## How it was made
 
 ### How the port works
 
-N64Recomp reads the game's code out of my own cartridge dump and writes it
+N64: Recompiled reads the game's code out of a cartridge dump and writes it
 out as C, one function at a time, at build time. None of that output is in
 this repository. That C is compiled and linked with three other things:
 
 * librecomp and ultramodern, which give it the console's operating system
   calls
 * RT64, which turns the game's display lists into Direct3D 12 or Vulkan
-* the port's own code under `src/`
-
-The port's own code is the window, input, audio and settings. It is also
-the identity the frame interpolation pairs objects and sprites by, the menu
-pages composed from the game's own sprite font, the photo export, and the
-Snap Station.
+* the port's own code under `src/`: the window, input, audio and settings,
+  the menu pages, the photo export and the Snap Station
 
 For some features the game's own behaviour had to change: the Graphics page
 on its Options screen, the fifth title entry, the intro's camera fix. Each
@@ -506,10 +462,12 @@ None of this would exist without:
   named in `NOTICE.md`.
 * The Roboto Project Authors, for the typeface the printer's lettering is
   set from.
-* Claude Code, the tool I built this with ([How I made it](#how-i-made-it)).
+* Claude Code, the tool I built this with ([How it was made](#how-it-was-made)).
 * Jack and Beans, the team at HAL Laboratory who made the game. Their name,
   shown in the game's opening and at the head of its credits, gave me the
-  name I use here.
+  name I use here. It is on the title screen's credits line,
+  `JackandBeans (Snap64 Recomp) · v1.0.9`, with the port's name and version
+  ([the game's history](docs/HISTORY.md)).
 * [Video Game Esoterica](https://www.youtube.com/@VideoGameEsoterica), whose video on the port,
   ["Pokemon Snap Recomp Out NOW! More Pokemon PC Ports"](https://youtu.be/1ds9leciGU4?si=iLBwSeI-OqSO8NsI), asked
   for a speed multiplier. Fast forward and slow motion came from that ask.
@@ -518,8 +476,27 @@ None of this would exist without:
   other machines are what 1.0.1 to 1.0.8 were made of, and the next ones
   are what the release after will be.
 
+## Documentation
+
+* [The manual](docs/MANUAL.md) -- every control, page, hotkey and setting
+* [The Snap Station](docs/SNAP-STATION.md)
+* [Linux and the Steam Deck](docs/STEAM-DECK.md)
+* [Known issues, in full](docs/KNOWN-ISSUES.md)
+* [What has been verified](docs/VERIFICATION.md)
+* [Mods](docs/MODS.md)
+* [The game's history](docs/HISTORY.md)
+* [The screenshots](docs/SCREENSHOTS.md)
+* [The changelog](CHANGELOG.md)
+
 ## License
 
-Copyright (C) 2026 JackandBeans. GPLv3: see `LICENSE` and `NOTICE.md`. The port's own code is mine
-and GPLv3; the game is Nintendo's, Creatures', GAME FREAK's and HAL's, and
-nothing of it is here.
+Copyright (C) 2026 JackandBeans. The port's own code is GPLv3: see
+`LICENSE` and [NOTICE.md](NOTICE.md).
+
+This project is not affiliated with, endorsed by or connected to Nintendo,
+Creatures Inc., GAME FREAK inc., HAL Laboratory or The Pokémon Company.
+Pokémon and Pokémon Snap are their trademarks, and the game is theirs. No
+game data is included; you supply your own ROM. The released program is
+compiled from the game's code, which N64: Recompiled translated into C from
+my own cartridge dump. That is how a static recompilation works, and
+[NOTICE.md](NOTICE.md) says what is derived from the game and how.
