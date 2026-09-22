@@ -133,7 +133,7 @@ picture. The full set, with a caption for each, is in
 
 Nothing has to be installed. The download holds everything but the game.
 
-No oldest graphics card has been measured for this port.
+No one has tested how old a graphics card can be and still run the port.
 [Zelda 64: Recompiled](https://github.com/Zelda64Recomp/Zelda64Recomp),
 which uses the same renderer, names the GeForce GT 630, the Radeon HD 7750
 and the Intel HD 510 as the oldest that should work. This port has run on an
@@ -342,11 +342,13 @@ them, and how to write one.
 
 Planned, roughly in this order.
 
-1. **Reports from other machines.** Releases 1.0.1 to 1.0.8 were made of
-   what players reported, and later ones will be too. The issue form is the
-   way to send one, with `snap64.log` attached.
+1. **Reports from other machines.** Most releases so far were made of what
+   players reported, and later ones will be too. The issue form is the way
+   to send one, with `snap64.log` attached.
 2. **A Linux desktop.** The native build has run under WSL and on a Deck,
    and on no Linux desktop yet. The first report from one would be welcome.
+3. **macOS.** The code is in the tree and has never run on a Mac. It
+   needs someone with one to try it.
 
 The same list, with a place to reply, is pinned under
 [Discussions](https://github.com/JackandBeans/Snap64Recomp/discussions/1).
@@ -426,8 +428,9 @@ and inputs at each step.
 I made this port with Claude Code, an AI coding tool. I decide what the
 port does, test it on my own PC and Steam Deck, and turn what players
 report into the next release. Claude writes the code, the tools and the
-documentation in sessions I direct, and every commit made that way names
-the model in its `Co-Authored-By` line.
+documentation in sessions I direct. Each commit made that way names the
+model in its `Co-Authored-By` line, except 46 from the first week, before
+the line was added.
 
 ## Thanks
 
@@ -472,9 +475,8 @@ None of this would exist without:
   ["Pokemon Snap Recomp Out NOW! More Pokemon PC Ports"](https://youtu.be/1ds9leciGU4?si=iLBwSeI-OqSO8NsI), asked
   for a speed multiplier. Fast forward and slow motion came from that ask.
   Thank you for the video, and for the idea.
-* Everyone who plays it and reports what they see. The first reports from
-  other machines are what 1.0.1 to 1.0.8 were made of, and the next ones
-  are what the release after will be.
+* Everyone who plays it and reports what they see. Most releases so far
+  were made of what players reported, and the next ones will be too.
 
 ## Documentation
 

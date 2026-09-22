@@ -26,10 +26,12 @@ For code, these are the things that keep the port what it is:
   has its version bumped, its suite run and its archive checked
   (`BUILDING.md`, "To cut a release").
 * **Say how a change was made.** I made this port with Claude Code
-  (README, "How it was made"), and every commit made that way names the
-  model in a `Co-Authored-By` trailer. A contribution made with an AI tool
-  is welcome on the same terms: name the tool in the trailer.
+  (README, "How it was made"), and each commit made that way names the
+  model in a `Co-Authored-By` trailer, except the first week's, before the
+  trailer was in use. A contribution made with an AI tool is welcome on the
+  same terms: name the tool in the trailer.
 
-Build instructions are in `BUILDING.md`; the automated suite is
-`tools/release_check.py`, and a pull request should say what it reported.
+Build instructions are in `BUILDING.md`. Build with your change, run the
+automated suite, `tools/release_check.py`, and say in the pull request what
+it reported.
 Everything is GPLv3, and a contribution is offered under the same terms.
