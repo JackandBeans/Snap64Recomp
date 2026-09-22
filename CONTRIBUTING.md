@@ -33,5 +33,7 @@ For code, these are the things that keep the port what it is:
 
 Build instructions are in `BUILDING.md`. Build with your change, run the
 automated suite, `tools/release_check.py`, and say in the pull request what
-it reported.
+it reported. The suite needs a full build, your own ROM and about twenty
+minutes; if you cannot run it, say so in the pull request, and I will run it
+before merging.
 Everything is GPLv3, and a contribution is offered under the same terms.
