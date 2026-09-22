@@ -12,10 +12,12 @@
 # 24 and 16 px (a window's title bar, the taskbar's small mode), where a
 # wordmark would be a smear: the logo's film canister alone, on nothing,
 # filling the full height. The canister is lifted out of the logo by a
-# flood fill from the crop's edges over the burst's yellow and the clear
-# ground, so the filmstrip and the burst behind it are left out and nothing
-# of the canister is cut; its left side, where the filmstrip lay against it
-# in the logo, is the clean right side mirrored, so the two sides match.
+# flood fill from the crop's edges over the burst's yellow, its shaded
+# half-transparent edge and the clear ground, so the filmstrip and the burst
+# behind it are left out and nothing of the canister is cut; its outline's
+# left side, where the filmstrip lay against it in the logo, takes the shape
+# of the clean right side, while its paint (the 64, the Poke Ball, the cap's
+# highlight) stays as drawn.
 #
 # The macOS bundle's icon, src/snap64.icns, from the same pieces: the tile
 # at 32 px and above with the Retina doubles Finder asks for, up to 512
@@ -71,6 +73,11 @@ TILE_TOP = (104, 86, 156)       # a little lighter than the logo's outline blue
 TILE_BOTTOM = (76, 61, 118)     # a little darker
 RIM = (58, 45, 96)              # the thin edge
 CANISTER_BOX = (1006, 560, 1084, 694)   # generous box around the canister in docs/logo.png
+# In the cut canister (78 px wide): the first column of the 64 on the label,
+# and the column by which the right side's label shading has faded to the
+# label's flat colour. Measured on this logo; see cut_canister.
+CANISTER_INK_FROM = 14
+CANISTER_FADE_TO = 28
 SS = 8                          # supersampling for the tile's edges
 
 
@@ -129,8 +136,12 @@ def cut_canister(logo):
     reg = np.asarray(logo.crop(CANISTER_BOX)).astype(int)
     r, g, b, a = reg[..., 0], reg[..., 1], reg[..., 2], reg[..., 3]
     yellow = (r > 190) & (g > 150) & (b < 130) & ((r - b) > 90)
-    pale = (r > 225) & (g > 210) & (b > 150) & (a < 250)   # the burst's soft edge
-    ground = (a < 8) | yellow | pale
+    pale = (r > 225) & (g > 210) & (b > 150) & (a < 250)   # the burst's soft edge, light
+    # The burst's soft edge where it is shaded: half-transparent pixels of a
+    # yellow hue, bright or olive. They hug the cap's sides and its feet,
+    # and left in they show as a yellow smear beside the cap.
+    soft = (a < 160) & (r > 60) & (g > 45) & (b < 60) & ((r - b) > 50) & (r >= g)
+    ground = (a < 8) | yellow | pale | soft
     H, W = ground.shape
     reached = np.zeros_like(ground, dtype=bool)
     q = deque()
@@ -161,16 +172,66 @@ def cut_canister(logo):
     out[..., 3] = np.where(keep, a, 0)
     im = Image.fromarray(out.astype(np.uint8), 'RGBA')
     im = im.crop(alpha_bbox(im))
-    # The right side is the clean one; make the left its mirror: the whole
-    # silhouette, and the outer band of pixels (outline, the bands' ends),
-    # while the label's own art in the middle stays as drawn.
+    # The outline's right side is the clean one; the left takes its shape
+    # (the silhouette alone), which drops what the filmstrip's end left on
+    # the body's left. A pixel the mirror makes opaque was ground on the
+    # left, with the burst's yellow under it, so it takes the mirror's colour
+    # as well. Everything else keeps its paint: the 64, the Poke Ball, the
+    # cap's highlight.
     px = np.asarray(im).copy()
     w = px.shape[1]
     mirrored = px[:, ::-1, :]
     half = w // 2
-    band = max(4, w // 5)
+    added = (px[:, :half, 3] == 0) & (mirrored[:, :half, 3] > 0)
     px[:, :half, 3] = mirrored[:, :half, 3]
-    px[:, :band, :3] = mirrored[:, :band, :3]
+    px[:, :half, :3][added] = mirrored[:, :half, :3][added]
+    # The outline's edge pixels are blended with the burst's yellow behind
+    # them in the logo: a few olive pixels at the cap's tip, and a faint
+    # olive fringe down the body's sides. Above the shoulders nothing of the
+    # canister is yellow, and below them the outline's outer two pixels are
+    # never the label, so a yellow-tinted pixel there takes the colour of
+    # the nearest plain pixel inward in its row, its own alpha kept.
+    opaque = px[..., 3] > 8
+    widths = opaque.sum(axis=1)
+    shoulder = int(np.argmax(widths >= 0.6 * w))
+    rgb = px[..., :3].astype(int)
+    tinted = opaque & ((rgb[..., 0] - rgb[..., 2]) > 40) & (rgb[..., 1] > 40) & (rgb[..., 0] >= rgb[..., 1])
+    fix = tinted.copy()
+    for y in range(shoulder, px.shape[0]):
+        if not opaque[y].any():
+            continue
+        first = int(np.argmax(opaque[y]))
+        last = w - 1 - int(np.argmax(opaque[y][::-1]))
+        inner = np.ones(w, dtype=bool)
+        inner[first:first + 2] = False
+        inner[max(first + 2, last - 1):last + 1] = False
+        fix[y, inner] = False
+    for y, x in zip(*np.where(fix)):
+        step = 1 if x < half else -1
+        nx = x + step
+        while 0 <= nx < w and (tinted[y, nx] or px[y, nx, 3] <= 8):
+            nx += step
+        if 0 <= nx < w:
+            px[y, x, :3] = px[y, nx, :3]
+    # The left edge's colours too: in the logo the filmstrip's dark end
+    # covers the canister's left outline and the label's shaded edge, so
+    # the left had a flat dark bar where the right has a black outline and
+    # a label that shades in from it. The right side's colours come across
+    # outright up to the 64, then fade into the drawn pixels over the next
+    # columns, so there is no seam; ink (the 64's strokes, the Poke Ball's
+    # outline and red) keeps its own colour throughout.
+    h = px.shape[0]
+    lum = px[..., :3].astype(int).sum(axis=2) // 3
+    ink = (px[..., 3] > 200) & ((lum < 120) | ((px[..., 0] > 150) & (px[..., 1] < 110)))
+    ink[:, :CANISTER_INK_FROM] = False
+    weight = np.zeros(w)
+    weight[:CANISTER_INK_FROM] = 1.0
+    weight[CANISTER_INK_FROM:CANISTER_FADE_TO] = np.linspace(
+        1.0, 0.0, CANISTER_FADE_TO - CANISTER_INK_FROM, endpoint=False)
+    wgt = np.tile(weight, (h, 1))
+    wgt[ink] = 0.0
+    rgb = px[..., :3].astype(float) * (1 - wgt[..., None]) + mirrored[..., :3].astype(float) * wgt[..., None]
+    px[..., :3] = np.rint(rgb).astype(np.uint8)
     return Image.fromarray(px, 'RGBA')
 
 
