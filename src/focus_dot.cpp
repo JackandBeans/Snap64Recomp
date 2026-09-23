@@ -24,6 +24,7 @@
 #include <cstdint>
 
 #include "recomp.h"
+#include "vr/vr_service.h"
 
 extern "C" {
 #include "funcs.h"
@@ -116,6 +117,12 @@ extern "C" void PokemonDetector_PostProcessImage(uint8_t* rdram, recomp_context*
     // it and samples the pixel next door.
     const bool drewDot = (MEM_H(0, (gpr)(int32_t)centerAddress) & 0xFFFF) == snap::DotColor;
     snap::g_focus_dot_visible.store(drewDot, std::memory_order_relaxed);
+    if(snap::vr::requested.load()) {
+        auto& state=snap::vr::shared();std::lock_guard lock(state.mutex);
+        state.focusVisible=drewDot;
+        unsigned context=MEM_HU(0,(int32_t)0x803AEF36)&1;
+        state.focusFrame=state.detectorFrames[context];
+    }
 
     // When the game DID write here, what is there is already what the game put
     // there and must be left alone.

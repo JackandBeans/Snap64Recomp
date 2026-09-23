@@ -156,6 +156,9 @@ namespace RT64 {
             // Pokemon Snap port: how far this image sits between the previous
             // drawn frame and the current one, for moving tagged rectangles.
             float snapRectWeight;
+            // Isolated VR replay: world geometry only, full eye viewport.
+            bool snapVRWorldOnly = false;
+            bool snapVRHighPrecisionDepth = false;
         };
 
         FramebufferRenderer(RenderWorker *worker, bool rtSupport, UserConfiguration::GraphicsAPI graphicsAPI, const ShaderLibrary *shaderLibrary);

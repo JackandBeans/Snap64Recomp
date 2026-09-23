@@ -117,6 +117,28 @@ HOOKED = [
     # most recently freed address, so an address alone names two different
     # sprites within a frame of each other.
     'omGObjAddSprite',
+    # VR host bridges. Wrappers pass through when VR was not requested.
+    'mainCameraRender',
+    'Msg_ShowMessage', 'Msg_Reset',
+    'Tutorial_ShowMessage',
+    'drawSkyBox1Cycle', 'drawSkyBox2Cycle',
+    'func_800AA38C', 'func_800AA740',
+    'FocusMark_SetTargetPos', 'FocusMark_SetPos', 'FocusMark_SetTargetSize', 'FocusMark_SetSize', 'FocusMark_Show', 'FocusMark_Create',
+    'UIButtonImage_Create', 'UIButtonImage_DeleteAll', 'UIButtonImage_DeleteInRect', 'UIButtonImage_SetState', 'UIButtonImage_SetStateInsideRect',  # Direct VR name-grid selection before menu input dispatch.
+    'PokemonDetector_InitDetector',
+    'func_8009D8A8',
+    'makePhoto',
+    'updateCameraZoomedIn',
+    'updateCameraZoomedOut',
+    'Items_InitItem',
+    'handleItemButtonsPress',
+    'renderPokemonModelTypeIFogged',
+    'renderPokemonModelTypeJFogged',
+    'renderPokemonModelTypeBFogged',
+    'renderPokemonModelTypeDFogged',
+    'renderPokemonModelTypeI',
+    'renderPokemonModelTypeB',
+    'renderPokemonModelTypeD',
 ]
 
 # Calls inserted INSIDE a recompiled function, at a named guest address.

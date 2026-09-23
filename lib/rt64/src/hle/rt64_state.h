@@ -79,6 +79,7 @@ namespace RT64 {
         // framebuffer, which HLE presentation never shows). Set per frame by
         // the port's send_dl; consumed by GBI_RDP::fullSync.
         bool snapFocusDotRequest = false;
+        uint64_t snapVRFrame=0, snapVREpoch=0;
         TextureManager textureManager;
         FramebufferManager framebufferManager;
         // Pokemon Snap port: the renders a photo sprite may be halved from,

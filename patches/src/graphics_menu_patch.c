@@ -37,6 +37,7 @@
 #include "sys/om.h"
 #include "PR/sp.h"
 #include "PR/libaudio.h"
+#include "vr_pointer.inc"
 
 /* Option screen globals, resolved from the reference symbols. */
 extern s8 D_800E8374_A0F904;                 /* selected item index */
@@ -1336,6 +1337,15 @@ static void snap_graphics_page(void) {
 
     while (1) {
         input = func_800AA38C(0);
+        snap_vr_header();
+        {
+            s32 pointed=snap_vr_row(sel, top, PAGE_VISIBLE, PAGE_ITEMS);
+            if(pointed!=sel) {
+                snap_tint((GObj*)PAGE_LABEL(sel),0xFF,0xFF,0xFF);
+                sel=pointed; pulseState=0;
+                snap_swap_strip(descStrip,snap_row_desc(sel));
+            }
+        }
         moved = 0;
 
         if (gContInputPressedButtons & B_BUTTON) {
@@ -1644,6 +1654,13 @@ s8 func_800E7700_A0EC90(void) {
 
     while (1) {
         temp_v0_2 = func_800AA38C(0);
+        snap_vr_header();
+        for(i=0;i<nItems;i++) {
+            if(snap_vr_sprite((SObj*)LIST_LABEL(i)) && i!=MBOX_SEL) {
+                snap_sprite_gray((SObj*)LIST_LABEL(MBOX_SEL),0xFF);
+                MBOX_SEL=i; pulseState=0; armed=0;
+            }
+        }
         if (gContInputPressedButtons & A_BUTTON) {
             snap_ui_sound(SND_OK);
             if ((MBOX_SEL == OPT_EXIT) && !armed) {
@@ -2134,6 +2151,15 @@ static void snap_sound_page(void) {
 
     while (1) {
         input = func_800AA38C(0);
+        snap_vr_header();
+        {
+            s32 pointed=snap_vr_row(sel, 0, 6, 6);
+            if(pointed!=sel) {
+                snap_tint((GObj*)PAGE_LABEL(sel),0xFF,0xFF,0xFF);
+                sel=pointed; pulseState=0;
+                snap_swap_strip(descStrip,STR_SND_DESC + sel);
+            }
+        }
         moved = 0;
 
         if (gContInputPressedButtons & B_BUTTON) {
@@ -2698,6 +2724,15 @@ static s32 snap_controls_page(void) {
 
     while (1) {
         input = func_800AA38C(0);
+        snap_vr_header();
+        {
+            s32 pointed=snap_vr_row(sel, top, CTL_VISIBLE, CTL_ROWS);
+            if(pointed!=sel) {
+                snap_tint((GObj*)PAGE_LABEL(sel),0xFF,0xFF,0xFF);
+                sel=pointed; pulseState=0;
+                snap_swap_strip(descStrip,snap_ctl_desc_str(sel));
+            }
+        }
         moved = 0;
 
         if (gContInputPressedButtons & B_BUTTON) {
@@ -3193,6 +3228,15 @@ static void snap_bind_page(void) {
 
     while (1) {
         input = func_800AA38C(0);
+        snap_vr_header();
+        {
+            s32 pointed=snap_vr_row(sel, top, BIND_VISIBLE, BIND_ROWS);
+            if(pointed!=sel) {
+                snap_tint((GObj*)BIND_LABEL(sel),0xFF,0xFF,0xFF);
+                sel=pointed; pulseState=0;
+                snap_swap_strip(descStrip,snap_bind_desc_str(sel)); armed=0;flash=0;
+            }
+        }
 
         /* The host turned the bank: the row values are new. */
         if (BIND_GEN != gen) {
@@ -3836,6 +3880,15 @@ static void snap_mod_options_page(s32 modRow) {
 
     while (1) {
         input = func_800AA38C(0);
+        snap_vr_header();
+        {
+            s32 pointed=snap_vr_row(sel, top, OPT_VISIBLE, count);
+            if(pointed!=sel) {
+                snap_tint((GObj*)OPT_LABEL(sel-top),0xFF,0xFF,0xFF);
+                sel=pointed; pulseState=0;
+                snap_swap_strip(descStrip,snap_opt_help_str(sel-top,gen));
+            }
+        }
 
         if (OPT_GEN != gen) {
             gen = OPT_GEN;
@@ -4037,6 +4090,15 @@ static void snap_mods_page(void) {
 
     while (1) {
         input = func_800AA38C(0);
+        snap_vr_header();
+        {
+            s32 pointed=snap_vr_row(sel, top, MODS_VISIBLE, count);
+            if(pointed!=sel) {
+                snap_tint((GObj*)MODS_LABEL(sel-top),0xFF,0xFF,0xFF);
+                sel=pointed; pulseState=0;
+                snap_swap_strip(descStrip,snap_mods_help_str(sel-top,gen)); snap_mods_hint_show(hintStrip,sel,top,gen,modCount);
+            }
+        }
 
         /* The host turned the bank: the window's names and values are new. */
         if (MODS_GEN != gen) {
@@ -4325,6 +4387,15 @@ static void snap_port_pages(s32 ctx) {
 
     while (1) {
         input = func_800AA38C(0);
+        snap_vr_header();
+        {
+            s32 pointed=snap_vr_row(sel, 0, COURSE_ITEMS, COURSE_ITEMS);
+            if(pointed!=sel) {
+                snap_tint((GObj*)COURSE_LABEL(sel),0xFF,0xFF,0xFF);
+                sel=pointed; pulseState=0;
+                snap_swap_strip(helpStrip,snap_course_help_str(sel)); armed=0;
+            }
+        }
 
         if (snap_start_closes()) {
             break;
@@ -5153,6 +5224,15 @@ s32 func_800E3974_A0AF04(s8 arg0) {
 
     while (1) {
         temp_v0 = func_800AA38C(0);
+        for(i=0;i<temp_s3;i++) {
+            if(snap_vr_sprite(sp54[i]->data.sobj) && i!=var_s0) {
+                ohEndAllObjectProcesses(sp54[var_s0]);
+                func_800E18E0_A08E70(sp54[var_s0]->data.sobj,0xC0,0xC0,0);
+                var_s0=i;
+                omCreateProcess(sp54[var_s0],func_800E3240_A0A7D0,0,1);
+            }
+        }
+
         if (temp_v0->pressedButtons != 0) {
             func_800E1AEC_A0907C();
             func_800E1AD4_A09064();

@@ -16,6 +16,8 @@ struct RSPProcessCB {
     uint vertexCount;
     float prevFrameWeight;
     float curFrameWeight;
+    uint snapVRView;
+    uint3 snapPadding;
 };
 
 [[vk::push_constant]] ConstantBuffer<RSPProcessCB> gConstants : register(b0);
@@ -70,7 +72,10 @@ void CSMain(uint vertexIndex : SV_DispatchThreadID) {
     float4 vertexColor;
     if (fogIndex > 0) {
         const RSPFog rspFog = rspFogVector[fogIndex - 1];
-        const float fogAlpha = ((max(tfPos.z, 0) / tfPos.w) * rspFog.mul + rspFog.offset);
+        // Headset near/far differ from the ROM camera. Preserve its fog curve
+        // in view-space distance instead of feeding it headset clip depth.
+        float fogDepth=gConstants.snapVRView ? max(0.0f,(25610.0f/25590.0f)-(512000.0f/25590.0f)/max(tfPos.w,0.001f)) : max(tfPos.z,0)/tfPos.w;
+        const float fogAlpha = fogDepth * rspFog.mul + rspFog.offset;
         vertexColor.a = clamp(fogAlpha / 255.0f, 0.0f, 1.0f);
     }
     else {

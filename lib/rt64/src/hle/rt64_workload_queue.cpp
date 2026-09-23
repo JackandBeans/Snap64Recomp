@@ -23,6 +23,9 @@
 // Atomic: armed here on the render thread, consumed on the game thread, read
 // by the present queue.
 extern "C" std::atomic<int32_t> snap_frame_dump_pending;
+extern "C" bool snap_vr_enabled();
+extern "C" unsigned snap_vr_refresh_rate();
+extern "C" void snap_vr_render(RT64::WorkloadQueue*,RT64::GameFrame*,const RT64::GameFrame*,float);
 
 namespace RT64 {
     // WorkloadQueue
@@ -256,7 +259,7 @@ namespace RT64 {
             workloadConfig.targetRate = ext.sharedResources->userConfig.refreshRateTarget;
 
             // Limit the target rate to the rate detected by the swap chain.
-            if ((ext.sharedResources->swapChainRate > 0) && (workloadConfig.targetRate > ext.sharedResources->swapChainRate)) {
+            if (!snap_vr_enabled() && (ext.sharedResources->swapChainRate > 0) && (workloadConfig.targetRate > ext.sharedResources->swapChainRate)) {
                 workloadConfig.targetRate = ext.sharedResources->swapChainRate;
             }
 
@@ -268,6 +271,7 @@ namespace RT64 {
         }
 
         // Store the rate that was chosen for the configuration.
+        if(snap_vr_enabled() && snap_vr_refresh_rate())workloadConfig.targetRate=snap_vr_refresh_rate();
         ext.sharedResources->targetRate = workloadConfig.targetRate;
 
 #   if RT_ENABLED
@@ -420,7 +424,7 @@ namespace RT64 {
         rendererCPUProfiler.start();
 
         const bool aspectRatioAdjustment = (abs(workloadConfig.aspectRatioScale - 1.0f) > 1e-6f);
-        const bool processProjections = aspectRatioAdjustment || prevFrame.matched|| curFrame.isDebuggerCameraEnabled(*this);
+        const bool processProjections = aspectRatioAdjustment || prevFrame.matched|| curFrame.isDebuggerCameraEnabled(*this) || snap_vr_enabled();
         bool uploadProjections = false;
         if (processProjections) {
             ProjectionProcessor::ProcessParams projParams;
@@ -1936,7 +1940,7 @@ namespace RT64 {
                     // RDRAM exactly as the game computed it), and its
                     // presented image is then replaced with the previous
                     // frame's before the present thread is told about it.
-                    const bool heldSubFrame = snapCutHold && (frame > 0) &&
+                    const bool heldSubFrame = !snap_vr_enabled() && snapCutHold && (frame > 0) &&
                         threadHoldCopy(snapHoldScratch.get(), RenderTargetKey(), overrideTarget, RenderTargetKey());
                     if (!heldSubFrame) {
                         const bool interpolationSubFrame = generateInterpolatedFrames && (curFrameWeight < 1.0f);
@@ -1953,6 +1957,7 @@ namespace RT64 {
                         threadRenderFrame(curFrame, prevFrame, workloadConfig, workload.debuggerRenderer, workload.debuggerCamera, curFrameWeight, prevFrameWeight, deltaTimeMs,
                             interpolationTargetKey, interpolationTargetFbPairIndex, overrideTarget, overrideModifier, velocityUploaderUsed, uploadExtras, tileInterpolationUsed, lookAtInterpolationUsed,
                             interpolationSubFrame);
+                        if (snap_vr_enabled()) snap_vr_render(this,&curFrame,&prevFrame,curFrameWeight);
                     }
 
                     if (snapCutHold && (frame == 0)) {

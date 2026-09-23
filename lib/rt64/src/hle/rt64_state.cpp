@@ -2780,6 +2780,7 @@ namespace RT64 {
 
     void State::advanceWorkload(Workload &workload, bool paused) {
         workload.workloadId = ++workloadId;
+        workload.snapVRFrame=snapVRFrame;workload.snapVREpoch=snapVREpoch;
         workload.presentId = presentId;
         workload.debuggerCamera = debuggerInspector.camera;
         workload.debuggerRenderer = debuggerInspector.renderer;

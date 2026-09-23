@@ -75,7 +75,7 @@ LIBRARY_EXPORT bool RasterPS(const RenderParams rp, float4 vertexPosition, float
     // in a wider range of values. Not accounting for this can lead to geometry showing up that should otherwise be invisible.
     // This max range was determined by using a test ROM against an LLE implementation.
     // FIXME: This should be turned off for non-F3D microcodes.
-    const bool simulateDepthClipF3D = true;
+    const bool simulateDepthClipF3D = (FbParams.snapVRHighPrecisionDepth == 0);
     const float MaxDepth = simulateDepthClipF3D && !renderFlagRect(rp.flags) && !zSourcePrim ? (1022.0f / 1024.0f) : 1.0f;
     
     // FIXME: This can be implemented by checking feature support for the API and embedding the depth bounds into the pipeline.
@@ -101,7 +101,7 @@ LIBRARY_EXPORT bool RasterPS(const RenderParams rp, float4 vertexPosition, float
     // clips before it encodes, and after interpolation, which is the only point at which the
     // hardware quantises at all. Snapping per vertex instead flattens the depth gradient across
     // large polygons and loses the geometry entirely.
-    resultDepth = QuantizeDepthN64(fragDepth);
+    resultDepth = FbParams.snapVRHighPrecisionDepth ? saturate(fragDepth) : QuantizeDepthN64(fragDepth);
 
     if (depthDecal) {
         // Sample the depth buffer for this pixel to compare for the decal check.
@@ -119,7 +119,13 @@ LIBRARY_EXPORT bool RasterPS(const RenderParams rp, float4 vertexPosition, float
         }
 
         // Perform the decal depth tolerance check.
-        const float DepthTolerance = max(CoplanarDepthTolerance(surfaceDepth), dz);
+        // N64's compressed-depth tolerance covers meters at distance with
+        // the headset's 2-unit near plane. It lets distant decal triangles
+        // leak through unrelated surfaces differently in the two eyes.
+        // Floating-point eye depth needs only rounding error and slope.
+        const float roundingTolerance = FbParams.snapVRHighPrecisionDepth ?
+            2.0f * abs(asfloat(asuint(surfaceDepth) + 1u) - surfaceDepth) : CoplanarDepthTolerance(surfaceDepth);
+        const float DepthTolerance = max(roundingTolerance, dz);
         const float pixelDepth = select(depthClampNear, max(fragDepth, 0.0f), fragDepth);
         if (abs(pixelDepth - surfaceDepth) > DepthTolerance) {
             return false;

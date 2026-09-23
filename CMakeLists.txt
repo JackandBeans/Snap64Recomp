@@ -52,6 +52,10 @@ endif()
 # Options
 # =============================================================================
 option(BUILD_RT64 "Build RT64 rendering backend" ON)
+option(SNAP_ENABLE_VR "Build the Windows OpenXR D3D12 VR port" OFF)
+if(SNAP_ENABLE_VR AND (NOT WIN32 OR NOT BUILD_RT64))
+    message(FATAL_ERROR "SNAP_ENABLE_VR requires Windows and BUILD_RT64")
+endif()
 
 message(STATUS "${SNAP_PRODUCT_NAME} ${SNAP_VERSION_FULL}")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
@@ -268,6 +272,8 @@ endif()
 set(SNAP_SOURCES
     ${SNAP_PATCH_SOURCES}
     src/main.cpp
+    src/vr/vr_service.cpp
+    src/vr/vr_game_bridge.cpp
     src/paths.cpp
     src/rom_picker.cpp
     src/fast_forward.cpp
@@ -326,6 +332,23 @@ if (MSVC)
 endif()
 
 add_executable(Snap64Recomp ${SNAP_SOURCES})
+if(SNAP_ENABLE_VR)
+    include(FetchContent)
+    set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    set(BUILD_API_LAYERS OFF CACHE BOOL "" FORCE)
+    set(DYNAMIC_LOADER OFF CACHE BOOL "" FORCE)
+    set(JSONCPP_STATIC_WINDOWS_RUNTIME ON CACHE BOOL "" FORCE)
+    FetchContent_Declare(openxr
+        GIT_REPOSITORY https://github.com/KhronosGroup/OpenXR-SDK.git
+        GIT_TAG 105a2a674cd7aae85de8d6a43f2d2cbdaa80af60)
+    FetchContent_MakeAvailable(openxr)
+    set_property(TARGET openxr_loader PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
+    target_sources(Snap64Recomp PRIVATE src/vr/vr_interaction.cpp src/vr/vr_options.cpp src/vr/vr_openxr.cpp src/vr/vr_renderer.cpp src/vr/vr_props.cpp)
+    target_compile_definitions(Snap64Recomp PRIVATE SNAP_ENABLE_VR=1)
+    target_link_libraries(Snap64Recomp PRIVATE openxr_loader d3d12 dxgi d3dcompiler)
+    add_custom_command(TARGET Snap64Recomp POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/assets/vr" "$<TARGET_FILE_DIR:Snap64Recomp>/assets/vr")
+endif()
 
 target_include_directories(Snap64Recomp PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"

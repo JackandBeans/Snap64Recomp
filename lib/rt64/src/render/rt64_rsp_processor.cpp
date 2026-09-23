@@ -23,6 +23,8 @@ namespace RT64 {
         processCB.vertexCount = drawVertexCount - processCB.vertexStart;
         processCB.prevFrameWeight = p.prevFrameWeight;
         processCB.curFrameWeight = p.curFrameWeight;
+        processCB.snapVRView=p.snapVRView?1:0;
+        processCB.snapPadding[0]=processCB.snapPadding[1]=processCB.snapPadding[2]=0;
         p.outputBuffers->screenPosBuffer.computedSize += processCB.vertexCount * sizeof(float) * 4;
         p.outputBuffers->genTexCoordBuffer.computedSize += processCB.vertexCount * sizeof(float) * 2;
         p.outputBuffers->shadedColBuffer.computedSize += processCB.vertexCount * sizeof(float) * 4;

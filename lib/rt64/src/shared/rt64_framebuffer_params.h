@@ -16,6 +16,8 @@ namespace interop {
         // Pokemon Snap port: how far this image sits between the previous
         // matched frame and the current one; 1 on the frame the game drew.
         float snapPrimWeight;
+        uint snapVRHighPrecisionDepth;
+        uint snapPadding;
     };
 #ifdef HLSL_CPU
 };

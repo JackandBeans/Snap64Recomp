@@ -13,10 +13,12 @@
 #include <chrono>
 #include <cstdint>
 #include <mutex>
+#include "vr/vr_interaction.h"
 
 namespace snap {
 
 struct Settings {
+    vr::Settings vr;
     bool  fullscreen        = false;
     bool  widescreen        = false;  // RT64 Expand: true 16:9 FOV, not a stretch
     int   msaa              = 0;      // 0, 2, 4, 8

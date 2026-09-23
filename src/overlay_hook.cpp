@@ -18,6 +18,7 @@
 #include "recomp.h"
 #include "librecomp/overlays.hpp"
 #include "settings.h"
+#include "vr/vr_service.h"
 #include "menu_harvest.h"
 #include "audio.h"
 #include "ultramodern/ultramodern.hpp"
@@ -154,10 +155,12 @@ extern "C" void dmaLoadOverlay(uint8_t* rdram, recomp_context* ctx) {
         }
         if (rom_start == 0x4F0610u) {
             snap::g_app_level_resident.store(true, std::memory_order_relaxed);
+            snap::vr::sceneChanged(true);
         }
         else if (((vram_start < LevelCodeEnd) && ((vram_start + size) > LevelCodeStart)) ||
                  (rom_start == TitleRomStart)) {
             snap::g_app_level_resident.store(false, std::memory_order_relaxed);
+            snap::vr::sceneChanged(false);
         }
     }
 }

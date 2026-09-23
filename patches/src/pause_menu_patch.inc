@@ -266,7 +266,19 @@ static void snap_pause_pages(GObj* obj) {
     snap_pause_item_state();
 }
 
+static void snap_pause_pointer(void) {
+    s32 previous = PauseCurrentSelection;
+    func_800AA38C(0); /* Refresh the pointer mailbox even in the pause coroutine. */
+    if(snap_vr_sprite(Pause_Continue))PauseCurrentSelection=0;
+    else if(snap_vr_sprite(Pause_QuitCourse))PauseCurrentSelection=1;
+    else if(snap_vr_sprite(Pause_Retry))PauseCurrentSelection=2;
+    else if(snap_pause_item!=NULL && snap_vr_sprite(snap_pause_item->data.sobj))PauseCurrentSelection=3;
+    if(previous!=PauseCurrentSelection)snap_pause_item_state();
+
+}
+
 void Pause_UpdateSelection(GObj* obj) {
+    snap_pause_pointer();
     if (PauseButtonPressTimeout > 0) {
         Pause_StickReleased = 0;
     } else if ((ABS(gContInputStickY) > 20) && Pause_StickReleased) {
@@ -386,6 +398,7 @@ void updatePauseMenu(GObj* arg0) {
             return;
         }
         if (IsPaused) {
+            snap_pause_pointer(); /* Resolve this trigger against this frame's target. */
             if ((MBOX_MENU_REQ != 0) && (MBOX_DL_SPARE < SNAP_PAGES_DL_NEED)) {
                 MBOX_MENU_REQ = 0;   /* no room in this frame's display list */
             }

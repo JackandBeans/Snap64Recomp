@@ -293,6 +293,7 @@ namespace RT64 {
         std::multimap<uint32_t, uint32_t> transformIdMap;
         std::multimap<uint32_t, uint32_t> physicalAddressTransformMap;
         std::vector<uint32_t> transformIgnoredIds;
+        uint64_t snapVRFrame=0, snapVREpoch=0;
         uint64_t workloadId = 0;
         uint64_t presentId = 0;
         bool paused = false;

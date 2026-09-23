@@ -43,6 +43,8 @@ namespace plume {
 #endif
 }
 
+extern "C" void snap_vr_shutdown();
+
 namespace RT64 {
     // Constants
 
@@ -792,6 +794,8 @@ namespace RT64 {
         state.reset();
         workloadQueue.reset();
         presentQueue.reset();
+        // Rendering threads are joined; release XR resources before their device.
+        snap_vr_shutdown();
 
         // Call the deinit hook if one was attached.
         RenderHookDeinit *deinitHook = GetRenderHookDeinit();

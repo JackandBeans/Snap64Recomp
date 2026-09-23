@@ -1465,6 +1465,7 @@ namespace RT64 {
         fbParams.resolutionScale = p.resolutionScale;
         fbParams.horizontalMisalignment = p.horizontalMisalignment;
         fbParams.snapPrimWeight = p.snapRectWeight;
+        fbParams.snapVRHighPrecisionDepth=p.snapVRHighPrecisionDepth?1:0;fbParams.snapPadding=0;
         framebufferCount++;
 
         while (framebufferCount > framebufferVector.size()) {
@@ -1592,6 +1593,10 @@ namespace RT64 {
         RenderViewport viewportClip;
         for (uint32_t pr = 0; (pr < fbPair.projectionCount) && (globalCallIndex < p.maxGameCall); pr++) {
             const Projection &proj = fbPair.projections[pr];
+            if (p.snapVRWorldOnly && proj.type != Projection::Type::Perspective) {
+                globalCallIndex += proj.gameCallCount;
+                continue;
+            }
             if (proj.scissorRect.isNull()) {
                 continue;
             }
@@ -2140,6 +2145,18 @@ namespace RT64 {
                         bool usesViewport = (proj.type == Projection::Type::Perspective) || (proj.type == Projection::Type::Orthographic);
                         if (usesViewport) {
                             triangles.scissor = viewportScissorIntersection(viewportClip, triangles.scissor);
+                        }
+                        if (p.snapVRWorldOnly) {
+                            triangles.scissor = RenderRect(0,0,p.targetWidth,p.targetHeight);
+                        }
+                        if (p.snapVRHighPrecisionDepth && proj.type == Projection::Type::Perspective) {
+                            // OpenXR already supplies the complete asymmetric
+                            // projection. The ROM's zoomed-in scissor must not
+                            // activate the desktop 4:3 viewport adjustment:
+                            // scaling an off-axis eye projection creates a
+                            // nonzero disparity even for objects at infinity.
+                            triangles.screenScale = {1.0f,1.0f};
+                            triangles.screenOffset = halfPixelOffset;
                         }
                         if (snapDrawTrace) {
                             snapDrawTraceLine("  call %u type %d tris %u scissor (%d,%d)-(%d,%d) callRect (%d,%d)-(%d,%d) origins %u/%u testZ %d indexStart %u rect (%d,%d)-(%d,%d)",

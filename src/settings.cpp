@@ -106,6 +106,10 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         // value was always false, and the restore 1.0.5 promised ran only on
         // a Steam Deck, whose default is fullscreen.
         s.fullscreen         = j.value("fullscreen", s.fullscreen);
+        s.vr.leftHanded=j.value("vr_left_handed",false);
+        s.vr.eyeHeight=std::clamp(j.value("vr_eye_height",1.2f),0.5f,2.2f);
+        s.vr.renderScale=std::clamp(j.value("vr_render_scale",1.0f),0.5f,1.5f);
+        s.vr.throwStrength=std::clamp(j.value("vr_throw_strength",1.0f),0.25f,2.0f);
         s.widescreen         = j.value("widescreen", s.widescreen);
         s.msaa               = j.value("msaa", s.msaa);
         s.fps_mode           = j.value("fps_mode", s.fps_mode);
@@ -333,6 +337,10 @@ bool save_settings() {
     };
     const nlohmann::json j{
         {"fullscreen",            copy.fullscreen},
+        {"vr_left_handed", copy.vr.leftHanded},
+        {"vr_eye_height", copy.vr.eyeHeight},
+        {"vr_render_scale", copy.vr.renderScale},
+        {"vr_throw_strength", copy.vr.throwStrength},
         {"widescreen",            copy.widescreen},
         {"msaa",                  copy.msaa},
         {"fps_mode",              copy.fps_mode},

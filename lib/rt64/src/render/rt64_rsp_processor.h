@@ -15,6 +15,8 @@ namespace RT64 {
             uint32_t vertexCount;
             float prevFrameWeight;
             float curFrameWeight;
+            uint32_t snapVRView;
+            uint32_t snapPadding[3];
         };
 
         struct ModifyCB {
@@ -28,6 +30,7 @@ namespace RT64 {
             OutputBuffers *outputBuffers = nullptr;
             float prevFrameWeight = 0.0f;
             float curFrameWeight = 1.0f;
+            bool snapVRView = false;
         };
 
         ProcessCB processCB;

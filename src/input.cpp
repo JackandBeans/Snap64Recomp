@@ -50,6 +50,7 @@
  */
 
 #include "input.h"
+#include "vr/vr_service.h"
 
 #include <atomic>
 #include <chrono>
@@ -2596,6 +2597,11 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
     *buttons = btn;
     *x = ax;
     *y = ay;
+    snap::vr::input(buttons,x,y);
+    if(snap::vr::requested.load()&&g_rdram) {
+        auto& vr=snap::vr::shared();std::lock_guard lock(vr.mutex);
+        write_u8(g_rdram, ADDR_MailboxViewTurned, vr.viewTurned?1:0);vr.viewTurned=false;
+    }
     // The session tap: everything the game is about to be handed, recorded or
     // replaced. See snap_input_tap below.
     snap_input_tap(buttons, x, y);

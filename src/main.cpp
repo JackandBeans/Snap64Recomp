@@ -95,6 +95,7 @@ static constexpr const char* SNAP_INTERNAL_NAME  = "POKEMON SNAP";
 // SDL2 window / gfx callbacks
 // ---------------------------------------------------------------------------
 #include <SDL2/SDL.h>
+#include "vr/vr_service.h"
 #if defined(_WIN32) || defined(__APPLE__)
 #include <SDL2/SDL_syswm.h>
 #endif
@@ -499,6 +500,9 @@ static void update_gfx(void* /*gfx_data*/) {
                 ultramodern::quit();
                 break;
             case SDL_KEYDOWN:
+                if(event.key.keysym.scancode==SDL_SCANCODE_F9 && !event.key.repeat && snap::vr::requested.load()) {
+                    auto& state=snap::vr::shared();std::lock_guard lock(state.mutex);state.recenter=true;break;
+                }
                 // The BUTTON SETUP page is listening for a key: the input layer
                 // took this one as the binding (or refused it), and it is
                 // neither a hotkey nor Esc's Start here.
@@ -1211,6 +1215,17 @@ static void snap_radv_debug_nonggc() {
 #endif
 
 int main(int argc, char* argv[]) {
+    for(int i=1;i<argc;i++) {
+        if(std::string(argv[i])=="--vr"||std::string(argv[i])=="--vr-preview") {
+#ifdef SNAP_ENABLE_VR
+            snap::vr::requested=true;
+            snap::vr::preview=std::string(argv[i])=="--vr-preview";
+#else
+            fprintf(stderr,"This build has no VR support. Configure with -DSNAP_ENABLE_VR=ON.\n");
+            return 1;
+#endif
+        }
+    }
     (void)argc;
     (void)argv;
 

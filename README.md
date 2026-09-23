@@ -9,6 +9,8 @@
 
 # Snap64 Recomp
 
+This working tree includes an experimental [Windows OpenXR VR build](docs/VR.md). See that guide for the Quest PC VR launcher, controls, and validation status.
+
 Snap64 Recomp is a native PC port of Pokémon Snap (Nintendo 64, US release)
 for Windows, Linux and the Steam Deck. It is made with
 [N64: Recompiled](https://github.com/N64Recomp/N64Recomp), which translates

@@ -8,6 +8,7 @@
  */
 
 #include "rt64_render_context.h"
+#include "vr/vr_service.h"
 
 #include <cstdio>
 #include <cassert>
@@ -239,7 +240,7 @@ public:
         // Off Windows there is one backend, whatever the file says: Metal on
         // a Mac, Vulkan elsewhere.
 #if defined(_WIN32)
-        app_->userConfig.graphicsAPI = (snap::settings().graphics_api == 1)
+        app_->userConfig.graphicsAPI = (!snap::vr::requested.load() && snap::settings().graphics_api == 1)
             ? RT64::UserConfiguration::GraphicsAPI::Vulkan
             : RT64::UserConfiguration::GraphicsAPI::D3D12;
         printf("[SNAP] graphics API: %s\n", (snap::settings().graphics_api == 1) ? "Vulkan (settings)" : "Direct3D 12");
@@ -424,6 +425,10 @@ public:
             default:                        app_->userConfig.refreshRate = RT64::UserConfiguration::RefreshRate::Original; break;
         }
         app_->userConfig.refreshRateTarget = new_config.rr_manual_value;
+        if(snap::vr::requested.load()&&!snap::vr::preview) {
+            app_->userConfig.refreshRate=RT64::UserConfiguration::RefreshRate::Manual;
+            app_->userConfig.refreshRateTarget=snap::vr::displayRate.load();
+        }
         app_->userConfig.downsampleMultiplier = std::clamp(new_config.ds_option, 1, 8);
         app_->userConfig.threePointFiltering = snap::settings().three_point_filtering;
 
@@ -653,6 +658,13 @@ public:
         // Taken with an exchange: read and cleared in one step, so a set the
         // game made between the read and the clear is not swallowed and the
         // indicator does not drop out for a frame.
+        if(snap::vr::requested.load()) {
+            auto& vr=snap::vr::shared();std::lock_guard lock(vr.mutex);
+            app_->state->snapVRFrame=vr.game.frame;app_->state->snapVREpoch=vr.game.epoch;
+            if(vr.gameHistory.empty()||vr.gameHistory.back().frame!=vr.game.frame||vr.gameHistory.back().epoch!=vr.game.epoch) {
+                vr.gameHistory.push_back(vr.game);while(vr.gameHistory.size()>32)vr.gameHistory.pop_front();
+            }
+        }
         app_->state->snapFocusDotRequest = snap::g_focus_dot_visible.exchange(false, std::memory_order_relaxed);
 
         // Crossing into the next world block moves the origin everything is
@@ -849,6 +861,7 @@ public:
     }
 
     uint32_t get_display_framerate() const override {
+        if(snap::vr::requested.load()&&!snap::vr::preview)return snap::vr::displayRate.load();
         if (app_ && app_->presentQueue) {
             return app_->presentQueue->ext.sharedResources->swapChainRate;
         }
