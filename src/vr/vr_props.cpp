@@ -1,0 +1,324 @@
+#include "vr_props.h"
+#include "vr_font.h"
+#include "vr_menu.h"
+#include "vr_messages.h"
+#include "vr_transparency.h"
+#include <cstdio>
+#include <chrono>
+#include "paths.h"
+#include <windows.h>
+#include <d3d12.h>
+#include <d3dcompiler.h>
+#include <wrl/client.h>
+#include <json/json.hpp>
+#include <fstream>
+#include <stdexcept>
+#include <cstring>
+#include <algorithm>
+#include <cstddef>
+#define STB_IMAGE_WRITE_STATIC
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include <stb/stb_image_write.h>
+using Microsoft::WRL::ComPtr;
+namespace snap::vr {
+namespace {
+void ok(HRESULT h){if(FAILED(h))throw std::runtime_error("VR D3D12 failure: "+std::to_string(h));}
+struct Vertex {Vec3 position;float r,g,b,u=0,v=0,textured=0,alpha=1;};
+struct Color {float r,g,b;};
+void triangle(std::vector<Vertex>& out,Pose p,Vec3 a,Vec3 b,Vec3 c,Color color) {
+    Vec3 n=normalized(cross(b-a,c-a));float shade=std::clamp(.75f+dot(n,{.1f,.3f,.2f}),.35f,1.0f);
+    for(auto v:{a,b,c})out.push_back({p.position+rotate(p.orientation,v),color.r*shade,color.g*shade,color.b*shade});
+}
+void box(std::vector<Vertex>& out,Pose p,Vec3 center,Vec3 half,Color color) {
+    std::array<Vec3,8> v;for(int i=0;i<8;i++)v[i]=center+Vec3{(i&1)?half.x:-half.x,(i&2)?half.y:-half.y,(i&4)?half.z:-half.z};
+    const int faces[][4]={{0,4,6,2},{1,3,7,5},{0,1,5,4},{2,6,7,3},{0,2,3,1},{4,5,7,6}};
+    for(auto& f:faces){triangle(out,p,v[f[0]],v[f[1]],v[f[2]],color);triangle(out,p,v[f[0]],v[f[2]],v[f[3]],color);}
+}
+void screenQuad(std::vector<Vertex>& out,Pose p,float width,float height) {
+    const float coords[][4]={{-1,-1,0,1},{-1,1,0,0},{1,1,1,0},{-1,-1,0,1},{1,1,1,0},{1,-1,1,1}};
+    for(auto c:coords)out.push_back({p.position+rotate(p.orientation,{c[0]*width/2,c[1]*height/2,0}),1,1,1,c[2],c[3],1});
+}
+void label(std::vector<Vertex>& out,Pose panel,const char* text,float x,float y,float pixel,Color color) {
+    for(const char* c=text;*c;c++,x+=pixel*6) {
+        auto bits=glyph(*c);
+        for(int column=0;column<5;column++)for(int row=0;row<7;row++)if(bits[column]&(1<<row)) {
+            Vec3 p{x+column*pixel,y-row*pixel,.005f};
+            triangle(out,panel,p,p+Vec3{0,-pixel,0},p+Vec3{pixel,-pixel,0},color);
+            triangle(out,panel,p,p+Vec3{pixel,-pixel,0},p+Vec3{pixel,0,0},color);
+        }
+    }
+}
+Matrix multiply(const Matrix&a,const Matrix&b){Matrix c{};for(int i=0;i<4;i++)for(int j=0;j<4;j++)for(int k=0;k<4;k++)c[i*4+j]+=a[i*4+k]*b[k*4+j];return c;}
+Quat mix(Quat a,Quat b,float t){float d=a.x*b.x+a.y*b.y+a.z*b.z+a.w*b.w;if(d<0){b.x=-b.x;b.y=-b.y;b.z=-b.z;b.w=-b.w;}Quat q{a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t,a.z+(b.z-a.z)*t,a.w+(b.w-a.w)*t};float n=std::sqrt(q.x*q.x+q.y*q.y+q.z*q.z+q.w*q.w);return {q.x/n,q.y/n,q.z/n,q.w/n};}
+struct Mesh {
+    std::vector<Vertex> vertices;
+    void load(const nlohmann::json& j) {
+        const auto data=j.at("vertices").get<std::vector<float>>();
+        const auto indices=j.at("indices").get<std::vector<unsigned>>();
+        const auto alpha=j.value("alpha",std::vector<float>{});
+        if(data.size()%11||indices.size()%3)throw std::runtime_error("Invalid VR model layout");
+        if(!alpha.empty()&&alpha.size()!=data.size()/11)throw std::runtime_error("Invalid VR model alpha layout");
+        vertices.reserve(indices.size());
+        for(unsigned index:indices) {
+            size_t i=size_t(index)*11;if(i+10>=data.size())throw std::runtime_error("VR model index out of range");
+            Vec3 n{data[i+3],data[i+4],data[i+5]};
+            float shade=std::clamp(.80f+dot(n,{.12f,.25f,.18f}),.35f,1.f);
+            float opacity=alpha.empty()?1.f:alpha[index];
+            if(!std::isfinite(opacity)||opacity<0||opacity>1)throw std::runtime_error("Invalid VR model opacity");
+            vertices.push_back({{data[i],data[i+1],data[i+2]},data[i+6]*shade,data[i+7]*shade,data[i+8]*shade,0,0,0,opacity});
+        }
+    }
+    void draw(std::vector<Vertex>& out,Pose pose) const {
+        out.reserve(out.size()+vertices.size());
+        for(auto vertex:vertices){vertex.position=pose.position+rotate(pose.orientation,vertex.position);out.push_back(vertex);}
+    }
+};
+struct Rig {
+    std::vector<float> rest,ibm,verts,open,fist,cameraGrip,itemGrip;
+    std::vector<int> parent,tris;
+    std::vector<std::string> names;
+    void load(const nlohmann::json& j){rest=j.at("rest").get<std::vector<float>>();ibm=j.at("ibm").get<std::vector<float>>();verts=j.at("verts").get<std::vector<float>>();parent=j.at("parent").get<std::vector<int>>();tris=j.at("tris").get<std::vector<int>>();names=j.at("bones").get<std::vector<std::string>>();open=j.at("poses").at("open").get<std::vector<float>>();fist=j.at("poses").at("fist").get<std::vector<float>>();cameraGrip=j.at("poses").at("grip_1").get<std::vector<float>>();itemGrip=j.at("poses").at("grip_3").get<std::vector<float>>();}
+    void draw(std::vector<Vertex>& out,Pose wrist,const HandInput& input,Held held) const {
+        std::vector<Pose> world(parent.size());
+        for(size_t i=0;i<parent.size();i++) {
+            float t=input.squeeze;
+            if(names[i].starts_with("Index"))t=input.trigger;
+            if(names[i].starts_with("Thumb"))t=input.thumbTouch?.7f:.15f;
+            if(held!=Held::None)t=std::max(t,held==Held::Camera?.55f:.65f);
+            const auto& target=held==Held::Camera?cameraGrip:held!=Held::None?itemGrip:fist;
+            size_t q=i*4;Pose p{mix({open[q],open[q+1],open[q+2],open[q+3]},{target[q],target[q+1],target[q+2],target[q+3]},t),{rest[i*7],rest[i*7+1],rest[i*7+2]}};
+            world[i]=parent[i]?compose(world[parent[i]-1],p):p;
+        }
+        std::vector<Vertex> transformed;transformed.reserve(verts.size()/15);
+        for(size_t i=0;i<verts.size();i+=15) {
+            Vec3 p{},n{};
+            for(int k=0;k<4;k++) {
+                float weight=verts[i+11+k];if(weight<=0)continue;size_t b=size_t(verts[i+7+k])-1;const float* m=&ibm[b*12];
+                Vec3 v{m[0]*verts[i]+m[1]*verts[i+1]+m[2]*verts[i+2]+m[3],m[4]*verts[i]+m[5]*verts[i+1]+m[6]*verts[i+2]+m[7],m[8]*verts[i]+m[9]*verts[i+1]+m[10]*verts[i+2]+m[11]};
+                Vec3 norm{m[0]*verts[i+3]+m[1]*verts[i+4]+m[2]*verts[i+5],m[4]*verts[i+3]+m[5]*verts[i+4]+m[6]*verts[i+5],m[8]*verts[i+3]+m[9]*verts[i+4]+m[10]*verts[i+5]};
+                p=p+(world[b].position+rotate(world[b].orientation,v))*weight;n=n+rotate(world[b].orientation,norm)*weight;
+            }
+            float u=verts[i+6];Color color=u<.25f?Color{.91f,.65f,.43f}:u<.5f?Color{.10f,.35f,.18f}:u<.75f?Color{.08f,.1f,.08f}:Color{.65f,.73f,.56f};
+            float shade=std::clamp(.775f+dot(normalized(n),{.06f,.225f,.05f}),.3f,1.f);
+            transformed.push_back({wrist.position+rotate(wrist.orientation,p),color.r*shade,color.g*shade,color.b*shade});
+        }
+        for(int i:tris)out.push_back(transformed.at(i));
+    }
+};
+const char* shader=R"(
+cbuffer Constants:register(b0){row_major float4x4 vp;}
+Texture2D screenTex:register(t0);SamplerState sampler0:register(s0);
+struct V{float3 p:POSITION;float3 c:COLOR0;float3 uv:TEXCOORD;float alpha:COLOR1;};
+struct P{float4 p:SV_POSITION;float3 c:COLOR0;float3 uv:TEXCOORD;float alpha:COLOR1;};
+P vs(V v){P o;o.p=mul(float4(v.p,1),vp);o.p.z=(o.p.z+o.p.w)*0.5;o.c=v.c;o.uv=v.uv;o.alpha=v.alpha;return o;}
+float4 ps(P p):SV_TARGET{return p.uv.z>.5?float4(screenTex.Sample(sampler0,p.uv.xy).rgb,1):float4(p.c,p.alpha);}
+)";
+}
+struct Props::Impl {
+    ID3D12Device* device;ID3D12CommandQueue* queue;
+    ComPtr<ID3D12CommandAllocator> allocator;
+    ComPtr<ID3D12GraphicsCommandList> list;
+    ComPtr<ID3D12Fence> fence;
+    ComPtr<ID3D12RootSignature> root;
+    ComPtr<ID3D12PipelineState> pipeline,transparentPipeline;
+    ComPtr<ID3D12DescriptorHeap> rtv,dsv,srv;
+    ComPtr<ID3D12Resource> vertices,indices,timestampReadback;
+    ComPtr<ID3D12QueryHeap> timestampHeap;
+    UINT64 timestampFrequency=0;
+    double waitMs=0;
+    UINT64 fenceValue=0;HANDLE event=nullptr;size_t capacity=0,indexCapacity=0;
+    std::array<Rig,2> hands;
+    Mesh cameraMesh,vehicleMesh,appleMesh,pesterBallMesh;
+    std::vector<Vertex> frameVertices;
+    std::vector<unsigned> opaqueIndices;
+    std::vector<TransparentTriangle> transparentTriangles;
+    uint64_t geometryFrame=0;bool geometryReady=false;
+    Impl(ID3D12Device* d,ID3D12CommandQueue* q):device(d),queue(q) {
+        D3D12_QUERY_HEAP_DESC query{};query.Type=D3D12_QUERY_HEAP_TYPE_TIMESTAMP;query.Count=2;
+        ok(d->CreateQueryHeap(&query,IID_PPV_ARGS(&timestampHeap)));ok(q->GetTimestampFrequency(&timestampFrequency));
+        D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_READBACK;
+        D3D12_RESOURCE_DESC buffer{};buffer.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;buffer.Width=16;buffer.Height=1;
+        buffer.DepthOrArraySize=buffer.MipLevels=1;buffer.SampleDesc.Count=1;buffer.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        ok(d->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&buffer,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_PPV_ARGS(&timestampReadback)));
+        ok(d->CreateCommandAllocator(D3D12_COMMAND_LIST_TYPE_DIRECT,IID_PPV_ARGS(&allocator)));
+        ok(d->CreateCommandList(0,D3D12_COMMAND_LIST_TYPE_DIRECT,allocator.Get(),nullptr,IID_PPV_ARGS(&list)));ok(list->Close());
+        ok(d->CreateFence(0,D3D12_FENCE_FLAG_NONE,IID_PPV_ARGS(&fence)));event=CreateEventW(nullptr,FALSE,FALSE,nullptr);if(!event)throw std::runtime_error("VR fence event");
+        D3D12_DESCRIPTOR_HEAP_DESC hd{};hd.NumDescriptors=1;hd.Type=D3D12_DESCRIPTOR_HEAP_TYPE_RTV;ok(d->CreateDescriptorHeap(&hd,IID_PPV_ARGS(&rtv)));
+        hd.Type=D3D12_DESCRIPTOR_HEAP_TYPE_DSV;ok(d->CreateDescriptorHeap(&hd,IID_PPV_ARGS(&dsv)));
+        hd.Type=D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;hd.Flags=D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;ok(d->CreateDescriptorHeap(&hd,IID_PPV_ARGS(&srv)));
+        D3D12_DESCRIPTOR_RANGE range{D3D12_DESCRIPTOR_RANGE_TYPE_SRV,1,0,0,0};
+        D3D12_ROOT_PARAMETER params[2]{};params[0].ParameterType=D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;params[0].Constants={0,0,16};params[0].ShaderVisibility=D3D12_SHADER_VISIBILITY_VERTEX;
+        params[1].ParameterType=D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;params[1].DescriptorTable={1,&range};params[1].ShaderVisibility=D3D12_SHADER_VISIBILITY_PIXEL;
+        D3D12_STATIC_SAMPLER_DESC sampler{};sampler.Filter=D3D12_FILTER_MIN_MAG_MIP_LINEAR;sampler.AddressU=sampler.AddressV=sampler.AddressW=D3D12_TEXTURE_ADDRESS_MODE_CLAMP;sampler.MaxLOD=D3D12_FLOAT32_MAX;sampler.ShaderVisibility=D3D12_SHADER_VISIBILITY_PIXEL;sampler.ComparisonFunc=D3D12_COMPARISON_FUNC_ALWAYS;
+        D3D12_ROOT_SIGNATURE_DESC rd{2,params,1,&sampler,D3D12_ROOT_SIGNATURE_FLAG_ALLOW_INPUT_ASSEMBLER_INPUT_LAYOUT};ComPtr<ID3DBlob> blob,errors;
+        ok(D3D12SerializeRootSignature(&rd,D3D_ROOT_SIGNATURE_VERSION_1,&blob,&errors));ok(d->CreateRootSignature(0,blob->GetBufferPointer(),blob->GetBufferSize(),IID_PPV_ARGS(&root)));
+        ComPtr<ID3DBlob> vs,ps;ok(D3DCompile(shader,std::strlen(shader),"snap_vr",nullptr,nullptr,"vs","vs_5_0",0,0,&vs,&errors));ok(D3DCompile(shader,std::strlen(shader),"snap_vr",nullptr,nullptr,"ps","ps_5_0",0,0,&ps,&errors));
+        D3D12_INPUT_ELEMENT_DESC elements[]={{"POSITION",0,DXGI_FORMAT_R32G32B32_FLOAT,0,0,D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0},{"COLOR",0,DXGI_FORMAT_R32G32B32_FLOAT,0,12,D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0},{"TEXCOORD",0,DXGI_FORMAT_R32G32B32_FLOAT,0,24,D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0},{"COLOR",1,DXGI_FORMAT_R32_FLOAT,0,UINT(offsetof(Vertex,alpha)),D3D12_INPUT_CLASSIFICATION_PER_VERTEX_DATA,0}};
+        D3D12_GRAPHICS_PIPELINE_STATE_DESC pd{};pd.pRootSignature=root.Get();pd.VS={vs->GetBufferPointer(),vs->GetBufferSize()};pd.PS={ps->GetBufferPointer(),ps->GetBufferSize()};pd.InputLayout={elements,4};
+        pd.BlendState.RenderTarget[0].RenderTargetWriteMask=D3D12_COLOR_WRITE_ENABLE_ALL;pd.SampleMask=UINT_MAX;pd.RasterizerState.FillMode=D3D12_FILL_MODE_SOLID;pd.RasterizerState.CullMode=D3D12_CULL_MODE_NONE;pd.RasterizerState.DepthClipEnable=TRUE;
+        pd.DepthStencilState.DepthEnable=TRUE;pd.DepthStencilState.DepthWriteMask=D3D12_DEPTH_WRITE_MASK_ALL;pd.DepthStencilState.DepthFunc=D3D12_COMPARISON_FUNC_LESS_EQUAL;
+        pd.PrimitiveTopologyType=D3D12_PRIMITIVE_TOPOLOGY_TYPE_TRIANGLE;pd.NumRenderTargets=1;pd.RTVFormats[0]=DXGI_FORMAT_R8G8B8A8_UNORM;pd.DSVFormat=DXGI_FORMAT_D32_FLOAT;pd.SampleDesc.Count=1;
+        ok(d->CreateGraphicsPipelineState(&pd,IID_PPV_ARGS(&pipeline)));
+        auto& blend=pd.BlendState.RenderTarget[0];blend.BlendEnable=TRUE;
+        blend.SrcBlend=D3D12_BLEND_SRC_ALPHA;blend.DestBlend=D3D12_BLEND_INV_SRC_ALPHA;blend.BlendOp=D3D12_BLEND_OP_ADD;
+        blend.SrcBlendAlpha=D3D12_BLEND_ONE;blend.DestBlendAlpha=D3D12_BLEND_INV_SRC_ALPHA;blend.BlendOpAlpha=D3D12_BLEND_OP_ADD;
+        pd.DepthStencilState.DepthWriteMask=D3D12_DEPTH_WRITE_MASK_ZERO;
+        ok(d->CreateGraphicsPipelineState(&pd,IID_PPV_ARGS(&transparentPipeline)));
+        std::ifstream file(snap::base_dir()/"assets/vr/hands.json");if(!file)throw std::runtime_error("Missing assets/vr/hands.json");nlohmann::json j;file>>j;hands[0].load(j.at("left"));hands[1].load(j.at("right"));
+        std::ifstream models(snap::base_dir()/"assets/vr/props.json");if(!models)throw std::runtime_error("Missing assets/vr/props.json");
+        nlohmann::json props;models>>props;cameraMesh.load(props.at("models").at("camera"));vehicleMesh.load(props.at("models").at("zero_one"));
+        appleMesh.load(props.at("models").at("apple"));pesterBallMesh.load(props.at("models").at("pester_ball"));
+    }
+    ~Impl(){if(event)CloseHandle(event);}
+    void begin(){ok(allocator->Reset());ok(list->Reset(allocator.Get(),nullptr));}
+    void finish(){ok(list->Close());ID3D12CommandList* lists[]={list.Get()};queue->ExecuteCommandLists(1,lists);ok(queue->Signal(fence.Get(),++fenceValue));ok(fence->SetEventOnCompletion(fenceValue,event));auto start=std::chrono::steady_clock::now();if(WaitForSingleObject(event,10000)!=WAIT_OBJECT_0)throw std::runtime_error("VR GPU fence timed out");waitMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();}
+};
+Props::Props(ID3D12Device*d,ID3D12CommandQueue*q):impl(std::make_unique<Impl>(d,q)){}
+Props::~Props()=default;
+void Props::beginTiming(){auto& x=*impl;x.waitMs=0;x.begin();x.list->EndQuery(x.timestampHeap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,0);x.finish();}
+double Props::endTiming(){
+    auto& x=*impl;x.begin();x.list->EndQuery(x.timestampHeap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,1);
+    x.list->ResolveQueryData(x.timestampHeap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,0,2,x.timestampReadback.Get(),0);x.finish();
+    UINT64* data=nullptr;D3D12_RANGE range{0,16};ok(x.timestampReadback->Map(0,&range,reinterpret_cast<void**>(&data)));
+    double elapsed=1000.0*double(data[1]-data[0])/double(x.timestampFrequency);x.timestampReadback->Unmap(0,nullptr);return elapsed;
+}
+double Props::fenceWaitMs()const{return impl->waitMs;}
+
+void Props::capture(ID3D12Resource*source,const char* filename) {
+    auto& x=*impl;auto desc=source->GetDesc();D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint;UINT rows;UINT64 rowSize,size;
+    x.device->GetCopyableFootprints(&desc,0,1,0,&footprint,&rows,&rowSize,&size);
+    D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_READBACK;D3D12_RESOURCE_DESC buffer{};buffer.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;buffer.Width=size;buffer.Height=1;buffer.DepthOrArraySize=buffer.MipLevels=1;buffer.SampleDesc.Count=1;buffer.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+    ComPtr<ID3D12Resource> readback;ok(x.device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&buffer,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_PPV_ARGS(&readback)));
+    x.begin();D3D12_RESOURCE_BARRIER barrier{};barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;barrier.Transition={source,D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_RENDER_TARGET,D3D12_RESOURCE_STATE_COPY_SOURCE};x.list->ResourceBarrier(1,&barrier);
+    D3D12_TEXTURE_COPY_LOCATION s{source,D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,{}},d{};d.pResource=readback.Get();d.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;d.PlacedFootprint=footprint;x.list->CopyTextureRegion(&d,0,0,0,&s,nullptr);
+    std::swap(barrier.Transition.StateBefore,barrier.Transition.StateAfter);x.list->ResourceBarrier(1,&barrier);x.finish();
+    void* data;D3D12_RANGE range{0,SIZE_T(size)};ok(readback->Map(0,&range,&data));
+    if(!stbi_write_png(filename,int(desc.Width),int(desc.Height),4,data,int(footprint.Footprint.RowPitch))) {readback->Unmap(0,nullptr);throw std::runtime_error("VR capture write failed");}
+    readback->Unmap(0,nullptr);
+}
+void Props::copy(ID3D12Resource*source,ID3D12Resource*dest,unsigned width,unsigned height) {
+    auto& x=*impl;x.begin();D3D12_RESOURCE_BARRIER b[2]{};
+    for(auto& v:b){v.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;v.Transition.Subresource=D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES;}
+    b[0].Transition={source,D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_RENDER_TARGET,D3D12_RESOURCE_STATE_COPY_SOURCE};
+    // XR_KHR_D3D12_enable requires acquired color images to enter and
+    // leave application use in RENDER_TARGET, not COMMON/PRESENT.
+    b[1].Transition={dest,D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_RENDER_TARGET,D3D12_RESOURCE_STATE_COPY_DEST};x.list->ResourceBarrier(2,b);
+    D3D12_TEXTURE_COPY_LOCATION s{source,D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,{}},d{dest,D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX,{}};
+    D3D12_BOX box{0,0,0,width,height,1};x.list->CopyTextureRegion(&d,0,0,0,&s,&box);
+    std::swap(b[0].Transition.StateBefore,b[0].Transition.StateAfter);std::swap(b[1].Transition.StateBefore,b[1].Transition.StateAfter);x.list->ResourceBarrier(2,b);x.finish();
+}
+void Props::draw(ID3D12Resource*color,ID3D12Resource*depth,ID3D12Resource*screen,Pose eye,Fov fov,const GameState&g,const InteractionFrame&f,const Tracking&t,const Interaction&interaction,bool focus,bool optionsOpen,int optionsRow) {
+    auto& x=*impl;auto& v=x.frameVertices;float unit=interaction.settings.unitsPerMeter;
+    bool rebuild=!x.geometryReady||x.geometryFrame!=t.frame;
+    // Work in meters for props and transform the game-space eye into meters.
+    auto meters=[&](Pose p){p.position=p.position*(1/unit);return p;};
+    Pose cart=meters(interaction.cartPose(g));
+    if(rebuild){v.clear();x.geometryFrame=t.frame;x.geometryReady=true;
+    if(g.course) {
+        x.vehicleMesh.draw(v,cart);
+        for(int i=0;i<2;i++) {
+            Vec3 p=i?Interaction::pesterBin:Interaction::appleBin;
+
+            if(i?g.pesterBalls:g.apples)(i?x.pesterBallMesh:x.appleMesh).draw(v,compose(cart,Pose{{},p}));
+        }
+
+        Pose camera=compose(cart,Pose{{},Interaction::cameraDock});
+        for(int i=0;i<2;i++) {
+            if(!t.hands[i].tracked)continue;Pose hand=meters(f.hands[i]);x.hands[i].draw(v,handMeshPose(hand),t.hands[i],f.held[i]);
+            if(f.held[i]==Held::Camera)camera=compose(meters(f.lens),Pose{{},{0,0,.14f}});
+            else if(f.held[i]!=Held::None)(f.held[i]==Held::Apple?x.appleMesh:x.pesterBallMesh).draw(v,compose(hand,Pose{{},{0,-.02f,-.06f}}));
+        }
+        x.cameraMesh.draw(v,camera);
+        if(!g.message.empty()) {
+            // One binocular panel, after world rendering and outside the lens
+            // pass. Tutorials remain readable while the camera points away.
+            Pose panel=compose(meters(f.head),Pose{{},{0,-.18f,-.85f}});
+            auto lines=messageLines(g.message);float height=.055f*float(lines.size())+(g.messageContinue?.11f:.06f);
+            box(v,panel,{0,-height/2+.035f,-.012f},{.46f,height/2,.008f},{.025f,.04f,.07f});
+            for(size_t line=0;line<lines.size();line++)label(v,panel,lines[line].c_str(),-.43f,-float(line)*.055f,.0034f,{1,1,1});
+            if(g.messageContinue)label(v,panel,"PRESS A / X TO CONTINUE",-.27f,-height+.075f,.0034f,{1,.8f,.25f});
+        }
+        Pose display=compose(camera,Pose{{},{-.008f,-.004f,.050f}});screenQuad(v,display,.116f,.087f);
+        // Focus ring is geometry on the screen; it cannot contaminate scoring.
+        Color ring=focus?Color{1,.1f,.08f}:Color{.92f,.92f,.92f};
+        for(int i=0;i<32;i++) {
+            float a=2*pi*i/32,b=2*pi*(i+1)/32;
+            Vec3 p{std::cos(a)*.006f,std::sin(a)*.006f,.001f},q{std::cos(b)*.006f,std::sin(b)*.006f,.001f};
+            triangle(v,display,p,q,{q.x*1.15f,q.y*1.15f,q.z},ring);
+            triangle(v,display,p,{q.x*1.15f,q.y*1.15f,q.z},{p.x*1.15f,p.y*1.15f,p.z},ring);
+        }
+        // Two seven-segment film-count digits below the viewfinder.
+        constexpr unsigned digits[]={0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f};
+        for(int digit=0;digit<2;digit++) {
+            unsigned bits=digits[(digit?g.film:g.film/10)%10];float ox=.032f+digit*.009f,oy=-.038f;
+            const Vec3 centers[]={{0,.012f,0},{.004f,.008f,0},{.004f,.002f,0},{0,-.002f,0},{-.004f,.002f,0},{-.004f,.008f,0},{0,.005f,0}};
+            for(int segment=0;segment<7;segment++)if(bits&(1<<segment)) {
+                bool horizontal=segment==0||segment==3||segment==6;
+                box(v,camera,{ox+centers[segment].x,oy+centers[segment].y,.052f},horizontal?Vec3{.003f,.0007f,.0003f}:Vec3{.0007f,.0025f,.0003f},{.7f,1,.7f});
+            }
+        }
+    } else {
+        Pose panel{{},{0,interaction.settings.eyeHeight,-1.6f}};
+        if(optionsOpen) {
+            box(v,panel,{0,0,-.03f},{.8f,.6f,.02f},{.03f,.07f,.12f});
+            label(v,panel,"VR OPTIONS",-.62f,.48f,.015f,{1,.8f,.3f});
+            char rows[6][64];const auto& settings=interaction.settings;
+            std::snprintf(rows[0],64,"HAND  %s",settings.leftHanded?"LEFT":"RIGHT");
+            std::snprintf(rows[1],64,"EYE HEIGHT  %.2f M",settings.eyeHeight);
+            std::snprintf(rows[2],64,"RENDER SCALE  %.1f",settings.renderScale);
+            std::snprintf(rows[3],64,"THROW STRENGTH  %.1f",settings.throwStrength);
+            std::snprintf(rows[4],64,"RECENTER");std::snprintf(rows[5],64,"DONE");
+            for(int row=0;row<6;row++)label(v,panel,rows[row],-.62f,.27f-row*.11f,.010f,row==optionsRow?Color{1,.8f,.2f}:Color{.9f,.95f,1});
+            label(v,panel,"POINT AND TRIGGER OR USE THUMBSTICK",-.67f,-.47f,.0065f,{.65f,.75f,.85f});
+            label(v,panel,"RENDER SCALE APPLIES ON NEXT LAUNCH",-.67f,-.54f,.0065f,{.65f,.75f,.85f});
+        }else screenQuad(v,panel,1.6f,1.2f);
+        for(int i=0;i<2;i++)if(t.hands[i].tracked) {
+            Pose hand=interaction.localPose(t.hands[i].grip);x.hands[i].draw(v,handMeshPose(hand),t.hands[i],Held::None);
+            if(i!=(interaction.settings.leftHanded?0:1))continue;
+            Pose aim=interaction.localPose(t.hands[i].aim);Vec3 dir=rotate(aim.orientation,{0,0,-1});
+            if(dir.z<-.001f){float distance=(-1.6f-aim.position.z)/dir.z;if(distance>0){Vec3 hit=aim.position+dir*distance;
+                if(std::abs(hit.x)<.8f&&std::abs(hit.y-interaction.settings.eyeHeight)<.6f){Pose cursor{{},hit};box(v,cursor,{0,0,.002f},{.004f,.004f,.002f},{.15f,1,1});}}}
+        }
+    }
+    x.opaqueIndices.clear();x.transparentTriangles.clear();
+    for(unsigned first=0;first<v.size();first+=3) {
+        if(v[first].alpha<1||v[first+1].alpha<1||v[first+2].alpha<1)
+            x.transparentTriangles.push_back({first,(v[first].position+v[first+1].position+v[first+2].position)*(1.f/3)});
+        else for(unsigned k=0;k<3;k++)x.opaqueIndices.push_back(first+k);
+    }
+    } // Both eyes share exactly the same accessory geometry snapshot.
+    if(v.empty())return;
+    Pose ep=g.course?meters(eye):interaction.localPose(eye);
+    const auto transparent=transparentIndices(x.transparentTriangles,ep);
+    size_t size=v.size()*sizeof(Vertex);if(size>x.capacity) {
+        x.vertices.Reset();x.capacity=size*2;D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_UPLOAD;
+        D3D12_RESOURCE_DESC desc{};desc.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;desc.Width=x.capacity;desc.Height=1;desc.DepthOrArraySize=desc.MipLevels=1;desc.SampleDesc.Count=1;desc.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        ok(x.device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&desc,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&x.vertices)));
+    }
+    if(rebuild){void* data;D3D12_RANGE range{0,0};ok(x.vertices->Map(0,&range,&data));std::memcpy(data,v.data(),size);x.vertices->Unmap(0,nullptr);}
+    const size_t indexSize=(x.opaqueIndices.size()+transparent.size())*sizeof(unsigned);
+    if(indexSize>x.indexCapacity) {
+        x.indices.Reset();x.indexCapacity=indexSize*2;D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_UPLOAD;
+        D3D12_RESOURCE_DESC desc{};desc.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;desc.Width=x.indexCapacity;desc.Height=1;desc.DepthOrArraySize=desc.MipLevels=1;desc.SampleDesc.Count=1;desc.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        ok(x.device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&desc,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&x.indices)));
+    }
+    if(rebuild||!transparent.empty()) {
+        void* data;D3D12_RANGE range{0,0};ok(x.indices->Map(0,&range,&data));auto* dest=static_cast<unsigned*>(data);
+        std::copy(x.opaqueIndices.begin(),x.opaqueIndices.end(),dest);std::copy(transparent.begin(),transparent.end(),dest+x.opaqueIndices.size());x.indices->Unmap(0,nullptr);
+    }
+    x.device->CreateRenderTargetView(color,nullptr,x.rtv->GetCPUDescriptorHandleForHeapStart());x.device->CreateDepthStencilView(depth,nullptr,x.dsv->GetCPUDescriptorHandleForHeapStart());
+    D3D12_SHADER_RESOURCE_VIEW_DESC sd{};sd.Format=screen->GetDesc().Format;sd.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2D;sd.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;sd.Texture2D.MipLevels=1;x.device->CreateShaderResourceView(screen,&sd,x.srv->GetCPUDescriptorHandleForHeapStart());
+    x.begin();auto rt=x.rtv->GetCPUDescriptorHandleForHeapStart(),ds=x.dsv->GetCPUDescriptorHandleForHeapStart();x.list->OMSetRenderTargets(1,&rt,FALSE,&ds);
+    auto desc=color->GetDesc();D3D12_VIEWPORT viewport{0,0,float(desc.Width),float(desc.Height),0,1};D3D12_RECT scissor{0,0,LONG(desc.Width),LONG(desc.Height)};x.list->RSSetViewports(1,&viewport);x.list->RSSetScissorRects(1,&scissor);
+    x.list->SetPipelineState(x.pipeline.Get());x.list->SetGraphicsRootSignature(x.root.Get());ID3D12DescriptorHeap* heaps[]={x.srv.Get()};x.list->SetDescriptorHeaps(1,heaps);x.list->SetGraphicsRootDescriptorTable(1,x.srv->GetGPUDescriptorHandleForHeapStart());
+    auto vp=multiply(view(ep),projection(fov,.02f,1000));x.list->SetGraphicsRoot32BitConstants(0,16,vp.data(),0);
+    D3D12_VERTEX_BUFFER_VIEW vb{x.vertices->GetGPUVirtualAddress(),UINT(size),sizeof(Vertex)};x.list->IASetVertexBuffers(0,1,&vb);x.list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+    D3D12_INDEX_BUFFER_VIEW ib{x.indices->GetGPUVirtualAddress(),UINT(indexSize),DXGI_FORMAT_R32_UINT};x.list->IASetIndexBuffer(&ib);
+    x.list->DrawIndexedInstanced(UINT(x.opaqueIndices.size()),1,0,0,0);
+    if(!transparent.empty()) {
+        x.list->SetPipelineState(x.transparentPipeline.Get());
+        x.list->DrawIndexedInstanced(UINT(transparent.size()),1,UINT(x.opaqueIndices.size()),0,0);
+    }
+    x.finish();
+}
+}

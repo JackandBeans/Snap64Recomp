@@ -1,0 +1,109 @@
+# Windows OpenXR VR build
+
+This is an experimental PC VR implementation. The acceptance matrix below distinguishes implemented paths from completed headset validation. Standalone Quest execution is not supported.
+
+## Build and run
+
+Follow the repository's normal dependency, ROM, patch, and recompilation pipeline first. The ROM must match the USA revision expected by `pokemonsnap.us.toml`. Never edit `RecompiledFuncs` directly: add wrappers to `tools/hook_funcs.py`, change patch sources, then regenerate.
+
+```powershell
+python tools/fetch_deps.py
+python tools/hook_funcs.py
+cmake -S . -B build-win -G "Visual Studio 17 2022" -A x64 -DSNAP_ENABLE_VR=ON
+cmake --build build-win --config Release --target Snap64Recomp --parallel 12
+cd build-win/Release
+./Snap64Recomp.exe --vr
+```
+
+OpenXR SDK release 1.1.53 is pinned in CMake. The active Windows OpenXR runtime must have the connected headset available on the same graphics adapter as RT64. VR forces D3D12. Launch without `--vr` for desktop play. The build copies the hand and prop assets beside the executable; keep `assets/vr` with it.
+
+`--vr-preview` renders synthetic stereo eyes without an OpenXR device. It saves periodic left/right PNGs in the working directory, retains desktop controls, and is intended for diagnostic use. It cannot establish comfort or headset alignment.
+
+## Controls
+
+- Menus: dominant-hand thumbstick changes the highlight; trigger confirms, B/Y cancels, A/X sends Start. Point directly at the desired control. Title, options and pause use sprite/row hit tests; original lab and photo menus move their focus rectangle to the pointed target and defer confirmation until it arrives. On-screen A/B prompt icons and their adjacent labels are clickable. Name entry maps the pointer directly to each character and to Backspace, Space and End; the pointed key is latched at the trigger edge.
+- VR options: click the left thumbstick to open the settings panel. Point at a row and trigger, or use the thumbstick to select and adjust. B/Y or Done closes it. Opening it during a course requests pause.
+- Recenter: press both thumbsticks together, or F9 on the PC. Sit or stand in the intended posture and look forward when recentering.
+- Camera: squeeze grip near the holster on the right to pick it up with either hand. Hold grip to carry it; release to return it. The holding hand's trigger takes one photograph per press; its thumbstick changes lens zoom. Grip with the free hand near the camera to steady its orientation.
+- Items: grip near the left apple dispenser or right pester-ball dispenser, then release grip to throw. Items appear only after their original unlocks and cooldowns. Tracking loss cancels held objects rather than throwing them.
+- Course: B/Y holds dash; A/X plays the flute, subject to the original game's unlock checks. The left controller menu button pauses where the runtime makes it available.
+- Tutorials: a binocular panel gives the current grip/shutter instruction. A/X continues informational prompts. The panel stays visible during the original text's blink interval and clears when the tutorial dismisses it. Head/camera turns count as looking around without requiring desktop mouse capture.
+
+The cart follows route position and yaw; its pitch and roll never rotate the tracking origin. Physical leaning and turning are retained. There is no free locomotion.
+
+## Settings and saves
+
+VR settings live in `snapsettings.json` beside the executable:
+
+| Key | Default | Meaning |
+| --- | --- | --- |
+| `vr_left_handed` | `false` | Dominant hand for menus |
+| `vr_eye_height` | `1.2` | Calibrated eye height above the cart origin, meters |
+| `vr_render_scale` | `1.0` | Multiplier on OpenXR's recommended eye dimensions |
+| `vr_throw_strength` | `1.0` | Multiplier on tracked release velocity |
+
+The in-headset VR options panel edits the same values. Handedness, height and throw strength apply live; render scale applies on the next launch. Direct file edits require restarting. Recenter is available during play. The physical holster stays on the right and can be grabbed with either hand.
+
+Original save data remains `saves/pokemonsnap.bin`. VR photographs also need `saves/vr-photo-lenses.json`: the original photo record stores eye and target but cannot represent arbitrary lens roll or variable field of view. Keep this sidecar with the save. Its metadata also applies when viewing those photographs in desktop mode.
+
+## Implementation boundaries
+
+`src/vr/vr_openxr.*` owns session, actions, predicted poses, stereo swapchains and submission. `vr_interaction.*` contains the cart-relative pose and interaction state machine. `vr_game_bridge.cpp` wraps guest functions at the verified ROM revision's addresses. `vr_renderer.cpp` replays perspective draw calls from one simulation snapshot into separate eye and lens targets; it excludes framebuffer side effects. `vr_props.cpp` draws world-depth-tested accessories after the world. These accessories never enter the game's photograph detector or scoring renderer.
+
+Off-axis Pokemon draws are added without allocating photograph detector regions. The main guest camera follows the handheld lens. Detector metadata carries source-frame IDs, and lens projection/up-vector metadata is restored during photo review and scoring.
+
+Eye passes use RT64's matched world matrices and vertex/UV interpolation weights at the runtime refresh rate. Cart snapshots are associated with game workloads and interpolated over the same interval, with shortest-path yaw and course-block origin rebasing. Tracking remains predicted each display frame. The lens/scoring image retains its simulation snapshot. Desktop interpolation settings are preserved.
+
+Sky adjustment is restricted to the actual `SkyBoxObject`, resolved through the world overlay. Several terrain blocks reuse `drawSkyBox2Cycle`; they must retain their original transforms. The dome follows the cart independently of the handheld camera. Eye decal tolerance uses floating-point depth precision instead of the N64 compressed-depth tolerance.
+
+The camera, ZERO-ONE-inspired vehicle, apple and Pester Ball are authored in `tools/build_vr_models.py` and `assets/vr/snap_vr_props.blend`; regenerate with `blender --background --python tools/build_vr_models.py`. The exporter validates transforms, normals and triangle area, and writes indexed meter-scale geometry with UVs to `props.json`. `vr_props.cpp` loads all four meshes; the apple and Pester Ball replace the procedural spheres in the item dispensers and either hand. Released projectiles continue to use the ROM assets and original game logic. `tools/vr_assets.py` converts the local DramaticShape numeric hand mesh, skeleton and poses into `assets/vr/hands.json`; attribution is in `assets/vr/NOTICE.md`.
+
+The polished Blender props retain the camera origin, palm sockets, live screen plane and item reach locations. Camera details include a ribbed focus ring, recessed lens, front casting, flash diffuser, accessory shoe, strap eyes and grip ribs. The ZERO-ONE adds an interior liner, hull trim, seat panels, gauge graduations/needles, wheel rim hardware, lamp details and supported item wells/holster. Details use geometry and colors supported by the runtime. The camera is 10,436 triangles and the vehicle 30,604, down from 24,300 and 37,940 respectively; this is a geometry reduction, not a measured headset performance claim.
+
+The `.blend` has `camera`, `zero_one`, `apple` and `pester_ball` collections, a `VR Props Source` scene, and seven review scenes. Regeneration writes front/rear/side camera, vehicle/cockpit and individual item renders (`build-win/vr-*-review.png`) plus `build-win/vr-model-stats.json`. Export also checks finite attributes and triangle area after rounding and enforces triangle budgets. The item integration and transparency support require rebuilding the executable; the build copies the matching assets into `build-win/Release/assets/vr/`. For later geometry-only edits, copying the regenerated assets there is sufficient.
+
+The apple has a lobed peel with vertex-color blush, recessed crown, curved stem and solid folded leaf (2,980 triangles). The Pester Ball has three separate, raised red/blue/orange shells over a smaller yellow core, with recessed yellow channels and inset purple ports (9,048 triangles). The panel crowns sit 4.5 mm above the inner sphere. The channels are now approximately 2.5 times wider (0.28 radians between panels), and the colored shells use 65% opacity. Both retain the existing center-origin hand placement and roughly 55 mm body radius. Individual portable exports are `assets/vr/apple.glb` and `assets/vr/pester_ball.glb`; the game uses their geometry in `props.json`.
+
+Transparent models export an optional per-vertex `alpha` array alongside the existing 11-float vertex layout. The accessory renderer draws opaque geometry first, then alpha-blended triangles sorted back-to-front separately for each eye, with depth testing enabled and transparent depth writes disabled. The yellow core and purple ports remain opaque. The GLB also preserves the colored materials' opacity.
+
+Polish validation: the camera and vehicle Blender views were inspected, and 130 ray samples across the live display rectangle confirm no model geometry in front of its plane. The earlier runtime preview reached the lab and exited before a course capture. The item addition includes reviewed Blender renders, closed-mesh and portable-export checks, a Windows Release build and passing existing VR interaction tests. A synthetic preview initialized with all four models. In-course and headset item appearance remain unverified.
+
+Camera attachment follow-up: reviewed the three Quest screenshots `VirtualDesktop.Android-20260923-155300.jpg`, `-155310.jpg`, and `-155318.jpg`. Added an eyecup neck and rear control rail, extended the lens barrel, and seated the optical layers, markings, screws and flash ribs. `tools/vr_model_validation.py` now checks actual surface intersections/containment from every camera component to the main casting; all 83 parts connect. Saved-source validation also passes all closed-mesh, display-clearance, widened-channel and opacity checks. Portable exports retain the expected triangle counts and translucent materials. VR tests cover transparent ordering, including separate stereo-eye order and transformed viewers. These changes still need a fresh headset appearance check.
+
+## Validation record (2026-09-23)
+
+- Left-eye ghosting follow-up: corrected the OpenXR color swapchain copy barriers from COMMON to RENDER_TARGET on acquisition and release, as required by XR_KHR_D3D12_enable. The copy fence still completes before release. This fixes an API contract violation; whether it resolves the reported ghosting requires headset verification. Creating `vr-capture.request` in the running game's working directory captures both actual acquired swapchain images as `vr-submitted-left/right.png` before release, then removes the request. Capture readback stalls make this a diagnostic operation only.
+
+- Distant stereo follow-up: eye passes bypass RT64's desktop 4:3 scissor-driven horizontal adjustment. Camera zoom could activate this adjustment, stretching asymmetric OpenXR projections and introducing disparity even at infinity. Eye viewport depth now uses the full 0..1 range consistently with accessories. Desktop and lens passes retain their original viewport rules.
+- `SNAP_VR_STEREO_TEST=1` with `--vr-preview` exercises mirrored asymmetric FOVs at 960x1020 per eye (the Quest's observed aspect ratio). A held-camera Beach replay reached zoomed 180x140 source viewports; both captures were inspected and diagnostic checks found no drawn vertices using an unreplaced mono projection. Release build and interaction tests pass. This is synthetic validation; the reported distant doubling still needs headset confirmation.
+
+- Follow-up: held-camera body and optical pose rotate 90 degrees forward together while preserving either palm socket; unit tests cover both hands and two-hand steadying.
+- Follow-up: a fresh-game Beach tutorial was reached through VR controller input in an isolated data directory. Both eye captures visibly show the grip tutorial panel (`build-win/vr-fresh-tutorial/vr-preview-10800-left.png` and `-right.png`). The ROM message string observed at this step was empty, so tutorial-specific VR text comes directly from the original tutorial message ID. Later tutorial steps and physical-controller fit still need headset confirmation.
+- Follow-up: diagnostic preview logs show three world/cart samples per 30 Hz update at 90 Hz (weights 0.1667/0.5000/0.8333 or 0.3333/0.6667/1.0000). Typical Beach VR-pass CPU time was 5–7 ms at 1280x960 per eye; this excludes the original game pass and is not a native-headset performance result. Button pulses span a simulation tick, and menu triggers retain their held state.
+
+- Desktop Release and OpenXR Release builds succeeded on this PC. The reconstructed USA ROM matched SHA-1 `edc7c49cc568c045fe48be0d18011c30f393cbaf`.
+- Standalone pose/interaction tests pass (including independent headset/camera aim and stationary drops inheriting cart velocity): yaw-only cart transform, lean parallax, recenter, asymmetric projection, camera grab/shutter/return, film exhaustion, unlock/cooldown gates, both-hand item acquisition, release velocity, tracking/focus loss and course transition cancellation.
+- Synthetic stereo captures reached the Beach course from a fresh game through title, name entry, lab and course selection. The course, cart, hands and live camera display rendered.
+- A scripted pointer test entered AZ, deleted Z, added a space and selected End through the original name screen; the name and highlight were checked in rendered captures. All 95 character-grid hit targets and editing buttons have mapping tests. Both hand meshes have a 90-degree forward wrist correction requested during headset testing.
+- Quest via SteamVR reached the focused OpenXR session state and submitted frames using sRGB RGBA8 swapchains. Runtime-requested eye size was 3760 x 3996 at scale 1.0.
+- Initial live menu stereo rendering measured approximately 10-12 ms of CPU wall time including synchronous GPU waits, excluding `xrWaitFrame` and the original game's render. This is **not** a measured total GPU frame time or proof of refresh-rate performance.
+
+Revision after headset screenshots (2026-09-23):
+
+- Reviewed the three September 23 ADB screenshots, not the video. Replaced the block camera and cart with a detailed side-grip camera (24,300 triangles) and a rounded ZERO-ONE-inspired cockpit (37,940 triangles). Both eye views reuse one accessory geometry snapshot. In the isolated 1280x960 Beach check this reduced the VR CPU pass from about 12.7 ms to 5.1?5.3 ms; that includes waits, excludes the original game pass, and is not Quest-resolution performance validation.
+- Camera body attaches its left/right side socket to the corresponding palm; the lens follows the controller aim pose. Synthetic Beach eye captures show the display unobstructed by the holding wrist.
+- Eye passes use floating-point depth without the N64 far-depth clipping/quantization. Fog retains the original camera-distance curve. The lens/photo pass retains the original depth behavior. VR sky drawing follows the lens during cinematic introductions, preventing the dome from remaining around the displaced cinematic camera. A captured Beach stereo pair was inspected; this does not establish headset comfort or cover every distant object.
+- Pointer testing in an isolated copy of the save held Save steadily, then opened Go to Course on a simultaneous pointer move/trigger press. Title ? Options ? Graphics and row help updates were also checked. Pointing at Maybe later returned to course selection; pointing at Let's go entered Beach. The original neutral-input API is preserved for frozen confirmation menus; button-image hooks expose on-screen A/B prompts as pointer targets.
+- Tests include row/grid hit targets, no scrolling over a selected target, and camera palm sockets/aim alignment for both hands. `SNAP_VR_POINTER_TEST` (preview only) reads four whitespace-separated numbers from a file: panel X, Y, trigger 0/1, back 0/1. `SNAP_VR_MODEL_TEST=1` adds a synthetic held-camera pose in courses.
+
+Still requiring verification: headset comfort and stereo alignment; independent-camera photos through Oak scoring; physical item collisions/reactions and moving-cart throws; pause/retry, runtime restart and save/load; every course and unlock-dependent interaction. No complete-game or performance acceptance is claimed.
+
+The runtime log now reports CPU wall time, D3D12 timestamp queue span, and synchronous fence-wait time for the VR passes, alongside the runtime-selected refresh rate. Queue span includes CPU submission gaps; all three metrics exclude the original game pass and its readbacks. Set `SNAP_VR_CAPTURE=1` to save one pair of actual headset eye images after 120 focused frames.
+
+Run the pure interaction tests with:
+
+```powershell
+cmake -S tests/vr -B build-win/vr-tests -G "Visual Studio 17 2022" -A x64
+cmake --build build-win/vr-tests --config Release
+ctest --test-dir build-win/vr-tests -C Release --output-on-failure
+```

@@ -1,0 +1,7 @@
+cmake_minimum_required(VERSION 3.20)
+project(SnapVRTests LANGUAGES CXX)
+set(CMAKE_CXX_STANDARD 20)
+enable_testing()
+add_executable(vr_interaction_tests vr_interaction_tests.cpp ../../src/vr/vr_interaction.cpp)
+target_include_directories(vr_interaction_tests PRIVATE ../../src/vr)
+add_test(NAME vr_interaction COMMAND vr_interaction_tests)
