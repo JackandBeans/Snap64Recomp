@@ -26,6 +26,16 @@ No ROM or player saves are packaged. The CMake build target remains `Snap64Recom
 
 ## Controls
 
+The original game's Options entry and pages are hidden in VR, including the
+title and pause-menu entries and the Esc/Select shortcut. The VR settings
+panel remains available on the left thumbstick. `--desktop` restores the
+original Options interface.
+
+Validation: a synthetic VR title capture showed New Game and Continue with
+Options omitted; scripted desktop menu shortcuts did not open the pages.
+The Release build passes. The pause-menu entry is disabled at creation and
+excluded from navigation; a fresh pause-menu headset check remains outstanding.
+
 - Menus: dominant-hand thumbstick changes the highlight; trigger or A/X confirms, B/Y cancels. The left controller menu button sends Start. Point directly at the desired control. Title, options and pause use sprite/row hit tests; original lab and photo menus move their focus rectangle to the pointed target and defer confirmation until it arrives. On-screen A/B prompt icons and their adjacent labels are clickable. Name entry maps the pointer directly to each character and to Backspace, Space and End; the pointed key is latched when trigger or A/X is pressed.
 - VR options: click the left thumbstick to open the settings panel. Point at a row and press trigger or A/X, or use the thumbstick to select and adjust. B/Y or Done closes it. Opening it during a course requests pause.
 - Recenter: press both thumbsticks together, or F9 on the PC. Sit or stand in the intended posture and look forward when recentering.

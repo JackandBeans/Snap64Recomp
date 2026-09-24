@@ -52,6 +52,7 @@
 #include "settings.h"
 #include "snap_station.h"
 #include "version.h"
+#include "vr/vr_service.h"
 
 // stb_image's implementation is compiled inside the RT64 library
 // (rt64_texture_cache.cpp); this include only brings the declarations.
@@ -3586,6 +3587,10 @@ void menu_arena_reset(uint8_t* rdram) {
 }
 
 void menu_anywhere_tick(uint8_t* rdram, void* ctxIn) {
+    if(snap::vr::requested.load()) {
+        input_take_menu_request();
+        return;
+    }
     if ((rdram == nullptr) || (ctxIn == nullptr) || !g_staged) {
         return;
     }

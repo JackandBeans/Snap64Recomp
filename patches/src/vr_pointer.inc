@@ -2,6 +2,8 @@
 #define VR_POINT_MAGIC (*(volatile u32*)0x80C00F00)
 #define VR_POINT_X (*(volatile f32*)0x80C00F04)
 #define VR_POINT_Y (*(volatile f32*)0x80C00F08)
+/* Published at overlay load, independent of pointer focus/tracking. */
+#define VR_MODE_ENABLED (*(volatile u32*)0x80C00F0C)
 static s32 snap_vr_hit(f32 x,f32 y,f32 w,f32 h) {
     return VR_POINT_MAGIC==0x56525054 && VR_POINT_X>=x-3 && VR_POINT_X<x+w+3 && VR_POINT_Y>=y-3 && VR_POINT_Y<y+h+3;
 }

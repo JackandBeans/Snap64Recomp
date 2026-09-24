@@ -4364,7 +4364,7 @@ static void snap_port_pages(s32 ctx) {
     s32 sel, i, navUp, navDown, open, armed;
     u8 pulseState, pulseCounter;
 
-    if (DIR_MAGIC != 0x53474130) {
+    if (VR_MODE_ENABLED || DIR_MAGIC != 0x53474130) {
         return;
     }
     snap_page_ctx = ctx;
@@ -4594,6 +4594,7 @@ void func_800E7F98_A0F528(void) {
     GObj* modsLabel;
     GObj* modsHelp;
 
+    if (VR_MODE_ENABLED) return;
     func_800E71DC_A0E76C();
     MBOX_PAGES_OPEN = 1;   /* the Option screen is up: Esc is Start here, not the pages */
 
@@ -5106,6 +5107,10 @@ u8 func_800E33C8_A0A958(GObj** gobjs) {
         gobjs[0] = D_800E82CC_A0F85C;
         snap_title_row(gobjs[0], 127, 138);
         gobjs[1] = D_800E82D8_A0F868;
+        if (VR_MODE_ENABLED) {
+            snap_sprite_show(gobjs[1]->data.sobj, 0);
+            return 1;
+        }
         snap_title_row(gobjs[1], 128, 162);
         return 2;
     }
@@ -5115,6 +5120,10 @@ u8 func_800E33C8_A0A958(GObj** gobjs) {
         gobjs[1] = D_800E82D0_A0F860;
         snap_title_row(gobjs[1], 128, 150);
         gobjs[2] = D_800E82D8_A0F868;
+        if (VR_MODE_ENABLED) {
+            snap_sprite_show(gobjs[2]->data.sobj, 0);
+            return 2;
+        }
         snap_title_row(gobjs[2], 128, 168);
         return 3;
     }
@@ -5127,6 +5136,10 @@ u8 func_800E33C8_A0A958(GObj** gobjs) {
         gobjs[2] = D_800E82D4_A0F864;
         snap_title_row(gobjs[2], 116, 155);
         gobjs[3] = D_800E82D8_A0F868;
+        if (VR_MODE_ENABLED) {
+            snap_sprite_show(gobjs[3]->data.sobj, 0);
+            return 3;
+        }
         snap_title_row(gobjs[3], 128, 174);
         return 4;
     }
@@ -5139,6 +5152,10 @@ u8 func_800E33C8_A0A958(GObj** gobjs) {
     gobjs[3] = station;
     snap_title_row(gobjs[3], TITLE_STATION_X, TITLE_ROW_Y(3));
     gobjs[4] = D_800E82D8_A0F868;
+    if (VR_MODE_ENABLED) {
+        snap_sprite_show(gobjs[4]->data.sobj, 0);
+        return 4;
+    }
     snap_title_row(gobjs[4], 128, TITLE_ROW_Y(4));
     return 5;
 }

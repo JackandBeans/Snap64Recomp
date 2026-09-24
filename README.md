@@ -282,6 +282,10 @@ Look around and lean naturally; the ZERO-ONE follows the original course
 route. There is no free locomotion. The camera holster stays on your right
 regardless of the dominant-hand setting.
 
+The original game's Options entry and pages are hidden in VR. Use the VR
+settings panel opened with the left thumbstick; desktop Options remain
+available when launching with `--desktop`.
+
 ### Desktop controls
 
 Desktop keyboard and mouse, as the port ships them:

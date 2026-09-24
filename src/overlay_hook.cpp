@@ -91,6 +91,9 @@ extern "C" void gtlInitHeap(uint8_t* rdram, recomp_context* ctx) {
 
 extern "C" void dmaLoadOverlay(uint8_t* rdram, recomp_context* ctx) {
     snap::g_rdram = rdram;
+    // Persistent launch mode for guest menus; pointer validity can disappear
+    // while the headset loses focus and must not make Options reappear.
+    MEM_W(0, (int32_t)0x80C00F0C) = snap::vr::requested.load() ? 1 : 0;
     snap::apply_game_settings(rdram);
     // An overlay load is a safe moment for the settings mailbox: the menu
     // cannot be open while code is being swapped. The menu's strings are

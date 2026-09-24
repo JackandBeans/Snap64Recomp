@@ -388,6 +388,7 @@ void Pause_HideUI(GObj* obj) {
 }
 
 void updatePauseMenu(GObj* arg0) {
+    if (VR_MODE_ENABLED) MBOX_MENU_REQ = 0;
     MBOX_PAUSE_ALIVE = 3;   /* the host routes the menu key here while this runs */
     if (snap_pause_page_open) {
         return;   /* the port's pages own the input while one is open */
@@ -480,7 +481,7 @@ void updatePauseMenu(GObj* arg0) {
             snap_pause_show_mode = direct;
             snap_pause_item = NULL;
             snap_pause_item_sel = NULL;
-            if (!direct) {
+            if (!direct && !VR_MODE_ENABLED) {
                 /* The pill, made afresh for this pause and hidden until the
                  * slide-in shows the others; none without the staged art. */
                 snap_pause_item = snap_strip_make_rgba(STR_PAUSE_PILL, SNAP_PAUSE_ITEM_X, SNAP_PAUSE_ITEM_Y);

@@ -26,6 +26,8 @@ Press A/X to continue dialogue, hold B/Y to dash, and use the left menu
 button to pause where the runtime makes it available.
 Click the left thumbstick for VR settings. Press both thumbsticks together
 while looking forward to recenter.
+The original game's Options entries and pages are hidden in VR; they are
+available in --desktop mode.
 
 README.md contains the full VR controls table. docs/VR.md covers setup,
 settings and the limits of current headset validation.

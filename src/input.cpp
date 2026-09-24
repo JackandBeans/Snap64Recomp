@@ -1340,6 +1340,7 @@ void input_tap_start() {
 }
 
 void input_request_menu() {
+    if(snap::vr::requested.load())return;
     g_menu_request.store(1, std::memory_order_relaxed);
 }
 
