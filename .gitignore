@@ -17,6 +17,7 @@ build-modtool/
 *.n64
 *.v64
 *.dll
+*.srm
 saves/
 snapsettings.json
 *.log
