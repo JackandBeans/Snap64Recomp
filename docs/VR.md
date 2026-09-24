@@ -21,12 +21,12 @@ OpenXR SDK release 1.1.53 is pinned in CMake. The active Windows OpenXR runtime 
 
 ## Controls
 
-- Menus: dominant-hand thumbstick changes the highlight; trigger confirms, B/Y cancels, A/X sends Start. Point directly at the desired control. Title, options and pause use sprite/row hit tests; original lab and photo menus move their focus rectangle to the pointed target and defer confirmation until it arrives. On-screen A/B prompt icons and their adjacent labels are clickable. Name entry maps the pointer directly to each character and to Backspace, Space and End; the pointed key is latched at the trigger edge.
-- VR options: click the left thumbstick to open the settings panel. Point at a row and trigger, or use the thumbstick to select and adjust. B/Y or Done closes it. Opening it during a course requests pause.
+- Menus: dominant-hand thumbstick changes the highlight; trigger or A/X confirms, B/Y cancels. The left controller menu button sends Start. Point directly at the desired control. Title, options and pause use sprite/row hit tests; original lab and photo menus move their focus rectangle to the pointed target and defer confirmation until it arrives. On-screen A/B prompt icons and their adjacent labels are clickable. Name entry maps the pointer directly to each character and to Backspace, Space and End; the pointed key is latched when trigger or A/X is pressed.
+- VR options: click the left thumbstick to open the settings panel. Point at a row and press trigger or A/X, or use the thumbstick to select and adjust. B/Y or Done closes it. Opening it during a course requests pause.
 - Recenter: press both thumbsticks together, or F9 on the PC. Sit or stand in the intended posture and look forward when recentering.
 - Camera: squeeze grip near the holster on the right to pick it up with either hand. Hold grip to carry it; release to return it. The holding hand's trigger takes one photograph per press; its thumbstick changes lens zoom. Grip with the free hand near the camera to steady its orientation.
 - Items: grip near the left apple dispenser or right pester-ball dispenser, then release grip to throw. Items appear only after their original unlocks and cooldowns. Tracking loss cancels held objects rather than throwing them.
-- Course: B/Y holds dash; A/X plays the flute, subject to the original game's unlock checks. The left controller menu button pauses where the runtime makes it available.
+- Course: B/Y holds dash; A/X advances dialogue. Reach to the labeled POKE FLUTE button on the left dashboard and press down (or pull trigger with an empty hand near the cap). Once unlocked it plays for 10 seconds; withdraw and press again to change tune and restart the timer. Throws do not interrupt it; pause, focus loss, and cutscenes cancel playback. The left controller menu button pauses where the runtime makes it available.
 - Tutorials: a binocular panel gives the current grip/shutter instruction. A/X continues informational prompts. The panel stays visible during the original text's blink interval and clears when the tutorial dismisses it. Head/camera turns count as looking around without requiring desktop mouse capture.
 
 The cart follows route position and yaw; its pitch and roll never rotate the tracking origin. Physical leaning and turning are retained. There is no free locomotion.
@@ -139,3 +139,12 @@ Shutter contact and rear visibility follow-up:
 - Blender assembly/contact and geometry validation, projectile asset validation, Release build and interaction tests pass. A right-hand preview shows the finger over the shutter; actual controller fit remains a headset check.
 
 The rear-facing synthetic capture renders the scene, but the preview exited before Pikachu-specific visibility could be confirmed. Verify that encounter in the headset; no full-course visibility acceptance is claimed.
+
+
+Item-grip follow-up:
+
+- Bait and pester balls now use DramaticShape's full `grip_4` pose while held, independent of trigger/thumb input. Only item-holding hands use its wrist nudge; the camera grip stays as fitted separately.
+- Palm placement and per-hand item orientation come from the local `HandProp.lua` and `data/ball_grip.lua`. Visible item centers, motion-history sampling and projectile release positions share the same mirrored transform.
+- Interaction tests verify both palm seats, outward-facing item orientation, and release/render center agreement; Release build passes.
+
+The five item tutorial page replacements and exact new wording are documented in [VR control text replacements](VR_CONTROL_TEXT_REPLACEMENTS.md).

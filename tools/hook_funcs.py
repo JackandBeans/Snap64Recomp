@@ -121,6 +121,7 @@ HOOKED = [
     'mainCameraRender',
     'Msg_ShowMessage', 'Msg_Reset',
     'Tutorial_ShowMessage',
+    'func_800E4578_8A9D98', 'Items_StopPokeFlute', 'Items_GetPokeFluteState',
     'drawSkyBox1Cycle', 'drawSkyBox2Cycle',
     'func_800AA38C', 'func_800AA740',
     'FocusMark_SetTargetPos', 'FocusMark_SetPos', 'FocusMark_SetTargetSize', 'FocusMark_SetSize', 'FocusMark_Show', 'FocusMark_Create',

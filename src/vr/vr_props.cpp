@@ -86,7 +86,7 @@ struct Rig {
     std::vector<float> rest,ibm,verts,open,fist,cameraGrip,itemGrip;
     std::vector<int> parent,tris;
     std::vector<std::string> names;
-    void load(const nlohmann::json& j){rest=j.at("rest").get<std::vector<float>>();ibm=j.at("ibm").get<std::vector<float>>();verts=j.at("verts").get<std::vector<float>>();parent=j.at("parent").get<std::vector<int>>();tris=j.at("tris").get<std::vector<int>>();names=j.at("bones").get<std::vector<std::string>>();open=j.at("poses").at("open").get<std::vector<float>>();fist=j.at("poses").at("fist").get<std::vector<float>>();cameraGrip=j.at("poses").at("grip_1").get<std::vector<float>>();itemGrip=j.at("poses").at("grip_3").get<std::vector<float>>();}
+    void load(const nlohmann::json& j){rest=j.at("rest").get<std::vector<float>>();ibm=j.at("ibm").get<std::vector<float>>();verts=j.at("verts").get<std::vector<float>>();parent=j.at("parent").get<std::vector<int>>();tris=j.at("tris").get<std::vector<int>>();names=j.at("bones").get<std::vector<std::string>>();open=j.at("poses").at("open").get<std::vector<float>>();fist=j.at("poses").at("fist").get<std::vector<float>>();cameraGrip=j.at("poses").at("grip_1").get<std::vector<float>>();itemGrip=j.at("poses").at("grip_4").get<std::vector<float>>();}
     void draw(std::vector<Vertex>& out,Pose wrist,const HandInput& input,Held held,const Vec3* shutterTarget=nullptr) const {
         std::vector<Pose> world(parent.size());
         for(size_t i=0;i<parent.size();i++) {
@@ -94,6 +94,9 @@ struct Rig {
             if(names[i].starts_with("Index"))t=held==Held::Camera?0.f:input.trigger;
             if(names[i].starts_with("Thumb"))t=input.thumbTouch?.7f:.15f;
             if(held!=Held::None&&!names[i].starts_with("Index"))t=std::max(t,held==Held::Camera?.55f:.65f);
+            // DramaticShape's ball hold is a full static pose. Trigger and
+            // thumb touches must not uncurl fingers through the held item.
+            if(held==Held::Apple||held==Held::PesterBall)t=1.f;
             const auto& target=held==Held::Camera?cameraGrip:held!=Held::None?itemGrip:fist;
             size_t q=i*4;Pose p{mix({open[q],open[q+1],open[q+2],open[q+3]},{target[q],target[q+1],target[q+2],target[q+3]},t),{rest[i*7],rest[i*7+1],rest[i*7+2]}};
             world[i]=parent[i]?compose(world[parent[i]-1],p):p;
@@ -301,6 +304,19 @@ void Props::draw(ID3D12Resource*color,ID3D12Resource*depth,ID3D12Resource*screen
             }
         }
         x.vehicleMesh.draw(v,cart);
+        // Reachable left dashboard extension, top-facing label and press cap.
+        const Vec3 button=Interaction::fluteButton;
+        box(v,cart,{button.x,.765f,-.54f},{.11f,.02f,.13f},{.16f,.18f,.20f});
+        box(v,cart,{button.x,.795f,button.z},{.062f,.010f,.060f},{.70f,.58f,.28f});
+        box(v,cart,{button.x,button.y-.012f,button.z},{.053f,.014f,.051f},
+            !g.fluteUnlocked?Color{.24f,.24f,.24f}:g.fluteSeconds>0?Color{.25f,.90f,.42f}:Color{.95f,.65f,.12f});
+        Pose fluteLabel=compose(cart,Pose{{-.70710678f,0,0,.70710678f},{button.x,button.y+.004f,button.z}});
+        label(v,fluteLabel,"POKE FLUTE",-.049f,.009f,.00165f,{.03f,.03f,.03f});
+        char fluteStatus[32];
+        if(!g.fluteUnlocked)std::snprintf(fluteStatus,sizeof(fluteStatus),"LOCKED");
+        else if(g.fluteSeconds>0)std::snprintf(fluteStatus,sizeof(fluteStatus),"PLAYING %02d",int(std::ceil(g.fluteSeconds)));
+        else std::snprintf(fluteStatus,sizeof(fluteStatus),"PRESS  10S");
+        label(v,fluteLabel,fluteStatus,-.046f,-.017f,.0015f,{.03f,.03f,.03f});
         for(int i=0;i<2;i++) {
             Vec3 p=i?Interaction::pesterBin:Interaction::appleBin;
 
@@ -317,9 +333,10 @@ void Props::draw(ID3D12Resource*color,ID3D12Resource*depth,ID3D12Resource*screen
         for(int i=0;i<2;i++) {
             if(!t.hands[i].tracked)continue;
             Pose hand=meters(f.hands[i]);
-            x.hands[i].draw(v,handMeshPose(hand),t.hands[i],f.held[i],i==holdingHand?&shutterPoint:nullptr);
+            bool itemHeld=f.held[i]==Held::Apple||f.held[i]==Held::PesterBall;
+            x.hands[i].draw(v,itemHeld?itemHandPose(hand,i):handMeshPose(hand),t.hands[i],f.held[i],i==holdingHand?&shutterPoint:nullptr);
             if(f.held[i]!=Held::None&&f.held[i]!=Held::Camera)
-                (f.held[i]==Held::Apple?x.appleMesh:x.pesterBallMesh).draw(v,heldItemPose(hand));
+                (f.held[i]==Held::Apple?x.appleMesh:x.pesterBallMesh).draw(v,heldItemPose(hand,i));
         }
         x.cameraMesh.draw(v,camera,leftCamera,press);
         if(!g.message.empty()) {
@@ -362,7 +379,7 @@ void Props::draw(ID3D12Resource*color,ID3D12Resource*depth,ID3D12Resource*screen
             std::snprintf(rows[3],64,"THROW STRENGTH  %.1f",settings.throwStrength);
             std::snprintf(rows[4],64,"RECENTER");std::snprintf(rows[5],64,"DONE");
             for(int row=0;row<6;row++)label(v,panel,rows[row],-.62f,.27f-row*.11f,.010f,row==optionsRow?Color{1,.8f,.2f}:Color{.9f,.95f,1});
-            label(v,panel,"POINT AND TRIGGER OR USE THUMBSTICK",-.67f,-.47f,.0065f,{.65f,.75f,.85f});
+            label(v,panel,"TRIGGER OR A/X SELECTS - STICK MOVES",-.67f,-.47f,.0065f,{.65f,.75f,.85f});
             label(v,panel,"RENDER SCALE APPLIES ON NEXT LAUNCH",-.67f,-.54f,.0065f,{.65f,.75f,.85f});
         }else screenQuad(v,panel,1.6f,1.2f);
         for(int i=0;i<2;i++)if(t.hands[i].tracked) {

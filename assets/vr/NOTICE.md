@@ -27,3 +27,7 @@ Pokeball release logic in DramaticShapeVoxelMod/lib/CatchThrow.lua (local
 DramaticShape vr-perf checkout). The initial peak-window/3x implementation
 was retuned after controller feedback: an 80 ms velocity regression and a
 smooth launch gain up to 2.3x reduce strength and release inconsistency.
+
+Item hand poses and palm placement follow DramaticShapeVoxelMod/lib/HandProp.lua
+and data/ball_grip.lua: static grip_4, per-hand wrist offsets, palm seats and
+hold quaternions. Both hand rendering and native release sampling use this seat.

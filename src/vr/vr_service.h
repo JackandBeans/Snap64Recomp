@@ -19,6 +19,7 @@ struct SharedState {
     MenuPoint menuPointer{},menuClick{};
     uint64_t menuClickSerial=0;
     std::deque<Throw> releases;
+    bool fluteRequest=false;
     uint16_t buttons=0, pulses=0;
     uint16_t pulseHeld=0;
     std::chrono::steady_clock::time_point pulseUntil{};

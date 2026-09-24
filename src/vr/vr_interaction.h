@@ -31,7 +31,8 @@ struct SmokePuff { Vec3 position; uint64_t born=0; };
 struct GameState {
     uint64_t epoch=0, frame=0;
     bool course=false, paused=false, apples=false, pesterBalls=false, itemReady=true;
-    bool cinematic=false;
+    bool cinematic=false, fluteUnlocked=false;
+    float fluteSeconds=0;
     std::vector<SmokePuff> smoke;
     Vec3 cartPosition{}, cartVelocity{}; // game units; velocity per second
     float cartYaw=0;
@@ -55,12 +56,13 @@ struct InteractionFrame {
     std::array<Pose,2> hands{};
     std::array<Held,2> held{};
     std::vector<Throw> throws;
-    bool shutter=false, dash=false, flute=false, pause=false, cameraHeld=false;
+    bool shutter=false, dash=false, flute=false, advance=false, pause=false, cameraHeld=false;
     float fovY=45;
 };
 class Interaction {
 public:
     Settings settings;
+    static constexpr Vec3 fluteButton{-0.24f,0.82f,-0.48f};
     static constexpr Vec3 cameraDock{0.28f,0.92f,-0.38f};
     static constexpr Vec3 appleBin{0.36f,0.74f,0.02f};
     static constexpr Vec3 pesterBin{0.36f,0.74f,-0.23f};
@@ -72,7 +74,7 @@ public:
 private:
     std::array<std::deque<ThrowSample>,2> history;
     std::array<Held,2> held{};
-    std::array<bool,2> gripping{}, triggering{}, primary{}, menus{}, armed{};
+    std::array<bool,2> gripping{}, triggering{}, primary{}, menus{}, armed{}, fluteArmed{};
     Pose origin{};
     bool centered=false, wasFocused=false;
     uint64_t epoch=0;

@@ -1,14 +1,65 @@
 #include "vr_interaction.h"
+#include "vr_flute.h"
+#include "vr_tutorials.h"
 #include "vr_menu.h"
 #include "vr_messages.h"
 #include "vr_transparency.h"
 #include "vr_transition.h"
 #include <cstdlib>
+#include <cstring>
 #include <iostream>
 using namespace snap::vr;
 void check(bool v,const char* message) { if(!v){std::cerr<<message<<'\n';std::exit(1);} }
 bool near(float a,float b) {return std::abs(a-b)<0.001f;}
 int main() {
+    FluteTimer song;
+    check(song.update(1,1,true,true)==FluteTimer::Play,"flute starts on request");
+    check(song.update(10.999,1,true,false)==FluteTimer::None&&song.active,"flute lasts ten seconds");
+    check(song.update(11,1,true,false)==FluteTimer::Stop&&!song.active,"flute stops at ten seconds");
+    song.update(12,1,true,true);song.update(20,1,true,true);
+    check(near(song.remaining(21),9),"another press resets full duration");
+    check(song.update(22,1,false,false)==FluteTimer::Stop,"pause or focus loss cancels music");
+    check(song.update(23,1,false,true)==FluteTimer::None,"locked flute cannot start");
+    song.update(24,1,true,true);
+    check(song.update(25,2,true,false)==FluteTimer::None&&!song.active,"new scene never stops stale overlay music");
+    for(const auto& page:tutorialReplacements) {
+        check(std::strlen(page.text)<128,"replacement fits guest stack page buffer");
+        int count=0;
+        for(const auto& other:tutorialReplacements) {
+            if(other.tableOffset==page.tableOffset)++count;
+            if(&other!=&page)check(other.tableOffset!=page.tableOffset||other.page!=page.page,"unique replacement page IDs");
+        }
+        check(count<=2,"replacement group fits reserved guest stack storage");
+    }
+    check(tutorialReplacements[0].page==2&&tutorialReplacements[1].page==4,"bait replaces controls and distance guidance");
+    check(tutorialReplacements[2].page==1,"pester replaces controls page");
+    for(int side=0;side<2;side++) {
+        Interaction controls;Tracking tracking{};GameState game{};
+        tracking.headValid=tracking.focused=true;tracking.head.position={0,1.2f,0};
+        game.course=true;game.fluteUnlocked=true;game.epoch=1;
+        controls.update(tracking,game);
+        auto& hand=tracking.hands[side];hand.tracked=true;hand.grip.position=Interaction::fluteButton;
+        check(!controls.update(tracking,game).flute,"tracking appearing on cap never presses");
+        hand.grip.position.y+=.2f;controls.update(tracking,game);
+        hand.grip.position=Interaction::fluteButton;
+        check(controls.update(tracking,game).flute,"either hand presses physical cap");
+        check(!controls.update(tracking,game).flute,"resting hand cannot repeat press");
+        hand.grip.position.y+=.2f;controls.update(tracking,game);
+        hand.grip.position=Interaction::fluteButton;game.fluteUnlocked=false;
+        check(!controls.update(tracking,game).flute,"locked button cannot play");
+        game.fluteUnlocked=true;hand.tracked=false;
+        check(!controls.update(tracking,game).flute,"lost tracking cannot press");
+        hand.tracked=true;hand.primary=true;
+        auto result=controls.update(tracking,game);
+        check(!result.flute&&result.advance,"A/X advances dialogue without playing music");
+        hand.grip.position.y+=.2f;controls.update(tracking,game);
+        hand.grip.position=Interaction::fluteButton;hand.grip.position.y+=.08f;hand.trigger=1;
+        check(controls.update(tracking,game).flute,"nearby trigger can press cart button");
+        hand.grip.position.y+=.2f;controls.update(tracking,game);
+        hand.grip.position=Interaction::fluteButton;game.cinematic=true;
+        check(!controls.update(tracking,game).flute,"cinematic cannot press button");
+    }
+
     check(length(throwVelocity({{0,{}},{.04,{0,0,-.08f}},{.08,{0,0,-.16f}}})-Vec3{0,0,-4.6f})<.001f,"release uses the reduced 2.3x gain");
     check(length(throwVelocity({{0,{}},{.04,{}},{.08,{.16f,0,0}},{.12,{.16f,0,0}}})-Vec3{4.6f,0,0})<.001f,"release fit does not amplify an earlier speed peak");
     check(length(throwVelocity({{0,{}},{.01,{1,0,0}}}))==0,"single short tracking spike cannot establish a throw");
@@ -39,7 +90,7 @@ int main() {
         check(release.throws.size()==1,"both item types release from either dispenser");
         auto expected=rotate(throwing.cartPose(game).orientation,{0,0,-690})+game.cartVelocity;
         check(length(release.throws[0].velocity-expected)<.01f,"boost, throw setting and yaw apply before unboosted cart velocity");
-        check(length(release.throws[0].position-heldItemPose(release.hands[side],100).position)<.001f,"projectile spawns at rendered item center");
+        check(length(release.throws[0].position-heldItemPose(release.hands[side],side,100).position)<.001f,"projectile spawns at rendered item center");
     }
     Interaction vr; Tracking t; t.focused=t.headValid=true; t.head.position={0,1.2f,0};
     GameState g; g.course=g.apples=g.pesterBalls=true; g.epoch=1;
@@ -128,6 +179,13 @@ int main() {
         held=grip.update(sample,course);body=compose(held.lens,Pose{{},{0,0,14}});
         check(length(body.position+rotate(body.orientation,socket*100)-palm)<.001f,"two-hand smoothing preserves the camera palm attachment");
 
+    }
+    for(unsigned side=0;side<2;side++) {
+        Pose controller{yaw(.7f),{.2f,.9f,-.3f}};
+        auto wrist=itemHandPose(controller,side),item=heldItemPose(controller,side);
+        Vec3 seat=rotate(conjugate(controller.orientation),item.position-wrist.position);
+        check(length(seat-Vec3{side==0?.054f:-.054f,-.075f,-.001f})<.00001f,"item seat matches DramaticShape relative to wrist");
+        check(length(rotate(conjugate(controller.orientation),rotate(item.orientation,{0,0,1}))-Vec3{side==0?1.f:-1.f,0,0})<.00001f,"ball face points out of either palm");
     }
     GameState previous,current;previous.course=current.course=true;previous.epoch=current.epoch=4;
     previous.cartPosition={100,0,0};current.cartPosition={120,0,0};previous.cartYaw=pi-.1f;current.cartYaw=-pi+.1f;

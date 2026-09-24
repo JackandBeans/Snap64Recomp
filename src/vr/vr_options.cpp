@@ -13,7 +13,7 @@ bool Options::update(const Tracking& t,Interaction& interaction) {
     click=clicked;
     unsigned dominant=interaction.settings.leftHanded?0:1;
     const auto& hand=t.hands[dominant];
-    bool pressed=hand.tracked&&hand.trigger>.6f,back=hand.tracked&&hand.secondary;
+    bool pressed=hand.tracked&&(hand.trigger>.6f||hand.primary),back=hand.tracked&&hand.secondary;
     if(open&&hand.tracked) {
         if(back&&!cancel)open=false;
         float x=hand.stickX,y=hand.stickY;bool edit=false;int direction=1;

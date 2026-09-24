@@ -24,7 +24,7 @@ void sceneChanged(bool course) {
     auto& s=shared();std::lock_guard lock(s.mutex);
     s.menuPointer=s.menuClick={};s.namePointer=s.nameClick={};
     s.gameHistory.clear();s.game.message.clear();s.game.messageContinue=false;s.viewTurned=false;
-    s.pulseHeld=0;s.pulseUntil={};
+    s.pulseHeld=0;s.pulseUntil={};s.fluteRequest=false;s.game.fluteSeconds=0;s.game.fluteUnlocked=false;
     ++s.game.epoch;s.game.course=course;s.game.cinematic=course;s.game.smoke.clear();s.game.frame=0;s.releases.clear();s.interaction={};s.buttons=s.pulses=0;s.focusVisible=false;s.focusFrame=0;
 }
 #ifndef SNAP_ENABLE_VR

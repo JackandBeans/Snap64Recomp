@@ -28,7 +28,14 @@ inline Vec3 throwVelocity(const std::deque<ThrowSample>& samples) {
     blend=blend*blend*(3-2*blend);
     return result*(1+1.3f*blend); // smooth gain up to 2.3x; drops remain gentle
 }
-inline Pose heldItemPose(Pose hand,float unitsPerMeter=1) {
-    return compose(hand,Pose{{},Vec3{0,-.02f,-.06f}*unitsPerMeter});
+// DramaticShape HandProp.OFFSET_L/R and data/ball_grip.lua. Offsets are
+// in OpenXR grip space, meters; the wrist nudge and ball seat must agree.
+inline Pose itemHandPose(Pose hand,unsigned side,float unitsPerMeter=1) {
+    constexpr float h=.7071067811865475f;
+    return compose(hand,Pose{{-h,0,0,h},Vec3{side==0?-.015f:.015f,.06f,0}*unitsPerMeter});
+}
+inline Pose heldItemPose(Pose hand,unsigned side,float unitsPerMeter=1) {
+    constexpr float h=.7071067811865475f;
+    return compose(hand,Pose{{side==0?h:-h,0,h,0},Vec3{side==0?.039f:-.039f,-.015f,-.001f}*unitsPerMeter});
 }
 }

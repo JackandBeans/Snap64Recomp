@@ -22,7 +22,7 @@ InteractionFrame Interaction::update(const Tracking& t,const GameState& g) {
     if (!centered && t.headValid) recenter(t);
     bool reset=(epoch!=g.epoch)||!g.course||!t.focused||!t.headValid||g.paused||g.cinematic;
     if (reset) {
-        held={}; armed={}; gripping={}; triggering={};
+        held={}; armed={}; fluteArmed={}; gripping={}; triggering={};
         for (auto& h:history) h.clear();
     }
     if (wasFocused&&!t.focused&&g.course&&!g.paused) out.pause=true;
@@ -36,12 +36,12 @@ InteractionFrame Interaction::update(const Tracking& t,const GameState& g) {
         bool grip=h.squeeze>(gripping[i]?0.35f:0.65f),trigger=h.trigger>0.6f;
         out.hands[i]=toWorld(h.grip,g);
         if (!h.tracked||reset) {
-            held[i]=Held::None; samples.clear(); armed[i]=false;
+            held[i]=Held::None; samples.clear(); armed[i]=false; fluteArmed[i]=false;
         } else {
             if (!grip) armed[i]=true; // regain tracking with grip held cannot grab/throw
             Pose local=localPose(h.grip);
             if (!samples.empty()&&(t.seconds<=samples.back().time||t.seconds-samples.back().time>.12)) samples.clear();
-            const Vec3 itemPosition=heldItemPose(local).position;
+            const Vec3 itemPosition=heldItemPose(local,i).position;
             samples.push_back({t.seconds,itemPosition});
             while(samples.size()>2 && t.seconds-samples.front().time>.24) samples.pop_front();
             if (grip&&!gripping[i]&&armed[i]&&held[i]==Held::None) {
@@ -61,7 +61,7 @@ InteractionFrame Interaction::update(const Tracking& t,const GameState& g) {
                     if(t.seconds-samples.front().time>=.035) {
                         Vec3 velocity=throwVelocity(samples);
                         velocity=rotate(cartPose(g).orientation,velocity*(settings.unitsPerMeter*settings.throwStrength))+g.cartVelocity;
-                        out.throws.push_back({held[i],heldItemPose(out.hands[i],settings.unitsPerMeter).position,velocity,g.epoch});
+                        out.throws.push_back({held[i],heldItemPose(out.hands[i],i,settings.unitsPerMeter).position,velocity,g.epoch});
                         nextThrow=t.seconds+0.25;
                     }
                 }
@@ -81,7 +81,16 @@ InteractionFrame Interaction::update(const Tracking& t,const GameState& g) {
                 out.shutter=trigger&&!triggering[i]&&g.film>0;
             }
             out.dash=out.dash||h.secondary;
-            out.flute=out.flute||(h.primary&&!primary[i]);
+            out.advance=out.advance||(h.primary&&!primary[i]);
+            // Reach to the labeled cap and press down, or pull trigger nearby.
+            // Re-arm only after withdrawing; tracking recovery inside cannot fire.
+            Vec3 delta=local.position-fluteButton;
+            if(length(delta)>.14f)fluteArmed[i]=true;
+            bool cap=std::abs(delta.x)<.065f&&std::abs(delta.z)<.065f&&delta.y>-.025f&&delta.y<.035f;
+            bool press=cap||(length(delta)<.11f&&trigger&&!triggering[i]);
+            if(fluteArmed[i]&&held[i]==Held::None&&g.fluteUnlocked&&press) {
+                out.flute=true;fluteArmed[i]=false;
+            }
             out.pause=out.pause||(h.menu&&!menus[i]);
         }
         gripping[i]=grip; triggering[i]=trigger; primary[i]=h.primary; menus[i]=h.menu;

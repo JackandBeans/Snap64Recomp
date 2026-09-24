@@ -1,6 +1,8 @@
 // Guest offsets: matching 3a236dc decomp symbols, sys/om.h, world/world.h.
 #include "vr_service.h"
 #include "vr_messages.h"
+#include "vr_flute.h"
+#include "vr_tutorials.h"
 #include "recomp.h"
 #include <cstring>
 #include <cstdlib>
@@ -65,6 +67,7 @@ void lens(uint8_t* rdram) {
     uint32_t mtx=word(rdram,cam+0x68);if(pointer(mtx))MEM_B(4,(int32_t)mtx)=12; // LOOKAT_REFLECT
     scalar(rdram,cam+0x20,s.interaction.fovY);
 }
+FluteTimer fluteTimer;
 thread_local bool releasing=false;
 thread_local bool tutorialBlinkReset=false;
 thread_local Vec3 releaseVelocity,releasePosition;
@@ -93,6 +96,8 @@ extern "C" void mainCameraRender(uint8_t* rdram,recomp_context* ctx) {
         g.cartPosition=vector(rdram,movement+0xc);g.cartYaw=scalar(rdram,movement+0x1c);
         g.paused=MEM_BU(0,(int32_t)paused)!=0;
         g.cartVelocity=vector(rdram,0x80382CA0)*30;
+        g.fluteUnlocked=(word(rdram,0x803AE51C)&4)!=0;
+        if(preview&&std::getenv("SNAP_VR_FLUTE_TEST"))g.fluteUnlocked=true;
         g.apples=word(rdram,0x803AE51C)&1;g.pesterBalls=word(rdram,0x803AE51C)&2;
         g.film=std::clamp(60-int(word(rdram,0x800AC0E0)),0,60);
         g.itemReady=word(rdram,0x80382CB4)==0&&!word(rdram,0x80382D0C);
@@ -103,6 +108,26 @@ extern "C" void mainCameraRender(uint8_t* rdram,recomp_context* ctx) {
             uint32_t root=pointer(it->first)?word(rdram,it->first+0x48):0;
             if(pointer(root))g.smoke.push_back({vector(rdram,root+0x1c),it->second.born});
             ++it;
+        }
+    }
+    if(requested.load()) {
+        FluteTimer::Action action;
+        {
+            auto& s=shared();std::lock_guard lock(s.mutex);
+            double now=std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
+            bool allowed=s.game.course&&!s.game.paused&&!s.game.cinematic&&s.game.fluteUnlocked&&s.tracking.focused&&s.tracking.headValid;
+            bool press=s.fluteRequest&&(!word(rdram,0x80382D0C)||(preview&&std::getenv("SNAP_VR_FLUTE_TEST")));
+            s.fluteRequest=false;
+            action=fluteTimer.update(now,s.game.epoch,allowed,press);
+            s.game.fluteSeconds=fluteTimer.remaining(now);
+        }
+        recomp_context call=*ctx;
+        if(preview&&std::getenv("SNAP_VR_FLUTE_TEST")&&action!=FluteTimer::None)
+            fprintf(stderr,"[SNAP-VR-FLUTE-TEST] %s at %.3f seconds\n",action==FluteTimer::Play?"play":"stop",std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count());
+        if(action==FluteTimer::Play) {
+            Items_PlayPokeFlute(rdram,&call);
+        }else if(action==FluteTimer::Stop) {
+            Items_StopPokeFlute(rdram,&call);
         }
     }
     lens(rdram);
@@ -286,7 +311,7 @@ extern "C" void handleItemButtonsPress(uint8_t* rdram,recomp_context* ctx) {
         }
     }
     uint16_t pressed=MEM_HU(0,(int32_t)0x80049752);
-    uint16_t buttons=pressed&~0xc000;
+    uint16_t buttons=pressed&~0xc004;
     if(release) {
         // Use the original input branch for sounds, flute cancellation, icons,
         // cooldown and projectile creation. Only its spawn pose/velocity differ.
@@ -431,3 +456,62 @@ void skyRender(uint8_t* rdram,recomp_context* ctx,void (*original)(uint8_t*,reco
 }
 extern "C" void drawSkyBox1Cycle(uint8_t* rdram,recomp_context* ctx){skyRender(rdram,ctx,__real_drawSkyBox1Cycle);}
 extern "C" void drawSkyBox2Cycle(uint8_t* rdram,recomp_context* ctx){skyRender(rdram,ctx,__real_drawSkyBox2Cycle);}
+
+extern "C" void Items_StopPokeFlute(uint8_t* rdram,recomp_context* ctx) {
+    // Native item branches cancel music. A timed physical-button song survives throws.
+    if(requested.load()&&releasing&&fluteTimer.active)return;
+    __real_Items_StopPokeFlute(rdram,ctx);
+}
+extern "C" void func_800E4578_8A9D98(uint8_t* rdram,recomp_context* ctx) {
+    if(!requested.load()||snap::g_scene_overlay_rom.load()!=0x8A70E0u) {
+        __real_func_800E4578_8A9D98(rdram,ctx);return;
+    }
+    uint32_t table=uint32_t(ctx->r5),offset=0;
+    const uint32_t base=uint32_t(section_addresses[114]);
+    const char* exercise=preview?std::getenv("SNAP_VR_TUTORIAL_TEST"):nullptr;
+    // Preview-only dialogue exercise; no progression or ROM data is saved.
+    if(exercise) {
+        static bool exercised=false;
+        if(!exercised) {
+            exercised=true;
+            offset=std::strcmp(exercise,"bait")==0?0xB4558:std::strcmp(exercise,"pester")==0?0xB4578:0xB4588;
+            table=base+offset;ctx->r5=int32_t(table);ctx->r6=0;ctx->r7=1;
+        }
+    }
+    if(pointer(table))for(const auto& entry:tutorialReplacements) {
+        const uint32_t source=base+entry.tableOffset;
+        if(word(rdram,table)==word(rdram,source)&&word(rdram,table+4)==word(rdram,source+4)) {
+            offset=entry.tableOffset;break;
+        }
+    }
+    if(!offset){__real_func_800E4578_8A9D98(rdram,ctx);return;}
+    // Only new prose is stored here. Signed guest offsets are essential:
+    // unsigned 32-bit offsets would zero-extend the emulated address.
+    auto stack=ctx->r29;ctx->r29-=512;
+    struct SavedPage {int index;uint32_t pointer;};
+    std::array<SavedPage,2> saved{};int count=0;
+    for(const auto& entry:tutorialReplacements)if(entry.tableOffset==offset) {
+        saved[count]={entry.page,word(rdram,table+entry.page*4)};
+        uint32_t address=uint32_t(ctx->r29)+128+count*128;
+        for(size_t i=0;i<=std::strlen(entry.text);i++)MEM_B(i,int32_t(address))=entry.text[i];
+        MEM_W(entry.page*4,int32_t(table))=address;
+        ++count;
+    }
+    if(exercise)fprintf(stderr,"[SNAP-VR-TUTORIAL-TEST] table %08X replaced %d pages\n",base+offset,count);
+    __real_func_800E4578_8A9D98(rdram,ctx);
+    for(int i=0;i<count;i++)MEM_W(saved[i].index*4,int32_t(table))=saved[i].pointer;
+    ctx->r29=stack;
+}
+
+extern "C" void Items_GetPokeFluteState(uint8_t* rdram,recomp_context* ctx) {
+    __real_Items_GetPokeFluteState(rdram,ctx);
+    if(!requested.load()||!fluteTimer.active||ctx->r2!=0)return;
+    // A short native tune loops without advancing to the next melody. Keep
+    // native music cleanup from ending the physical button's ten-second run.
+    bool playing;
+    {auto& s=shared();std::lock_guard lock(s.mutex);
+        playing=s.game.epoch==fluteTimer.epoch&&s.game.course&&!s.game.cinematic&&!s.game.paused&&s.tracking.focused;}
+    if(!playing)return;
+    recomp_context call=*ctx;__real_Items_StopPokeFlute(rdram,&call);
+    call=*ctx;Items_PlayPokeFlute(rdram,&call);ctx->r2=-1;
+}

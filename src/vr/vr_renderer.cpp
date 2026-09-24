@@ -33,9 +33,9 @@ struct Renderer {
     std::array<RenderFramebufferStorage,3> framebuffers;
     bool ready=false;
     std::array<Held,2> previousHeld{};
-    uint64_t previewFrame=0,nameTestFrame=0,modelTestFrame=0;
+    uint64_t previewFrame=0,nameTestFrame=0,modelTestFrame=0,fluteTestFrame=0;
     bool capturedHeadset=false;
-    bool recenterDown=false, wasFocused=false, menuTriggerDown=false;
+    bool recenterDown=false, wasFocused=false, menuConfirmDown=false;
     Vec3 previousHeadForward{},previousLensForward{};
     bool hadTracking=false;
     float worldWeight=1;
@@ -248,6 +248,18 @@ struct Renderer {
             t.head.orientation=yaw(pi);
             for(unsigned i=0;i<2;i++){t.eyes[i].orientation=t.head.orientation;t.eyes[i].position=t.head.position+rotate(t.head.orientation,{i?.032f:-.032f,0,0});}
         }
+        if(preview&&g.course&&std::getenv("SNAP_VR_ITEM_GRIP_TEST"))for(unsigned i=0;i<2;i++) {
+            t.hands[i].grip.position={i?.18f:-.18f,1.10f,-.36f};
+            t.hands[i].grip.orientation={.70710678f,0,0,.70710678f};
+        }
+        if(preview&&g.course&&!g.cinematic&&std::getenv("SNAP_VR_FLUTE_TEST")) {
+            ++fluteTestFrame;
+            t.head.orientation={-.29552f,0,0,.9553365f};
+            for(unsigned i=0;i<2;i++){t.eyes[i].orientation=t.head.orientation;t.eyes[i].position=t.head.position+rotate(t.head.orientation,{i?.032f:-.032f,0,0});}
+            auto& hand=t.hands[0];hand.grip.position=Interaction::fluteButton;
+            hand.grip.position.y+=(fluteTestFrame>=60&&fluteTestFrame<75)||(fluteTestFrame>=120&&fluteTestFrame<135)?0.f:.22f;
+            hand.squeeze=hand.trigger=0;
+        }
         bool bothClicks=t.hands[0].tracked&&t.hands[1].tracked&&t.hands[0].stickClick&&t.hands[1].stickClick;
         if(recenter||(bothClicks&&!recenterDown))interaction.recenter(t);
         recenterDown=bothClicks;
@@ -255,6 +267,7 @@ struct Renderer {
         if(options.recenterRequested)interaction.recenter(t);
         auto interactionGame=g;if(options.open)interactionGame.paused=true;
         auto f=interaction.update(t,interactionGame);
+        if(preview&&g.course&&std::getenv("SNAP_VR_ITEM_GRIP_TEST")){f.held[0]=Held::Apple;f.held[1]=Held::PesterBall;}
         if(g.course&&std::getenv("SNAP_VR_DIAG")&&diagnosticFrames++<90) {
             size_t interpolated=0,modified=0;
             for(auto wi:frame.workloads){auto& d=queue.workloads[wi].drawData;interpolated+=d.lerpWorldTransforms.size();modified+=d.modifyPosUints.size();}
@@ -277,7 +290,8 @@ struct Renderer {
                     if(f.cameraHeld)s.buttons|=0x2000;
                     if(f.shutter)s.pulses|=0x8000;
                     if(f.dash)s.buttons|=0x10;
-                    if(f.flute)s.pulses|=g.messageContinue?0x8000:0x4;
+                    if(f.advance&&g.messageContinue)s.pulses|=0x8000;
+                    if(f.flute)s.fluteRequest=true;
                     for(auto release:f.throws)if(s.releases.size()<2)s.releases.push_back(release);
                 }else {
                     unsigned hand=interaction.settings.leftHanded?0:1;
@@ -295,20 +309,19 @@ struct Renderer {
                         }
                     }
                     if(t.hands[hand].tracked) {
-                        bool trigger=t.hands[hand].trigger>.6f;
-                        if(trigger)s.buttons|=0x8000;
-                        if(trigger&&!menuTriggerDown) {
+                        bool confirm=t.hands[hand].trigger>.6f||t.hands[hand].primary;
+                        if(confirm)s.buttons|=0x8000;
+                        if(confirm&&!menuConfirmDown) {
                             s.pulses|=0x8000;
                             s.nameClick=nameEntry?s.namePointer:NameCell{};
                             s.menuClick=s.menuPointer;++s.menuClickSerial;
                         }
-                        menuTriggerDown=trigger;
+                        menuConfirmDown=confirm;
                         if(t.hands[hand].secondary)s.buttons|=0x4000;
-                        if(t.hands[hand].primary)s.buttons|=0x1000;
-                    }
+                    }else menuConfirmDown=false;
                     if(t.hands[0].tracked&&t.hands[0].menu)s.buttons|=0x1000;
                 }
-            } else {s.releases.clear();menuTriggerDown=false;s.nameClick={};}
+            } else {s.releases.clear();menuConfirmDown=false;s.nameClick={};}
             if(f.pause)s.pulses|=0x1000;
         }
         if((!preview&&!xr.shouldRender())||!t.headValid){xr.end(false);frameGuard.done=true;return;}
@@ -364,7 +377,7 @@ struct Renderer {
                 props->capture(native(colors[i].get()),i?"vr-headset-right.png":"vr-headset-left.png");
                 if(i==1)capturedHeadset=true;
             }
-            if(preview&&(previewFrame==30||previewFrame%120==0||(std::getenv("SNAP_VR_TRANSITION_DIAG")&&(fade.hold||fade.gain<1)&&previewFrame%5==0))) {
+            if(preview&&(previewFrame==30||previewFrame%120==0||(previewFrame%5==0&&std::getenv("SNAP_VR_TUTORIAL_TEST")&&snap::g_scene_overlay_rom.load()==0x8A70E0u)||(std::getenv("SNAP_VR_TRANSITION_DIAG")&&(fade.hold||fade.gain<1)&&previewFrame%5==0))) {
                 std::string filename="vr-preview-"+std::to_string(previewFrame)+(i?"-right.png":"-left.png");props->capture(native(colors[i].get()),filename.c_str());
             }
         }
