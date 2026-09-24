@@ -19,6 +19,8 @@ Initial VR release series:
 - Headset-paced frame interpolation without desktop VSync or frame-dropping
   rules limiting VR; verified near 120 submitted FPS on a 120 Hz headset.
 - Runtime logs report measured submitted FPS separately from the interpolation target.
+- The live camera viewfinder follows the tracked lens and interpolates scene motion
+  at the headset cadence instead of repeating the simulation snapshot.
 - `Snap64RecompVR.exe` starts in VR by default; `--desktop` selects desktop mode.
 
 The build remains experimental. See the VR guide in `docs/VR.md` for tested

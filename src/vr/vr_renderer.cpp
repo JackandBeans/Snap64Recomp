@@ -40,7 +40,7 @@ struct Renderer {
     bool hadTracking=false;
     float worldWeight=1;
     ViewTransition transition;
-    unsigned diagnosticFrames=0;
+    unsigned diagnosticFrames=0,viewfinderTestFrames=0;
     bool stereoTest()const{return preview&&std::getenv("SNAP_VR_STEREO_TEST");}
     unsigned width(unsigned i)const{return preview?(stereoTest()?960:1280):xr.width(i);}
     unsigned height(unsigned i)const{return preview?(stereoTest()?1020:960):xr.height(i);}
@@ -128,32 +128,32 @@ struct Renderer {
             for(auto f:pairs)for(uint32_t p=0;p<w.fbPairs[f].projectionCount;p++) {
                 const auto& proj=w.fbPairs[f].projections[p];if(proj.type!=Projection::Type::Perspective)continue;
                 auto index=proj.transformsIndex;
-                if(target!=2){
-                    interop::float4x4 viewMatrix=vm;
-                    if(cinematic) {
-                        const auto& authored=index<savedView.size()?savedView[index]:d.viewTransforms[index];
-                        viewMatrix=hlslpp::mul(authored,vm);
-                        if(target==0&&std::getenv("SNAP_VR_CINEMA_DIAG")) {
-                            static unsigned samples=0;
-                            if(samples++<90)fprintf(stderr,"[SNAP-VR-CINEMA] alpha %.4f view %.6f %.6f %.6f world %zu\n",worldWeight,float(authored[3][0]),float(authored[3][1]),float(authored[3][2]),d.lerpWorldTransforms.size());
-                        }
+                interop::float4x4 viewMatrix=vm;
+                if(cinematic) {
+                    const auto& authored=index<savedView.size()?savedView[index]:d.viewTransforms[index];
+                    viewMatrix=hlslpp::mul(authored,vm);
+                    if(target==0&&std::getenv("SNAP_VR_CINEMA_DIAG")) {
+                        static unsigned samples=0;
+                        if(samples++<90)fprintf(stderr,"[SNAP-VR-CINEMA] alpha %.4f view %.6f %.6f %.6f world %zu\n",worldWeight,float(authored[3][0]),float(authored[3][1]),float(authored[3][2]),d.lerpWorldTransforms.size());
                     }
-                    d.modViewTransforms[index]=viewMatrix;d.modProjTransforms[index]=pm;d.modViewProjTransforms[index]=hlslpp::mul(viewMatrix,pm);
                 }
+                d.modViewTransforms[index]=viewMatrix;d.modProjTransforms[index]=pm;d.modViewProjTransforms[index]=hlslpp::mul(viewMatrix,pm);
                 auto& viewport=d.modRspViewports[index];viewport.scale.x=160;viewport.scale.y=120;viewport.translate.x=160;viewport.translate.y=120;
                 // Match the native accessory depth mapping exactly. The N64
                 // viewport's 511/1024 scale compresses the world depth range.
-                if(target<2){viewport.scale.z=.5f;viewport.translate.z=.5f;}
+                viewport.scale.z=.5f;viewport.translate.z=.5f;
             }
             std::vector<BufferUploader::Upload> uploads;
             uploads.push_back({d.modViewProjTransforms.data(),{0,d.modViewProjTransforms.size()},sizeof(interop::float4x4),RenderBufferFlag::STORAGE,{},&w.drawBuffers.viewProjTransformsBuffer});
             uploads.push_back({d.modRspViewports.data(),{0,d.modRspViewports.size()},sizeof(interop::RSPViewport),RenderBufferFlag::STORAGE,{},&w.drawBuffers.rspViewportsBuffer});
-            // The lens stays on the simulation/scoring snapshot. Eyes retain
-            // RT64's matched, interpolated world matrices from this subframe.
-            auto& transforms=(target<2&&d.lerpWorldTransforms.size()==d.worldTransforms.size())?d.lerpWorldTransforms:d.worldTransforms;
+            // Every live view, including the handheld screen, uses the current
+            // tracked pose and this subframe's matched world/vertex motion.
+            // Photo capture and scoring use the original game pass, not these
+            // private replay targets.
+            auto& transforms=(d.lerpWorldTransforms.size()==d.worldTransforms.size())?d.lerpWorldTransforms:d.worldTransforms;
             uploads.push_back({transforms.data(),{0,transforms.size()},sizeof(interop::float4x4),RenderBufferFlag::STORAGE,{},&w.drawBuffers.worldTransformsBuffer});
             upload->submit(worker,uploads);
-            w.resetRSPOutputBuffers();RSPProcessor::ProcessParams rp;rp.worker=worker;rp.drawData=&d;rp.drawBuffers=&w.drawBuffers;rp.outputBuffers=&w.outputBuffers;rp.snapVRView=target<2;rp.curFrameWeight=target<2?worldWeight:1;rp.prevFrameWeight=1-rp.curFrameWeight;rsp->process(rp);
+            w.resetRSPOutputBuffers();RSPProcessor::ProcessParams rp;rp.worker=worker;rp.drawData=&d;rp.drawBuffers=&w.drawBuffers;rp.outputBuffers=&w.outputBuffers;rp.snapVRView=true;rp.curFrameWeight=worldWeight;rp.prevFrameWeight=1-rp.curFrameWeight;rsp->process(rp);
             queue.ext.textureCache->incrementLock();
             struct TextureGuard{TextureCache* cache;~TextureGuard(){cache->decrementLock();}}guard{queue.ext.textureCache};
             renderer->updateTextureCache(queue.ext.textureCache);renderer->resetFramebuffers(worker,false,w.extended.ditherNoiseStrength,RenderMultisampling{});
@@ -161,7 +161,7 @@ struct Renderer {
                 FramebufferRenderer::DrawParams p{};p.worker=worker;p.fbStorage=&framebuffers[target];p.curWorkload=&w;p.fbPairIndex=f;
                 p.fbWidth=320;p.fbHeight=240;p.targetWidth=color.width;p.targetHeight=color.height;p.resolutionScale={float(color.width)/320,float(color.height)/240};
                 p.aspectRatioSource=p.aspectRatioTarget=4.f/3;p.extAspectPercentage=1;p.rasterShaderCache=queue.ext.rasterShaderCache;
-                p.presetScene=frame.presetScene;p.submissionFrame=w.submissionFrame;p.deltaTimeMs=1000.f/30;p.ubershadersOnly=true;p.maxGameCall=UINT32_MAX;p.snapRectWeight=1;p.snapVRWorldOnly=true;p.snapVRHighPrecisionDepth=target<2;
+                p.presetScene=frame.presetScene;p.submissionFrame=w.submissionFrame;p.deltaTimeMs=1000.f/30;p.ubershadersOnly=true;p.maxGameCall=UINT32_MAX;p.snapRectWeight=1;p.snapVRWorldOnly=true;p.snapVRHighPrecisionDepth=true;
                 renderer->addFramebuffer(p);
             }
             if(!d.gpuTiles.empty()) {
@@ -350,6 +350,15 @@ struct Renderer {
         if(course) {
             float vertical=f.fovY*pi/360;float horizontal=std::atan(std::tan(vertical)*4/3);
             replay(frame,2,f.lens,{-horizontal,horizontal,vertical,-vertical},true);screen=colors[2].get();
+            // Bounded, preview-only capture of successive live viewfinder
+            // samples. Readback stalls make this unsuitable for timing tests.
+            if(preview&&modelTestFrame>120&&viewfinderTestFrames<12&&std::getenv("SNAP_VR_VIEWFINDER_TEST")) {
+                const std::string filename="vr-viewfinder-"+std::to_string(viewfinderTestFrames++)+".png";
+                props->capture(static_cast<plume::D3D12Texture*>(screen->texture.get())->d3d,filename.c_str());
+                const auto& source=queue.workloads[frame.workloads.back()];
+                fprintf(stderr,"[SNAP-VR-VIEWFINDER] %s workload %llu alpha %.4f lens %.3f %.3f %.3f\n",
+                    filename.c_str(),(unsigned long long)source.workloadId,worldWeight,f.lens.position.x,f.lens.position.y,f.lens.position.z);
+            }
         }else {
             screen=presented?presented:desktop(frame);
             // Keep a private copy: score readbacks may render several scratch
