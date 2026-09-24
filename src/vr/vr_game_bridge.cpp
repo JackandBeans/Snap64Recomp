@@ -56,7 +56,7 @@ void savePhotoLenses() {
 void lens(uint8_t* rdram) {
     if(!requested.load())return;
     auto& s=shared();std::lock_guard lock(s.mutex);
-    if(!s.game.course||s.interaction.epoch!=s.game.epoch)return;
+    if(!s.game.course||s.game.cinematic||s.interaction.epoch!=s.game.epoch)return;
     uint32_t cam=word(rdram,mainCamera);if(!pointer(cam))return;
     const auto p=compose(Pose{yaw(s.game.cartYaw+pi),s.game.cartPosition},s.interaction.lensInCart);Vec3 forward=rotate(p.orientation,{0,0,-1});
     vector(rdram,cam+0x3c,p.position);vector(rdram,cam+0x48,p.position+forward*100);
@@ -68,6 +68,23 @@ void lens(uint8_t* rdram) {
 thread_local bool releasing=false;
 thread_local bool tutorialBlinkReset=false;
 thread_local Vec3 releaseVelocity,releasePosition;
+struct Impact {uint64_t epoch,born;};
+std::map<uint32_t,Impact> impacts;
+void cinematic(bool active) {
+    if(!requested.load())return;
+    auto& s=shared();std::lock_guard lock(s.mutex);s.game.cinematic=active;s.releases.clear();
+}
+}
+extern "C" void PlayerModel_Init(uint8_t* rdram,recomp_context* ctx){cinematic(true);__real_PlayerModel_Init(rdram,ctx);}
+extern "C" void Camera_StartStopCutscene(uint8_t* rdram,recomp_context* ctx){cinematic(true);__real_Camera_StartStopCutscene(rdram,ctx);}
+extern "C" void func_803571C4_4F75D4(uint8_t* rdram,recomp_context* ctx){cinematic(true);__real_func_803571C4_4F75D4(rdram,ctx);}
+extern "C" void func_803572B0_4F76C0(uint8_t* rdram,recomp_context* ctx){__real_func_803572B0_4F76C0(rdram,ctx);cinematic(false);}
+extern "C" void Items_RemovePesterBall(uint8_t* rdram,recomp_context* ctx) {
+    if(requested.load()) {
+        auto& s=shared();std::lock_guard lock(s.mutex);auto obj=uint32_t(ctx->r4);
+        if(!impacts.count(obj))impacts[obj]={s.game.epoch,s.game.frame};
+    }
+    __real_Items_RemovePesterBall(rdram,ctx);
 }
 extern "C" void mainCameraRender(uint8_t* rdram,recomp_context* ctx) {
     if(snap::vr::requested.load()) {
@@ -79,8 +96,34 @@ extern "C" void mainCameraRender(uint8_t* rdram,recomp_context* ctx) {
         g.apples=word(rdram,0x803AE51C)&1;g.pesterBalls=word(rdram,0x803AE51C)&2;
         g.film=std::clamp(60-int(word(rdram,0x800AC0E0)),0,60);
         g.itemReady=word(rdram,0x80382CB4)==0&&!word(rdram,0x80382D0C);
+        g.smoke.clear();
+        for(auto it=impacts.begin();it!=impacts.end();) {
+            if(it->second.epoch!=g.epoch){it=impacts.erase(it);continue;}
+            if(g.frame-it->second.born>36){++it;continue;}
+            uint32_t root=pointer(it->first)?word(rdram,it->first+0x48):0;
+            if(pointer(root))g.smoke.push_back({vector(rdram,root+0x1c),it->second.born});
+            ++it;
+        }
     }
-    lens(rdram);__real_mainCameraRender(rdram,ctx);
+    lens(rdram);
+    if(snap::vr::preview&&std::getenv("SNAP_VR_PROJECTILE_TEST")) {
+        static unsigned frames=0;
+        if(++frames%30==1) {
+            auto& s=shared();GameState g;{std::lock_guard lock(s.mutex);g=s.game;}
+            recomp_context call=*ctx;call.r29-=0x80;call.r4=call.r29+0x20;call.r5=call.r29+0x30;
+            vector(rdram,uint32_t(call.r5),{});
+            const auto rotation=yaw(g.cartYaw+pi);
+            releasing=true;releaseVelocity={};
+            releasePosition=g.cartPosition+rotate(rotation,{-20,180,-100});
+            Items_SpawnApple(rdram,&call);
+            call=*ctx;call.r29-=0x80;call.r4=call.r29+0x20;call.r5=call.r29+0x30;
+            vector(rdram,uint32_t(call.r5),{});
+            releasePosition=g.cartPosition+rotate(rotation,{90,180,-160});
+            Items_SpawnPesterBall(rdram,&call);
+            releasing=false;
+        }
+    }
+    __real_mainCameraRender(rdram,ctx);
 }
 extern "C" void Msg_ShowMessage(uint8_t* rdram,recomp_context* ctx) {
     if(snap::vr::requested.load()&&pointer(uint32_t(ctx->r4))) {
@@ -164,11 +207,71 @@ extern "C" void updateCameraZoomedIn(uint8_t* rdram,recomp_context* ctx) {
 extern "C" void updateCameraZoomedOut(uint8_t* rdram,recomp_context* ctx) {__real_updateCameraZoomedOut(rdram,ctx);lens(rdram);}
 extern "C" void Items_InitItem(uint8_t* rdram,recomp_context* ctx) {
     uint32_t obj=uint32_t(ctx->r4);
+    impacts.erase(obj);
     if(releasing) {
         recomp_context call=*ctx;call.r29-=0x60;call.r5=call.r29+0x20;
         vector(rdram,uint32_t(call.r5),releasePosition);__real_Items_InitItem(rdram,&call);
     }else __real_Items_InitItem(rdram,ctx);
     if(releasing&&pointer(obj)){uint32_t item=word(rdram,obj+0x58);if(pointer(item))vector(rdram,item+8,releaseVelocity);}
+}
+extern "C" void renderModelTypeDFogged(uint8_t* rdram,recomp_context* ctx) {
+    // Opening sky mesh (payload 8037ED08, cloud texture 8035A2A8),
+    // including its eight culling vertices. Expand about its local bounds
+    // center once per segment load. This changes no terrain or actor vertices.
+    if(requested.load() && snap::g_scene_overlay_rom.load()==0xA08E30 &&
+       MEM_H(0,(int32_t)0x8036AA78)==0 && MEM_H(2,(int32_t)0x8036AA78)==-892 &&
+       MEM_H(4,(int32_t)0x8036AA78)==1711) {
+        for(auto [base,count]:{std::pair<uint32_t,unsigned>{0x8036AA78,24},{0x803717A8,8}})
+            for(unsigned i=0;i<count;i++) {
+                int32_t vertex=int32_t(base+i*16);
+                MEM_H(0,vertex)=int16_t(MEM_H(0,vertex)*4-2655);
+                MEM_H(2,vertex)=int16_t(MEM_H(2,vertex)*4+27);
+                MEM_H(4,vertex)=int16_t(MEM_H(4,vertex)*4-556);
+            }
+    }
+    __real_renderModelTypeDFogged(rdram,ctx);
+}
+extern "C" void renderModelTypeBFogged(uint8_t* rdram,recomp_context* ctx) {
+    // Match the original item tree's display list, including trees recreated
+    // from PhotoData. Do not identify items by reusable GObj IDs or userData.
+    const uint32_t obj=uint32_t(ctx->r4);
+    const uint32_t root=pointer(obj)?word(rdram,obj+0x48):0;
+    const uint32_t child=pointer(root)?word(rdram,root+0x10):0;
+    int kind=-1;
+    if(requested.load()&&pointer(child)) {
+        const uint32_t world=uint32_t(section_addresses[12]);
+        const uint32_t payload=word(rdram,child+0x50);
+        if(pointer(world)&&payload) {
+            if(payload==word(rdram,world+0x9630+48))kind=0; // apple tree child
+            else if(payload==word(rdram,world+0x7898+48))kind=1; // Pester Ball
+        }
+    }
+    static std::array<uint32_t,2> lists{};
+    static bool attempted=false;
+    if(kind>=0&&!attempted) {
+        attempted=true;
+        try {
+            std::ifstream file(snap::base_dir()/"assets/vr/projectiles.bin",std::ios::binary);
+            std::vector<unsigned char> bytes((std::istreambuf_iterator<char>(file)),{});
+            auto read=[&](size_t i){return uint32_t(bytes.at(i))<<24|uint32_t(bytes.at(i+1))<<16|uint32_t(bytes.at(i+2))<<8|bytes.at(i+3);};
+            constexpr uint32_t base=0x80F00000;
+            if(bytes.size()<16||bytes.size()>0x100000||read(0)!=0x56524931||read(4)!=bytes.size())throw std::runtime_error("Invalid projectile asset header");
+            for(int i=0;i<2;i++){auto address=read(8+i*4);if(address<base+16||address>=base+bytes.size()||(address&7))throw std::runtime_error("Invalid projectile display list");}
+            for(size_t i=0;i<bytes.size();i++)MEM_B(i,(int32_t)base)=bytes[i];
+            lists={read(8),read(12)};
+            fprintf(stderr,"[SNAP-VR] Replacement apple/Pester Ball world meshes loaded (%zu bytes)\n",bytes.size());
+        }catch(const std::exception& e){fprintf(stderr,"[SNAP-VR] Projectile model replacement unavailable: %s\n",e.what());}
+    }
+    if(kind<0||!lists[kind]){__real_renderModelTypeBFogged(rdram,ctx);return;}
+    // Attach to the root to avoid the original sprite child's billboard
+    // transform. Retain root movement, bounce, shrink and photo transforms.
+    const uint32_t payload=word(rdram,root+0x50),materials=word(rdram,root+0x80);
+    struct RestoreItem {
+        uint8_t* rdram;uint32_t root,child,payload,materials;
+        ~RestoreItem(){MEM_W(0,(int32_t)(root+0x10))=child;MEM_W(0,(int32_t)(root+0x50))=payload;MEM_W(0,(int32_t)(root+0x80))=materials;}
+    }restore{rdram,root,child,payload,materials};
+    MEM_W(0,(int32_t)(root+0x10))=0;MEM_W(0,(int32_t)(root+0x50))=lists[kind];MEM_W(0,(int32_t)(root+0x80))=0;
+    __real_renderModelTypeBFogged(rdram,ctx);
 }
 extern "C" void handleItemButtonsPress(uint8_t* rdram,recomp_context* ctx) {
     if(!snap::vr::requested.load()){__real_handleItemButtonsPress(rdram,ctx);return;}
@@ -239,6 +342,10 @@ void menuInput(uint8_t* rdram,recomp_context* ctx) {
     constexpr uint32_t mailbox=0x80C00F00;
     MEM_W(0,(int32_t)mailbox)=0;
     if(!snap::vr::requested.load())return;
+    if(snap::g_scene_overlay_rom.load()==0xA08E30u) {
+        auto& state=shared();std::lock_guard lock(state.mutex);
+        state.game.cinematic=MEM_BU(0,(int32_t)0x800E832B)==5;
+    }
     MenuPoint point,click;uint64_t serial,epoch;bool active;
     {auto& s=shared();std::lock_guard lock(s.mutex);
         point=s.menuPointer;click=s.menuClick;serial=s.menuClickSerial;epoch=s.game.epoch;
@@ -315,6 +422,7 @@ void skyRender(uint8_t* rdram,recomp_context* ctx,void (*original)(uint8_t*,reco
     // Only the actual SkyBoxObject may follow the rider; terrain must retain
     // its block transform. Keep the dome independent of handheld lens motion.
     const uint32_t skyObject=word(rdram,uint32_t(section_addresses[12])+0x5248);
+    {auto& s=shared();std::lock_guard lock(s.mutex);if(s.game.cinematic)course=false;}
     if(!course||obj!=skyObject||!pointer(model)||!pointer(cam)){original(rdram,ctx);return;}
     Vec3 saved=vector(rdram,model+0x1c);vector(rdram,model+0x1c,skyCenter);
     struct RestoreSky {uint8_t* rdram;uint32_t address;Vec3 saved;~RestoreSky(){vector(rdram,address,saved);}}restore{rdram,model+0x1c,saved};

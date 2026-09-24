@@ -1,5 +1,6 @@
 #pragma once
 #include "vr_math.h"
+#include "vr_throw.h"
 #include <cstdint>
 #include <deque>
 #include <vector>
@@ -26,9 +27,12 @@ struct Tracking {
     std::array<Fov,2> fovs{};
     std::array<HandInput,2> hands{};
 };
+struct SmokePuff { Vec3 position; uint64_t born=0; };
 struct GameState {
     uint64_t epoch=0, frame=0;
     bool course=false, paused=false, apples=false, pesterBalls=false, itemReady=true;
+    bool cinematic=false;
+    std::vector<SmokePuff> smoke;
     Vec3 cartPosition{}, cartVelocity{}; // game units; velocity per second
     float cartYaw=0;
     int film=60;
@@ -58,16 +62,15 @@ class Interaction {
 public:
     Settings settings;
     static constexpr Vec3 cameraDock{0.28f,0.92f,-0.38f};
-    static constexpr Vec3 appleBin{-0.43f,0.68f,-0.25f};
-    static constexpr Vec3 pesterBin{0.43f,0.68f,-0.25f};
+    static constexpr Vec3 appleBin{0.36f,0.74f,0.02f};
+    static constexpr Vec3 pesterBin{0.36f,0.74f,-0.23f};
     void recenter(const Tracking& tracking);
     InteractionFrame update(const Tracking& tracking, const GameState& game);
     Pose toWorld(Pose trackingPose,const GameState& game) const;
     Pose cartPose(const GameState& game) const;
     Pose localPose(Pose trackingPose) const;
 private:
-    struct Sample { double time; Vec3 position; };
-    std::array<std::deque<Sample>,2> history;
+    std::array<std::deque<ThrowSample>,2> history;
     std::array<Held,2> held{};
     std::array<bool,2> gripping{}, triggering{}, primary{}, menus{}, armed{};
     Pose origin{};

@@ -119,7 +119,7 @@ for radius,start,end in ((.022,1.75,2.70),(.0195,1.9,2.50)):
 for i in range(11):
  a=-.9+i*.18;o=box('Focus scale tick',(.0413*math.sin(a),.003+.0413*math.cos(a),-.114),(.0012,.0012,.005 if i%5==0 else .0027),'ivory',0);o.rotation_euler.y=a
 box('Focus index',(0,.044,-.073),(.002,.0012,.005),'red',0)
-cylinder('Shutter',(.083,.061,.003),.010,.007,'red',(0,1,0),32,bevel=.001)
+cylinder('Shutter',(.064,.060,-.006),.010,.007,'red',(0,1,0),32,bevel=.001)
 cylinder('Mode dial',(-.062,.06,0),.019,.012,'dark',(0,1,0),32)
 for y in [-.026,0,.026]:cylinder('Rear button',(.068,y,.051),.004,.004,'silver',(0,0,1),20)
 for x in [-.068,.068]:
@@ -136,7 +136,7 @@ for x in (-.012,.012):box('Accessory shoe rail',(x,.082,.002),(.003,.004,.025),'
 box('Display inner trim',(-.008,-.004,.049),(.120,.091,.001),'trim',.001)
 for i in range(8):
  a=math.tau*i/8;o=box('Mode dial tick',(-.062+.012*math.sin(a),.0662,.012*math.cos(a)),(.0015,.0008,.004),'ivory' if i else 'red',0);o.rotation_euler.z=-a
-cylinder('Shutter collar',(.083,.055,.003),.012,.007,'silver',(0,1,0))
+cylinder('Shutter collar',(.064,.054,-.006),.012,.007,'silver',(0,1,0))
 cylinder('Lens release button',(.053,-.026,-.0455),.005,.005,'dark',vertices=20)
 box('Film door seam',(0,-.055,.003),(.116,.002,.043),'dark',.001)
 box('Film door latch',(-.032,-.057,.007),(.023,.004,.012),'silver',.002)
@@ -208,9 +208,10 @@ for side in [-1,1]:
   x=side*.712*math.sqrt(1-((z+.13)/.932)**2);axis=Vector((x/.712**2,0,(z+.13)/.932**2)).normalized()
   screw('Hull rivet',(x,.59,z),.012,axis)
  # Integrated item wells retain the established seated reach locations.
- cylinder('Dispenser cup',(side*.43,.615,-.25),.095,.085,'body',(0,1,0),40)
- ring('Dispenser rim',(side*.43,.66,-.25),.101,.078,.018,'gold',(0,1,0),40)
- cylinder('Dispenser well',(side*.43,.666,-.25),.077,.009,'dark',(0,1,0),40)
+ bin_z=.02 if side<0 else -.23
+ cylinder('Dispenser cup',(.36,.675,bin_z),.095,.085,'body',(0,1,0),40)
+ ring('Dispenser rim',(.36,.72,bin_z),.101,.078,.018,'gold',(0,1,0),40)
+ cylinder('Dispenser well',(.36,.726,bin_z),.077,.009,'dark',(0,1,0),40)
 box('Camera holster base',(.28,.865,-.38),(.20,.035,.12),'rubber',.016)
 for x in [.185,.375]:box('Holster retaining lip',(x,.90,-.38),(.015,.055,.12),'gold',.008)
 # Mechanical details use geometry and vertex colors supported by the VR renderer.
@@ -230,8 +231,9 @@ for side in (-1,1):
  cylinder('Hoop foot collar',(side*.592,.73,.41),.044,.07,'trim',(0,1,0),24)
  tube('Seat piping',[(side*.239,.60,.411),(side*.239,.88,.411),(side*.20,.917,.411)],.004,'body')
  box('Seat belt anchor',(side*.30,.48,.26),(.038,.06,.06),'silver',.008)
- tube('Dispenser bracket',[(side*.53,.46,-.25),(side*.43,.57,-.25),(side*.43,.625,-.25)],.025,'body')
- ring('Item bin color band',(side*.43,.646,-.25),.096,.092,.009,'red' if side<0 else 'green',(0,1,0),40)
+ bin_z=.02 if side<0 else -.23
+ tube('Dispenser bracket',[(.53,.46,bin_z),(.36,.63,bin_z),(.36,.685,bin_z)],.025,'body')
+ ring('Item bin color band',(.36,.706,bin_z),.096,.092,.009,'red' if side<0 else 'green',(0,1,0),40)
  box('Rear marker housing',(side*.30,.54,.706),(.15,.068,.04),'dark',.015)
  box('Rear marker lens',(side*.30,.54,.730),(.11,.040,.010),'red',.008)
  tube('Front bumper',[(side*.10,.36,-1.01),(side*.26,.39,-1.10),(side*.43,.43,-.96)],.021,'trim')
@@ -327,7 +329,7 @@ for side in (-1,1):
 manifest={'units':'meters','axes':'X right Y up -Z forward','models':{}}
 stats={}
 for group,objects in parts.items():
- data=[];indices=[];unique={};alpha=[]
+ data=[];indices=[];unique={};alpha=[];shutter_vertices=set()
  for o in objects:
   bpy.ops.object.select_all(action='DESELECT');o.select_set(True);bpy.context.view_layer.objects.active=o
   bpy.ops.object.transform_apply(location=True,rotation=True,scale=True)
@@ -349,15 +351,19 @@ for group,objects in parts.items():
     key=(*vertex,opacity)
     if key not in unique:unique[key]=len(data)//11;data.extend(vertex);alpha.append(opacity)
     indices.append(unique[key])
+    if o.name=="Shutter":shutter_vertices.add(unique[key])
    exported=[Vector(data[index*11:index*11+3]) for index in indices[-3:]]
    assert (exported[1]-exported[0]).cross(exported[2]-exported[0]).length>1e-12,(o.name,'degenerate rounded export')
  manifest['models'][group]={'vertices':data,'indices':indices}
+ if shutter_vertices:manifest['models'][group]['shutter_vertices']=sorted(shutter_vertices)
  if any(a<1 for a in alpha):manifest['models'][group]['alpha']=alpha
  stats[group]={'triangles':len(indices)//3,'vertices':len(data)//11,'bounds':[[min(data[a::11]),max(data[a::11])] for a in range(3)]}
  assert stats[group]['triangles']<{'camera':24300,'zero_one':37940,'apple':4000,'pester_ball':9500}[group],(group,'triangle budget exceeded')
  print(group,stats[group],flush=True)
 validate_camera_assembly(parts['camera'])
 (OUT/'props.json').write_text(json.dumps(manifest,separators=(',',':'))+'\n')
+from vr_projectile_assets import export as export_projectiles
+export_projectiles(ROOT)
 (ROOT/'build-win').mkdir(parents=True,exist_ok=True)
 (ROOT/'build-win/vr-model-stats.json').write_text(json.dumps(stats,indent=2)+'\n')
 bpy.context.preferences.filepaths.save_version=0
@@ -391,7 +397,8 @@ def review(filename,model,position,target,scale,width=1200,height=1000):
  for light in scene.objects:
   if light.type=='LIGHT':view.collection.objects.link(light)
  camera.location=vec(position);camera.rotation_euler=(vec(target)-camera.location).to_track_quat('-Z','Y').to_euler();camera.data.ortho_scale=scale
- view.render.resolution_x=width;view.render.resolution_y=height;view.render.resolution_percentage=100;view.render.filepath=str(ROOT/'build-win'/filename);bpy.ops.render.render(write_still=True,scene=view.name)
+ view.render.resolution_x=width;view.render.resolution_y=height;view.render.resolution_percentage=100;view.render.filepath=str(ROOT/'build-win'/filename)
+ if '--no-render' not in sys.argv:bpy.ops.render.render(write_still=True,scene=view.name)
 
 review('vr-model-review.png','zero_one',(2.8,2.4,-3.8),(0,.79,-.12),2.75,1400,1200)
 review('vr-cockpit-review.png','zero_one',(1.8,2.6,2.5),(0,.73,-.15),2.65,1400,1200)

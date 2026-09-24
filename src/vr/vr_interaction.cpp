@@ -20,7 +20,7 @@ Pose Interaction::toWorld(Pose p,const GameState& g) const {
 InteractionFrame Interaction::update(const Tracking& t,const GameState& g) {
     InteractionFrame out; out.frame=t.frame; out.epoch=g.epoch;
     if (!centered && t.headValid) recenter(t);
-    bool reset=(epoch!=g.epoch)||!g.course||!t.focused||!t.headValid||g.paused;
+    bool reset=(epoch!=g.epoch)||!g.course||!t.focused||!t.headValid||g.paused||g.cinematic;
     if (reset) {
         held={}; armed={}; gripping={}; triggering={};
         for (auto& h:history) h.clear();
@@ -40,22 +40,28 @@ InteractionFrame Interaction::update(const Tracking& t,const GameState& g) {
         } else {
             if (!grip) armed[i]=true; // regain tracking with grip held cannot grab/throw
             Pose local=localPose(h.grip);
-            if (!samples.empty()&&t.seconds<=samples.back().time) samples.clear();
-            samples.push_back({t.seconds,local.position});
-            while(samples.size()>2 && t.seconds-samples.front().time>0.09) samples.pop_front();
+            if (!samples.empty()&&(t.seconds<=samples.back().time||t.seconds-samples.back().time>.12)) samples.clear();
+            const Vec3 itemPosition=heldItemPose(local).position;
+            samples.push_back({t.seconds,itemPosition});
+            while(samples.size()>2 && t.seconds-samples.front().time>.24) samples.pop_front();
             if (grip&&!gripping[i]&&armed[i]&&held[i]==Held::None) {
-                if (length(local.position-cameraDock)<0.22f&&held[1-i]!=Held::Camera) held[i]=Held::Camera;
-                else if(g.itemReady&&t.seconds>=nextThrow&&g.apples&&length(local.position-appleBin)<0.20f) held[i]=Held::Apple;
-                else if(g.itemReady&&t.seconds>=nextThrow&&g.pesterBalls&&length(local.position-pesterBin)<0.20f) held[i]=Held::PesterBall;
+                float cameraDistance=length(local.position-cameraDock);
+                float itemDistance=std::min(g.apples?length(local.position-appleBin):1.f,g.pesterBalls?length(local.position-pesterBin):1.f);
+                if (cameraDistance<0.22f&&cameraDistance<=itemDistance&&held[1-i]!=Held::Camera) held[i]=Held::Camera;
+                else if(g.itemReady&&t.seconds>=nextThrow) {
+                    float apple=g.apples?length(local.position-appleBin):1.f;
+                    float pester=g.pesterBalls?length(local.position-pesterBin):1.f;
+                    if(apple<.20f&&apple<=pester)held[i]=Held::Apple;
+                    else if(pester<.20f)held[i]=Held::PesterBall;
+                }
+                if(held[i]==Held::Apple||held[i]==Held::PesterBall){samples.clear();samples.push_back({t.seconds,itemPosition});}
             }
             if (!grip&&gripping[i]) {
                 if ((held[i]==Held::Apple||held[i]==Held::PesterBall)&&samples.size()>=2) {
-                    auto a=samples.front(), b=samples.back(); float span=float(b.time-a.time);
-                    if(span>=0.015f&&span<0.2f) {
-                        Vec3 velocity=(b.position-a.position)*(1/span);
-                        float speed=length(velocity); if(speed>12) velocity=velocity*(12/speed);
+                    if(t.seconds-samples.front().time>=.035) {
+                        Vec3 velocity=throwVelocity(samples);
                         velocity=rotate(cartPose(g).orientation,velocity*(settings.unitsPerMeter*settings.throwStrength))+g.cartVelocity;
-                        out.throws.push_back({held[i],out.hands[i].position,velocity,g.epoch});
+                        out.throws.push_back({held[i],heldItemPose(out.hands[i],settings.unitsPerMeter).position,velocity,g.epoch});
                         nextThrow=t.seconds+0.25;
                     }
                 }
@@ -68,7 +74,7 @@ InteractionFrame Interaction::update(const Tracking& t,const GameState& g) {
                 Pose aim=toWorld(h.aim,g);Pose wrist=handMeshPose(out.hands[i]);
                 aim.orientation=compose(aim,Pose{{-.70710678f,0,0,.70710678f},{}}).orientation;
                 Vec3 palm=wrist.position+rotate(wrist.orientation,Vec3{i==0?.025f:-.025f,.015f,-.055f}*settings.unitsPerMeter);
-                Vec3 socket{i==0?-.087f:.092f,-.012f,.010f};
+                Vec3 socket{i==0?-.092f:.092f,-.012f,.010f};
                 Pose body{aim.orientation,palm-rotate(aim.orientation,socket*settings.unitsPerMeter)};
                 out.lens=compose(body,Pose{{},{0,0,-.14f*settings.unitsPerMeter}});
                 fovY=std::clamp(fovY-h.stickY*30*dt,20.0f,60.0f);
@@ -86,7 +92,7 @@ InteractionFrame Interaction::update(const Tracking& t,const GameState& g) {
             Quat a=lastLens,b=out.lens.orientation;float sign=(a.x*b.x+a.y*b.y+a.z*b.z+a.w*b.w)<0?-1.f:1.f;
             float blend=1-std::exp(-dt*25);Quat q{a.x*(1-blend)+b.x*sign*blend,a.y*(1-blend)+b.y*sign*blend,a.z*(1-blend)+b.z*sign*blend,a.w*(1-blend)+b.w*sign*blend};
             float n=std::sqrt(q.x*q.x+q.y*q.y+q.z*q.z+q.w*q.w);
-            Vec3 lensToPalm{held[0]==Held::Camera?-.087f:.092f,-.012f,.150f};
+            Vec3 lensToPalm{held[0]==Held::Camera?-.092f:.092f,-.012f,.150f};
             lensToPalm=lensToPalm*settings.unitsPerMeter;
             Vec3 anchor=out.lens.position+rotate(out.lens.orientation,lensToPalm);
             out.lens.orientation={q.x/n,q.y/n,q.z/n,q.w/n};

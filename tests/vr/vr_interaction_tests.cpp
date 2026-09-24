@@ -2,12 +2,45 @@
 #include "vr_menu.h"
 #include "vr_messages.h"
 #include "vr_transparency.h"
+#include "vr_transition.h"
 #include <cstdlib>
 #include <iostream>
 using namespace snap::vr;
 void check(bool v,const char* message) { if(!v){std::cerr<<message<<'\n';std::exit(1);} }
 bool near(float a,float b) {return std::abs(a-b)<0.001f;}
 int main() {
+    check(length(throwVelocity({{0,{}},{.04,{0,0,-.08f}},{.08,{0,0,-.16f}}})-Vec3{0,0,-4.6f})<.001f,"release uses the reduced 2.3x gain");
+    check(length(throwVelocity({{0,{}},{.04,{}},{.08,{.16f,0,0}},{.12,{.16f,0,0}}})-Vec3{4.6f,0,0})<.001f,"release fit does not amplify an earlier speed peak");
+    check(length(throwVelocity({{0,{}},{.01,{1,0,0}}}))==0,"single short tracking spike cannot establish a throw");
+    check(length(throwVelocity({{0,{}},{.04,{1,0,0}},{.2,{1,0,0}},{.24,{1,0,0}}}))==0,"old peak falls outside the release window");
+    check(near(throwVelocity({{0,{}},{.02,{.004f,0,0}},{.04,{.008f,0,0}}}).x,.2f),"slow drops retain unboosted hand motion");
+    for(int rate:{72,90,120}) {
+        std::deque<ThrowSample> samples;
+        for(int n=0;n<=rate/5;n++){double at=double(n)/rate;samples.push_back({at,{0,float(2*at),0}});}
+        check(near(throwVelocity(samples).y,4.6f),"same physical throw across headset sampling rates");
+    }
+    auto releaseAt=[](float speed){return throwVelocity({{0,{}},{.04,{speed*.04f,0,0}},{.08,{speed*.08f,0,0}}}).x;};
+    check(std::abs(releaseAt(.901f)-releaseAt(.899f))<.02f,"no boost discontinuity at old 0.9 m/s threshold");
+    ViewTransition fade;check(!fade.update(2,10).hold,"initial cinematic is visible");
+    check(fade.update(1,11).hold&&fade.mode==2,"handoff retains outgoing image");
+    auto fadeMiddle=fade.update(1,11.125);check(fadeMiddle.hold&&near(fadeMiddle.gain,.5f),"outgoing cinematic fades down");
+    auto black=fade.update(1,11.25);check(!black.hold&&black.gain==0&&fade.mode==1,"view switches only at black");
+    check(near(fade.update(1,11.45).gain,.5f),"new cart view fades in");
+    check(fade.update(2,12).hold,"exit cutscene retains outgoing cart image until black");
+    for(int side=0;side<2;side++) {
+        Interaction throwing;Tracking tracking{};GameState game{};
+        tracking.focused=tracking.headValid=true;tracking.head.position={0,1.2f,0};
+        game.course=game.apples=game.pesterBalls=true;game.epoch=1;game.cartYaw=.7f;game.cartVelocity={20,0,10};
+        throwing.settings.throwStrength=1.5f;throwing.update(tracking,game);
+        auto& hand=tracking.hands[side];hand.tracked=true;hand.grip.position=side?Interaction::pesterBin:Interaction::appleBin;
+        tracking.seconds=.01;throwing.update(tracking,game);hand.squeeze=1;tracking.seconds=.02;throwing.update(tracking,game);
+        hand.grip.position.z-=.08f;tracking.seconds=.06;throwing.update(tracking,game);
+        hand.grip.position.z-=.08f;tracking.seconds=.10;hand.squeeze=0;auto release=throwing.update(tracking,game);
+        check(release.throws.size()==1,"both item types release from either dispenser");
+        auto expected=rotate(throwing.cartPose(game).orientation,{0,0,-690})+game.cartVelocity;
+        check(length(release.throws[0].velocity-expected)<.01f,"boost, throw setting and yaw apply before unboosted cart velocity");
+        check(length(release.throws[0].position-heldItemPose(release.hands[side],100).position)<.001f,"projectile spawns at rendered item center");
+    }
     Interaction vr; Tracking t; t.focused=t.headValid=true; t.head.position={0,1.2f,0};
     GameState g; g.course=g.apples=g.pesterBalls=true; g.epoch=1;
     auto f=vr.update(t,g);
@@ -84,7 +117,7 @@ int main() {
         sample.hands[side].aim.orientation=yaw(.4f);sample.seconds=.01;grip.update(sample,course);
         sample.hands[side].squeeze=1;sample.seconds=.03;auto held=grip.update(sample,course);
         Pose body=compose(held.lens,Pose{{},{0,0,14}}),wrist=handMeshPose(held.hands[side]);
-        Vec3 socket{side==0?-.087f:.092f,-.012f,.010f};
+        Vec3 socket{side==0?-.092f:.092f,-.012f,.010f};
         Vec3 palm=wrist.position+rotate(wrist.orientation,Vec3{side==0?.025f:-.025f,.015f,-.055f}*100);
         check(length(body.position+rotate(body.orientation,socket*100)-palm)<.001f,"camera side socket attaches to either palm");
         auto aim=grip.toWorld(sample.hands[side].aim,course);

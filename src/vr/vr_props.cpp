@@ -52,6 +52,7 @@ Matrix multiply(const Matrix&a,const Matrix&b){Matrix c{};for(int i=0;i<4;i++)fo
 Quat mix(Quat a,Quat b,float t){float d=a.x*b.x+a.y*b.y+a.z*b.z+a.w*b.w;if(d<0){b.x=-b.x;b.y=-b.y;b.z=-b.z;b.w=-b.w;}Quat q{a.x+(b.x-a.x)*t,a.y+(b.y-a.y)*t,a.z+(b.z-a.z)*t,a.w+(b.w-a.w)*t};float n=std::sqrt(q.x*q.x+q.y*q.y+q.z*q.z+q.w*q.w);return {q.x/n,q.y/n,q.z/n,q.w/n};}
 struct Mesh {
     std::vector<Vertex> vertices;
+    std::vector<bool> shutter;
     void load(const nlohmann::json& j) {
         const auto data=j.at("vertices").get<std::vector<float>>();
         const auto indices=j.at("indices").get<std::vector<unsigned>>();
@@ -59,7 +60,9 @@ struct Mesh {
         if(data.size()%11||indices.size()%3)throw std::runtime_error("Invalid VR model layout");
         if(!alpha.empty()&&alpha.size()!=data.size()/11)throw std::runtime_error("Invalid VR model alpha layout");
         vertices.reserve(indices.size());
+        auto shutterIndices=j.value("shutter_vertices",std::vector<unsigned>{});
         for(unsigned index:indices) {
+            shutter.push_back(std::find(shutterIndices.begin(),shutterIndices.end(),index)!=shutterIndices.end());
             size_t i=size_t(index)*11;if(i+10>=data.size())throw std::runtime_error("VR model index out of range");
             Vec3 n{data[i+3],data[i+4],data[i+5]};
             float shade=std::clamp(.80f+dot(n,{.12f,.25f,.18f}),.35f,1.f);
@@ -68,9 +71,15 @@ struct Mesh {
             vertices.push_back({{data[i],data[i+1],data[i+2]},data[i+6]*shade,data[i+7]*shade,data[i+8]*shade,0,0,0,opacity});
         }
     }
-    void draw(std::vector<Vertex>& out,Pose pose) const {
+    void draw(std::vector<Vertex>& out,Pose pose,bool mirrorX=false,float press=0) const {
         out.reserve(out.size()+vertices.size());
-        for(auto vertex:vertices){vertex.position=pose.position+rotate(pose.orientation,vertex.position);out.push_back(vertex);}
+        for(size_t i=0;i<vertices.size();i++) {
+            // Reflection reverses winding; swap the last two triangle corners.
+            size_t index=mirrorX?(i/3*3+(i%3==0?0:3-i%3)):i;
+            auto vertex=vertices[index];if(shutter[index])vertex.position.y-=.0025f*press;
+            if(mirrorX)vertex.position.x=-vertex.position.x;
+            vertex.position=pose.position+rotate(pose.orientation,vertex.position);out.push_back(vertex);
+        }
     }
 };
 struct Rig {
@@ -78,16 +87,39 @@ struct Rig {
     std::vector<int> parent,tris;
     std::vector<std::string> names;
     void load(const nlohmann::json& j){rest=j.at("rest").get<std::vector<float>>();ibm=j.at("ibm").get<std::vector<float>>();verts=j.at("verts").get<std::vector<float>>();parent=j.at("parent").get<std::vector<int>>();tris=j.at("tris").get<std::vector<int>>();names=j.at("bones").get<std::vector<std::string>>();open=j.at("poses").at("open").get<std::vector<float>>();fist=j.at("poses").at("fist").get<std::vector<float>>();cameraGrip=j.at("poses").at("grip_1").get<std::vector<float>>();itemGrip=j.at("poses").at("grip_3").get<std::vector<float>>();}
-    void draw(std::vector<Vertex>& out,Pose wrist,const HandInput& input,Held held) const {
+    void draw(std::vector<Vertex>& out,Pose wrist,const HandInput& input,Held held,const Vec3* shutterTarget=nullptr) const {
         std::vector<Pose> world(parent.size());
         for(size_t i=0;i<parent.size();i++) {
             float t=input.squeeze;
-            if(names[i].starts_with("Index"))t=input.trigger;
+            if(names[i].starts_with("Index"))t=held==Held::Camera?0.f:input.trigger;
             if(names[i].starts_with("Thumb"))t=input.thumbTouch?.7f:.15f;
-            if(held!=Held::None)t=std::max(t,held==Held::Camera?.55f:.65f);
+            if(held!=Held::None&&!names[i].starts_with("Index"))t=std::max(t,held==Held::Camera?.55f:.65f);
             const auto& target=held==Held::Camera?cameraGrip:held!=Held::None?itemGrip:fist;
             size_t q=i*4;Pose p{mix({open[q],open[q+1],open[q+2],open[q+3]},{target[q],target[q+1],target[q+2],target[q+3]},t),{rest[i*7],rest[i*7+1],rest[i*7+2]}};
             world[i]=parent[i]?compose(world[parent[i]-1],p):p;
+        }
+        if(shutterTarget) {
+            // Solve only the index chain against the physical button. The
+            // remaining fingers retain the imported camera grip pose.
+            Vec3 target=rotate(conjugate(wrist.orientation),*shutterTarget-wrist.position);
+            std::array<size_t,5> chain{};size_t count=0;
+            for(size_t i=0;i<names.size();i++)if(names[i].starts_with("Index")&&count<chain.size())chain[count++]=i;
+            if(count==chain.size())for(int iteration=0;iteration<24;iteration++) {
+                for(int joint=3;joint>=0;joint--) {
+                    size_t root=chain[joint];Vec3 origin=world[root].position;
+                    Vec3 a=normalized(world[chain[4]].position-origin),b=normalized(target-origin);
+                    float cosine=std::clamp(dot(a,b),-1.f,1.f);
+                    Vec3 axis=cross(a,b);Quat turn{axis.x,axis.y,axis.z,1+cosine};
+                    float norm=std::sqrt(dot(axis,axis)+turn.w*turn.w);
+                    if(norm<1e-6f)continue;
+                    turn={turn.x/norm,turn.y/norm,turn.z/norm,turn.w/norm};
+                    for(int k=joint;k<5;k++) {
+                        auto& pose=world[chain[k]];
+                        pose.position=origin+rotate(turn,pose.position-origin);pose.orientation=turn*pose.orientation;
+                    }
+                }
+                if(length(world[chain[4]].position-target)<.0002f)break;
+            }
         }
         std::vector<Vertex> transformed;transformed.reserve(verts.size()/15);
         for(size_t i=0;i<verts.size();i+=15) {
@@ -113,6 +145,22 @@ struct P{float4 p:SV_POSITION;float3 c:COLOR0;float3 uv:TEXCOORD;float alpha:COL
 P vs(V v){P o;o.p=mul(float4(v.p,1),vp);o.p.z=(o.p.z+o.p.w)*0.5;o.c=v.c;o.uv=v.uv;o.alpha=v.alpha;return o;}
 float4 ps(P p):SV_TARGET{return p.uv.z>.5?float4(screenTex.Sample(sampler0,p.uv.xy).rgb,1):float4(p.c,p.alpha);}
 )";
+const char* presentationShader=R"(
+cbuffer Constants:register(b0){float4 origin;float4 right;float4 up;float4 forward;float4 tangents;float4 settings;}
+struct P{float4 position:SV_POSITION;float2 uv:TEXCOORD;};
+P vs(uint id:SV_VertexID){P p;p.uv=float2((id<<1)&2,id&2);p.position=float4(p.uv*float2(2,-2)+float2(-1,1),0,1);return p;}
+float4 ps(P p):SV_TARGET {
+    float visible=settings.x;
+    if(settings.y>.5) {
+        float3 ray=right.xyz*lerp(tangents.x,tangents.y,p.uv.x)+up.xyz*lerp(tangents.z,tangents.w,p.uv.y)+forward.xyz;
+        float distance=(-1.6-origin.z)/min(ray.z,-.00001);
+        float2 hit=(origin.xyz+ray*distance).xy-float2(0,settings.z);
+        float edge=max(abs(hit.x)/.95,abs(hit.y)/.65);
+        visible*=ray.z<0&&distance>0?1-smoothstep(.80,1,edge):0;
+    }
+    return float4(0,0,0,1-visible);
+}
+)";
 }
 struct Props::Impl {
     ID3D12Device* device;ID3D12CommandQueue* queue;
@@ -120,7 +168,8 @@ struct Props::Impl {
     ComPtr<ID3D12GraphicsCommandList> list;
     ComPtr<ID3D12Fence> fence;
     ComPtr<ID3D12RootSignature> root;
-    ComPtr<ID3D12PipelineState> pipeline,transparentPipeline;
+    ComPtr<ID3D12PipelineState> pipeline,transparentPipeline,presentationPipeline;
+    ComPtr<ID3D12RootSignature> presentationRoot;
     ComPtr<ID3D12DescriptorHeap> rtv,dsv,srv;
     ComPtr<ID3D12Resource> vertices,indices,timestampReadback;
     ComPtr<ID3D12QueryHeap> timestampHeap;
@@ -164,6 +213,15 @@ struct Props::Impl {
         blend.SrcBlendAlpha=D3D12_BLEND_ONE;blend.DestBlendAlpha=D3D12_BLEND_INV_SRC_ALPHA;blend.BlendOpAlpha=D3D12_BLEND_OP_ADD;
         pd.DepthStencilState.DepthWriteMask=D3D12_DEPTH_WRITE_MASK_ZERO;
         ok(d->CreateGraphicsPipelineState(&pd,IID_PPV_ARGS(&transparentPipeline)));
+        D3D12_ROOT_PARAMETER postParam{};postParam.ParameterType=D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;postParam.Constants={0,0,24};
+        D3D12_ROOT_SIGNATURE_DESC postDesc{1,&postParam,0,nullptr,D3D12_ROOT_SIGNATURE_FLAG_NONE};
+        ok(D3D12SerializeRootSignature(&postDesc,D3D_ROOT_SIGNATURE_VERSION_1,&blob,&errors));
+        ok(d->CreateRootSignature(0,blob->GetBufferPointer(),blob->GetBufferSize(),IID_PPV_ARGS(&presentationRoot)));
+        ok(D3DCompile(presentationShader,std::strlen(presentationShader),"vr_presentation",nullptr,nullptr,"vs","vs_5_0",0,0,&vs,&errors));
+        ok(D3DCompile(presentationShader,std::strlen(presentationShader),"vr_presentation",nullptr,nullptr,"ps","ps_5_0",0,0,&ps,&errors));
+        pd.pRootSignature=presentationRoot.Get();pd.VS={vs->GetBufferPointer(),vs->GetBufferSize()};pd.PS={ps->GetBufferPointer(),ps->GetBufferSize()};pd.InputLayout={};
+        pd.DepthStencilState.DepthEnable=FALSE;pd.DSVFormat=DXGI_FORMAT_UNKNOWN;
+        ok(d->CreateGraphicsPipelineState(&pd,IID_PPV_ARGS(&presentationPipeline)));
         std::ifstream file(snap::base_dir()/"assets/vr/hands.json");if(!file)throw std::runtime_error("Missing assets/vr/hands.json");nlohmann::json j;file>>j;hands[0].load(j.at("left"));hands[1].load(j.at("right"));
         std::ifstream models(snap::base_dir()/"assets/vr/props.json");if(!models)throw std::runtime_error("Missing assets/vr/props.json");
         nlohmann::json props;models>>props;cameraMesh.load(props.at("models").at("camera"));vehicleMesh.load(props.at("models").at("zero_one"));
@@ -175,6 +233,18 @@ struct Props::Impl {
 };
 Props::Props(ID3D12Device*d,ID3D12CommandQueue*q):impl(std::make_unique<Impl>(d,q)){}
 Props::~Props()=default;
+void Props::presentation(ID3D12Resource* color,Pose eye,Fov fov,float gain,bool portal,float height) {
+    auto& x=*impl;
+    Vec3 r=rotate(eye.orientation,{1,0,0}),u=rotate(eye.orientation,{0,1,0}),f=rotate(eye.orientation,{0,0,-1});
+    float constants[]={eye.position.x,eye.position.y,eye.position.z,0,r.x,r.y,r.z,0,u.x,u.y,u.z,0,f.x,f.y,f.z,0,
+        std::tan(fov.left),std::tan(fov.right),std::tan(fov.up),std::tan(fov.down),gain,portal?1.f:0.f,height,0};
+    x.device->CreateRenderTargetView(color,nullptr,x.rtv->GetCPUDescriptorHandleForHeapStart());
+    x.begin();auto rt=x.rtv->GetCPUDescriptorHandleForHeapStart();x.list->OMSetRenderTargets(1,&rt,FALSE,nullptr);
+    auto desc=color->GetDesc();D3D12_VIEWPORT vp{0,0,float(desc.Width),float(desc.Height),0,1};D3D12_RECT rect{0,0,LONG(desc.Width),LONG(desc.Height)};
+    x.list->RSSetViewports(1,&vp);x.list->RSSetScissorRects(1,&rect);x.list->SetPipelineState(x.presentationPipeline.Get());
+    x.list->SetGraphicsRootSignature(x.presentationRoot.Get());x.list->SetGraphicsRoot32BitConstants(0,24,constants,0);
+    x.list->IASetPrimitiveTopology(D3D_PRIMITIVE_TOPOLOGY_TRIANGLELIST);x.list->DrawInstanced(3,1,0,0);x.finish();
+}
 void Props::beginTiming(){auto& x=*impl;x.waitMs=0;x.begin();x.list->EndQuery(x.timestampHeap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,0);x.finish();}
 double Props::endTiming(){
     auto& x=*impl;x.begin();x.list->EndQuery(x.timestampHeap.Get(),D3D12_QUERY_TYPE_TIMESTAMP,1);
@@ -215,6 +285,21 @@ void Props::draw(ID3D12Resource*color,ID3D12Resource*depth,ID3D12Resource*screen
     Pose cart=meters(interaction.cartPose(g));
     if(rebuild){v.clear();x.geometryFrame=t.frame;x.geometryReady=true;
     if(g.course) {
+        for(const auto& puff:g.smoke) {
+            float age=float(g.frame-puff.born)/30.f;
+            if(age<0||age>1.2f)continue;
+            for(int lobe=0;lobe<7;lobe++) {
+                float angle=lobe*2.39996f,spread=.08f+age*.20f;
+                Vec3 center=puff.position*(1/unit)+Vec3{std::cos(angle)*spread,age*.23f+.03f*(lobe%3),std::sin(angle)*spread};
+                float radius=.08f+age*.18f;size_t begin=v.size();
+                auto point=[&](int a,int b){float lat=-pi/2+a*pi/8,lon=b*2*pi/12;return Vec3{std::cos(lat)*std::cos(lon),std::sin(lat),std::cos(lat)*std::sin(lon)}*radius;};
+                for(int a=0;a<8;a++)for(int b=0;b<12;b++) {
+                    triangle(v,Pose{{},center},point(a,b),point(a+1,b),point(a+1,b+1),{.66f,.22f,.86f});
+                    triangle(v,Pose{{},center},point(a,b),point(a+1,b+1),point(a,b+1),{.66f,.22f,.86f});
+                }
+                for(size_t n=begin;n<v.size();n++)v[n].alpha=.23f*(1-age/1.2f);
+            }
+        }
         x.vehicleMesh.draw(v,cart);
         for(int i=0;i<2;i++) {
             Vec3 p=i?Interaction::pesterBin:Interaction::appleBin;
@@ -222,13 +307,21 @@ void Props::draw(ID3D12Resource*color,ID3D12Resource*depth,ID3D12Resource*screen
             if(i?g.pesterBalls:g.apples)(i?x.pesterBallMesh:x.appleMesh).draw(v,compose(cart,Pose{{},p}));
         }
 
-        Pose camera=compose(cart,Pose{{},Interaction::cameraDock});
+        const bool leftCamera=f.held[0]==Held::Camera;
+        const int holdingHand=leftCamera?0:f.held[1]==Held::Camera?1:-1;
+        Pose camera=holdingHand>=0?compose(meters(f.lens),Pose{{},{0,0,.14f}}):compose(cart,Pose{{},Interaction::cameraDock});
+        const float press=holdingHand>=0?std::clamp(t.hands[holdingHand].trigger,0.f,1.f):0.f;
+        // Fingertip is above the cap when released, then follows its 2.5 mm
+        // travel on press. Pad clearance keeps the skin outside the casting.
+        Vec3 shutterPoint=camera.position+rotate(camera.orientation,{leftCamera?-.064f:.064f,.0705f-.0065f*press,-.006f});
         for(int i=0;i<2;i++) {
-            if(!t.hands[i].tracked)continue;Pose hand=meters(f.hands[i]);x.hands[i].draw(v,handMeshPose(hand),t.hands[i],f.held[i]);
-            if(f.held[i]==Held::Camera)camera=compose(meters(f.lens),Pose{{},{0,0,.14f}});
-            else if(f.held[i]!=Held::None)(f.held[i]==Held::Apple?x.appleMesh:x.pesterBallMesh).draw(v,compose(hand,Pose{{},{0,-.02f,-.06f}}));
+            if(!t.hands[i].tracked)continue;
+            Pose hand=meters(f.hands[i]);
+            x.hands[i].draw(v,handMeshPose(hand),t.hands[i],f.held[i],i==holdingHand?&shutterPoint:nullptr);
+            if(f.held[i]!=Held::None&&f.held[i]!=Held::Camera)
+                (f.held[i]==Held::Apple?x.appleMesh:x.pesterBallMesh).draw(v,heldItemPose(hand));
         }
-        x.cameraMesh.draw(v,camera);
+        x.cameraMesh.draw(v,camera,leftCamera,press);
         if(!g.message.empty()) {
             // One binocular panel, after world rendering and outside the lens
             // pass. Tutorials remain readable while the camera points away.
@@ -238,7 +331,7 @@ void Props::draw(ID3D12Resource*color,ID3D12Resource*depth,ID3D12Resource*screen
             for(size_t line=0;line<lines.size();line++)label(v,panel,lines[line].c_str(),-.43f,-float(line)*.055f,.0034f,{1,1,1});
             if(g.messageContinue)label(v,panel,"PRESS A / X TO CONTINUE",-.27f,-height+.075f,.0034f,{1,.8f,.25f});
         }
-        Pose display=compose(camera,Pose{{},{-.008f,-.004f,.050f}});screenQuad(v,display,.116f,.087f);
+        Pose display=compose(camera,Pose{{},{leftCamera?.008f:-.008f,-.004f,.050f}});screenQuad(v,display,.116f,.087f);
         // Focus ring is geometry on the screen; it cannot contaminate scoring.
         Color ring=focus?Color{1,.1f,.08f}:Color{.92f,.92f,.92f};
         for(int i=0;i<32;i++) {
@@ -250,7 +343,7 @@ void Props::draw(ID3D12Resource*color,ID3D12Resource*depth,ID3D12Resource*screen
         // Two seven-segment film-count digits below the viewfinder.
         constexpr unsigned digits[]={0x3f,0x06,0x5b,0x4f,0x66,0x6d,0x7d,0x07,0x7f,0x6f};
         for(int digit=0;digit<2;digit++) {
-            unsigned bits=digits[(digit?g.film:g.film/10)%10];float ox=.032f+digit*.009f,oy=-.038f;
+            unsigned bits=digits[(digit?g.film:g.film/10)%10];float ox=(leftCamera?-.041f:.032f)+digit*.009f,oy=-.038f;
             const Vec3 centers[]={{0,.012f,0},{.004f,.008f,0},{.004f,.002f,0},{0,-.002f,0},{-.004f,.002f,0},{-.004f,.008f,0},{0,.005f,0}};
             for(int segment=0;segment<7;segment++)if(bits&(1<<segment)) {
                 bool horizontal=segment==0||segment==3||segment==6;

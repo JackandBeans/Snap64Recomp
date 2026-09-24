@@ -16,6 +16,7 @@ public:
     double endTiming();
     double fenceWaitMs() const;
     void capture(ID3D12Resource* source,const char* filename);
+    void presentation(ID3D12Resource* color,Pose calibratedEye,Fov fov,float gain,bool portal,float eyeHeight);
 private:
     struct Impl;std::unique_ptr<Impl> impl;
 };

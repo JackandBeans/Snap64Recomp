@@ -4,7 +4,7 @@
 #include <atomic>
 #include <mutex>
 #include <chrono>
-namespace RT64 {struct WorkloadQueue;struct GameFrame;}
+namespace RT64 {struct WorkloadQueue;struct GameFrame;struct RenderTarget;}
 namespace snap::vr {
 extern std::atomic<bool> requested;
 extern bool preview;
@@ -31,6 +31,6 @@ struct SharedState {
 SharedState& shared();
 bool input(uint16_t* buttons,float* x,float* y);
 void sceneChanged(bool course);
-void render(RT64::WorkloadQueue&,RT64::GameFrame&,const RT64::GameFrame&,float);
+void render(RT64::WorkloadQueue&,RT64::GameFrame&,const RT64::GameFrame&,float,RT64::RenderTarget*);
 void shutdown();
 }

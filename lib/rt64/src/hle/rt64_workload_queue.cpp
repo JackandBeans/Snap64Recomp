@@ -25,7 +25,7 @@
 extern "C" std::atomic<int32_t> snap_frame_dump_pending;
 extern "C" bool snap_vr_enabled();
 extern "C" unsigned snap_vr_refresh_rate();
-extern "C" void snap_vr_render(RT64::WorkloadQueue*,RT64::GameFrame*,const RT64::GameFrame*,float);
+extern "C" void snap_vr_render(RT64::WorkloadQueue*,RT64::GameFrame*,const RT64::GameFrame*,float,RT64::RenderTarget*);
 
 namespace RT64 {
     // WorkloadQueue
@@ -1957,7 +1957,7 @@ namespace RT64 {
                         threadRenderFrame(curFrame, prevFrame, workloadConfig, workload.debuggerRenderer, workload.debuggerCamera, curFrameWeight, prevFrameWeight, deltaTimeMs,
                             interpolationTargetKey, interpolationTargetFbPairIndex, overrideTarget, overrideModifier, velocityUploaderUsed, uploadExtras, tileInterpolationUsed, lookAtInterpolationUsed,
                             interpolationSubFrame);
-                        if (snap_vr_enabled()) snap_vr_render(this,&curFrame,&prevFrame,curFrameWeight);
+
                     }
 
                     if (snapCutHold && (frame == 0)) {
@@ -2032,6 +2032,15 @@ namespace RT64 {
                                     ((overrideTarget != nullptr) ? (const void *)overrideTarget->texture.get() : nullptr));
                             fflush(stdout);
                         }
+                    }
+
+                    // VR panels must consume the completed presentation target,
+                    // after cut holds, never a photo-scoring scratch framebuffer.
+                    if (snap_vr_enabled()) {
+                        RenderTarget* presented = overrideTarget;
+                        if (!presented && !interpolationTargetKey.isEmpty())
+                            presented = &ext.sharedResources->renderTargetManager.get(interpolationTargetKey);
+                        snap_vr_render(this,&curFrame,&prevFrame,curFrameWeight,presented);
                     }
 
                     // Add total time the frame took to render.

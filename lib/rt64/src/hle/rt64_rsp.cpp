@@ -1265,7 +1265,10 @@ namespace RT64 {
         // the scissor: its extent is unknowable before clipping, and the
         // scissor is the bound the RDP draws against. Drawing itself is not
         // touched; the GPU clips the triangle as it always did.
-        bool unprojectable = false;
+        // A display list is shared by the lens and both tracked eyes. A
+        // triangle outside the original lens can be visible behind the rider.
+        // Preserve its draw bounds; each view still clips and depth-tests it.
+        bool unprojectable = state->snapVRActive;
         for (int i = 0; i < 3; i++) {
             const hlslpp::float4 &t = workload.drawData.posTransformed[globalIndices[i]];
             const hlslpp::float3 &s = posScreen[globalIndices[i]];

@@ -2,6 +2,7 @@
 #include "vr_openxr.h"
 #include "vr_props.h"
 #include "vr_options.h"
+#include "vr_transition.h"
 #include "settings.h"
 #include "hle/rt64_workload_queue.h"
 #include "render/rt64_render_target_manager.h"
@@ -28,6 +29,7 @@ struct Renderer {
     std::unique_ptr<RSPProcessor> rsp;
     std::unique_ptr<BufferUploader> upload;
     std::array<std::unique_ptr<RenderTarget>,3> colors,depths;
+    std::unique_ptr<RenderTarget> menuImage;
     std::array<RenderFramebufferStorage,3> framebuffers;
     bool ready=false;
     std::array<Held,2> previousHeld{};
@@ -37,6 +39,7 @@ struct Renderer {
     Vec3 previousHeadForward{},previousLensForward{};
     bool hadTracking=false;
     float worldWeight=1;
+    ViewTransition transition;
     unsigned diagnosticFrames=0;
     bool stereoTest()const{return preview&&std::getenv("SNAP_VR_STEREO_TEST");}
     unsigned width(unsigned i)const{return preview?(stereoTest()?960:1280):xr.width(i);}
@@ -61,10 +64,19 @@ struct Renderer {
         }
         ready=true;printf("[SNAP-VR] %s initialized: %ux%u / %ux%u\n",preview?"diagnostic preview":"OpenXR",width(0),height(0),width(1),height(1));
     }
-    void replay(GameFrame& frame,unsigned target,Pose eye,Fov fov,bool world) {
+    void replay(GameFrame& frame,unsigned target,Pose eye,Fov fov,bool world,bool cinematic=false) {
         auto* worker=queue.ext.workloadGraphicsWorker;
         auto& color=*colors[target];auto& depth=*depths[target];
-        worker->commandList->begin();color.clearColorTarget(worker);depth.clearDepthTarget(worker);worker->commandList->end();worker->execute();waitWorker();
+        worker->commandList->begin();
+        color.clearColorTarget(worker);
+        // The opening movie only authored scenery for its original camera. Supply
+        // an unbounded fog-colored background behind it for both tracked eyes;
+        // unlike a finite sky card this cannot expose black at its edges.
+        // Keep depth untouched so all original scenery occludes the backdrop.
+        if(cinematic && snap::g_scene_overlay_rom.load()==0xA08E30)
+            worker->commandList->clearColor(0,plume::RenderColor(120.f/255.f,120.f/255.f,150.f/255.f,1.f));
+        depth.clearDepthTarget(worker);
+        worker->commandList->end();worker->execute();waitWorker();
         if(!world)return;
         for(uint32_t wi:frame.workloads) {
             auto& w=queue.workloads[wi];auto& d=w.drawData;
@@ -114,7 +126,18 @@ struct Renderer {
             for(auto f:pairs)for(uint32_t p=0;p<w.fbPairs[f].projectionCount;p++) {
                 const auto& proj=w.fbPairs[f].projections[p];if(proj.type!=Projection::Type::Perspective)continue;
                 auto index=proj.transformsIndex;
-                if(target!=2){d.modViewTransforms[index]=vm;d.modProjTransforms[index]=pm;d.modViewProjTransforms[index]=hlslpp::mul(vm,pm);}
+                if(target!=2){
+                    interop::float4x4 viewMatrix=vm;
+                    if(cinematic) {
+                        const auto& authored=index<savedView.size()?savedView[index]:d.viewTransforms[index];
+                        viewMatrix=hlslpp::mul(authored,vm);
+                        if(target==0&&std::getenv("SNAP_VR_CINEMA_DIAG")) {
+                            static unsigned samples=0;
+                            if(samples++<90)fprintf(stderr,"[SNAP-VR-CINEMA] alpha %.4f view %.6f %.6f %.6f world %zu\n",worldWeight,float(authored[3][0]),float(authored[3][1]),float(authored[3][2]),d.lerpWorldTransforms.size());
+                        }
+                    }
+                    d.modViewTransforms[index]=viewMatrix;d.modProjTransforms[index]=pm;d.modViewProjTransforms[index]=hlslpp::mul(viewMatrix,pm);
+                }
                 auto& viewport=d.modRspViewports[index];viewport.scale.x=160;viewport.scale.y=120;viewport.translate.x=160;viewport.translate.y=120;
                 // Match the native accessory depth mapping exactly. The N64
                 // viewport's 511/1024 scale compresses the world depth range.
@@ -154,12 +177,12 @@ struct Renderer {
     RenderTarget* desktop(GameFrame& frame) {
         RenderTarget* result=nullptr;
         for(uint32_t wi:frame.workloads){auto& w=queue.workloads[wi];for(uint32_t f=0;f<w.fbPairCount;f++) {
-            const auto& p=w.fbPairs[f];if(p.colorImage.width!=320)continue;
+            const auto& p=w.fbPairs[f];if(p.colorImage.width!=320||!p.earlyPresentCandidate()||p.displayColorRect(false).height(false,true)<220)continue;
             RenderTargetKey key(p.colorImage.address,p.colorImage.width,p.colorImage.siz,Framebuffer::Type::Color);
             auto& target=queue.ext.sharedResources->renderTargetManager.get(key);if(!target.isEmpty())result=&target;
         }}return result;
     }
-    void render(GameFrame& frame,const GameFrame& previous,float weight) {
+    void render(GameFrame& frame,const GameFrame& previous,float weight,RenderTarget* presented) {
         worldWeight=previous.matched?weight:1.f;
         Tracking t;
         if(preview) {
@@ -214,11 +237,16 @@ struct Renderer {
                     g.cartPosition=interpolated.cartPosition;g.cartYaw=interpolated.cartYaw;
                 }
             }}
-        if(preview&&g.course&&std::getenv("SNAP_VR_MODEL_TEST")) {
-            ++modelTestFrame;auto& hand=t.hands[1];
-            hand.grip.position=modelTestFrame<12?Interaction::cameraDock:Vec3{.15f,1.15f,-.32f};
+        if(preview&&g.course&&!g.cinematic&&std::getenv("SNAP_VR_MODEL_TEST")) {
+            ++modelTestFrame;auto& hand=t.hands[std::strcmp(std::getenv("SNAP_VR_MODEL_TEST"),"left")==0?0:1];
+            hand.grip.position=modelTestFrame<12?Interaction::cameraDock:Vec3{std::strcmp(std::getenv("SNAP_VR_MODEL_TEST"),"left")==0?-.15f:.15f,1.15f,-.32f};
             hand.grip.orientation={.70710678f,0,0,.70710678f};
-            hand.aim.orientation={};hand.squeeze=modelTestFrame>=5?1.f:0.f;
+            hand.aim.orientation={.70710678f,0,0,.70710678f};hand.squeeze=modelTestFrame>=5?1.f:0.f;
+            if(std::getenv("SNAP_VR_GRIP_TEST"))hand.trigger=(modelTestFrame/180)%2?1.f:0.f;
+        }
+        if(preview&&g.course&&!g.cinematic&&modelTestFrame>500&&std::getenv("SNAP_VR_REAR_TEST")) {
+            t.head.orientation=yaw(pi);
+            for(unsigned i=0;i<2;i++){t.eyes[i].orientation=t.head.orientation;t.eyes[i].position=t.head.position+rotate(t.head.orientation,{i?.032f:-.032f,0,0});}
         }
         bool bothClicks=t.hands[0].tracked&&t.hands[1].tracked&&t.hands[0].stickClick&&t.hands[1].stickClick;
         if(recenter||(bothClicks&&!recenterDown))interaction.recenter(t);
@@ -245,7 +273,7 @@ struct Renderer {
             s.buttons=0;s.stickX=s.stickY=0;s.namePointer={};s.menuPointer={};
             bool nameEntry=snap::g_scene_overlay_rom.load()==0xA5CC50u;
             if(t.focused&&t.headValid&&!options.open) {
-                if(g.course&&!g.paused) {
+                if(g.course&&!g.paused&&!g.cinematic) {
                     if(f.cameraHeld)s.buttons|=0x2000;
                     if(f.shutter)s.pulses|=0x8000;
                     if(f.dash)s.buttons|=0x10;
@@ -286,23 +314,47 @@ struct Renderer {
         if((!preview&&!xr.shouldRender())||!t.headValid){xr.end(false);frameGuard.done=true;return;}
         workerWaitMs=0;props->beginTiming();
         auto* worker=queue.ext.workloadGraphicsWorker;RenderTarget* screen=nullptr;
-        bool course=g.course&&g.frame>0&&!g.paused&&!options.open;
+        bool cinema=g.cinematic&&!g.paused&&!options.open;
+        bool course=g.course&&g.frame>0&&!g.paused&&!options.open&&!cinema;
+        int desiredView=cinema?2:course?1:0;
+        if(desiredView!=transition.target&&std::getenv("SNAP_VR_TRANSITION_DIAG"))fprintf(stderr,"[SNAP-VR-VIEW] frame %llu epoch %llu view %d -> %d\n",(unsigned long long)t.frame,(unsigned long long)g.epoch,transition.target,desiredView);
+        auto fade=transition.update(desiredView,t.seconds);
         if(course) {
             float vertical=f.fovY*pi/360;float horizontal=std::atan(std::tan(vertical)*4/3);
             replay(frame,2,f.lens,{-horizontal,horizontal,vertical,-vertical},true);screen=colors[2].get();
-        }else screen=desktop(frame);
+        }else {
+            screen=presented?presented:desktop(frame);
+            // Keep a private copy: score readbacks may render several scratch
+            // tasks without a new display image. Continue showing the last UI
+            // with current head tracking instead of submitting an empty layer.
+            if(screen&&!screen->isEmpty()) {
+                if(!menuImage||menuImage->usesHDR!=screen->usesHDR)
+                    menuImage=std::make_unique<RenderTarget>(0,Framebuffer::Type::Color,RenderMultisampling{},screen->usesHDR);
+                menuImage->resize(worker,screen->width,screen->height);
+                worker->commandList->begin();
+                if(screen->multisampling.sampleCount>1)menuImage->resolveFromTarget(worker,screen,queue.ext.shaderLibrary);
+                else menuImage->snapCopyFromTargetRaster(worker,screen,queue.ext.shaderLibrary);
+                worker->commandList->end();worker->execute();waitWorker();
+            }
+            screen=menuImage.get();
+        }
         if(!screen){xr.end(false);frameGuard.done=true;return;}
         const bool captureSubmitted=!preview&&std::filesystem::exists("vr-capture.request");
         for(unsigned i=0;i<2;i++) {
-            Pose eye=interaction.toWorld(t.eyes[i],g);replay(frame,i,eye,t.fovs[i],course);
+            auto native=[](RenderTarget* target){return static_cast<plume::D3D12Texture*>(target->texture.get())->d3d;};
+            if(!fade.hold) {
+            Pose eye=interaction.toWorld(t.eyes[i],g);
+            if(cinema){eye=interaction.localPose(t.eyes[i]);eye.position.y-=interaction.settings.eyeHeight;eye.position=eye.position*interaction.settings.unitsPerMeter;}
+            replay(frame,i,eye,t.fovs[i],course||cinema,cinema);
             worker->commandList->begin();
             worker->commandList->barriers(RenderBarrierStage::GRAPHICS,RenderTextureBarrier(screen->texture.get(),RenderTextureLayout::SHADER_READ));
             worker->commandList->barriers(RenderBarrierStage::GRAPHICS,RenderTextureBarrier(colors[i]->texture.get(),RenderTextureLayout::COLOR_WRITE));
             worker->commandList->barriers(RenderBarrierStage::GRAPHICS,RenderTextureBarrier(depths[i]->texture.get(),RenderTextureLayout::DEPTH_WRITE));
             worker->commandList->end();worker->execute();waitWorker();
-            auto native=[](RenderTarget* target){return static_cast<plume::D3D12Texture*>(target->texture.get())->d3d;};
             auto displayGame=g;displayGame.course=course;
-            props->draw(native(colors[i].get()),native(depths[i].get()),native(screen),course?eye:t.eyes[i],t.fovs[i],displayGame,f,t,interaction,focus,options.open,options.row);
+            if(!cinema)props->draw(native(colors[i].get()),native(depths[i].get()),native(screen),course?eye:t.eyes[i],t.fovs[i],displayGame,f,t,interaction,focus,options.open,options.row);
+            }
+            if(fade.gain<1||(!fade.hold&&cinema))props->presentation(native(colors[i].get()),interaction.localPose(t.eyes[i]),t.fovs[i],fade.gain,!fade.hold&&cinema,interaction.settings.eyeHeight);
             if(!preview){
                 auto* image=xr.acquire(i);props->copy(native(colors[i].get()),image,width(i),height(i));
                 if(captureSubmitted)props->capture(image,i?"vr-submitted-right.png":"vr-submitted-left.png");
@@ -312,7 +364,7 @@ struct Renderer {
                 props->capture(native(colors[i].get()),i?"vr-headset-right.png":"vr-headset-left.png");
                 if(i==1)capturedHeadset=true;
             }
-            if(preview&&(previewFrame==30||previewFrame%120==0)) {
+            if(preview&&(previewFrame==30||previewFrame%120==0||(std::getenv("SNAP_VR_TRANSITION_DIAG")&&(fade.hold||fade.gain<1)&&previewFrame%5==0))) {
                 std::string filename="vr-preview-"+std::to_string(previewFrame)+(i?"-right.png":"-left.png");props->capture(native(colors[i].get()),filename.c_str());
             }
         }
@@ -330,12 +382,12 @@ struct Renderer {
 std::unique_ptr<Renderer> renderer;
 auto retryAfter=std::chrono::steady_clock::time_point{};
 }
-void render(RT64::WorkloadQueue& queue,RT64::GameFrame& frame,const RT64::GameFrame& previous,float weight) {
+void render(RT64::WorkloadQueue& queue,RT64::GameFrame& frame,const RT64::GameFrame& previous,float weight,RenderTarget* presented) {
     if(!requested.load()||std::chrono::steady_clock::now()<retryAfter)return;
     try {
         std::scoped_lock lock(queue.ext.sharedResources->workloadMutex,queue.workerMutex);
         if(!renderer)renderer=std::make_unique<Renderer>(queue);
-        renderer->render(frame,previous,weight);
+        renderer->render(frame,previous,weight,presented);
     }catch(const std::exception& e){
         fprintf(stderr,"[SNAP-VR] %s; retrying in two seconds\n",e.what());
         auto& state=shared();{std::lock_guard lock(state.mutex);state.buttons=0;state.releases.clear();

@@ -19,16 +19,16 @@ bool input(uint16_t* buttons,float* x,float* y) {
 extern "C" void snap_vr_shutdown(){shutdown();}
 extern "C" unsigned snap_vr_refresh_rate(){return displayRate.load();}
 extern "C" bool snap_vr_enabled(){return snap::vr::requested.load();}
-extern "C" void snap_vr_render(RT64::WorkloadQueue* q,RT64::GameFrame* f,const RT64::GameFrame* previous,float weight){snap::vr::render(*q,*f,*previous,weight);}
+extern "C" void snap_vr_render(RT64::WorkloadQueue* q,RT64::GameFrame* f,const RT64::GameFrame* previous,float weight,RT64::RenderTarget* presented){snap::vr::render(*q,*f,*previous,weight,presented);}
 void sceneChanged(bool course) {
     auto& s=shared();std::lock_guard lock(s.mutex);
     s.menuPointer=s.menuClick={};s.namePointer=s.nameClick={};
     s.gameHistory.clear();s.game.message.clear();s.game.messageContinue=false;s.viewTurned=false;
     s.pulseHeld=0;s.pulseUntil={};
-    ++s.game.epoch;s.game.course=course;s.game.frame=0;s.releases.clear();s.interaction={};s.buttons=s.pulses=0;s.focusVisible=false;s.focusFrame=0;
+    ++s.game.epoch;s.game.course=course;s.game.cinematic=course;s.game.smoke.clear();s.game.frame=0;s.releases.clear();s.interaction={};s.buttons=s.pulses=0;s.focusVisible=false;s.focusFrame=0;
 }
 #ifndef SNAP_ENABLE_VR
-void render(RT64::WorkloadQueue&,RT64::GameFrame&,const RT64::GameFrame&,float){}
+void render(RT64::WorkloadQueue&,RT64::GameFrame&,const RT64::GameFrame&,float,RT64::RenderTarget*){}
 void shutdown(){}
 #endif
 }

@@ -56,7 +56,7 @@ Eye passes use RT64's matched world matrices and vertex/UV interpolation weights
 
 Sky adjustment is restricted to the actual `SkyBoxObject`, resolved through the world overlay. Several terrain blocks reuse `drawSkyBox2Cycle`; they must retain their original transforms. The dome follows the cart independently of the handheld camera. Eye decal tolerance uses floating-point depth precision instead of the N64 compressed-depth tolerance.
 
-The camera, ZERO-ONE-inspired vehicle, apple and Pester Ball are authored in `tools/build_vr_models.py` and `assets/vr/snap_vr_props.blend`; regenerate with `blender --background --python tools/build_vr_models.py`. The exporter validates transforms, normals and triangle area, and writes indexed meter-scale geometry with UVs to `props.json`. `vr_props.cpp` loads all four meshes; the apple and Pester Ball replace the procedural spheres in the item dispensers and either hand. Released projectiles continue to use the ROM assets and original game logic. `tools/vr_assets.py` converts the local DramaticShape numeric hand mesh, skeleton and poses into `assets/vr/hands.json`; attribution is in `assets/vr/NOTICE.md`.
+The camera, ZERO-ONE-inspired vehicle, apple and Pester Ball are authored in `tools/build_vr_models.py` and `assets/vr/snap_vr_props.blend`; regenerate with `blender --background --python tools/build_vr_models.py`. The exporter validates transforms, normals and triangle area, and writes indexed meter-scale geometry with UVs to `props.json`. `vr_props.cpp` loads all four meshes for the cockpit, dispensers and hands. `tools/vr_projectile_assets.py` also exports the apple and Pester Ball to `projectiles.bin`: the same geometry goes through the game's F3DEX2 renderer for released items, the viewfinder, and photo reconstruction. The VR hook temporarily replaces only the matching item's render tree, leaving movement, collision, shrink, deletion and scoring logic intact. The immutable display-list/vertex arena is reserved at 0x80F00000..0x81000000, above the UI heap and below the mod heap. Regenerate the binary after editing `props.json`; the Blender exporter does this automatically. Run `python tests/vr/test_projectile_assets.py` to validate the exported batches, triangle counts and meter scale. `tools/vr_assets.py` converts the local DramaticShape numeric hand mesh, skeleton and poses into `assets/vr/hands.json`; attribution is in `assets/vr/NOTICE.md`.
 
 The polished Blender props retain the camera origin, palm sockets, live screen plane and item reach locations. Camera details include a ribbed focus ring, recessed lens, front casting, flash diffuser, accessory shoe, strap eyes and grip ribs. The ZERO-ONE adds an interior liner, hull trim, seat panels, gauge graduations/needles, wheel rim hardware, lamp details and supported item wells/holster. Details use geometry and colors supported by the runtime. The camera is 10,436 triangles and the vehicle 30,604, down from 24,300 and 37,940 respectively; this is a geometry reduction, not a measured headset performance claim.
 
@@ -71,6 +71,10 @@ Polish validation: the camera and vehicle Blender views were inspected, and 130 
 Camera attachment follow-up: reviewed the three Quest screenshots `VirtualDesktop.Android-20260923-155300.jpg`, `-155310.jpg`, and `-155318.jpg`. Added an eyecup neck and rear control rail, extended the lens barrel, and seated the optical layers, markings, screws and flash ribs. `tools/vr_model_validation.py` now checks actual surface intersections/containment from every camera component to the main casting; all 83 parts connect. Saved-source validation also passes all closed-mesh, display-clearance, widened-channel and opacity checks. Portable exports retain the expected triangle counts and translucent materials. VR tests cover transparent ordering, including separate stereo-eye order and transformed viewers. These changes still need a fresh headset appearance check.
 
 ## Validation record (2026-09-23)
+
+- Released-model follow-up: an isolated Beach replay with `SNAP_VR_PROJECTILE_TEST=1` visibly renders both authored item meshes in the world in both eye captures. The diagnostic is preview-only and periodically spawns real game items; it is not enabled in normal VR. Export validation checks the checked-in binary against the mesh source, every vertex batch and triangle index, and physical scale. Release build and interaction tests pass. Photo reconstruction uses the same matched item render tree, but an end-to-end photo review containing these items has not yet been visually checked.
+
+- Apple and Pester Ball releases now use DramaticShape's VR Pokeball peak-window estimator (35-100 ms segments within 120 ms), with its 3x velocity boost above 0.9 m/s. Sampling the visible held item's center includes wrist rotation and avoids a spawn jump. Throw strength applies to the gesture before adding cart velocity. Snap retains its original projectile gravity and collisions; slow releases remain drops, and no single-target magnet or catchable-juggling mode is introduced. Tests cover flick slowdown, stale peaks, short samples, both item types, rotated cart motion, and rendered/spawn position agreement. Physical feel still needs controller testing.
 
 - Left-eye ghosting follow-up: corrected the OpenXR color swapchain copy barriers from COMMON to RENDER_TARGET on acquisition and release, as required by XR_KHR_D3D12_enable. The copy fence still completes before release. This fixes an API contract violation; whether it resolves the reported ghosting requires headset verification. Creating `vr-capture.request` in the running game's working directory captures both actual acquired swapchain images as `vr-submitted-left/right.png` before release, then removes the request. Capture readback stalls make this a diagnostic operation only.
 
@@ -107,3 +111,31 @@ cmake -S tests/vr -B build-win/vr-tests -G "Visual Studio 17 2022" -A x64
 cmake --build build-win/vr-tests --config Release
 ctest --test-dir build-win/vr-tests -C Release --output-on-failure
 ```
+
+
+September 23 interaction and cinematic revision:
+
+- Both dispensers remain on the right. Pester balls are 25 cm forward of bait; both moved inward/up for seated reach. Grab arbitration chooses the nearest eligible prop.
+- Throw release now fits the last 80 ms of tracked item-center motion, with a smooth gain capped at 2.3x instead of the previous 3x peak boost. Tests cover 72/90/120 Hz consistency, slow releases, spikes, tracking loss and cart velocity.
+- Original pester-ball impacts start a depth-tested purple smoke puff. Both projectile types retain their native 3D replacements and original collision/effect paths.
+- Course cinematic/ride changes hold and fade out the outgoing view over 250 ms, switch at black, and fade in over 400 ms. Native cart accessories are hidden during authored cinematics.
+- The opening movie uses tracked stereo behind a room-space vignetted portal. Its cloud sky mesh and culling bounds are expanded fourfold about their center; an unbounded fog-color backdrop fills any remaining uncovered pixels. This is restricted to the opening overlay and sky payload, preserving desktop assets and foreground geometry.
+- Release build, interaction tests and projectile asset checks pass. Preview rendering has been inspected; physical throw feel, full exit-gate transitions and comfort still require headset validation.
+
+
+Follow-up presentation and handedness fixes:
+
+- VR menu panels consume RT64's selected presentation target after cut holds, including interpolation targets. A private copy retains the last UI through photo-processing workloads without a display image, instead of submitting an empty OpenXR layer. Full-height UI fallback excludes small offscreen photo buffers.
+- Cinematic eyes compose tracked eye motion with RT64's interpolated authored camera transform. VR enables camera interpolation independently of the desktop toggle; matched world animation interpolation remains active and cut detection is retained.
+- A left-held camera reflects only body geometry across its local X axis, with corrected triangle winding and the mirrored right-hand grip socket. The screen position follows the mirrored bezel, while screen UVs, focus ring and film digits remain readable. Right-held and docked cameras retain their original geometry.
+- Release build and palm-attachment tests pass. Preview logs show changing intermediate cinematic view transforms. A left-hand Beach capture shows the red shutter on the left, with upright viewfinder imagery and readable film digits. A complete tally countdown and headset comfort still need runtime confirmation.
+
+
+Shutter contact and rear visibility follow-up:
+
+- Reviewed Quest screenshot `VirtualDesktop.Android-20260923-201716.jpg`. Moved the shutter/collar 19 mm inward onto the top casting. The exported shutter vertex mask drives 2.5 mm of trigger travel without moving the collar.
+- The held-camera index chain now targets the physical shutter cap, including mirrored left-handed placement. The fingertip follows trigger travel; other fingers keep the imported grip pose.
+- VR display-list bounds retain triangles outside the original camera's view, including rear-facing Pok?mon, for per-eye clipping and depth testing. The original lens-frustum photo subject selection and game-managed despawning are unchanged.
+- Blender assembly/contact and geometry validation, projectile asset validation, Release build and interaction tests pass. A right-hand preview shows the finger over the shutter; actual controller fit remains a headset check.
+
+The rear-facing synthetic capture renders the scene, but the preview exited before Pikachu-specific visibility could be confirmed. Verify that encounter in the headset; no full-course visibility acceptance is claimed.

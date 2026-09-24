@@ -31,6 +31,7 @@ static int64_t snap_display_list_nanos = 0;
 // (ultramodern/src/threads.cpp).
 namespace snap {
     extern std::atomic<bool> g_app_level_resident;           // overlay_hook.cpp
+    extern std::atomic<uint32_t> g_scene_overlay_rom;
     extern std::atomic<bool> g_hold_in_course;                   // overlay_hook.cpp
 }
 
@@ -533,7 +534,8 @@ public:
         // NOT caused by this reset.
         // Kept in sync every list so F6 takes effect immediately.
         app_->state->setRenderToRAM(snap::settings().render_to_ram ? 1 : 0);
-        app_->workloadQueue->snapInterpolateCamera.store(snap::settings().interpolate_camera, std::memory_order_relaxed);
+        app_->state->snapVRActive=snap::vr::requested.load();
+        app_->workloadQueue->snapInterpolateCamera.store(snap::settings().interpolate_camera || snap::vr::requested.load(), std::memory_order_relaxed);
         app_->workloadQueue->ubershadersOnly = snap::settings().ubershaders_only;
 
         // Widescreen widens the course and nothing else. Decided here, per
@@ -660,6 +662,11 @@ public:
         // indicator does not drop out for a frame.
         if(snap::vr::requested.load()) {
             auto& vr=snap::vr::shared();std::lock_guard lock(vr.mutex);
+            if(snap::g_scene_overlay_rom.load()==0xA08E30u) {
+                // The opening movie polls the controller directly, bypassing
+                // menuInput. Observe its state on every submitted game frame.
+                vr.game.cinematic=app_->core.RDRAM[0xE832Bu^3u]==5;
+            }
             app_->state->snapVRFrame=vr.game.frame;app_->state->snapVREpoch=vr.game.epoch;
             if(vr.gameHistory.empty()||vr.gameHistory.back().frame!=vr.game.frame||vr.gameHistory.back().epoch!=vr.game.epoch) {
                 vr.gameHistory.push_back(vr.game);while(vr.gameHistory.size()>32)vr.gameHistory.pop_front();
