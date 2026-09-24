@@ -58,8 +58,7 @@ __pycache__/
 menu_font_runtime.json
 
 # Local VR diagnostic captures contain imagery from the loaded game.
-/vr-preview-*-left.png
-/vr-preview-*-right.png
+vr-preview-*.png
 
 # Editor / OS
 .vs/
