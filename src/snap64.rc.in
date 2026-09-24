@@ -23,9 +23,9 @@ BEGIN
             VALUE "CompanyName",      "JackandBeans"
             VALUE "FileDescription",  "@SNAP_PRODUCT_NAME@"
             VALUE "FileVersion",      "@SNAP_VERSION_FULL@"
-            VALUE "InternalName",     "Snap64Recomp"
+            VALUE "InternalName",     "@SNAP_EXECUTABLE_NAME@"
             VALUE "LegalCopyright",   "Copyright (C) 2026 JackandBeans, GPLv3. Not affiliated with Nintendo; Pokemon is a trademark of its owners."
-            VALUE "OriginalFilename", "Snap64Recomp.exe"
+            VALUE "OriginalFilename", "@SNAP_EXECUTABLE_NAME@.exe"
             VALUE "ProductName",      "@SNAP_PRODUCT_NAME@"
             VALUE "ProductVersion",   "@SNAP_VERSION_FULL@"
         END

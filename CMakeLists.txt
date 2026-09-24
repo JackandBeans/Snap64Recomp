@@ -52,9 +52,14 @@ endif()
 # Options
 # =============================================================================
 option(BUILD_RT64 "Build RT64 rendering backend" ON)
-option(SNAP_ENABLE_VR "Build the Windows OpenXR D3D12 VR port" OFF)
+option(SNAP_ENABLE_VR "Build the Windows OpenXR D3D12 port with VR as the default launch mode" OFF)
 if(SNAP_ENABLE_VR AND (NOT WIN32 OR NOT BUILD_RT64))
     message(FATAL_ERROR "SNAP_ENABLE_VR requires Windows and BUILD_RT64")
+endif()
+set(SNAP_EXECUTABLE_NAME "Snap64Recomp")
+if(SNAP_ENABLE_VR)
+    set(SNAP_EXECUTABLE_NAME "Snap64RecompVR")
+    set(SNAP_PRODUCT_NAME "Snap64RecompVR")
 endif()
 
 message(STATUS "${SNAP_PRODUCT_NAME} ${SNAP_VERSION_FULL}")
@@ -332,6 +337,7 @@ if (MSVC)
 endif()
 
 add_executable(Snap64Recomp ${SNAP_SOURCES})
+set_target_properties(Snap64Recomp PROPERTIES OUTPUT_NAME "${SNAP_EXECUTABLE_NAME}")
 if(SNAP_ENABLE_VR)
     include(FetchContent)
     set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
@@ -348,6 +354,11 @@ if(SNAP_ENABLE_VR)
     target_link_libraries(Snap64Recomp PRIVATE openxr_loader d3d12 dxgi d3dcompiler)
     add_custom_command(TARGET Snap64Recomp POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/assets/vr" "$<TARGET_FILE_DIR:Snap64Recomp>/assets/vr")
+    install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets/vr" DESTINATION assets
+        PATTERN "*.blend" EXCLUDE)
+    install(FILES "${openxr_SOURCE_DIR}/LICENSE" DESTINATION licenses RENAME OpenXR.txt)
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/VR.md"
+        "${CMAKE_CURRENT_SOURCE_DIR}/docs/VR_CONTROL_TEXT_REPLACEMENTS.md" DESTINATION docs)
 endif()
 
 target_include_directories(Snap64Recomp PRIVATE
@@ -481,7 +492,7 @@ if (WIN32)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/shaders/rt64-seen-shaders.bin"
             "$<TARGET_FILE_DIR:Snap64Recomp>/cache/rt64-seen-shaders.bin"
-        COMMENT "Placing the runtime DLLs, menu_text/ and the seen-shader list next to Snap64Recomp.exe"
+        COMMENT "Placing the runtime DLLs, menu_text/ and the seen-shader list next to ${SNAP_EXECUTABLE_NAME}.exe"
         VERBATIM)
 else()
     # Linux and macOS: no runtime libraries of the port's own (SDL2 is the
@@ -537,7 +548,7 @@ if (WIN32)
     # that are symbolised against this file; a user's crash log is unreadable
     # without it. The copy that ships has the build machine's paths replaced
     # (tools/filter_map.cmake); the symbols and addresses are untouched.
-    set(SNAP_MAP_FILTERED "${CMAKE_CURRENT_BINARY_DIR}/generated/Snap64Recomp.map")
+    set(SNAP_MAP_FILTERED "${CMAKE_CURRENT_BINARY_DIR}/generated/${SNAP_EXECUTABLE_NAME}.map")
     add_custom_command(TARGET Snap64Recomp POST_BUILD
         COMMAND ${CMAKE_COMMAND}
             "-DINPUT=$<TARGET_FILE_DIR:Snap64Recomp>/$<TARGET_FILE_BASE_NAME:Snap64Recomp>.map"
@@ -573,8 +584,12 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/texture_packs/README.txt" DESTINATION
 # say where it comes from and how to refresh it.
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/gamecontrollerdb.txt" DESTINATION .)
 
+if(SNAP_ENABLE_VR)
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/START_HERE_VR.txt" DESTINATION . RENAME "START HERE.txt")
+else()
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/START HERE.txt" DESTINATION .)
+endif()
 install(FILES
-    "${CMAKE_CURRENT_SOURCE_DIR}/START HERE.txt"
     "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
     "${CMAKE_CURRENT_SOURCE_DIR}/NOTICE.md"
     "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
@@ -653,11 +668,11 @@ install(FILES
 
 # cpack -C Release (from the build directory) -> Snap64Recomp-<version>-win64.zip
 # with a top-level folder of the same name, and a .sha256 beside it.
-set(CPACK_PACKAGE_NAME "Snap64Recomp")
+set(CPACK_PACKAGE_NAME "${SNAP_EXECUTABLE_NAME}")
 set(CPACK_PACKAGE_VERSION "${SNAP_VERSION_FULL}")
 if (WIN32)
     set(CPACK_GENERATOR "ZIP")
-    set(CPACK_PACKAGE_FILE_NAME "Snap64Recomp-${SNAP_VERSION_FULL}-win64")
+    set(CPACK_PACKAGE_FILE_NAME "${SNAP_EXECUTABLE_NAME}-${SNAP_VERSION_FULL}-win64")
 elseif (APPLE)
     # The macOS release is the application bundle tools/macos_bundle.py
     # builds from the install tree; cpack here is the same flat folder, for

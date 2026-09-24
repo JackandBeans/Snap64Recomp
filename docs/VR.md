@@ -12,12 +12,17 @@ python tools/hook_funcs.py
 cmake -S . -B build-win -G "Visual Studio 17 2022" -A x64 -DSNAP_ENABLE_VR=ON
 cmake --build build-win --config Release --target Snap64Recomp --parallel 12
 cd build-win/Release
-./Snap64Recomp.exe --vr
+./Snap64RecompVR.exe
 ```
 
-OpenXR SDK release 1.1.53 is pinned in CMake. The active Windows OpenXR runtime must have the connected headset available on the same graphics adapter as RT64. VR forces D3D12. Launch without `--vr` for desktop play. The build copies the hand and prop assets beside the executable; keep `assets/vr` with it.
+OpenXR SDK release 1.1.53 is pinned in CMake. The active Windows OpenXR runtime must have the connected headset available on the same graphics adapter as RT64. VR forces D3D12. Builds configured with `SNAP_ENABLE_VR=ON` launch in VR by default, including when double-clicked. Use `Snap64RecompVR.exe --desktop` for desktop play; explicit `--vr` remains supported. Builds configured with `SNAP_ENABLE_VR=OFF` start in desktop mode. The build copies the hand and prop assets beside the executable; keep `assets/vr` with it.
 
 `--vr-preview` renders synthetic stereo eyes without an OpenXR device. It saves periodic left/right PNGs in the working directory, retains desktop controls, and is intended for diagnostic use. It cannot establish comfort or headset alignment.
+
+Packaging the Release build with `cpack -C Release` from its build directory
+produces `Snap64RecompVR-<version>-win64.zip` and a SHA-256 checksum. The
+archive includes runtime DLLs, VR assets, instructions and license notices.
+No ROM or player saves are packaged. The CMake build target remains `Snap64Recomp`.
 
 ## Controls
 

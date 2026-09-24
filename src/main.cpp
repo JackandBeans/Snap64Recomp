@@ -1207,11 +1207,20 @@ static void snap_radv_debug_nonggc() {
 #endif
 
 int main(int argc, char* argv[]) {
+#ifdef SNAP_ENABLE_VR
+    // A VR build must work when launched directly from Explorer or a library.
+    // Desktop builds retain their usual startup; --desktop opts out here.
+    snap::vr::requested=true;
+#endif
     for(int i=1;i<argc;i++) {
-        if(std::string(argv[i])=="--vr"||std::string(argv[i])=="--vr-preview") {
+        const std::string argument=argv[i];
+        if(argument=="--desktop") {
+            snap::vr::requested=false;
+            snap::vr::preview=false;
+        }else if(argument=="--vr"||argument=="--vr-preview") {
 #ifdef SNAP_ENABLE_VR
             snap::vr::requested=true;
-            snap::vr::preview=std::string(argv[i])=="--vr-preview";
+            snap::vr::preview=argument=="--vr-preview";
 #else
             fprintf(stderr,"This build has no VR support. Configure with -DSNAP_ENABLE_VR=ON.\n");
             return 1;

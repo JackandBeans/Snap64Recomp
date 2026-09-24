@@ -10,7 +10,8 @@
 # Snap64 Recomp
 
 **Experimental VR fork:** This working tree adds Windows PC VR through OpenXR.
-Build it from source with `SNAP_ENABLE_VR=ON` and launch with `--vr`.
+Build it from source with `SNAP_ENABLE_VR=ON`; the executable launches in VR
+by default. Use `--desktop` for desktop play.
 A Quest can connect through a PC OpenXR runtime such as SteamVR; standalone
 Quest play is not supported. The upstream release links on this page lead
 to the original desktop port and do **not** include this fork's VR changes. See the
@@ -115,8 +116,9 @@ refresh-rate performance have not been verified in VR.
 Complete the normal [build prerequisites and ROM generation](BUILDING.md),
 then follow the [VR build and run steps](docs/VR.md#build-and-run). Configure
 with `-DSNAP_ENABLE_VR=ON`, keep the copied `assets/vr` folder beside the
-executable, and start `Snap64Recomp.exe --vr`. Starting without `--vr` keeps
-desktop play. `--vr-preview` produces synthetic eye captures for diagnostics;
+executable, and start `Snap64RecompVR.exe` normally or double-click it. VR-enabled
+builds start in VR by default; use `Snap64RecompVR.exe --desktop` for desktop
+play. `--vr` remains supported. `--vr-preview` produces synthetic eye captures for diagnostics;
 it does not test a headset.
 
 In VR, point and press trigger or A/X to use menus. Grip near the right-hand

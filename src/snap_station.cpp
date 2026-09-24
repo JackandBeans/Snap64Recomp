@@ -11,6 +11,9 @@
  */
 #include "snap_station.h"
 #include "snap_station_osd_font.h"
+#ifdef SNAP_ENABLE_VR
+#include "vr/vr_service.h"
+#endif
 
 #include <atomic>
 #include <chrono>
@@ -375,6 +378,11 @@ bool relaunch_self(const char* why) {
         return false;
     }
     std::wstring command = L"\"" + std::wstring(exe) + L"\"";
+#ifdef SNAP_ENABLE_VR
+    // Keep an explicit desktop session in desktop mode across kiosk resets.
+    if(!snap::vr::requested.load())command+=L" --desktop";
+    else if(snap::vr::preview)command+=L" --vr-preview";
+#endif
     // The new process is a plain launch: an input replay or a capture
     // schedule belongs to the run that is ending, not to the boot the kiosk
     // is resetting into.

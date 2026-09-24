@@ -1,0 +1,35 @@
+Snap64RecompVR
+Experimental Windows PC VR build
+
+1. CONNECT YOUR HEADSET
+Use your PC's active OpenXR runtime with the headset connected. Quest uses
+a PC connection; this is not a standalone Quest application.
+
+2. PROVIDE YOUR ROM
+Place your own Pokemon Snap (USA) cartridge dump in this folder as
+pokemonsnap.z64, or select your dump when the program asks. No ROM is included.
+
+3. START IN VR
+Double-click Snap64RecompVR.exe. VR starts by default, with no launch arguments.
+Keep assets/vr and the included DLLs beside the executable.
+For desktop play, run: Snap64RecompVR.exe --desktop
+
+4. CONTROLS
+Point and pull trigger or press A/X to confirm menus; B/Y goes back.
+Hold grip near the right holster to pick up the camera. Pull that hand's
+trigger to take a photo; move its thumbstick up/down to zoom. Release grip
+to return the camera. Grip an unlocked item at its dispenser and release
+to throw. Both dispensers are on your right.
+Press your empty hand into the round flute button on the left dashboard;
+no trigger is needed. It stays gray and inactive until the flute is unlocked.
+Press A/X to continue dialogue, hold B/Y to dash, and use the left menu
+button to pause where the runtime makes it available.
+Click the left thumbstick for VR settings. Press both thumbsticks together
+while looking forward to recenter.
+
+README.md contains the full VR controls table. docs/VR.md covers setup,
+settings and the limits of current headset validation.
+
+Keep saves/pokemonsnap.bin and saves/vr-photo-lenses.json together when
+moving your saves. LICENSE, NOTICE.md and licenses/ contain the code and
+dependency licensing information; assets/vr/NOTICE.md credits the VR assets.
