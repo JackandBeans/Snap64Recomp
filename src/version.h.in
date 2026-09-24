@@ -3,8 +3,8 @@
  * @brief The port's identity, in one place.
  *
  * CMake writes version.h from this file into <build>/generated (see
- * "Version" in CMakeLists.txt): the numbers come from project(VERSION) and
- * SNAP_VERSION_PRERELEASE there, and nowhere else.
+ * cmake/Version.cmake): desktop numbers come from project(VERSION), while
+ * SNAP_VR_VERSION and its prerelease suffix define the independent VR series.
  *
  * "JackandBeans" is the port's name for itself on the title screen, after
  * Jack and Beans, the HAL team that began the game as a photography game
@@ -26,9 +26,9 @@
 // so the trademark is never the product's name.
 #define SNAP_PORT_CODENAME  "JackandBeans"
 
-#define SNAP_VERSION_MAJOR  @PROJECT_VERSION_MAJOR@
-#define SNAP_VERSION_MINOR  @PROJECT_VERSION_MINOR@
-#define SNAP_VERSION_PATCH  @PROJECT_VERSION_PATCH@
+#define SNAP_VERSION_MAJOR  @SNAP_VERSION_MAJOR@
+#define SNAP_VERSION_MINOR  @SNAP_VERSION_MINOR@
+#define SNAP_VERSION_PATCH  @SNAP_VERSION_PATCH@
 // "-rc1" for a prerelease, "" for a final.
 #define SNAP_VERSION_SUFFIX "@SNAP_VERSION_SUFFIX@"
 // "1.0.0-rc1"

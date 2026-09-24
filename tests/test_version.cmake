@@ -1,0 +1,31 @@
+# Run without a compiler or dependencies: cmake -P tests/test_version.cmake
+set(PROJECT_VERSION "1.0.9")
+set(SNAP_ENABLE_VR ON)
+set(SNAP_VERSION_PRERELEASE "desktop-rc1")
+include("${CMAKE_CURRENT_LIST_DIR}/../cmake/Version.cmake")
+set(vr_release "${SNAP_VERSION_FULL}")
+set(vr_numbers "${SNAP_VERSION_MAJOR}.${SNAP_VERSION_MINOR}.${SNAP_VERSION_PATCH}")
+set(expected_vr "${SNAP_VR_VERSION}")
+if(SNAP_VR_VERSION_PRERELEASE)
+    string(APPEND expected_vr "-${SNAP_VR_VERSION_PRERELEASE}")
+endif()
+if(NOT SNAP_VERSION_FULL STREQUAL expected_vr)
+    message(FATAL_ERROR "Desktop prerelease leaked into the VR release")
+endif()
+
+set(PROJECT_VERSION "9.8.7")
+set(SNAP_VERSION_PRERELEASE "desktop-rc2")
+include("${CMAKE_CURRENT_LIST_DIR}/../cmake/Version.cmake")
+if(NOT SNAP_VERSION_FULL STREQUAL vr_release OR
+   NOT "${SNAP_VERSION_MAJOR}.${SNAP_VERSION_MINOR}.${SNAP_VERSION_PATCH}" STREQUAL vr_numbers)
+    message(FATAL_ERROR "Changing the desktop version changed the VR version")
+endif()
+
+set(SNAP_ENABLE_VR OFF)
+set(SNAP_VERSION_PRERELEASE "rc2")
+include("${CMAKE_CURRENT_LIST_DIR}/../cmake/Version.cmake")
+if(NOT SNAP_VERSION_FULL STREQUAL "9.8.7-rc2" OR
+   NOT "${SNAP_VERSION_MAJOR}.${SNAP_VERSION_MINOR}.${SNAP_VERSION_PATCH}" STREQUAL "9.8.7")
+    message(FATAL_ERROR "Desktop version selection changed")
+endif()
+message(STATUS "Independent VR and desktop version selection passed")

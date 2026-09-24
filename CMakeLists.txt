@@ -16,25 +16,10 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # =============================================================================
-# Version -- the one place it lives
+# Desktop version (VR has an independent release series in cmake/Version.cmake)
 # =============================================================================
-# project(VERSION) takes numbers only, so the prerelease tag is its own
-# variable. SNAP_VERSION_FULL is what every surface shows: the title bar,
-# the log banner, the credits line, the exe's version resource and the
-# package name (all through the generated version.h / snap64.rc, below).
-# An empty SNAP_VERSION_PRERELEASE is a final release.
 set(SNAP_PRODUCT_NAME "Snap64 Recomp")
 set(SNAP_VERSION_PRERELEASE "")
-if (SNAP_VERSION_PRERELEASE)
-    set(SNAP_VERSION_SUFFIX "-${SNAP_VERSION_PRERELEASE}")
-    set(SNAP_RC_FILEFLAGS "VS_FF_PRERELEASE")
-else()
-    set(SNAP_VERSION_SUFFIX "")
-    set(SNAP_RC_FILEFLAGS "0x0L")
-endif()
-set(SNAP_VERSION_FULL "${PROJECT_VERSION}${SNAP_VERSION_SUFFIX}")
-# The title screen's credits face has no hyphen (src/version.h.in).
-string(REPLACE "-" " " SNAP_VERSION_CREDITS "${SNAP_VERSION_FULL}")
 if (MSVC)
     enable_language(RC)
     # The C++ runtime is linked into the executable (and into SDL2.dll, built
@@ -62,6 +47,7 @@ if(SNAP_ENABLE_VR)
     set(SNAP_PRODUCT_NAME "Snap64RecompVR")
 endif()
 
+include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/Version.cmake")
 message(STATUS "${SNAP_PRODUCT_NAME} ${SNAP_VERSION_FULL}")
 message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 
@@ -358,7 +344,8 @@ if(SNAP_ENABLE_VR)
         PATTERN "*.blend" EXCLUDE)
     install(FILES "${openxr_SOURCE_DIR}/LICENSE" DESTINATION licenses RENAME OpenXR.txt)
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/VR.md"
-        "${CMAKE_CURRENT_SOURCE_DIR}/docs/VR_CONTROL_TEXT_REPLACEMENTS.md" DESTINATION docs)
+        "${CMAKE_CURRENT_SOURCE_DIR}/docs/VR_CONTROL_TEXT_REPLACEMENTS.md"
+        "${CMAKE_CURRENT_SOURCE_DIR}/docs/VR_CHANGELOG.md" DESTINATION docs)
 endif()
 
 target_include_directories(Snap64Recomp PRIVATE
@@ -586,14 +573,16 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/assets/gamecontrollerdb.txt" DESTINAT
 
 if(SNAP_ENABLE_VR)
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/START_HERE_VR.txt" DESTINATION . RENAME "START HERE.txt")
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/VR_CHANGELOG.md" DESTINATION . RENAME CHANGELOG.md)
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/CHANGELOG.md" DESTINATION docs RENAME DESKTOP_CHANGELOG.md)
 else()
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/START HERE.txt" DESTINATION .)
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/CHANGELOG.md" DESTINATION .)
 endif()
 install(FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/LICENSE"
     "${CMAKE_CURRENT_SOURCE_DIR}/NOTICE.md"
     "${CMAKE_CURRENT_SOURCE_DIR}/README.md"
-    "${CMAKE_CURRENT_SOURCE_DIR}/CHANGELOG.md"
     DESTINATION .)
 
 # Third-party licence texts, copied from the vendored trees at install time so
@@ -670,6 +659,9 @@ install(FILES
 # with a top-level folder of the same name, and a .sha256 beside it.
 set(CPACK_PACKAGE_NAME "${SNAP_EXECUTABLE_NAME}")
 set(CPACK_PACKAGE_VERSION "${SNAP_VERSION_FULL}")
+set(CPACK_PACKAGE_VERSION_MAJOR "${SNAP_VERSION_MAJOR}")
+set(CPACK_PACKAGE_VERSION_MINOR "${SNAP_VERSION_MINOR}")
+set(CPACK_PACKAGE_VERSION_PATCH "${SNAP_VERSION_PATCH}")
 if (WIN32)
     set(CPACK_GENERATOR "ZIP")
     set(CPACK_PACKAGE_FILE_NAME "${SNAP_EXECUTABLE_NAME}-${SNAP_VERSION_FULL}-win64")

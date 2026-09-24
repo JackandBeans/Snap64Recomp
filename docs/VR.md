@@ -4,6 +4,15 @@ This is an experimental PC VR implementation. The acceptance matrix below distin
 
 ## Build and run
 
+VR releases are versioned independently of the desktop port. The current VR
+version is **1.0**, defined in `cmake/Version.cmake`; desktop version updates
+do not change it. See [VR changelog](VR_CHANGELOG.md). For future VR releases,
+update `SNAP_VR_VERSION` (and its separate prerelease suffix, if needed) and
+add a VR changelog entry. Use `vr/v<version>` for VR Git release tags to keep
+them distinct from desktop tags.
+Run `cmake -P tests/test_version.cmake` to verify that desktop version and
+prerelease changes cannot alter the VR release number.
+
 Follow the repository's normal dependency, ROM, patch, and recompilation pipeline first. The ROM must match the USA revision expected by `pokemonsnap.us.toml`. Never edit `RecompiledFuncs` directly: add wrappers to `tools/hook_funcs.py`, change patch sources, then regenerate.
 
 ```powershell

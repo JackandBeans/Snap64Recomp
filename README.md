@@ -12,6 +12,8 @@
 **Experimental VR fork:** This working tree adds Windows PC VR through OpenXR.
 Build it from source with `SNAP_ENABLE_VR=ON`; the executable launches in VR
 by default. Use `--desktop` for desktop play.
+**VR version 1.0** follows its own release series, separate from the desktop
+port's version. See the [VR changelog](docs/VR_CHANGELOG.md).
 A Quest can connect through a PC OpenXR runtime such as SteamVR; standalone
 Quest play is not supported. The upstream release links on this page lead
 to the original desktop port and do **not** include this fork's VR changes. See the
