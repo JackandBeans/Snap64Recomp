@@ -28,6 +28,22 @@ int main() {
     check(rendered == 720, "30 Hz source must sustain all 720 display samples at 72 Hz over ten seconds");
     check(now <= 4610, "fractional cadence must not accumulate latency");
 
+    // 240 units/second represents 30 Hz sources and 80 Hz display exactly.
+    pacing.reset();now=1000;rendered=0;logicalTicks=displayTicks=0;
+    for(unsigned source=0;source<300;++source) {
+        now=std::max(now,int64_t(1000+source*8));
+        pacing.begin(now,8,3);
+        logicalTicks+=80;
+        const unsigned frames=(logicalTicks-displayTicks)/30;
+        for(unsigned frame=0;frame<frames;++frame) {
+            now+=3;++rendered;
+            if(!pacing.canRenderAnother(now))break;
+        }
+        displayTicks+=frames*30;
+    }
+    check(rendered==800,"30 Hz source must sustain 800 display samples at 80 Hz over ten seconds");
+    check(now<=3406,"80 Hz cadence must not accumulate latency");
+
     pacing.reset();
     pacing.begin(1000, 33333, 13889);
     check(pacing.canRenderAnother(12100), "spare time permits an intermediate animation pose");

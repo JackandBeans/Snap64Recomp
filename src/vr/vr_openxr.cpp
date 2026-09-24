@@ -214,6 +214,7 @@ bool OpenXR::begin(Tracking& t) {
             if(x.state==XR_SESSION_STATE_READY&&!x.running) {XrSessionBeginInfo bi{XR_TYPE_SESSION_BEGIN_INFO};bi.primaryViewConfigurationType=XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;check(xrBeginSession(x.session,&bi),"begin session");x.running=true;fprintf(stderr,"[SNAP-VR] session begun\n");
 #ifdef __ANDROID__
                 snap_quest_set_performance(x.session);
+                snap_quest_display_refresh(x.session,true);
 #endif
             }
             if(x.state==XR_SESSION_STATE_STOPPING&&x.running) {check(xrEndSession(x.session),"end session");x.running=false;}
@@ -280,5 +281,12 @@ unsigned OpenXR::refreshRate()const {
     // physical display rate during reprojection. Forcing 45/48 Hz to 60
     // generates extra interpolation frames that xrWaitFrame cannot consume.
     return period>0?std::clamp(unsigned(std::lround(1e9/double(period))),1u,1000u):90u;
+}
+float OpenXR::physicalRefreshRate()const {
+#ifdef __ANDROID__
+    return snap_quest_display_refresh(impl->session);
+#else
+    return float(refreshRate());
+#endif
 }
 }

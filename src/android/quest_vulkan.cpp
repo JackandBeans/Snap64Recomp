@@ -11,6 +11,7 @@
 #include <stdexcept>
 #include <cstring>
 #include <vector>
+#include <cstdlib>
 
 namespace {
 std::mutex windowMutex;
@@ -74,6 +75,7 @@ XrSystemId systemId=XR_NULL_SYSTEM_ID;
 VkInstance vulkanInstance=VK_NULL_HANDLE;
 std::once_flag initialized;
 bool performanceSettings=false;
+bool displayRefresh=false;
 void check(XrResult r,const char* operation){if(XR_FAILED(r))throw std::runtime_error(std::string(operation)+": "+std::to_string(r));}
 template<class T> T function(const char* name){T value=nullptr;check(xrGetInstanceProcAddr(instance,name,reinterpret_cast<PFN_xrVoidFunction*>(&value)),name);return value;}
 void initialize() {
@@ -90,8 +92,13 @@ void initialize() {
     check(xrEnumerateInstanceExtensionProperties(nullptr,0,&extensionCount,nullptr),"extension count");
     std::vector<XrExtensionProperties> available(extensionCount,{XR_TYPE_EXTENSION_PROPERTIES});
     check(xrEnumerateInstanceExtensionProperties(nullptr,extensionCount,&extensionCount,available.data()),"extensions");
-    for(const auto& extension:available)if(std::strcmp(extension.extensionName,XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME)==0) {
-        extensions.push_back(XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME);performanceSettings=true;break;
+    for(const auto& extension:available) {
+        if(std::strcmp(extension.extensionName,XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME)==0) {
+            extensions.push_back(XR_EXT_PERFORMANCE_SETTINGS_EXTENSION_NAME);performanceSettings=true;
+        }
+        if(std::strcmp(extension.extensionName,XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME)==0) {
+            extensions.push_back(XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME);displayRefresh=true;
+        }
     }
     XrInstanceCreateInfoAndroidKHR android{XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR};android.applicationVM=vm;android.applicationActivity=activity;
     XrInstanceCreateInfo ci{XR_TYPE_INSTANCE_CREATE_INFO};ci.next=&android;
@@ -106,6 +113,23 @@ void initialize() {
 }
 XrInstance snap_quest_xr_instance(){std::call_once(initialized,initialize);return instance;}
 XrSystemId snap_quest_xr_system(){snap_quest_xr_instance();return systemId;}
+float snap_quest_display_refresh(XrSession session,bool request) {
+    if(!displayRefresh)return 0;
+    auto get=function<PFN_xrGetDisplayRefreshRateFB>("xrGetDisplayRefreshRateFB");
+    if(request) {
+        float wanted=80;
+        if(const char* value=std::getenv("SNAP_QUEST_REFRESH"))if(std::strcmp(value,"72")==0)wanted=72;
+        auto enumerate=function<PFN_xrEnumerateDisplayRefreshRatesFB>("xrEnumerateDisplayRefreshRatesFB");
+        uint32_t count=0;check(enumerate(session,0,&count,nullptr),"refresh count");
+        std::vector<float> rates(count);check(enumerate(session,count,&count,rates.data()),"refresh rates");
+        bool supported=false;fprintf(stderr,"[SNAP-VR] supported display rates:");
+        for(float rate:rates){fprintf(stderr," %.1f",rate);supported|=rate==wanted;}
+        fprintf(stderr,"; requested %.1f\n",wanted);
+        if(supported)check(function<PFN_xrRequestDisplayRefreshRateFB>("xrRequestDisplayRefreshRateFB")(session,wanted),"request refresh rate");
+        else fprintf(stderr,"[SNAP-VR] requested display rate unsupported; benchmark cannot qualify at that rate\n");
+    }
+    float rate=0;check(get(session,&rate),"actual display refresh rate");return rate;
+}
 void snap_quest_set_performance(XrSession session) {
     if(!performanceSettings)return;
     auto set=function<PFN_xrPerfSettingsSetPerformanceLevelEXT>("xrPerfSettingsSetPerformanceLevelEXT");

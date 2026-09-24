@@ -3,6 +3,7 @@
 #include "vr_props.h"
 #include "vr_options.h"
 #include "vr_transition.h"
+#include "vr_benchmark.h"
 #include "settings.h"
 #include "hle/rt64_workload_queue.h"
 #include "render/rt64_render_target_manager.h"
@@ -37,6 +38,28 @@ struct Renderer {
     std::unique_ptr<FramebufferRenderer> renderer;
     std::unique_ptr<RSPProcessor> rsp;
     std::unique_ptr<BufferUploader> upload;
+#ifdef __ANDROID__
+    struct ViewResources {
+        std::unique_ptr<FramebufferRenderer> renderer;
+        std::unique_ptr<RSPProcessor> rsp;
+        std::unique_ptr<BufferUploader> upload,tiles;
+        std::unique_ptr<RenderCommandList> commands;
+        std::unique_ptr<RenderCommandFence> fence;
+        BufferPair viewProj,viewport,world,rdpTiles,lookAt,gpuTiles;
+        ComputedBuffer screenPos,texcoords,shaded,testZ;
+        bool pending=false;
+    };
+    std::array<std::unique_ptr<ViewResources>,3> views;
+    unsigned pendingTextureLocks=0;
+    void retireViews(bool wait) {
+        for(auto& v:views)if(v&&v->pending) {
+            if(wait)queue.ext.workloadGraphicsWorker->commandQueue->waitForCommandFence(v->fence.get());
+            v->pending=false;
+        }
+        while(pendingTextureLocks){queue.ext.textureCache->decrementLock();--pendingTextureLocks;}
+    }
+    ~Renderer(){retireViews(true);}
+#endif
     std::array<std::unique_ptr<RenderTarget>,3> colors,depths;
     std::unique_ptr<RenderTarget> menuImage;
     std::array<RenderFramebufferStorage,3> framebuffers;
@@ -115,6 +138,46 @@ struct Renderer {
                 if(perspective)pairs.push_back(f);
             }
             if(pairs.empty())continue;
+#ifdef __ANDROID__
+            // Each view owns every buffer, descriptor and command list it
+            // mutates. Immutable source geometry remains pinned by the active
+            // workload until the final frame fence completes.
+            ViewResources* asynchronous=nullptr;
+            if(frame.workloads.size()==1) {
+                auto& owned=views[target];
+                if(!owned) {
+                    owned=std::make_unique<ViewResources>();
+                    owned->renderer=std::make_unique<FramebufferRenderer>(worker,false,queue.ext.createdGraphicsAPI,queue.ext.shaderLibrary);
+                    owned->rsp=std::make_unique<RSPProcessor>(queue.ext.device);
+                    owned->upload=std::make_unique<BufferUploader>(queue.ext.device);
+                    owned->tiles=std::make_unique<BufferUploader>(queue.ext.device);
+                    owned->commands=worker->commandQueue->createCommandList();owned->fence=queue.ext.device->createCommandFence();
+                }
+                asynchronous=owned.get();
+            }
+            struct ViewBorrow {
+                Renderer& owner;ViewResources* v;RenderWorker* worker;Workload& w;
+                void swap() {
+                    if(!v)return;
+                    std::swap(owner.renderer,v->renderer);std::swap(owner.rsp,v->rsp);std::swap(owner.upload,v->upload);
+                    std::swap(worker->commandList,v->commands);std::swap(worker->commandFence,v->fence);
+                    auto& b=w.drawBuffers;auto& out=w.outputBuffers;
+                    std::swap(b.viewProjTransformsBuffer,v->viewProj);std::swap(b.rspViewportsBuffer,v->viewport);
+                    std::swap(b.worldTransformsBuffer,v->world);std::swap(b.rdpTilesBuffer,v->rdpTiles);
+                    std::swap(b.rspLookAtBuffer,v->lookAt);std::swap(b.gpuTilesBuffer,v->gpuTiles);
+                    std::swap(out.screenPosBuffer,v->screenPos);std::swap(out.genTexCoordBuffer,v->texcoords);
+                    std::swap(out.shadedColBuffer,v->shaded);std::swap(out.testZIndexBuffer,v->testZ);
+                }
+                ViewBorrow(Renderer& o,ViewResources* view,RenderWorker* rw,Workload& work):owner(o),v(view),worker(rw),w(work){swap();}
+                ~ViewBorrow(){swap();}
+            }borrow{*this,asynchronous,worker,w};
+            // Private view outputs start empty and must be allocated before
+            // RSP descriptors and barriers reference them.
+            if(asynchronous)w.updateOutputBuffers(worker);
+            auto* tileUploader=asynchronous?asynchronous->tiles.get():queue.ext.workloadTilesUploader;
+#else
+            auto* tileUploader=queue.ext.workloadTilesUploader;
+#endif
             if(target==0&&std::getenv("SNAP_VR_STEREO_DIAG")) {
                 static unsigned samples=0;
                 if(samples++%120==0) {
@@ -178,10 +241,14 @@ struct Renderer {
             // private replay targets.
             auto& transforms=(d.lerpWorldTransforms.size()==d.worldTransforms.size())?d.lerpWorldTransforms:d.worldTransforms;
             uploads.push_back({transforms.data(),{0,transforms.size()},sizeof(interop::float4x4),RenderBufferFlag::STORAGE,{},&w.drawBuffers.worldTransformsBuffer});
+            const auto& tiles=d.lerpRdpTiles.size()==d.rdpTiles.size()?d.lerpRdpTiles:d.rdpTiles;
+            const auto& lookAt=d.lerpRspLookAt.size()==d.rspLookAt.size()?d.lerpRspLookAt:d.rspLookAt;
+            if(!tiles.empty())uploads.push_back({tiles.data(),{0,tiles.size()},sizeof(interop::RDPTile),RenderBufferFlag::STORAGE,{},&w.drawBuffers.rdpTilesBuffer});
+            if(!lookAt.empty())uploads.push_back({lookAt.data(),{0,lookAt.size()},sizeof(interop::RSPLookAt),RenderBufferFlag::STORAGE,{},&w.drawBuffers.rspLookAtBuffer});
             upload->submit(worker,uploads);
             w.resetRSPOutputBuffers();RSPProcessor::ProcessParams rp;rp.worker=worker;rp.drawData=&d;rp.drawBuffers=&w.drawBuffers;rp.outputBuffers=&w.outputBuffers;rp.snapVRView=true;rp.curFrameWeight=worldWeight;rp.prevFrameWeight=1-rp.curFrameWeight;rsp->process(rp);
             queue.ext.textureCache->incrementLock();
-            struct TextureGuard{TextureCache* cache;~TextureGuard(){cache->decrementLock();}}guard{queue.ext.textureCache};
+            struct TextureGuard{TextureCache* cache;bool deferred=false;~TextureGuard(){if(!deferred)cache->decrementLock();}}guard{queue.ext.textureCache};
             renderer->updateTextureCache(queue.ext.textureCache);renderer->resetFramebuffers(worker,false,w.extended.ditherNoiseStrength,RenderMultisampling{});
             for(auto f:pairs) {
                 FramebufferRenderer::DrawParams p{};p.worker=worker;p.fbStorage=&framebuffers[target];p.curWorkload=&w;p.fbPairIndex=f;
@@ -199,15 +266,22 @@ struct Renderer {
             }
             if(!d.gpuTiles.empty()) {
                 renderer->createGPUTiles(d.callTiles.data(),uint32_t(d.callTiles.size()),d.gpuTiles.data(),&queue.ext.sharedResources->framebufferManager,queue.ext.textureCache,w.submissionFrame);
-                queue.ext.workloadTilesUploader->submit(worker,{{d.gpuTiles.data(),{0,d.gpuTiles.size()},sizeof(interop::GPUTile),RenderBufferFlag::STORAGE,{},&w.drawBuffers.gpuTilesBuffer}});
+                tileUploader->submit(worker,{{d.gpuTiles.data(),{0,d.gpuTiles.size()},sizeof(interop::GPUTile),RenderBufferFlag::STORAGE,{},&w.drawBuffers.gpuTilesBuffer}});
             }
             worker->commandList->begin();renderer->endFramebuffers(worker,&w.drawBuffers,&w.outputBuffers,false);
-            std::vector<BufferUploader*> uploaders{upload.get()};if(!d.gpuTiles.empty())uploaders.push_back(queue.ext.workloadTilesUploader);
+            std::vector<BufferUploader*> uploaders{upload.get()};if(!d.gpuTiles.empty())uploaders.push_back(tileUploader);
             renderer->recordSetup(worker,uploaders,rsp.get(),nullptr,&w.outputBuffers,false);
             for(uint32_t f=0;f<pairs.size();f++) {
                 renderer->recordFramebuffer(worker,f,needsClear,clearColor);needsClear=false;
             }
-            worker->commandList->end();renderer->waitForUploaders();worker->execute();waitWorker();renderer->advanceFrame(false);
+            worker->commandList->end();renderer->waitForUploaders();worker->execute();
+#ifdef __ANDROID__
+            if(asynchronous){asynchronous->pending=true;guard.deferred=true;++pendingTextureLocks;}
+            else waitWorker();
+#else
+            waitWorker();
+#endif
+            renderer->advanceFrame(false);
 
         }
         if(needsClear)clearEmpty();
@@ -251,6 +325,10 @@ struct Renderer {
             return;
         }
         wasFocused=t.focused;
+        // The workload thread owns this source frame until render returns.
+        // OpenXR pacing above needs no RT64 resources; do not block guest
+        // workload production or the graphics worker while waiting for it.
+        std::scoped_lock renderLock(queue.ext.sharedResources->workloadMutex,queue.workerMutex);
         if(!preview) {
             const unsigned rate=xr.refreshRate();
             if(displayRate.exchange(rate)!=rate)
@@ -258,6 +336,9 @@ struct Renderer {
         }
         struct FrameGuard{OpenXR& xr;bool done=false;~FrameGuard(){if(!done){try{xr.end(false);}catch(...){}}}}frameGuard{xr};
         auto start=std::chrono::steady_clock::now();GameState g;bool recenter=false,focus=false;
+#ifdef SNAP_QUEST_BENCHMARK
+        const auto previousStages=stageMs;
+#endif
         {auto& s=shared();std::lock_guard lock(s.mutex);g=s.game;recenter=s.recenter;s.recenter=false;focus=false;
             if(!frame.workloads.empty()) {
                 const auto& source=queue.workloads[frame.workloads.back()];
@@ -279,6 +360,9 @@ struct Renderer {
                     g.cartPosition=interpolated.cartPosition;g.cartYaw=interpolated.cartYaw;
                 }
             }}
+#ifdef SNAP_QUEST_BENCHMARK
+        questBenchmark().script(t,g);
+#endif
         if(preview&&g.course&&!g.cinematic&&std::getenv("SNAP_VR_MODEL_TEST")) {
             ++modelTestFrame;auto& hand=t.hands[std::strcmp(std::getenv("SNAP_VR_MODEL_TEST"),"left")==0?0:1];
             hand.grip.position=modelTestFrame<12?Interaction::cameraDock:Vec3{std::strcmp(std::getenv("SNAP_VR_MODEL_TEST"),"left")==0?-.15f:.15f,1.15f,-.32f};
@@ -451,8 +535,6 @@ struct Renderer {
                 props->copy(native(colors[i].get()),image,width(i),height(i));
                 stageMs[4]+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-copyReady).count();
                 if(captureSubmitted)props->capture(image,i?"vr-submitted-right.png":"vr-submitted-left.png");
-                const auto releaseStart=std::chrono::steady_clock::now();xr.release(i);
-                stageMs[6]+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-releaseStart).count();
             }
             if(!preview&&!capturedHeadset&&t.focused&&t.frame>=120&&std::getenv("SNAP_VR_CAPTURE")) {
                 props->capture(native(colors[i].get()),i?"vr-headset-right.png":"vr-headset-left.png");
@@ -463,11 +545,29 @@ struct Renderer {
             }
         }
         if(captureSubmitted){std::error_code error;std::filesystem::remove("vr-capture.request",error);}
-        accumulatedGpuMs+=props->endTiming();accumulatedWaitMs+=workerWaitMs+props->fenceWaitMs();
+        const double gpuMs=props->endTiming();
+#ifdef __ANDROID__
+        // Props' final fence is on the same queue as all view submissions.
+        retireViews(false);
+#endif
+        if(!preview) {
+            const auto releaseStart=std::chrono::steady_clock::now();
+            xr.release(0);xr.release(1);
+            stageMs[6]+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-releaseStart).count();
+        }
+        accumulatedGpuMs+=gpuMs;accumulatedWaitMs+=workerWaitMs+props->fenceWaitMs();
         xr.end(true);frameGuard.done=true;
         const auto sourceWorkload=queue.workloads[frame.workloads.back()].workloadId;
         if(sourceWorkload!=lastSourceWorkload){++sourceFrames;lastSourceWorkload=sourceWorkload;}
         const auto submitted=std::chrono::steady_clock::now();
+#ifdef SNAP_QUEST_BENCHMARK
+        auto stages=stageMs;for(size_t i=0;i<stages.size();++i)stages[i]-=previousStages[i];
+        const auto& source=queue.workloads[frame.workloads.back()];
+        static float physicalHz=0;static double checkedAt=0;
+        if(t.seconds-checkedAt>=1){physicalHz=xr.physicalRefreshRate();checkedAt=t.seconds;}
+        questBenchmark().sample(t,g,source.snapVRFrame,source.workloadId,worldWeight,width(0),height(0),physicalHz,
+            std::chrono::duration<double,std::milli>(submitted-start).count(),gpuMs,workerWaitMs+props->fenceWaitMs(),stages,f.cameraHeld,snap::g_scene_overlay_rom.load());
+#endif
         if(submissionWindow==std::chrono::steady_clock::time_point{})submissionWindow=submitted;
         else if(++submissionIntervals==120) {
             const double seconds=std::chrono::duration<double>(submitted-submissionWindow).count();
@@ -494,8 +594,10 @@ auto retryAfter=std::chrono::steady_clock::time_point{};
 void render(RT64::WorkloadQueue& queue,RT64::GameFrame& frame,const RT64::GameFrame& previous,float weight,RenderTarget* presented) {
     if(!requested.load()||std::chrono::steady_clock::now()<retryAfter)return;
     try {
-        std::scoped_lock lock(queue.ext.sharedResources->workloadMutex,queue.workerMutex);
-        if(!renderer)renderer=std::make_unique<Renderer>(queue);
+        if(!renderer) {
+            std::scoped_lock lock(queue.ext.sharedResources->workloadMutex,queue.workerMutex);
+            renderer=std::make_unique<Renderer>(queue);
+        }
         renderer->render(frame,previous,weight,presented);
     }catch(const std::exception& e){
         fprintf(stderr,"[SNAP-VR] %s; retrying in two seconds\n",e.what());

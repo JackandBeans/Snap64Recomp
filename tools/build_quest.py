@@ -13,6 +13,7 @@ import shutil
 import subprocess
 import sys
 import zipfile
+import xml.etree.ElementTree as ET
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = 'org.snap64.quest'
@@ -56,6 +57,7 @@ def main():
     parser.add_argument('--java-home', type=Path)
     parser.add_argument('--host-build', type=Path, default=ROOT / 'build-win')
     parser.add_argument('--jobs', type=int, default=8)
+    parser.add_argument('--benchmark', action='store_true', help='Isolated optimized controller-free benchmark APK')
     args = parser.parse_args()
     if os.name != 'nt':
         parser.error('This script currently uses the Windows host shader compiler.')
@@ -107,11 +109,13 @@ def main():
         run('cmake', '-S', ROOT, '-B', host, '-DSNAP_ENABLE_VR=OFF', f'-DSNAP_ROM={rom}')
         run('cmake', '--build', host, '--config', 'Release', '--target', 'RSPRecomp', 'file_to_c', '-j', args.jobs)
         rsp, file_to_c = list(host.rglob('RSPRecomp.exe')), list(host.rglob('file_to_c.exe'))
-    native = build / 'arm64'
+    package = PACKAGE + ('.benchmark' if args.benchmark else '')
+    native = build / ('arm64-benchmark' if args.benchmark else 'arm64')
     run('cmake', '-S', ROOT, '-B', native, '-G', 'Ninja',
         f'-DCMAKE_TOOLCHAIN_FILE={ndk / "build/cmake/android.toolchain.cmake"}',
         '-DANDROID_ABI=arm64-v8a', '-DANDROID_PLATFORM=android-29', '-DANDROID_STL=c++_shared',
         '-DCMAKE_BUILD_TYPE=Release', '-DSNAP_ENABLE_VR=ON', f'-DSNAP_ROM={rom}',
+        f'-DSNAP_QUEST_BENCHMARK={"ON" if args.benchmark else "OFF"}',
         f'-DSNAP_HOST_RSPRECOMP={require(rsp[0])}', f'-DSNAP_HOST_FILE_TO_C={require(file_to_c[0])}')
     run('cmake', '--build', native, '--target', 'Snap64Recomp', '-j', args.jobs)
 
@@ -134,6 +138,8 @@ def main():
         copy(ROOT / relative, assets / relative)
     copy(ROOT / 'shaders/rt64-seen-shaders.bin', assets / 'cache/rt64-seen-shaders.bin')
     copy(ROOT / 'assets/gamecontrollerdb.txt', assets / 'gamecontrollerdb.txt')
+    if args.benchmark:
+        copy(ROOT / 'tools/replays/beach.inputs', assets / 'benchmark/beach.inputs')
     for source in (ROOT / 'licenses').glob('*'):
         if source.is_file():
             copy(source, assets / 'licenses' / source.name)
@@ -150,7 +156,22 @@ def main():
     run(java / 'bin/java.exe', '-cp', bt / 'lib/d8.jar', 'com.android.tools.r8.D8',
         '--release', '--min-api', '29', '--lib', android_jar, '--output', dex, class_jar, env=env)
     unsigned, aligned = stage / 'unsigned.apk', stage / 'aligned.apk'
-    run(bt / 'aapt2.exe', 'link', '--manifest', ROOT / 'android/AndroidManifest.xml',
+    manifest = ROOT / 'android/AndroidManifest.xml'
+    if args.benchmark:
+        ns = 'http://schemas.android.com/apk/res/android'
+        ET.register_namespace('android', ns)
+        tree = ET.parse(manifest)
+        root = tree.getroot()
+        root.set('package', package)
+        app = root.find('application')
+        app.set(f'{{{ns}}}label', 'Snap64 Quest Benchmark')
+        app.find('activity').set(f'{{{ns}}}name', PACKAGE + '.QuestActivity')
+        ET.SubElement(root, 'uses-feature', {f'{{{ns}}}name': 'oculus.software.handtracking', f'{{{ns}}}required': 'false'})
+        ET.SubElement(root, 'uses-permission', {f'{{{ns}}}name': 'com.oculus.permission.HAND_TRACKING'})
+        ET.SubElement(app, 'meta-data', {f'{{{ns}}}name': 'com.oculus.handtracking.version', f'{{{ns}}}value': 'V2.0'})
+        manifest = stage / 'AndroidManifest.xml'
+        tree.write(manifest, encoding='utf-8', xml_declaration=True)
+    run(bt / 'aapt2.exe', 'link', '--manifest', manifest,
         '-I', android_jar, '-A', assets, '-o', unsigned)
     libraries = [require(native / 'libSnap64RecompVR.so'),
                  require(native / 'lib/SDL/libSDL2.so'),
@@ -180,7 +201,7 @@ def main():
             '-storepass:env', 'SNAP_QUEST_KEY_PASSWORD', '-keypass:env', 'SNAP_QUEST_KEY_PASSWORD',
             '-keyalg', 'RSA', '-keysize', '2048', '-validity', '10000',
             '-dname', 'CN=Snap64 Quest Local Release', env=env)
-    apk = build / 'Snap64RecompVR-quest-release.apk'
+    apk = build / ('Snap64RecompVR-quest-benchmark.apk' if args.benchmark else 'Snap64RecompVR-quest-release.apk')
     signer = [java / 'bin/java.exe', '-jar', bt / 'lib/apksigner.jar']
     run(*signer, 'sign', '--v2-signing-enabled', 'true', '--ks', key, '--ks-key-alias', 'snap64',
         '--ks-pass', 'env:SNAP_QUEST_KEY_PASSWORD', '--out', apk, aligned, env=env)
@@ -190,11 +211,11 @@ def main():
     print(f'Release APK: {apk}', flush=True)
     if adb_args:
         run(*adb_args, 'install', '--no-incremental', '-r', apk)
-        destination = f'/sdcard/Android/data/{PACKAGE}/files'
+        destination = f'/sdcard/Android/data/{package}/files'
         run(*adb_args, 'shell', 'mkdir', '-p', destination)
         run(*adb_args, 'push', rom, destination + '/pokemonsnap.z64')
         if args.launch:
-            run(*adb_args, 'shell', 'am', 'start', '-n', PACKAGE + '/.QuestActivity')
+            run(*adb_args, 'shell', 'am', 'start', '-n', package + '/' + PACKAGE + '.QuestActivity')
         print('Installed on Quest; ROM copied separately. Existing saves retained.')
 
 

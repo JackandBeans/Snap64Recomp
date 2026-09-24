@@ -34,6 +34,10 @@ public class QuestActivity extends SDLActivity {
         if (directory == null) directory = getFilesDir();
         try { copyAssets("", directory); }
         catch (IOException e) { throw new RuntimeException("Unable to install game assets", e); }
+        if (getPackageName().endsWith(".benchmark")) {
+            new File(directory, "saves").mkdirs();
+            new File(directory, "benchmark/results").mkdirs();
+        }
         System.loadLibrary("SDL2");
         System.loadLibrary("openxr_loader");
         System.loadLibrary("Snap64RecompVR");

@@ -2,20 +2,27 @@
 using namespace plume;
 struct Props::Impl {
     VRDevice* device; VRQueue* queue;
-    std::unique_ptr<RenderCommandList> list;
-    std::unique_ptr<RenderCommandFence> fence;
+    struct Submission {std::unique_ptr<RenderCommandList> list;std::unique_ptr<RenderCommandFence> fence;};
+    std::vector<Submission> submissions;
+    std::vector<std::unique_ptr<RenderFramebuffer>> retainedFramebuffers;
+    RenderCommandList* list=nullptr;
+    unsigned submission=0,drawIndex=0,copyIndex=0;
+    bool deferred=false;
     std::unique_ptr<RenderPipelineLayout> root,presentationRoot;
     std::unique_ptr<RenderPipelineLayout> copyRoot;
     std::unique_ptr<RenderPipeline> copyPipeline;
-    std::unique_ptr<RenderDescriptorSet> copyDescriptors;
+    std::array<std::unique_ptr<RenderDescriptorSet>,2> copyDescriptors;
     std::unique_ptr<RenderPipeline> pipeline,transparentPipeline,presentationPipeline;
     std::unique_ptr<RenderDescriptorSet> descriptors;
     std::unique_ptr<RenderSampler> sampler;
-    std::unique_ptr<RenderBuffer> vertices,indices;
+    std::unique_ptr<RenderBuffer> vertices;
+    std::array<std::unique_ptr<RenderBuffer>,2> indexBuffers;
     std::unique_ptr<RenderTexture> fluteTexture,blankTexture;
     std::unique_ptr<RenderQueryPool> timestamps;
     double waitMs=0;
-    size_t capacity=0,indexCapacity=0;
+    size_t capacity=0;
+    std::array<size_t,2> indexCapacities{};
+    uint64_t descriptorGeometry=UINT64_MAX;
     std::array<Rig,2> hands;
     Mesh cameraMesh,vehicleMesh,appleMesh,pesterBallMesh;
     struct RigidDraw {const Mesh* mesh;Pose pose;bool mirror;float press;};
@@ -42,7 +49,7 @@ struct Props::Impl {
         return device->createShader(code.data(),size_t(size),entry,RenderShaderFormat::SPIRV);
     }
     Impl(VRDevice* d,VRQueue* q):device(d),queue(q) {
-        list=q->createCommandList();fence=d->createCommandFence();timestamps=d->createQueryPool(2);
+        timestamps=d->createQueryPool(2);
         RenderDescriptorRange ranges[3]{};
         for(unsigned i=0;i<3;i++){ranges[i].type=i==2?RenderDescriptorRangeType::SAMPLER:RenderDescriptorRangeType::TEXTURE;ranges[i].binding=i;ranges[i].count=1;}
         RenderDescriptorSetDesc ds{ranges,3};descriptors=d->createDescriptorSet(ds);
@@ -74,7 +81,7 @@ struct Props::Impl {
         presentationPipeline=d->createGraphicsPipeline(pd);
         RenderDescriptorSetDesc copySet{ranges,1};
         copyRoot=d->createPipelineLayout({nullptr,0,&copySet,1});
-        copyDescriptors=d->createDescriptorSet(copySet);
+        for(auto& set:copyDescriptors)set=d->createDescriptorSet(copySet);
         vs=loadShader("copy.vs.spv","vs");ps=loadShader("copy.ps.spv","ps");
         pd.pipelineLayout=copyRoot.get();pd.vertexShader=vs.get();pd.pixelShader=ps.get();
         pd.renderTargetBlend[0]=RenderBlendDesc::Copy();pd.depthWriteEnabled=false;
@@ -86,11 +93,20 @@ struct Props::Impl {
         nlohmann::json props;models>>props;cameraMesh.load(props.at("models").at("camera"));vehicleMesh.load(props.at("models").at("zero_one"));
         appleMesh.load(props.at("models").at("apple"));pesterBallMesh.load(props.at("models").at("pester_ball"));
     }
-    void begin(){list->begin();}
-    void finish(){
-        list->end();static_cast<RenderCommandQueue*>(queue)->executeCommandLists(list.get(),fence.get());
-        auto start=std::chrono::steady_clock::now();queue->waitForCommandFence(fence.get());
+    void drain() {
+        if(!submission)return;
+        auto start=std::chrono::steady_clock::now();queue->waitForCommandFence(submissions[submission-1].fence.get());
         waitMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();
+    }
+    ~Impl(){drain();}
+    void begin(){
+        if(submission==submissions.size())submissions.push_back({queue->createCommandList(),device->createCommandFence()});
+        list=submissions[submission].list.get();list->begin();
+    }
+    void finish(){
+        list->end();static_cast<RenderCommandQueue*>(queue)->executeCommandLists(list,submissions[submission].fence.get());
+        ++submission;
+        if(!deferred){drain();submission=0;}
     }
     void uploadIcon(const FluteIcon& icon,std::unique_ptr<RenderTexture>& texture) {
         constexpr unsigned side=FluteIcon::side;
@@ -116,6 +132,9 @@ struct Props::Impl {
         list->setScissors(RenderRect{0,0,int32_t(color->desc.width),int32_t(color->desc.height)});
     }
     void draw(VRTexture* color,VRTexture* depth,VRTexture* screen,const std::vector<Vertex>& v,const std::vector<unsigned>& transparent,Pose eye,Fov fov) {
+        // Both eye draws may be in flight. The upload geometry is immutable
+        // for the tracked frame; each eye owns its depth-sorted index storage.
+        auto& indices=indexBuffers.at(drawIndex);auto& indexCapacity=indexCapacities.at(drawIndex++);
         size_t size=v.size()*sizeof(Vertex),indexSize=(opaqueIndices.size()+transparent.size())*sizeof(unsigned);
         if(size>capacity){capacity=size*2;vertices=device->createBuffer(RenderBufferDesc::VertexBuffer(capacity,RenderHeapType::UPLOAD));}
         if(size&&uploadedGeometry!=geometryFrame){std::memcpy(vertices->map(),v.data(),size);vertices->unmap();uploadedGeometry=geometryFrame;}
@@ -128,8 +147,11 @@ struct Props::Impl {
             for(size_t i=0;i<draw.mesh->vertices.size();++i)if(draw.mesh->shutter[i])data[i].textured=-1;
             buffer->unmap();rigidBuffers[draw.mesh]=std::move(buffer);
         }
-        descriptors->setTexture(0,screen,RenderTextureLayout::SHADER_READ);
-        descriptors->setTexture(1,fluteTexture?fluteTexture.get():blankTexture.get(),RenderTextureLayout::SHADER_READ);
+        if(descriptorGeometry!=geometryFrame) {
+            descriptors->setTexture(0,screen,RenderTextureLayout::SHADER_READ);
+            descriptors->setTexture(1,fluteTexture?fluteTexture.get():blankTexture.get(),RenderTextureLayout::SHADER_READ);
+            descriptorGeometry=geometryFrame;
+        }
         auto fb=framebuffer(color,depth);begin();
         RenderTextureBarrier barriers[]={{screen,RenderTextureLayout::SHADER_READ},{color,RenderTextureLayout::COLOR_WRITE},{depth,RenderTextureLayout::DEPTH_WRITE}};
         list->barriers(RenderBarrierStage::GRAPHICS,barriers,3);
@@ -153,7 +175,7 @@ struct Props::Impl {
             list->drawIndexedInstanced(uint32_t(opaqueIndices.size()),1,0,0,0);
             if(!transparent.empty()){list->setPipeline(transparentPipeline.get());list->drawIndexedInstanced(uint32_t(transparent.size()),1,uint32_t(opaqueIndices.size()),0,0);}
         }
-        finish();
+        retainedFramebuffers.push_back(std::move(fb));finish();
     }
 };
 Props::Props(VRDevice* d,VRQueue* q):impl(std::make_unique<Impl>(d,q)){}

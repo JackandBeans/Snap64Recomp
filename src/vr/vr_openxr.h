@@ -21,6 +21,7 @@ public:
     bool shouldRender() const;
     bool needsRestart() const;
     unsigned refreshRate() const;
+    float physicalRefreshRate() const;
 private:
     struct Impl;
     std::unique_ptr<Impl> impl;

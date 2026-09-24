@@ -7,23 +7,24 @@ void Props::presentation(VRTexture* color,Pose eye,Fov fov,float gain,bool porta
     x.list->barriers(RenderBarrierStage::GRAPHICS,RenderTextureBarrier(color,RenderTextureLayout::COLOR_WRITE));
     x.list->setFramebuffer(fb.get());x.viewport(color);
     x.list->setPipeline(x.presentationPipeline.get());x.list->setGraphicsPipelineLayout(x.presentationRoot.get());
-    x.list->setGraphicsPushConstants(0,constants);x.list->drawInstanced(3,1,0,0);x.finish();
+    x.list->setGraphicsPushConstants(0,constants);x.list->drawInstanced(3,1,0,0);x.retainedFramebuffers.push_back(std::move(fb));x.finish();
 }
-void Props::beginTiming(){auto& x=*impl;x.waitMs=0;x.begin();x.list->resetQueryPool(x.timestamps.get(),0,2);x.list->writeTimestamp(x.timestamps.get(),0);x.finish();}
-double Props::endTiming(){auto& x=*impl;x.begin();x.list->writeTimestamp(x.timestamps.get(),1);x.finish();x.timestamps->queryResults();auto* t=x.timestamps->getResults();return double(t[1]-t[0])/1e6;}
+void Props::beginTiming(){auto& x=*impl;x.drain();x.submission=x.drawIndex=x.copyIndex=0;x.retainedFramebuffers.clear();x.deferred=true;x.waitMs=0;x.begin();x.list->resetQueryPool(x.timestamps.get(),0,2);x.list->writeTimestamp(x.timestamps.get(),0);x.finish();}
+double Props::endTiming(){auto& x=*impl;x.begin();x.list->writeTimestamp(x.timestamps.get(),1);x.finish();x.drain();x.deferred=false;x.submission=0;x.timestamps->queryResults();auto* t=x.timestamps->getResults();return double(t[1]-t[0])/1e6;}
 double Props::fenceWaitMs()const{return impl->waitMs;}
 void Props::copy(VRTexture* source,VRTexture* destination,unsigned width,unsigned height) {
     auto& x=*impl;
     if(destination->imageView) {
         auto fb=x.framebuffer(destination);
-        x.copyDescriptors->setTexture(0,source,RenderTextureLayout::SHADER_READ);
+        auto& descriptors=x.copyDescriptors.at(x.copyIndex++);
+        descriptors->setTexture(0,source,RenderTextureLayout::SHADER_READ);
         x.begin();
         RenderTextureBarrier before[]={{source,RenderTextureLayout::SHADER_READ},{destination,RenderTextureLayout::COLOR_WRITE}};
         x.list->barriers(RenderBarrierStage::GRAPHICS,before,2);
         x.list->setFramebuffer(fb.get());x.viewport(destination);
         x.list->setPipeline(x.copyPipeline.get());x.list->setGraphicsPipelineLayout(x.copyRoot.get());
-        x.list->setGraphicsDescriptorSet(x.copyDescriptors.get(),0);x.list->drawInstanced(3,1,0,0);
-        x.finish();return;
+        x.list->setGraphicsDescriptorSet(descriptors.get(),0);x.list->drawInstanced(3,1,0,0);
+        x.retainedFramebuffers.push_back(std::move(fb));x.finish();return;
     }
     x.begin();
     RenderTextureBarrier before[]={{source,RenderTextureLayout::COPY_SOURCE},{destination,RenderTextureLayout::COPY_DEST}};
@@ -39,7 +40,7 @@ void Props::capture(VRTexture* source,const char* filename) {
     auto old=source->textureLayout;x.begin();
     x.list->barriers(RenderBarrierStage::COPY,RenderTextureBarrier(source,RenderTextureLayout::COPY_SOURCE));
     x.list->copyTextureRegion(RenderTextureCopyLocation::PlacedFootprint(buffer.get(),source->desc.format,width,height,1,width),RenderTextureCopyLocation::Subresource(source));
-    x.list->barriers(RenderBarrierStage::GRAPHICS,RenderTextureBarrier(source,old));x.finish();
+    x.list->barriers(RenderBarrierStage::GRAPHICS,RenderTextureBarrier(source,old));x.finish();x.drain();
     auto* data=buffer->map();int result=stbi_write_png(filename,int(width),int(height),4,data,int(width*4));buffer->unmap();
     if(!result)throw std::runtime_error("VR capture write failed");
 }

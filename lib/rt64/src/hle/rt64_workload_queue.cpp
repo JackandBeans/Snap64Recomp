@@ -25,6 +25,7 @@
 // by the present queue.
 extern "C" std::atomic<int32_t> snap_frame_dump_pending;
 extern "C" bool snap_vr_enabled();
+extern "C" bool snap_vr_world_active();
 extern "C" unsigned snap_vr_refresh_rate();
 extern "C" void snap_vr_render(RT64::WorkloadQueue*,RT64::GameFrame*,const RT64::GameFrame*,float,RT64::RenderTarget*);
 
@@ -409,7 +410,7 @@ namespace RT64 {
         const DebuggerRenderer &debuggerRenderer, const DebuggerCamera &debuggerCamera, float curFrameWeight, float prevFrameWeight,
         float deltaTimeMs, RenderTargetKey overrideTargetKey, int32_t overrideTargetFbPairIndex, RenderTarget *overrideTarget,
         uint32_t overrideTargetModifier, bool uploadVelocity, bool uploadExtras, bool interpolateTiles, bool interpolateLookAts,
-        bool interpolationSubFrame)
+        bool interpolationSubFrame, bool vrPrepareOnly)
     {
 #   if ENABLE_HIGH_RESOLUTION_RENDERER
         // A present gap is exactly the length of the slowest sub-frame
@@ -437,7 +438,7 @@ namespace RT64 {
             projParams.prevFrameWeight = prevFrameWeight;
             projParams.aspectRatioScale = workloadConfig.aspectRatioScale;
             projectionProcessor.process(projParams);
-            projectionProcessor.upload(projParams);
+            if(!vrPrepareOnly)projectionProcessor.upload(projParams);
             uploadProjections = true;
         }
 
@@ -476,7 +477,7 @@ namespace RT64 {
             transformParams.curFrameWeight = curFrameWeight;
             transformParams.prevFrameWeight = prevFrameWeight;
             transformProcessor.process(transformParams);
-            transformProcessor.upload(transformParams);
+            if(!vrPrepareOnly)transformProcessor.upload(transformParams);
             uploadTransforms = true;
         }
 
@@ -490,7 +491,7 @@ namespace RT64 {
             tileParams.curFrameWeight = curFrameWeight;
             tileParams.prevFrameWeight = prevFrameWeight;
             tileProcessor.process(tileParams);
-            tileProcessor.upload(tileParams);
+            if(!vrPrepareOnly)tileProcessor.upload(tileParams);
             uploadTiles = true;
         }
 
@@ -504,9 +505,14 @@ namespace RT64 {
             lookAtParams.curFrameWeight = curFrameWeight;
             lookAtParams.prevFrameWeight = prevFrameWeight;
             lookAtProcessor.process(lookAtParams);
-            lookAtProcessor.upload(lookAtParams);
+            if(!vrPrepareOnly)lookAtProcessor.upload(lookAtParams);
             uploadLookAts = true;
         }
+
+        // Headset-only samples need matched poses but must not replay guest
+        // framebuffer operations or photo-scoring passes. Eye replay uploads
+        // these prepared arrays into its RSP/material buffers below.
+        if(vrPrepareOnly){rendererCPUProfiler.end();return;}
 
         // Reset the max height tracking for all active framebuffers.
         fbManager.resetTracking();
@@ -1609,8 +1615,14 @@ namespace RT64 {
                 // Create as many render targets as required to store the interpolated targets.
                 auto &interpolatedTargets = ext.sharedResources->interpolatedColorTargets;
                 const bool usingMSAA = (ext.sharedResources->renderTargetManager.multisampling.sampleCount > 1);
+                bool xrEyeOnly=false;
+#ifdef __ANDROID__
+                xrEyeOnly=vrPaced&&!usingMSAA&&snap_vr_world_active();
+#endif
+                curFrameCounters.snapVREyeOnly=xrEyeOnly;
                 const bool usesHDR = ext.sharedResources->renderTargetManager.usesHDR;
                 uint32_t requiredFrames = (usingMSAA && generateInterpolatedFrames) ? displayFrames : (displayFrames - 1);
+                if(xrEyeOnly)requiredFrames=0;
                 // Pokemon Snap port: under antialiasing a cut-transit hold is
                 // delivered through interpolated target 0 whether or not this
                 // tick interpolates (the drawn target is multisampled and
@@ -1916,7 +1928,7 @@ namespace RT64 {
                         // reported at every transition.
 
                         // Override the render target.
-                        if (usingMSAA || (frame > 0)) {
+                        if (!xrEyeOnly && (usingMSAA || (frame > 0))) {
                             overrideTarget = interpolatedTargets[targetIndex].get();
                             overrideModifier = (targetIndex + 1);
 
@@ -1971,9 +1983,13 @@ namespace RT64 {
                                 std::memory_order_relaxed);
                         }
 
+                        if(xrEyeOnly && frame==0) {
+                            threadRenderFrame(curFrame, prevFrame, workloadConfig, workload.debuggerRenderer, workload.debuggerCamera, 1.0f, 0.0f, deltaTimeMs,
+                                interpolationTargetKey, interpolationTargetFbPairIndex, nullptr, 0, velocityUploaderUsed, uploadExtras, tileInterpolationUsed, lookAtInterpolationUsed, false);
+                        }
                         threadRenderFrame(curFrame, prevFrame, workloadConfig, workload.debuggerRenderer, workload.debuggerCamera, curFrameWeight, prevFrameWeight, deltaTimeMs,
                             interpolationTargetKey, interpolationTargetFbPairIndex, overrideTarget, overrideModifier, velocityUploaderUsed, uploadExtras, tileInterpolationUsed, lookAtInterpolationUsed,
-                            interpolationSubFrame);
+                            interpolationSubFrame, xrEyeOnly);
 
                     }
 

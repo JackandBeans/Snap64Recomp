@@ -701,7 +701,9 @@ namespace {
 
                 if (i < framesToPresent) {
                     uint32_t targetIndex = usingMSAA ? i : (i - 1);
-                    colorTarget = ext.sharedResources->interpolatedColorTargets[targetIndex].get();
+                    // The Android companion retains the source image while
+                    // intermediate animation poses are rendered to XR eyes.
+                    if(!frameCounters.snapVREyeOnly)colorTarget = ext.sharedResources->interpolatedColorTargets[targetIndex].get();
                 }
                 else {
                     colorTarget = nullptr;

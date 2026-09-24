@@ -23,6 +23,7 @@ namespace RT64 {
         uint32_t available = 0;
         uint32_t count = 0;
         bool skipped = false;
+        bool snapVREyeOnly = false;
         // Pokemon Snap port: the first display frame of this tick is to be
         // shown from interpolated colour target 0 rather than from the target
         // it was drawn into. Set by the workload thread when a cut-transit
