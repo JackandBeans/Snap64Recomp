@@ -61,7 +61,9 @@ LIBRARY_EXPORT bool RasterPS(const RenderParams rp, float4 vertexPosition, float
     const uint instanceIndex = instanceRenderIndices[gConstants.renderIndex].instanceIndex;
     const float4 vertexColor = renderFlagSmoothShade(rp.flags) ? vertexSmoothColor : float4(vertexFlatColor.rgb, vertexSmoothColor.a);
     const ColorCombiner colorCombiner = { rp.ccL, rp.ccH };
-    const bool depthClampNear = renderFlagNoN(rp.flags);
+    // Tracked eyes use a conventional near plane even when the specialized
+    // pipeline disables hardware clipping to match the fallback shader.
+    const bool depthClampNear = renderFlagNoN(rp.flags) && !FbParams.snapVRHighPrecisionDepth;
     const bool depthDecal = (otherMode.zMode() == ZMODE_DEC);
     const bool zSourcePrim = (otherMode.zSource() == G_ZS_PRIM);
     // Pokemon Snap port: a G_ZS_PRIM draw carries its depth in the per-call

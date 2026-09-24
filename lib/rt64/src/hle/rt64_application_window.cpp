@@ -11,7 +11,7 @@
 #if defined(_WIN32)
 #   include <Windows.h>
 #   include <ShellScalingAPI.h>
-#elif defined(__linux__)
+#elif defined(__linux__) && !defined(__ANDROID__)
 #   define Status int
 #   if !defined(RT64_SDL_WINDOW_VULKAN)
 #      include <X11/extensions/Xrandr.h>
@@ -109,8 +109,8 @@ namespace RT64 {
         bounds.width = rect.right - rect.left;
         bounds.height = rect.bottom - rect.top;
 #   elif defined(__ANDROID__)
-        static_assert(false && "Android unimplemented");
-#   elif defined(__linux__) || defined(__APPLE__)
+        bounds.left = bounds.top = 0; bounds.width = Width; bounds.height = Height;
+#   elif defined(__linux__) && !defined(__ANDROID__) || defined(__APPLE__)
         if (SDL_VideoInit(nullptr) != 0) {
             printf("Failed to init SDL2 video: %s\n", SDL_GetError());
             assert(false && "Failed to init SDL2 video");
@@ -153,8 +153,8 @@ namespace RT64 {
 #   elif defined(RT64_SDL_WINDOW_VULKAN)
         windowHandle = sdlWindow;
 #   elif defined(__ANDROID__)
-        static_assert(false && "Android unimplemented");
-#   elif defined(__linux__)
+        windowHandle = wmInfo.info.android.window;
+#   elif defined(__linux__) && !defined(__ANDROID__)
         windowHandle.display = wmInfo.info.x11.display;
         windowHandle.window = wmInfo.info.x11.window;
 #   elif defined(__APPLE__)
@@ -299,7 +299,7 @@ namespace RT64 {
         }
 
         refreshRate = displayMode.refresh_rate;
-#   elif defined(__linux__)
+#   elif defined(__linux__) && !defined(__ANDROID__)
         // Sourced from: https://stackoverflow.com/a/66865623
         XRRScreenResources *screenResources = XRRGetScreenResources(windowHandle.display, windowHandle.window);
         if (screenResources == nullptr) {
@@ -354,7 +354,7 @@ namespace RT64 {
         newWindowTop = rect.top;
 #   elif defined(RT64_SDL_WINDOW_VULKAN)
         SDL_GetWindowPosition(windowHandle, &newWindowLeft, &newWindowTop);
-#   elif defined(__linux__)
+#   elif defined(__linux__) && !defined(__ANDROID__)
         XWindowAttributes attributes;
         XGetWindowAttributes(windowHandle.display, windowHandle.window, &attributes);
         newWindowLeft = attributes.x;

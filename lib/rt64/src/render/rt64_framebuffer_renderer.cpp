@@ -1367,7 +1367,7 @@ namespace RT64 {
         }
     }
 
-    void FramebufferRenderer::recordFramebuffer(RenderWorker *worker, uint32_t framebufferIndex) {
+    void FramebufferRenderer::recordFramebuffer(RenderWorker *worker, uint32_t framebufferIndex, bool clear, RenderColor clearColor) {
         // Submit all transition barriers first.
         thread_local std::vector<RenderTextureBarrier> startBarriers;
         startBarriers.clear();
@@ -1389,6 +1389,10 @@ namespace RT64 {
 
         bool depthState = false;
         worker->commandList->setFramebuffer(targetDrawCall.fbStorage->colorDepthWrite.get());
+        if(clear) {
+            worker->commandList->clearColor(0,clearColor);
+            worker->commandList->clearDepth();
+        }
         for (const auto &pair : targetDrawCall.sceneIndices) {
 #       if RT_ENABLED
             if (pair.second) {
@@ -1815,7 +1819,17 @@ namespace RT64 {
                     {
                         triangles.shaderDesc = call.shaderDesc;
 
-                        RasterShader *gpuShader = p.ubershadersOnly ? nullptr : p.rasterShaderCache->getGPUShader(call.shaderDesc);
+                        ShaderDescription pipelineShaderDesc=call.shaderDesc;
+#ifdef __ANDROID__
+                        if(p.snapVRHighPrecisionDepth && !p.ubershadersOnly) {
+                            // Match the fallback's disabled hardware depth
+                            // clipping. The pixel shader clips tracked-eye
+                            // depth explicitly; retain the material's winding.
+                            pipelineShaderDesc.flags.NoN=true;
+                            p.rasterShaderCache->submit(pipelineShaderDesc);
+                        }
+#endif
+                        RasterShader *gpuShader = p.ubershadersOnly ? nullptr : p.rasterShaderCache->getGPUShader(pipelineShaderDesc);
                         if (gpuShader != nullptr) {
                             triangles.pipeline = gpuShader->pipeline.get();
                         }

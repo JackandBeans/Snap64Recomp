@@ -100,6 +100,9 @@ std::filesystem::path base_path(std::string_view rel) {
 }
 
 const std::filesystem::path& exe_dir() {
+#ifdef __ANDROID__
+    return base_dir();
+#else
     static const std::filesystem::path dir = [] {
         std::filesystem::path result;
         // The executable's folder; for a macOS bundle, its Contents/Resources,
@@ -117,6 +120,7 @@ const std::filesystem::path& exe_dir() {
         return result;
     }();
     return dir;
+#endif
 }
 
 std::filesystem::path exe_path(std::string_view rel) {

@@ -4,9 +4,9 @@
 #define HLSLPP_SCALAR
 #endif
 
-// Disable SIMD on Apple Silicon due to UB when compiling with optimizations.
+// Disable SIMD on ARM64 due to UB when compiling with optimizations.
 
-#if defined(__APPLE__) && defined(__aarch64__)
+#if defined(__aarch64__)
 #define HLSLPP_SCALAR
 #endif
 

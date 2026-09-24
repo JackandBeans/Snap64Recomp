@@ -120,7 +120,7 @@ HOOKED = [
     # VR host bridges. Wrappers pass through when VR was not requested.
     'mainCameraRender',
     'Msg_ShowMessage', 'Msg_Reset',
-    'Tutorial_ShowMessage',
+    'Tutorial_ShowMessage', 'Tutorial_ShowMessageAndWait', 'showPokemonLabel',
     'func_800E4578_8A9D98', 'Items_StopPokeFlute', 'Items_GetPokeFluteState',
     'drawSkyBox1Cycle', 'drawSkyBox2Cycle',
     'func_800AA38C', 'func_800AA740',

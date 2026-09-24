@@ -14,8 +14,9 @@ Build it from source with `SNAP_ENABLE_VR=ON`; the executable launches in VR
 by default. Use `--desktop` for desktop play.
 **VR version 1.0** follows its own release series, separate from the desktop
 port's version. See the [VR changelog](docs/VR_CHANGELOG.md).
-A Quest can connect through a PC OpenXR runtime such as SteamVR; standalone
-Quest play is not supported. The upstream release links on this page lead
+A Quest can connect through a PC OpenXR runtime such as SteamVR. An experimental
+[standalone Quest APK build](docs/QUEST.md) is also available from source.
+The upstream release links on this page lead
 to the original desktop port and do **not** include this fork's VR changes. See the
 [VR guide](docs/VR.md) for setup, controls and validation status.
 
@@ -111,8 +112,8 @@ bug report.
 This fork adds tracked stereo rendering and motion-controller interaction to
 the Windows build. It uses a connected headset through the PC's active OpenXR
 runtime and Direct3D 12. A Quest has reached a focused session and submitted
-frames through SteamVR. This is not a standalone Quest app or an upstream
-release feature. The full game, headset comfort, stereo alignment and
+frames through SteamVR. The [standalone Quest port](docs/QUEST.md) uses a separate
+Android/Vulkan build; neither VR path is an upstream release feature. The full game, headset comfort, stereo alignment and
 refresh-rate performance have not been verified in VR.
 
 Complete the normal [build prerequisites and ROM generation](BUILDING.md),

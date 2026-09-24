@@ -1349,8 +1349,8 @@ namespace {
                     ext.presentGraphicsWorker->commandList->end();
                     ext.presentGraphicsWorker->execute();
                     ext.presentGraphicsWorker->wait();
-                    swapChainValid = ext.swapChain->resize();
                     swapChainFramebuffers.clear();
+                    swapChainValid = ext.swapChain->resize();
 
                     if (swapChainValid) {
                         ext.sharedResources->setSwapChainSize(ext.swapChain->getWidth(), ext.swapChain->getHeight());

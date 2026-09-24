@@ -13,6 +13,9 @@
 #include <cstdio>
 #include <cassert>
 #include <algorithm>
+#ifdef __ANDROID__
+#include <SDL_syswm.h>
+#endif
 
 #include "ultramodern/renderer_context.hpp"
 #include "ultramodern/config.hpp"
@@ -192,6 +195,11 @@ public:
         // Set up the SDL window for RT64.
 #if defined(_WIN32)
         core.window = window_handle.window;
+#elif defined(__ANDROID__)
+        SDL_SysWMinfo info{};
+        SDL_VERSION(&info.version);
+        if(!SDL_GetWindowWMInfo(window_handle,&info)) return;
+        core.window = info.info.android.window;
 #elif defined(__APPLE__)
         core.window.window = window_handle.window;
         core.window.view   = window_handle.view;
@@ -276,6 +284,11 @@ public:
             case 2:  app_->userConfig.internalColorFormat = RT64::UserConfiguration::InternalColorFormat::High; break;
             default: app_->userConfig.internalColorFormat = RT64::UserConfiguration::InternalColorFormat::Automatic; break;
         }
+        // Stereo targets and their accessory pipelines use RGBA8. The game's
+        // replay pipelines must use that same format, including on mobile GPUs
+        // where RT64's Automatic setting otherwise selects float framebuffers.
+        if(snap::vr::requested.load())
+            app_->userConfig.internalColorFormat = RT64::UserConfiguration::InternalColorFormat::Standard;
         app_->userConfig.displayBuffering = snap::settings().triple_buffering
             ? RT64::UserConfiguration::DisplayBuffering::Triple
             : RT64::UserConfiguration::DisplayBuffering::Double;

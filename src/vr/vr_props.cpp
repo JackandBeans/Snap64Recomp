@@ -6,23 +6,30 @@
 #include <cstdio>
 #include <chrono>
 #include "paths.h"
+#ifndef __ANDROID__
 #include <windows.h>
 #include <d3d12.h>
 #include <d3dcompiler.h>
 #include <wrl/client.h>
+#endif
 #include <json/json.hpp>
 #include <fstream>
 #include <stdexcept>
 #include <cstring>
 #include <algorithm>
 #include <cstddef>
+#include <unordered_map>
 #define STB_IMAGE_WRITE_STATIC
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include <stb/stb_image_write.h>
+#ifndef __ANDROID__
 using Microsoft::WRL::ComPtr;
+#endif
 namespace snap::vr {
 namespace {
+#ifndef __ANDROID__
 void ok(HRESULT h){if(FAILED(h))throw std::runtime_error("VR D3D12 failure: "+std::to_string(h));}
+#endif
 struct Vertex {Vec3 position;float r,g,b,u=0,v=0,textured=0,alpha=1;};
 struct Color {float r,g,b;};
 void triangle(std::vector<Vertex>& out,Pose p,Vec3 a,Vec3 b,Vec3 c,Color color) {
@@ -186,6 +193,9 @@ float4 ps(P p):SV_TARGET {
 }
 )";
 }
+#ifdef __ANDROID__
+#include "vr_props_vulkan_impl.inl"
+#else
 struct Props::Impl {
     ID3D12Device* device;ID3D12CommandQueue* queue;
     ComPtr<ID3D12CommandAllocator> allocator;
@@ -293,6 +303,7 @@ struct Props::Impl {
 };
 Props::Props(ID3D12Device*d,ID3D12CommandQueue*q):impl(std::make_unique<Impl>(d,q)){}
 Props::~Props()=default;
+#endif
 std::array<FluteContact,2> Props::handContacts(const Tracking& tracking,const Interaction& interaction) {
     auto& x=*impl;std::array<FluteContact,2> contacts{};
     x.contactReady={};x.contactFrame=tracking.frame;
@@ -317,6 +328,9 @@ std::array<FluteContact,2> Props::handContacts(const Tracking& tracking,const In
     }
     return contacts;
 }
+#ifdef __ANDROID__
+#include "vr_props_vulkan_commands.inl"
+#else
 void Props::presentation(ID3D12Resource* color,Pose eye,Fov fov,float gain,bool portal,float height) {
     auto& x=*impl;
     Vec3 r=rotate(eye.orientation,{1,0,0}),u=rotate(eye.orientation,{0,1,0}),f=rotate(eye.orientation,{0,0,-1});
@@ -361,7 +375,8 @@ void Props::copy(ID3D12Resource*source,ID3D12Resource*dest,unsigned width,unsign
     D3D12_BOX box{0,0,0,width,height,1};x.list->CopyTextureRegion(&d,0,0,0,&s,&box);
     std::swap(b[0].Transition.StateBefore,b[0].Transition.StateAfter);std::swap(b[1].Transition.StateBefore,b[1].Transition.StateAfter);x.list->ResourceBarrier(2,b);x.finish();
 }
-void Props::draw(ID3D12Resource*color,ID3D12Resource*depth,ID3D12Resource*screen,Pose eye,Fov fov,const GameState&g,const InteractionFrame&f,const Tracking&t,const Interaction&interaction,bool focus,bool optionsOpen,int optionsRow) {
+#endif
+void Props::draw(VRTexture*color,VRTexture*depth,VRTexture*screen,Pose eye,Fov fov,const GameState&g,const InteractionFrame&f,const Tracking&t,const Interaction&interaction,bool focus,bool optionsOpen,int optionsRow) {
     auto& x=*impl;auto& v=x.frameVertices;float unit=interaction.settings.unitsPerMeter;
     if(g.fluteIcon&&!x.fluteTexture)x.uploadFluteIcon(*g.fluteIcon);
     bool rebuild=!x.geometryReady||x.geometryFrame!=t.frame;
@@ -369,6 +384,16 @@ void Props::draw(ID3D12Resource*color,ID3D12Resource*depth,ID3D12Resource*screen
     auto meters=[&](Pose p){p.position=p.position*(1/unit);return p;};
     Pose cart=meters(interaction.cartPose(g));
     if(rebuild){v.clear();x.geometryFrame=t.frame;x.geometryReady=true;
+#ifdef __ANDROID__
+    x.rigidDraws.clear();
+#endif
+    auto drawMesh=[&](const Mesh& mesh,Pose pose,bool mirror=false,float press=0.f) {
+#ifdef __ANDROID__
+        // Transparent pester balls retain their per-eye triangle sorting.
+        if(&mesh!=&x.pesterBallMesh){x.rigidDraws.push_back({&mesh,pose,mirror,press});return;}
+#endif
+        mesh.draw(v,pose,mirror,press);
+    };
     if(g.course) {
         for(const auto& puff:g.smoke) {
             float age=float(g.frame-puff.born)/30.f;
@@ -385,7 +410,7 @@ void Props::draw(ID3D12Resource*color,ID3D12Resource*depth,ID3D12Resource*screen
                 for(size_t n=begin;n<v.size();n++)v[n].alpha=.23f*(1-age/1.2f);
             }
         }
-        x.vehicleMesh.draw(v,cart);
+        drawMesh(x.vehicleMesh,cart);
         // Shallow round control seated in the dashboard's molded left lobe.
         const Vec3 button=Interaction::fluteButton;
         if(f.fluteTouch)x.flutePressTime=t.seconds;
@@ -407,7 +432,7 @@ void Props::draw(ID3D12Resource*color,ID3D12Resource*depth,ID3D12Resource*screen
         for(int i=0;i<2;i++) {
             Vec3 p=i?Interaction::pesterBin:Interaction::appleBin;
 
-            if(i?g.pesterBalls:g.apples)(i?x.pesterBallMesh:x.appleMesh).draw(v,compose(cart,Pose{{},p}));
+            if(i?g.pesterBalls:g.apples)drawMesh(i?x.pesterBallMesh:x.appleMesh,compose(cart,Pose{{},p}));
         }
 
         const bool leftCamera=f.held[0]==Held::Camera;
@@ -428,9 +453,9 @@ void Props::draw(ID3D12Resource*color,ID3D12Resource*depth,ID3D12Resource*screen
                 }
             }else x.hands[i].draw(v,itemHeld?itemHandPose(hand,i):handMeshPose(hand),t.hands[i],f.held[i],i==holdingHand?&shutterPoint:nullptr);
             if(f.held[i]!=Held::None&&f.held[i]!=Held::Camera)
-                (f.held[i]==Held::Apple?x.appleMesh:x.pesterBallMesh).draw(v,heldItemPose(hand,i));
+                drawMesh(f.held[i]==Held::Apple?x.appleMesh:x.pesterBallMesh,heldItemPose(hand,i));
         }
-        x.cameraMesh.draw(v,camera,leftCamera,press);
+        drawMesh(x.cameraMesh,camera,leftCamera,press);
         if(!g.message.empty()) {
             // One binocular panel, after world rendering and outside the lens
             // pass. Tutorials remain readable while the camera points away.
@@ -489,9 +514,16 @@ void Props::draw(ID3D12Resource*color,ID3D12Resource*depth,ID3D12Resource*screen
         else for(unsigned k=0;k<3;k++)x.opaqueIndices.push_back(first+k);
     }
     } // Both eyes share exactly the same accessory geometry snapshot.
+#ifdef __ANDROID__
+    if(v.empty()&&x.rigidDraws.empty())return;
+#else
     if(v.empty())return;
+#endif
     Pose ep=g.course?meters(eye):interaction.localPose(eye);
     const auto transparent=transparentIndices(x.transparentTriangles,ep);
+#ifdef __ANDROID__
+    x.draw(color,depth,screen,v,transparent,ep,fov);
+#else
     size_t size=v.size()*sizeof(Vertex);if(size>x.capacity) {
         x.vertices.Reset();x.capacity=size*2;D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_UPLOAD;
         D3D12_RESOURCE_DESC desc{};desc.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;desc.Width=x.capacity;desc.Height=1;desc.DepthOrArraySize=desc.MipLevels=1;desc.SampleDesc.Count=1;desc.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
@@ -522,5 +554,6 @@ void Props::draw(ID3D12Resource*color,ID3D12Resource*depth,ID3D12Resource*screen
         x.list->DrawIndexedInstanced(UINT(transparent.size()),1,UINT(x.opaqueIndices.size()),0,0);
     }
     x.finish();
+#endif
 }
 }

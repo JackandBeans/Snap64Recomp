@@ -1,6 +1,6 @@
 # Windows OpenXR VR build
 
-This is an experimental PC VR implementation. The acceptance matrix below distinguishes implemented paths from completed headset validation. Standalone Quest execution is not supported.
+This is an experimental VR implementation. The acceptance matrix below documents the PC VR path and distinguishes implemented paths from completed headset validation. The experimental standalone Android/Vulkan port has separate [Quest build instructions and validation status](QUEST.md).
 
 ## Build and run
 

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="org.snap64.quest" android:versionCode="1" android:versionName="1.0-quest.1"
+    android:installLocation="auto">
+    <uses-sdk android:minSdkVersion="29" android:targetSdkVersion="32" />
+    <uses-feature android:name="android.hardware.vr.headtracking" android:version="1" android:required="true" />
+    <uses-feature android:name="android.hardware.vulkan.version" android:version="4198400" android:required="true" />
+    <uses-permission android:name="org.khronos.openxr.permission.OPENXR_SYSTEM" />
+    <queries><provider android:authorities="org.khronos.openxr.runtime_broker;org.khronos.openxr.system_runtime_broker" /></queries>
+    <application android:label="Snap64 Recomp VR" android:allowBackup="false"
+        android:hasCode="true" android:extractNativeLibs="true" android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
+        <meta-data android:name="com.oculus.supportedDevices" android:value="quest2|questpro|quest3|quest3s" />
+        <activity android:name=".QuestActivity" android:exported="true" android:launchMode="singleTask"
+            android:screenOrientation="landscape" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode|navigation|density">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+                <category android:name="com.oculus.intent.category.VR" />
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

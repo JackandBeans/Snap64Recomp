@@ -1,7 +1,16 @@
+#ifdef __ANDROID__
+#define XR_USE_PLATFORM_ANDROID
+#define XR_USE_GRAPHICS_API_VULKAN
+#include <jni.h>
+#include <SDL_system.h>
+#include "plume_vulkan.h"
+#include "android/quest_xr.h"
+#else
 #define XR_USE_PLATFORM_WIN32
 #define XR_USE_GRAPHICS_API_D3D12
 #include <windows.h>
 #include <d3d12.h>
+#endif
 #include <openxr/openxr.h>
 #include <openxr/openxr_platform.h>
 #include "vr_openxr.h"
@@ -24,7 +33,12 @@ struct OpenXR::Impl {
     std::array<XrPath,2> hands{};
     std::array<XrSpace,2> grips{},aims{};
     std::array<XrSwapchain,2> chains{};
+#ifdef __ANDROID__
+    std::array<std::vector<XrSwapchainImageVulkanKHR>,2> images;
+    std::array<std::vector<std::unique_ptr<VRTexture>>,2> textures;
+#else
     std::array<std::vector<XrSwapchainImageD3D12KHR>,2> images;
+#endif
     std::array<XrViewConfigurationView,2> config{};
     std::array<XrView,2> views{};
     std::array<uint32_t,2> acquired{};
@@ -33,14 +47,23 @@ struct OpenXR::Impl {
     XrFrameState frame{XR_TYPE_FRAME_STATE};
     bool running=false,begun=false,lost=false;
     uint64_t frameId=0;
+#ifdef __ANDROID__
+    int64_t colorFormat=VK_FORMAT_R8G8B8A8_UNORM;
+#else
     int64_t colorFormat=DXGI_FORMAT_R8G8B8A8_UNORM;
+#endif
     ~Impl() {
+#ifdef __ANDROID__
+        for(auto& eye:textures)eye.clear();
+#endif
         if(session) {
             for(unsigned i=0;i<2;i++) {if(grips[i])xrDestroySpace(grips[i]);if(aims[i])xrDestroySpace(aims[i]);if(chains[i])xrDestroySwapchain(chains[i]);}
             if(head)xrDestroySpace(head);if(local)xrDestroySpace(local);xrDestroySession(session);
         }
         if(actions)xrDestroyActionSet(actions);
+#ifndef __ANDROID__
         if(instance)xrDestroyInstance(instance);
+#endif
     }
     XrPath path(const char* s) {XrPath p;check(xrStringToPath(instance,s,&p),"xrStringToPath");return p;}
     XrAction action(const char* name,XrActionType type) {
@@ -55,9 +78,21 @@ struct OpenXR::Impl {
 };
 OpenXR::OpenXR():impl(std::make_unique<Impl>()) {}
 OpenXR::~OpenXR()=default;
-bool OpenXR::initialize(ID3D12Device* device,ID3D12CommandQueue* queue,float scale,std::string& error) {
+bool OpenXR::initialize(VRDevice* device,VRQueue* queue,float scale,std::string& error) {
     try {
         auto& x=*impl;
+#ifdef __ANDROID__
+        x.instance=snap_quest_xr_instance();
+        XrSystemId system=snap_quest_xr_system();
+        PFN_xrGetVulkanGraphicsDevice2KHR getDevice=nullptr;
+        check(xrGetInstanceProcAddr(x.instance,"xrGetVulkanGraphicsDevice2KHR",reinterpret_cast<PFN_xrVoidFunction*>(&getDevice)),"Vulkan device function");
+        XrVulkanGraphicsDeviceGetInfoKHR getInfo{XR_TYPE_VULKAN_GRAPHICS_DEVICE_GET_INFO_KHR};getInfo.systemId=system;getInfo.vulkanInstance=device->renderInterface->instance;
+        VkPhysicalDevice physical;check(getDevice(x.instance,&getInfo,&physical),"Vulkan device");
+        if(physical!=device->physicalDevice)throw std::runtime_error("OpenXR and RT64 selected different Vulkan devices");
+        XrGraphicsBindingVulkan2KHR binding{XR_TYPE_GRAPHICS_BINDING_VULKAN2_KHR};
+        binding.instance=device->renderInterface->instance;binding.physicalDevice=physical;binding.device=device->vk;
+        binding.queueFamilyIndex=queue->familyIndex;binding.queueIndex=queue->queueIndex;
+#else
         const char* extensions[]={XR_KHR_D3D12_ENABLE_EXTENSION_NAME};
         XrInstanceCreateInfo ci{XR_TYPE_INSTANCE_CREATE_INFO};
         std::strcpy(ci.applicationInfo.applicationName,"Snap64 VR");ci.applicationInfo.apiVersion=XR_API_VERSION_1_0;
@@ -71,6 +106,7 @@ bool OpenXR::initialize(ID3D12Device* device,ID3D12CommandQueue* queue,float sca
         LUID adapter=device->GetAdapterLuid();
         if(adapter.HighPart!=req.adapterLuid.HighPart||adapter.LowPart!=req.adapterLuid.LowPart) throw std::runtime_error("OpenXR and RT64 selected different GPUs. Select the headset GPU for Snap64Recomp in Windows Graphics settings.");
         XrGraphicsBindingD3D12KHR binding{XR_TYPE_GRAPHICS_BINDING_D3D12_KHR};binding.device=device;binding.queue=queue;
+#endif
         XrSessionCreateInfo sci{XR_TYPE_SESSION_CREATE_INFO};sci.next=&binding;sci.systemId=system;
         check(xrCreateSession(x.instance,&sci,&x.session),"xrCreateSession");
         XrReferenceSpaceCreateInfo space{XR_TYPE_REFERENCE_SPACE_CREATE_INFO};space.poseInReferenceSpace.orientation.w=1;
@@ -112,18 +148,58 @@ bool OpenXR::initialize(ID3D12Device* device,ID3D12CommandQueue* queue,float sca
         check(xrEnumerateSwapchainFormats(x.session,count,&count,formats.data()),"swapchain formats");
         // RGBA8 linear and sRGB are copy-compatible D3D12 format families.
         // The original game's display values are already gamma encoded.
-        if(std::find(formats.begin(),formats.end(),DXGI_FORMAT_R8G8B8A8_UNORM_SRGB)!=formats.end())
-            x.colorFormat=DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+#ifdef __ANDROID__
+        constexpr int64_t srgb=VK_FORMAT_R8G8B8A8_SRGB;
+#else
+        constexpr int64_t srgb=DXGI_FORMAT_R8G8B8A8_UNORM_SRGB;
+#endif
+        if(std::find(formats.begin(),formats.end(),srgb)!=formats.end())
+            x.colorFormat=srgb;
         else if(std::find(formats.begin(),formats.end(),x.colorFormat)==formats.end())
             throw std::runtime_error("Runtime exposes no copy-compatible RGBA8 swapchain format");
         for(unsigned i=0;i<2;i++) {
             auto& c=x.config[i];c.recommendedImageRectWidth=std::clamp(uint32_t(c.recommendedImageRectWidth*scale),1u,c.maxImageRectWidth);
             c.recommendedImageRectHeight=std::clamp(uint32_t(c.recommendedImageRectHeight*scale),1u,c.maxImageRectHeight);
             XrSwapchainCreateInfo sc{XR_TYPE_SWAPCHAIN_CREATE_INFO};sc.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
+#ifdef __ANDROID__
+            sc.usageFlags|=XR_SWAPCHAIN_USAGE_MUTABLE_FORMAT_BIT;
+#endif
             sc.format=x.colorFormat;sc.sampleCount=1;sc.width=c.recommendedImageRectWidth;sc.height=c.recommendedImageRectHeight;sc.faceCount=sc.arraySize=sc.mipCount=1;
-            check(xrCreateSwapchain(x.session,&sc,&x.chains[i]),"create eye swapchain");
-            check(xrEnumerateSwapchainImages(x.chains[i],0,&count,nullptr),"swapchain images");x.images[i].resize(count,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
+            auto chainResult=xrCreateSwapchain(x.session,&sc,&x.chains[i]);
+#ifdef __ANDROID__
+            if(XR_FAILED(chainResult)) {
+                sc.usageFlags&=~XR_SWAPCHAIN_USAGE_MUTABLE_FORMAT_BIT;
+                chainResult=xrCreateSwapchain(x.session,&sc,&x.chains[i]);
+            }
+#endif
+            check(chainResult,"create eye swapchain");
+            check(xrEnumerateSwapchainImages(x.chains[i],0,&count,nullptr),"swapchain images");
+#ifdef __ANDROID__
+            x.images[i].resize(count,{XR_TYPE_SWAPCHAIN_IMAGE_VULKAN_KHR});
+#else
+            x.images[i].resize(count,{XR_TYPE_SWAPCHAIN_IMAGE_D3D12_KHR});
+#endif
             check(xrEnumerateSwapchainImages(x.chains[i],count,&count,reinterpret_cast<XrSwapchainImageBaseHeader*>(x.images[i].data())),"swapchain images");
+#ifdef __ANDROID__
+            for(const auto& image:x.images[i]) {
+                auto texture=std::make_unique<VRTexture>(device,image.image);
+                // Plume has no sRGB format enum. A mutable UNORM view lets a
+                // raster transfer preserve encoded RGBA bytes without another
+                // gamma conversion; otherwise retain the native copy format.
+                texture->desc=plume::RenderTextureDesc::Texture2D(sc.width,sc.height,1,plume::RenderFormat::R8G8B8A8_UNORM,plume::RenderTextureFlag::RENDER_TARGET);
+                texture->imageFormat=VkFormat(sc.format);texture->fillSubresourceRange();
+                if(sc.usageFlags&XR_SWAPCHAIN_USAGE_MUTABLE_FORMAT_BIT) {
+                    // Store the game's encoded values through an UNORM view;
+                    // OpenXR still reads the underlying sRGB swapchain normally.
+                    texture->createImageView(VK_FORMAT_R8G8B8A8_UNORM);
+                    if(texture->imageView)texture->imageFormat=VK_FORMAT_R8G8B8A8_UNORM;
+                }
+                texture->textureLayout=plume::RenderTextureLayout::COLOR_WRITE;
+                texture->barrierStages=plume::RenderBarrierStage::GRAPHICS;
+                x.textures[i].push_back(std::move(texture));
+            }
+            fprintf(stderr,"[SNAP-VR] eye %u output: %s\n",i,x.textures[i][0]->imageView?"raster transfer":"image copy fallback");
+#endif
         }
         return true;
     } catch(const std::exception& e) {error=e.what();impl=std::make_unique<Impl>();return false;}
@@ -135,7 +211,11 @@ bool OpenXR::begin(Tracking& t) {
         if(event.type==XR_TYPE_EVENT_DATA_SESSION_STATE_CHANGED) {
             x.state=reinterpret_cast<XrEventDataSessionStateChanged*>(&event)->state;
             fprintf(stderr,"[SNAP-VR] OpenXR session state %d\n",int(x.state));
-            if(x.state==XR_SESSION_STATE_READY&&!x.running) {XrSessionBeginInfo bi{XR_TYPE_SESSION_BEGIN_INFO};bi.primaryViewConfigurationType=XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;check(xrBeginSession(x.session,&bi),"begin session");x.running=true;fprintf(stderr,"[SNAP-VR] session begun\n");}
+            if(x.state==XR_SESSION_STATE_READY&&!x.running) {XrSessionBeginInfo bi{XR_TYPE_SESSION_BEGIN_INFO};bi.primaryViewConfigurationType=XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;check(xrBeginSession(x.session,&bi),"begin session");x.running=true;fprintf(stderr,"[SNAP-VR] session begun\n");
+#ifdef __ANDROID__
+                snap_quest_set_performance(x.session);
+#endif
+            }
             if(x.state==XR_SESSION_STATE_STOPPING&&x.running) {check(xrEndSession(x.session),"end session");x.running=false;}
             if(x.state==XR_SESSION_STATE_LOSS_PENDING||x.state==XR_SESSION_STATE_EXITING){x.running=false;x.lost=true;}
         }
@@ -168,9 +248,14 @@ bool OpenXR::begin(Tracking& t) {
     }
     return true;
 }
-ID3D12Resource* OpenXR::acquire(unsigned i) {
+VRTexture* OpenXR::acquire(unsigned i) {
     auto& x=*impl;XrSwapchainImageAcquireInfo ai{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};check(xrAcquireSwapchainImage(x.chains.at(i),&ai,&x.acquired[i]),"acquire eye");x.held[i]=true;
-    XrSwapchainImageWaitInfo wi{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};wi.timeout=XR_INFINITE_DURATION;check(xrWaitSwapchainImage(x.chains[i],&wi),"wait eye");return x.images[i][x.acquired[i]].texture;
+    XrSwapchainImageWaitInfo wi{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};wi.timeout=XR_INFINITE_DURATION;check(xrWaitSwapchainImage(x.chains[i],&wi),"wait eye");
+#ifdef __ANDROID__
+    return x.textures[i][x.acquired[i]].get();
+#else
+    return x.images[i][x.acquired[i]].texture;
+#endif
 }
 void OpenXR::release(unsigned i) {auto& x=*impl;if(!x.held.at(i))return;XrSwapchainImageReleaseInfo ri{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};check(xrReleaseSwapchainImage(x.chains[i],&ri),"release eye");x.held[i]=false;}
 void OpenXR::end(bool rendered) {

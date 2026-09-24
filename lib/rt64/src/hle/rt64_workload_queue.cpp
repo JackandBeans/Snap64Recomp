@@ -14,6 +14,7 @@
 #define ENABLE_HIGH_RESOLUTION_RENDERER 1
 
 #include "rt64_snap_diag.h"
+#include "rt64_snap_vr_pacing.h"
 
 #include <atomic>
 #include <chrono>
@@ -1186,6 +1187,7 @@ namespace RT64 {
         uint32_t displayRateForTicks = 0;
         int processCursor = -1;
         bool frameReduction = false;
+        SnapVRPacing xrPacing;
         // The previous game frame's presented target, for the cut-transit hold.
         // The game's cuts are hard cuts and release as hard cuts; a crossfade
         // tail was tried here and read as a glitch on screen.
@@ -1217,9 +1219,14 @@ namespace RT64 {
                 }
 
                 ElapsedTimer workloadTimer;
+                const auto xrWorkloadStart = std::chrono::steady_clock::now();
                 workloadProfiler.start();
                 threadConfigurationUpdate(workload.viFbSize, workloadConfig);
                 const bool vrPaced = snap_vr_enabled();
+                // Missed guest draws are not a request for more interpolated
+                // headset frames. Snap normally draws at 30 Hz; retaining that
+                // floor prevents the VI detector's overload feedback loop.
+                const uint32_t interpolationRate = vrPaced ? std::max(workload.viOriginalRate, 30u) : workload.viOriginalRate;
 
                 // FIXME: This is a very hacky way to find out if we need to advance the frame if the workload was paused for the first time.
                 if (!workload.paused || (!gameFrames[curFrameIndex].workloads.empty() && (gameFrames[curFrameIndex].workloads[0] != (uint32_t)processCursor))) {
@@ -1292,7 +1299,7 @@ namespace RT64 {
                     matchingProfiler.end();
                     matchingProfiler.log();
 
-                    const bool displayRateAboveOriginal = (workload.viOriginalRate > 0) && (workloadConfig.targetRate > workload.viOriginalRate);
+                    const bool displayRateAboveOriginal = (interpolationRate > 0) && (workloadConfig.targetRate > interpolationRate);
                     // Cutscenes interpolate fully, like gameplay. Both
                     // partial modes were tried and read wrong: native
                     // cadence stutters on every pan, and view-only (content
@@ -1320,12 +1327,13 @@ namespace RT64 {
                     // fifteen seconds of uneven pairs after a slow-motion
                     // release, measured 2026-09-14.
                     static uint32_t snapSpeedForTicks = 1000;
-                    const bool resetTicks = !generateInterpolatedFrames || (originalRateForTicks != workload.viOriginalRate) || (displayRateForTicks != workloadConfig.targetRate) || !displayRateAboveOriginal ||
+                    const bool resetTicks = !generateInterpolatedFrames || (originalRateForTicks != interpolationRate) || (displayRateForTicks != workloadConfig.targetRate) || !displayRateAboveOriginal ||
                                             (snapSpeedForTicks != snapSpeedNow);
                     if (resetTicks) {
                         logicalTicks = 0;
                         displayTicks = 0;
-                        originalRateForTicks = workload.viOriginalRate;
+                        originalRateForTicks = interpolationRate;
+                        xrPacing.reset();
                         displayRateForTicks = workloadConfig.targetRate;
                         snapSpeedForTicks = snapSpeedNow;
                     }
@@ -1481,17 +1489,17 @@ namespace RT64 {
                 uint32_t displayFrames = 1;
                 if (generateInterpolatedFrames) {
                     logicalTicks += snapSpanTicks;
-                    displayFrames = uint32_t((logicalTicks - displayTicks) / workload.viOriginalRate);
+                    displayFrames = uint32_t((logicalTicks - displayTicks) / interpolationRate);
                     deltaTimeMs = 1.0f / float(workloadConfig.targetRate);
 
                     if (!vrPaced && (displayFrames > 1) && frameReduction) {
-                        displayTicks += workload.viOriginalRate;
+                        displayTicks += interpolationRate;
                         displayFrames--;
                         frameReduction = false;
                     }
 
                     assert((logicalTicks > displayTicks) && "Logical ticks must always remain bigger than the display ticks.");
-                    assert(((logicalTicks - displayTicks) <= (snapSpanTicks + workload.viOriginalRate)) && "The gap between logical ticks and display ticks can't be bigger than this frame's span.");
+                    assert(((logicalTicks - displayTicks) <= (snapSpanTicks + interpolationRate)) && "The gap between logical ticks and display ticks can't be bigger than this frame's span.");
                     assert((displayFrames > 0) && "At least one display frame must be generated.");
                 }
                 else if (workload.viOriginalRate > 0) {
@@ -1838,6 +1846,11 @@ namespace RT64 {
                 const int64_t setupTimeMicro = workloadTimer.elapsedMicroseconds();
                 const int64_t adjustedTimeWindowMicro = originalTimeMicro - setupTimeMicro;
                 const int64_t maxTimePerFrameMicro = adjustedTimeWindowMicro / displayFrames;
+                const int64_t xrStartMicro = std::chrono::duration_cast<std::chrono::microseconds>(xrWorkloadStart.time_since_epoch()).count();
+                if (vrPaced && generateInterpolatedFrames) {
+                    const int64_t sourceInterval = (1000000 * snapSpanTicks) / (int64_t(interpolationRate) * snapNominalTicks);
+                    xrPacing.begin(xrStartMicro, sourceInterval, 1000000 / workloadConfig.targetRate);
+                }
                 bool skippedFrames = false;
                 bool skipWorkloadNow = false;
                 uint32_t targetIndex = 0;
@@ -1859,7 +1872,7 @@ namespace RT64 {
                         const int64_t expectedTimeMicro = frame * maxTimePerFrameMicro;
                         const int64_t measuredFrameMicro = renderTimeTotalMicro / framesRendered;
                         if ((currentTimeMicro > expectedTimeMicro) || ((currentTimeMicro + measuredFrameMicro) > adjustedTimeWindowMicro)) {
-                            displayTicks += workload.viOriginalRate;
+                            displayTicks += interpolationRate;
                             skippedFrames = true;
                             snapdiag::subFrameDroppedCounter().fetch_add(1, std::memory_order_relaxed);
                             continue;
@@ -1870,7 +1883,7 @@ namespace RT64 {
                     uint32_t overrideModifier = 0;
                     if (generateInterpolatedFrames) {
                         prevFrameWeight = std::clamp(float(snapSpanTicks + displayTicks - logicalTicks) / float(snapSpanTicks), 0.0f, 1.0f);
-                        displayTicks += workload.viOriginalRate;
+                        displayTicks += interpolationRate;
                         curFrameWeight = std::clamp(float(snapSpanTicks + displayTicks - logicalTicks) / float(snapSpanTicks), 0.0f, 1.0f);
 
                         // Every interpolated frame of a tick must sit further
@@ -2070,25 +2083,27 @@ namespace RT64 {
                     }
 
                     // For every additional frame, we increase the frames available and notify the present queue.
-                    if (generateInterpolatedFrames && (usingMSAA || (frame > 0))) {
+                    if (generateInterpolatedFrames && (vrPaced || usingMSAA || (frame > 0))) {
                         {
                             std::scoped_lock<std::mutex> cursorLock(cursorMutex);
-                            // A new simulation tick normally arrives while XR
-                            // is pacing this tick's eye frames. Finish their
-                            // interpolation interval before advancing; the
-                            // desktop mirror must not shorten that interval.
-                            skipWorkloadNow = !vrPaced && ((frame + 1) < displayFrames) && (writeCursor != threadCursor);
+                            const bool xrIntervalLate = vrPaced && !xrPacing.canRenderAnother(
+                                xrStartMicro + workloadTimer.elapsedMicroseconds());
+                            // The next workload may still be waiting for this
+                            // thread's resources. Do not require it to have
+                            // queued before ending an over-budget XR interval.
+                            skipWorkloadNow = ((frame + 1) < displayFrames) &&
+                                (vrPaced ? xrIntervalLate : (writeCursor != threadCursor));
                         }
 
                         {
                             std::scoped_lock<std::mutex> managerLock(ext.sharedResources->interpolatedMutex);
                             curFrameCounters.skipped = skipWorkloadNow;
-                            curFrameCounters.available++;
+                            if(usingMSAA || frame>0)curFrameCounters.available++;
                         }
 
                         // Add the amount of display ticks that correspond to the remaining frames.
                         if (skipWorkloadNow) {
-                            displayTicks += workload.viOriginalRate * (displayFrames - (frame + 1));
+                            displayTicks += interpolationRate * (displayFrames - (frame + 1));
                             snapdiag::workloadDroppedCounter().fetch_add(displayFrames - (frame + 1), std::memory_order_relaxed);
                         }
 

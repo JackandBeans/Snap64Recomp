@@ -1,5 +1,7 @@
 # Build output
 build-win/
+build-quest/
+*.keystore
 build-linux/
 build-macos/
 # The packaging check's fresh build directory (BUILDING.md, step 13).

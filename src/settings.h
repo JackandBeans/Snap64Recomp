@@ -256,7 +256,11 @@ struct Settings {
     // 1440p window asks for, so a large window with a capped scale is the
     // difference between smooth and unplayable. The presentation path already
     // scales any render size to the window.
+#ifdef __ANDROID__
+    int   resolution_scale  = 2;      // The guest pass is separate from the stereo eyes.
+#else
     int   resolution_scale  = 0;      // 0 = follow window, 1..8 = ceiling on the window scale
+#endif
 
     // How the finished frame is put on screen: 0 nearest (raw pixels),
     // 1 linear, 2 the anti-aliased pixel scaling RT64 defaults to.

@@ -12,7 +12,9 @@ namespace snap::vr {
 enum class Held : uint8_t { None, Camera, Apple, PesterBall };
 struct Settings {
     bool leftHanded=false;
-    float eyeHeight=1.2f, renderScale=1.0f, throwStrength=1.0f, unitsPerMeter=100.0f;
+    float eyeHeight=1.2f;
+    float renderScale=1.0f;
+    float throwStrength=1.0f, unitsPerMeter=100.0f;
 };
 struct HandInput {
     Pose grip{}, aim{};

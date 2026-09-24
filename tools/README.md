@@ -8,6 +8,7 @@ belongs. Python 3.11 with Pillow, NumPy and SciPy covers all of them.
 
 | Script | What it does |
 | --- | --- |
+| `build_quest.ps1`, `build_quest.py` | Builds and signs the standalone ARM64 Quest Release APK; `-Install -Launch` installs it through ADB and copies the user's ROM separately. See [QUEST.md](../docs/QUEST.md). |
 | `fetch_deps.py` | Fetches the vendored trees a clean checkout does not carry (SDL, DirectX-Headers, RT64's third-party trees) at the recorded upstream commits, and verifies them. |
 | `macos_bundle.py` | Lays the macOS application bundle out from a build directory's install tree, writes its `Info.plist`, signs it ad hoc and zips it with a START HERE text (BUILDING.md, step 15); `--dry-run` checks the layout on any machine. |
 | `gen_reference_syms.py` | Writes `patches/game_syms.ld` and `patches/pokemonsnap.syms.toml`, the symbol names, addresses and sizes the patch build and the recompiler need, and, given a fourth path, the data symbols a mod build names variables with (`docs/MODS.md`). |

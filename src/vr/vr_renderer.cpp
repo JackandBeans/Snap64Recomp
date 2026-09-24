@@ -6,7 +6,9 @@
 #include "settings.h"
 #include "hle/rt64_workload_queue.h"
 #include "render/rt64_render_target_manager.h"
+#ifndef __ANDROID__
 #include "plume_d3d12.h"
+#endif
 #include <chrono>
 #include <cstring>
 #include <cstdio>
@@ -19,6 +21,13 @@ namespace snap::vr {
 namespace {
 using namespace RT64;
 interop::float4x4 matrix(const Matrix& m){interop::float4x4 out;std::memcpy(&out,m.data(),sizeof(out));return out;}
+VRTexture* nativeTexture(RenderTarget* target) {
+#ifdef __ANDROID__
+    return static_cast<plume::VulkanTexture*>(target->texture.get());
+#else
+    return static_cast<plume::D3D12Texture*>(target->texture.get())->d3d;
+#endif
+}
 struct Renderer {
     WorkloadQueue& queue;
     OpenXR xr;
@@ -47,14 +56,25 @@ struct Renderer {
     double accumulatedMs=0,accumulatedGpuMs=0,accumulatedWaitMs=0,workerWaitMs=0;uint64_t timedFrames=0;
     std::chrono::steady_clock::time_point submissionWindow{};
     unsigned submissionIntervals=0;
+    uint64_t lastSourceWorkload=UINT64_MAX;
+    uint64_t viewfinderWorkload=UINT64_MAX;
+    unsigned sourceFrames=0;
+    std::array<double,7> stageMs{};
     void waitWorker(){auto start=std::chrono::steady_clock::now();queue.ext.workloadGraphicsWorker->wait();workerWaitMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();}
     Renderer(WorkloadQueue& q):queue(q) {
+        interaction.settings=snap::settings().vr;std::string error;
+#ifdef __ANDROID__
+        auto* device=static_cast<plume::VulkanDevice*>(q.ext.device);
+        auto* nativeQueue=static_cast<plume::VulkanCommandQueue*>(q.ext.workloadGraphicsWorker->commandQueue.get());
+        if(!xr.initialize(device,nativeQueue,interaction.settings.renderScale,error))throw std::runtime_error(error);
+        props=std::make_unique<Props>(device,nativeQueue);
+#else
         if(q.ext.createdGraphicsAPI!=UserConfiguration::GraphicsAPI::D3D12)throw std::runtime_error("VR requires D3D12");
         auto* device=static_cast<plume::D3D12Device*>(q.ext.device);
         auto* nativeQueue=static_cast<plume::D3D12CommandQueue*>(q.ext.workloadGraphicsWorker->commandQueue.get());
-        interaction.settings=snap::settings().vr;std::string error;
         if(!preview&&!xr.initialize(device->d3d,nativeQueue->d3d,interaction.settings.renderScale,error))throw std::runtime_error(error);
         props=std::make_unique<Props>(device->d3d,nativeQueue->d3d);
+#endif
         renderer=std::make_unique<FramebufferRenderer>(q.ext.workloadGraphicsWorker,false,q.ext.createdGraphicsAPI,q.ext.shaderLibrary);
         rsp=std::make_unique<RSPProcessor>(q.ext.device);upload=std::make_unique<BufferUploader>(q.ext.device);
         for(unsigned i=0;i<3;i++) {
@@ -67,19 +87,25 @@ struct Renderer {
         ready=true;printf("[SNAP-VR] %s initialized: %ux%u / %ux%u\n",preview?"diagnostic preview":"OpenXR",width(0),height(0),width(1),height(1));
     }
     void replay(GameFrame& frame,unsigned target,Pose eye,Fov fov,bool world,bool cinematic=false) {
+        struct Timer {double& total;std::chrono::steady_clock::time_point start=std::chrono::steady_clock::now();~Timer(){total+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();}} timer{stageMs[target]};
         auto* worker=queue.ext.workloadGraphicsWorker;
         auto& color=*colors[target];auto& depth=*depths[target];
-        worker->commandList->begin();
-        color.clearColorTarget(worker);
         // The opening movie only authored scenery for its original camera. Supply
         // an unbounded fog-colored background behind it for both tracked eyes;
         // unlike a finite sky card this cannot expose black at its edges.
         // Keep depth untouched so all original scenery occludes the backdrop.
-        if(cinematic && snap::g_scene_overlay_rom.load()==0xA08E30)
-            worker->commandList->clearColor(0,plume::RenderColor(120.f/255.f,120.f/255.f,150.f/255.f,1.f));
-        depth.clearDepthTarget(worker);
-        worker->commandList->end();worker->execute();waitWorker();
-        if(!world)return;
+        const auto clearColor=cinematic && snap::g_scene_overlay_rom.load()==0xA08E30?
+            plume::RenderColor(120.f/255.f,120.f/255.f,150.f/255.f,1.f):plume::RenderColor();
+        bool needsClear=true;
+        auto clearEmpty=[&] {
+            worker->commandList->begin();
+            RenderTextureBarrier barriers[]={{color.texture.get(),RenderTextureLayout::COLOR_WRITE},{depth.texture.get(),RenderTextureLayout::DEPTH_WRITE}};
+            worker->commandList->barriers(RenderBarrierStage::GRAPHICS,barriers,2);
+            worker->commandList->setFramebuffer(framebuffers[target].colorDepthWrite.get());
+            worker->commandList->clearColor(0,clearColor);worker->commandList->clearDepth();
+            worker->commandList->end();worker->execute();waitWorker();
+        };
+        if(!world){clearEmpty();return;}
         for(uint32_t wi:frame.workloads) {
             auto& w=queue.workloads[wi];auto& d=w.drawData;
             std::vector<uint32_t> pairs;
@@ -162,6 +188,13 @@ struct Renderer {
                 p.fbWidth=320;p.fbHeight=240;p.targetWidth=color.width;p.targetHeight=color.height;p.resolutionScale={float(color.width)/320,float(color.height)/240};
                 p.aspectRatioSource=p.aspectRatioTarget=4.f/3;p.extAspectPercentage=1;p.rasterShaderCache=queue.ext.rasterShaderCache;
                 p.presetScene=frame.presetScene;p.submissionFrame=w.submissionFrame;p.deltaTimeMs=1000.f/30;p.ubershadersOnly=true;p.maxGameCall=UINT32_MAX;p.snapRectWeight=1;p.snapVRWorldOnly=true;p.snapVRHighPrecisionDepth=true;
+#ifdef __ANDROID__
+                // Reuse the game's specialized material pipelines when their
+                // sample count matches our single-sample RGBA8 eye targets.
+                // Forcing the large fallback pixel shader for every eye draw
+                // leaves Adreno GPU-bound even after specialization completes.
+                p.ubershadersOnly=queue.ext.rasterShaderCache->multisampling.sampleCount>1;
+#endif
                 renderer->addFramebuffer(p);
             }
             if(!d.gpuTiles.empty()) {
@@ -171,10 +204,13 @@ struct Renderer {
             worker->commandList->begin();renderer->endFramebuffers(worker,&w.drawBuffers,&w.outputBuffers,false);
             std::vector<BufferUploader*> uploaders{upload.get()};if(!d.gpuTiles.empty())uploaders.push_back(queue.ext.workloadTilesUploader);
             renderer->recordSetup(worker,uploaders,rsp.get(),nullptr,&w.outputBuffers,false);
-            for(uint32_t f=0;f<pairs.size();f++)renderer->recordFramebuffer(worker,f);
+            for(uint32_t f=0;f<pairs.size();f++) {
+                renderer->recordFramebuffer(worker,f,needsClear,clearColor);needsClear=false;
+            }
             worker->commandList->end();renderer->waitForUploaders();worker->execute();waitWorker();renderer->advanceFrame(false);
 
         }
+        if(needsClear)clearEmpty();
     }
     RenderTarget* desktop(GameFrame& frame) {
         RenderTarget* result=nullptr;
@@ -349,12 +385,21 @@ struct Renderer {
         auto fade=transition.update(desiredView,t.seconds);
         if(course) {
             float vertical=f.fovY*pi/360;float horizontal=std::atan(std::tan(vertical)*4/3);
-            replay(frame,2,f.lens,{-horizontal,horizontal,vertical,-vertical},true);screen=colors[2].get();
+            bool refreshViewfinder=true;
+#ifdef __ANDROID__
+            const auto sourceId=queue.workloads[frame.workloads.back()].workloadId;
+            refreshViewfinder=f.cameraHeld || viewfinderWorkload!=sourceId;
+            viewfinderWorkload=sourceId;
+#endif
+            // A docked camera can refresh at the game's own cadence. Keep a
+            // held camera responsive to the current pose on every XR frame.
+            if(refreshViewfinder)replay(frame,2,f.lens,{-horizontal,horizontal,vertical,-vertical},true);
+            screen=colors[2].get();
             // Bounded, preview-only capture of successive live viewfinder
             // samples. Readback stalls make this unsuitable for timing tests.
             if(preview&&modelTestFrame>120&&viewfinderTestFrames<12&&std::getenv("SNAP_VR_VIEWFINDER_TEST")) {
                 const std::string filename="vr-viewfinder-"+std::to_string(viewfinderTestFrames++)+".png";
-                props->capture(static_cast<plume::D3D12Texture*>(screen->texture.get())->d3d,filename.c_str());
+                props->capture(nativeTexture(screen),filename.c_str());
                 const auto& source=queue.workloads[frame.workloads.back()];
                 fprintf(stderr,"[SNAP-VR-VIEWFINDER] %s workload %llu alpha %.4f lens %.3f %.3f %.3f\n",
                     filename.c_str(),(unsigned long long)source.workloadId,worldWeight,f.lens.position.x,f.lens.position.y,f.lens.position.z);
@@ -378,24 +423,36 @@ struct Renderer {
         if(!screen){xr.end(false);frameGuard.done=true;return;}
         const bool captureSubmitted=!preview&&std::filesystem::exists("vr-capture.request");
         for(unsigned i=0;i<2;i++) {
-            auto native=[](RenderTarget* target){return static_cast<plume::D3D12Texture*>(target->texture.get())->d3d;};
+            auto native=nativeTexture;
             if(!fade.hold) {
             Pose eye=interaction.toWorld(t.eyes[i],g);
             if(cinema){eye=interaction.localPose(t.eyes[i]);eye.position.y-=interaction.settings.eyeHeight;eye.position=eye.position*interaction.settings.unitsPerMeter;}
             replay(frame,i,eye,t.fovs[i],course||cinema,cinema);
+#ifndef __ANDROID__
             worker->commandList->begin();
             worker->commandList->barriers(RenderBarrierStage::GRAPHICS,RenderTextureBarrier(screen->texture.get(),RenderTextureLayout::SHADER_READ));
             worker->commandList->barriers(RenderBarrierStage::GRAPHICS,RenderTextureBarrier(colors[i]->texture.get(),RenderTextureLayout::COLOR_WRITE));
             worker->commandList->barriers(RenderBarrierStage::GRAPHICS,RenderTextureBarrier(depths[i]->texture.get(),RenderTextureLayout::DEPTH_WRITE));
             worker->commandList->end();worker->execute();waitWorker();
+#endif
             auto displayGame=g;displayGame.course=course;
-            if(!cinema)props->draw(native(colors[i].get()),native(depths[i].get()),native(screen),course?eye:t.eyes[i],t.fovs[i],displayGame,f,t,interaction,focus,options.open,options.row);
+            if(!cinema) {
+                const auto propStart=std::chrono::steady_clock::now();
+                props->draw(native(colors[i].get()),native(depths[i].get()),native(screen),course?eye:t.eyes[i],t.fovs[i],displayGame,f,t,interaction,focus,options.open,options.row);
+                stageMs[3]+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-propStart).count();
+            }
             }
             if(fade.gain<1||(!fade.hold&&cinema))props->presentation(native(colors[i].get()),interaction.localPose(t.eyes[i]),t.fovs[i],fade.gain,!fade.hold&&cinema,interaction.settings.eyeHeight);
             if(!preview){
-                auto* image=xr.acquire(i);props->copy(native(colors[i].get()),image,width(i),height(i));
+                const auto copyStart=std::chrono::steady_clock::now();
+                auto* image=xr.acquire(i);
+                const auto copyReady=std::chrono::steady_clock::now();
+                stageMs[5]+=std::chrono::duration<double,std::milli>(copyReady-copyStart).count();
+                props->copy(native(colors[i].get()),image,width(i),height(i));
+                stageMs[4]+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-copyReady).count();
                 if(captureSubmitted)props->capture(image,i?"vr-submitted-right.png":"vr-submitted-left.png");
-                xr.release(i);
+                const auto releaseStart=std::chrono::steady_clock::now();xr.release(i);
+                stageMs[6]+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-releaseStart).count();
             }
             if(!preview&&!capturedHeadset&&t.focused&&t.frame>=120&&std::getenv("SNAP_VR_CAPTURE")) {
                 props->capture(native(colors[i].get()),i?"vr-headset-right.png":"vr-headset-left.png");
@@ -408,19 +465,26 @@ struct Renderer {
         if(captureSubmitted){std::error_code error;std::filesystem::remove("vr-capture.request",error);}
         accumulatedGpuMs+=props->endTiming();accumulatedWaitMs+=workerWaitMs+props->fenceWaitMs();
         xr.end(true);frameGuard.done=true;
+        const auto sourceWorkload=queue.workloads[frame.workloads.back()].workloadId;
+        if(sourceWorkload!=lastSourceWorkload){++sourceFrames;lastSourceWorkload=sourceWorkload;}
         const auto submitted=std::chrono::steady_clock::now();
         if(submissionWindow==std::chrono::steady_clock::time_point{})submissionWindow=submitted;
         else if(++submissionIntervals==120) {
             const double seconds=std::chrono::duration<double>(submitted-submissionWindow).count();
             fprintf(stderr,"[SNAP-VR] %.1f submitted FPS, %u Hz interpolation target (%s; includes game pass and pacing)\n",
                 submissionIntervals/seconds,displayRate.load(),preview?"synthetic preview":"OpenXR application cadence");
-            submissionWindow=submitted;submissionIntervals=0;
+            fprintf(stderr,"[SNAP-VR] %.1f distinct game frames/s, workload %llu, game frame %llu\n",
+                sourceFrames/seconds,(unsigned long long)sourceWorkload,(unsigned long long)g.frame);
+            submissionWindow=submitted;submissionIntervals=sourceFrames=0;
         }
         accumulatedMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();
         if(++timedFrames%120==0){
             fprintf(stderr,"[SNAP-VR] %u Hz, %ux%u: VR CPU %.2f ms, GPU queue span %.2f ms, fence waits %.2f ms (120-frame means; excludes original game pass)\n",
                 displayRate.load(),width(0),height(0),accumulatedMs/120,accumulatedGpuMs/120,accumulatedWaitMs/120);
             accumulatedMs=accumulatedGpuMs=accumulatedWaitMs=0;
+            fprintf(stderr,"[SNAP-VR] pass times: left %.2f, right %.2f, viewfinder %.2f, props %.2f, copy %.2f, acquire %.2f, release %.2f ms\n",
+                stageMs[0]/120,stageMs[1]/120,stageMs[2]/120,stageMs[3]/120,stageMs[4]/120,stageMs[5]/120,stageMs[6]/120);
+            stageMs.fill(0);
         }
     }
 };

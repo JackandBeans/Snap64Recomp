@@ -2,18 +2,16 @@
 #include "vr_interaction.h"
 #include <memory>
 #include <string>
-struct ID3D12Device;
-struct ID3D12CommandQueue;
-struct ID3D12Resource;
+#include "vr_gpu.h"
 namespace snap::vr {
 class OpenXR {
 public:
     OpenXR(); ~OpenXR();
     OpenXR(const OpenXR&)=delete;
     OpenXR& operator=(const OpenXR&)=delete;
-    bool initialize(ID3D12Device*,ID3D12CommandQueue*,float renderScale,std::string& error);
+    bool initialize(VRDevice*,VRQueue*,float renderScale,std::string& error);
     bool begin(Tracking&);
-    ID3D12Resource* acquire(unsigned eye);
+    VRTexture* acquire(unsigned eye);
     void release(unsigned eye);
     void end(bool rendered);
     void haptic(unsigned hand,float strength=0.3f);

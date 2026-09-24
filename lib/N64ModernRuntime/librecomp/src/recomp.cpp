@@ -552,8 +552,17 @@ std::optional<std::u8string> current_game = std::nullopt;
 std::atomic<GameStatus> game_status = GameStatus::None;
 
 void run_thread_function(uint8_t* rdram, uint64_t addr, uint64_t sp, uint64_t arg) {
-    auto find_it = game_roms.find(current_game.value());
-    const recomp::GameEntry& game_entry = find_it->second;
+    // A pooled guest thread can wake after quit() clears current_game.
+    // Snapshot the immutable registration under the same lock as quit().
+    const recomp::GameEntry* registered_game = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(current_game_mutex);
+        if (!current_game) return;
+        auto found = game_roms.find(*current_game);
+        if (found == game_roms.end()) return;
+        registered_game = &found->second;
+    }
+    const recomp::GameEntry& game_entry = *registered_game;
     
     recomp_context ctx{};
     ctx.r29 = sp;

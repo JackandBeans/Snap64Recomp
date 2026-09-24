@@ -1,0 +1,27 @@
+# Keep the vendored backend untouched. Build a generated copy whose instance
+# and device creation goes through OpenXR, so the runtime adds its extensions.
+set(_plume_source "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/plume/plume_vulkan.cpp")
+file(READ "${_plume_source}" _plume)
+foreach(_call vkCreateInstance vkCreateDevice)
+    string(FIND "${_plume}" "${_call}(" _found)
+    if(_found EQUAL -1)
+        message(FATAL_ERROR "Plume changed: cannot adapt ${_call} for OpenXR")
+    endif()
+endforeach()
+string(REPLACE "vkCreateInstance(" "snap_quest_create_vulkan_instance(" _plume "${_plume}")
+string(REPLACE "vkCreateDevice(" "snap_quest_create_vulkan_device(" _plume "${_plume}")
+string(REPLACE "#include \"plume_vulkan.h\"" "#include \"plume_vulkan.h\"\n#include \"quest_vulkan.h\"" _plume "${_plume}")
+# SDL replaces its Android native window after suspend. Keep an owned reference
+# and rebuild the Vulkan surface on the present thread when that window changes.
+string(REPLACE "surfaceCreateInfo.window = desc.renderWindow;" "this->desc.renderWindow = snap_quest_wait_window();\n        surfaceCreateInfo.window = this->desc.renderWindow;" _plume "${_plume}")
+string(REPLACE "VulkanSwapChain::~VulkanSwapChain() {" "VulkanSwapChain::~VulkanSwapChain() {\n        if (desc.renderWindow) ANativeWindow_release(desc.renderWindow);" _plume "${_plume}")
+string(REPLACE "bool VulkanSwapChain::resize() {" "bool VulkanSwapChain::resize() {\n        if (!snap_quest_refresh_surface(this)) return false;" _plume "${_plume}")
+string(REPLACE "bool VulkanSwapChain::needsResize() const {" "bool VulkanSwapChain::needsResize() const {\n        if (snap_quest_window_changed(desc.renderWindow)) return true;" _plume "${_plume}")
+string(REPLACE "uint32_t VulkanSwapChain::getRefreshRate() const {" "uint32_t VulkanSwapChain::getRefreshRate() const {\n        if (vk == VK_NULL_HANDLE) return 0;" _plume "${_plume}")
+string(REPLACE "dstWidth = ANativeWindow_getWidth(desc.renderWindow);" "dstWidth = desc.renderWindow ? ANativeWindow_getWidth(desc.renderWindow) : 0;" _plume "${_plume}")
+string(REPLACE "dstHeight = ANativeWindow_getHeight(desc.renderWindow);" "dstHeight = desc.renderWindow ? ANativeWindow_getHeight(desc.renderWindow) : 0;" _plume "${_plume}")
+set(_generated "${CMAKE_CURRENT_BINARY_DIR}/generated/quest_plume_vulkan.cpp")
+file(CONFIGURE OUTPUT "${_generated}" CONTENT "${_plume}" @ONLY)
+set_property(DIRECTORY APPEND PROPERTY CMAKE_CONFIGURE_DEPENDS "${_plume_source}")
+set_property(TARGET plume PROPERTY SOURCES "${_generated}")
+target_include_directories(plume PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/android")

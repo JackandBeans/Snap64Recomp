@@ -5,6 +5,9 @@
 # line wins over this.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "The oldest macOS the build runs on")
 project(Snap64Recomp VERSION 1.0.9 LANGUAGES C CXX)
+if(ANDROID)
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
 if (APPLE)
     # Objective-C for RT64's Apple sources and SDL's Cocoa back end; the
     # port's own sources stay C++ (main.cpp takes the Metal layer through SDL).
@@ -37,9 +40,9 @@ endif()
 # Options
 # =============================================================================
 option(BUILD_RT64 "Build RT64 rendering backend" ON)
-option(SNAP_ENABLE_VR "Build the Windows OpenXR D3D12 port with VR as the default launch mode" OFF)
-if(SNAP_ENABLE_VR AND (NOT WIN32 OR NOT BUILD_RT64))
-    message(FATAL_ERROR "SNAP_ENABLE_VR requires Windows and BUILD_RT64")
+option(SNAP_ENABLE_VR "Build OpenXR VR (Windows D3D12 or Android Vulkan) as the default launch mode" OFF)
+if(SNAP_ENABLE_VR AND ((NOT WIN32 AND NOT ANDROID) OR NOT BUILD_RT64))
+    message(FATAL_ERROR "SNAP_ENABLE_VR requires Windows or Android, and BUILD_RT64")
 endif()
 set(SNAP_EXECUTABLE_NAME "Snap64Recomp")
 if(SNAP_ENABLE_VR)
@@ -56,7 +59,7 @@ message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 # =============================================================================
 # SDL2: built from the vendored tree on Windows and macOS, the system's on
 # Linux. SNAP_SDL_TARGET is what the port links; rt64 links SDL2_LIBRARIES.
-if (WIN32 OR APPLE)
+if (WIN32 OR APPLE OR ANDROID)
     set(SDL_TEST OFF CACHE BOOL "" FORCE)
     set(SDL2_DISABLE_INSTALL ON CACHE BOOL "" FORCE)
     if (APPLE)
@@ -85,8 +88,15 @@ endif()
 # =============================================================================
 if (BUILD_RT64)
     set(RT64_STATIC ON CACHE BOOL "Build RT64 as a static library" FORCE)
-    set(RT64_SDL_WINDOW_VULKAN ON CACHE BOOL "RT64 uses SDL Vulkan window" FORCE)
+    if(ANDROID)
+        set(RT64_SDL_WINDOW_VULKAN OFF CACHE BOOL "RT64 uses native Android window" FORCE)
+    else()
+        set(RT64_SDL_WINDOW_VULKAN ON CACHE BOOL "RT64 uses SDL Vulkan window" FORCE)
+    endif()
     add_subdirectory(lib/rt64 EXCLUDE_FROM_ALL)
+    if(ANDROID AND SNAP_ENABLE_VR)
+        include(cmake/QuestVulkan.cmake)
+    endif()
     if (WIN32)
         # SDK 22621 lacks D3D12_HEAP_TYPE_GPU_UPLOAD / OPTIONS15 / OPTIONS16;
         # the standalone DirectX-Headers provide current definitions.
@@ -202,10 +212,19 @@ set(SNAP_ASPMAIN_CPP "${SNAP_RSP_DIR}/aspMain.cpp")
 file(TO_CMAKE_PATH "${SNAP_ROM}" SNAP_ROM_CMAKE)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/rsp/aspMain.us.toml.in"
                "${SNAP_RSP_DIR}/aspMain.us.toml" @ONLY)
+if(ANDROID)
+    set(SNAP_HOST_RSPRECOMP "" CACHE FILEPATH "Host RSPRecomp executable")
+    if(NOT EXISTS "${SNAP_HOST_RSPRECOMP}")
+        message(FATAL_ERROR "Set SNAP_HOST_RSPRECOMP to a host-built RSPRecomp executable")
+    endif()
+    set(SNAP_RSP_COMMAND "${SNAP_HOST_RSPRECOMP}")
+else()
+    set(SNAP_RSP_COMMAND RSPRecomp)
+endif()
 add_custom_command(
     OUTPUT "${SNAP_ASPMAIN_CPP}"
-    COMMAND RSPRecomp "${SNAP_RSP_DIR}/aspMain.us.toml"
-    DEPENDS RSPRecomp "${SNAP_RSP_DIR}/aspMain.us.toml" "${SNAP_ROM}"
+    COMMAND ${SNAP_RSP_COMMAND} "${SNAP_RSP_DIR}/aspMain.us.toml"
+    DEPENDS ${SNAP_RSP_COMMAND} "${SNAP_RSP_DIR}/aspMain.us.toml" "${SNAP_ROM}"
     COMMENT "Recompiling the aspMain audio microcode from ${SNAP_ROM}"
     VERBATIM)
 
@@ -322,13 +341,25 @@ if (MSVC)
     list(APPEND SNAP_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/generated/snap64.rc")
 endif()
 
-add_executable(Snap64Recomp ${SNAP_SOURCES})
+if(ANDROID)
+    add_library(Snap64Recomp SHARED ${SNAP_SOURCES})
+    target_sources(Snap64Recomp PRIVATE src/android/quest_platform.cpp)
+    target_link_libraries(Snap64Recomp PRIVATE android log)
+    target_compile_definitions(Snap64Recomp PRIVATE main=SDL_main)
+    include(cmake/QuestShaders.cmake)
+else()
+    add_executable(Snap64Recomp ${SNAP_SOURCES})
+endif()
 set_target_properties(Snap64Recomp PROPERTIES OUTPUT_NAME "${SNAP_EXECUTABLE_NAME}")
 if(SNAP_ENABLE_VR)
     include(FetchContent)
     set(BUILD_TESTS OFF CACHE BOOL "" FORCE)
     set(BUILD_API_LAYERS OFF CACHE BOOL "" FORCE)
-    set(DYNAMIC_LOADER OFF CACHE BOOL "" FORCE)
+    if(ANDROID)
+        set(DYNAMIC_LOADER ON CACHE BOOL "" FORCE)
+    else()
+        set(DYNAMIC_LOADER OFF CACHE BOOL "" FORCE)
+    endif()
     set(JSONCPP_STATIC_WINDOWS_RUNTIME ON CACHE BOOL "" FORCE)
     FetchContent_Declare(openxr
         GIT_REPOSITORY https://github.com/KhronosGroup/OpenXR-SDK.git
@@ -337,7 +368,13 @@ if(SNAP_ENABLE_VR)
     set_property(TARGET openxr_loader PROPERTY MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
     target_sources(Snap64Recomp PRIVATE src/vr/vr_interaction.cpp src/vr/vr_options.cpp src/vr/vr_openxr.cpp src/vr/vr_renderer.cpp src/vr/vr_props.cpp)
     target_compile_definitions(Snap64Recomp PRIVATE SNAP_ENABLE_VR=1)
-    target_link_libraries(Snap64Recomp PRIVATE openxr_loader d3d12 dxgi d3dcompiler)
+    if(ANDROID)
+        target_sources(Snap64Recomp PRIVATE src/android/quest_vulkan.cpp)
+    endif()
+    target_link_libraries(Snap64Recomp PRIVATE openxr_loader)
+    if(WIN32)
+        target_link_libraries(Snap64Recomp PRIVATE d3d12 dxgi d3dcompiler)
+    endif()
     add_custom_command(TARGET Snap64Recomp POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_directory "${CMAKE_CURRENT_SOURCE_DIR}/assets/vr" "$<TARGET_FILE_DIR:Snap64Recomp>/assets/vr")
     install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets/vr" DESTINATION assets
@@ -434,7 +471,7 @@ if (BUILD_RT64)
 endif()
 
 # Platform-specific link flags
-if (UNIX AND NOT APPLE)
+if (UNIX AND NOT APPLE AND NOT ANDROID)
     target_link_libraries(Snap64Recomp PRIVATE
         pthread
         dl
@@ -445,7 +482,7 @@ endif()
 if (NOT MSVC)
     target_compile_options(Snap64Recomp PRIVATE -fno-strict-aliasing -Wall -Wextra -Wno-unused-parameter)
 endif()
-if (UNIX AND NOT APPLE)
+if (UNIX AND NOT APPLE AND NOT ANDROID)
     # The C++ runtime inside the binary, as the other N64 recompilations
     # ship it: the tarball then runs on a SteamOS whose libstdc++ is older
     # or newer than the build machine's. glibc stays the system's; the

@@ -1,5 +1,9 @@
 # Building Snap64 Recomp
 
+For the experimental standalone Quest APK, including the Windows build and
+ADB installation script, see [docs/QUEST.md](docs/QUEST.md). The generated game
+and patch inputs described below are also required for that build.
+
 This is the build as it exists today, on the one machine it has ever been built
 on. It is not a one-command build, and a fresh `git clone` does not contain
 everything the build needs. Read [What a clean checkout is missing](#what-a-clean-checkout-is-missing)

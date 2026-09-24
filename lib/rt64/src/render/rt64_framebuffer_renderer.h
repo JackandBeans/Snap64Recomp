@@ -180,7 +180,7 @@ namespace RT64 {
         void addFramebuffer(const DrawParams &p);
         void endFramebuffers(RenderWorker *worker, const DrawBuffers *drawBuffers, const OutputBuffers *outputBuffers, bool rtEnabled);
         void recordSetup(RenderWorker *worker, std::vector<BufferUploader *> bufferUploaders, RSPProcessor *rspProcessor, VertexProcessor *vertexProcessor, const OutputBuffers *outputBuffers, bool rtEnabled);
-        void recordFramebuffer(RenderWorker *worker, uint32_t framebufferIndex);
+        void recordFramebuffer(RenderWorker *worker, uint32_t framebufferIndex, bool clear=false, RenderColor clearColor=RenderColor());
         void waitForUploaders();
         void advanceFrame(bool rtEnabled);
 

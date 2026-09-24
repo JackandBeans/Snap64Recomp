@@ -70,7 +70,15 @@ void lens(uint8_t* rdram) {
 }
 FluteTimer fluteTimer;
 thread_local bool releasing=false;
-thread_local bool tutorialBlinkReset=false;
+// Native camera labels and tutorial blink updates share Msg_ShowMessage /
+// Msg_Reset with actual dialogue. They must not publish intermediate text or
+// clear an unrelated VR instruction while the render thread is sampling it.
+thread_local bool suppressMessageMirror=false;
+struct NativeMessageScope {
+    bool previous=suppressMessageMirror;
+    NativeMessageScope(){suppressMessageMirror=true;}
+    ~NativeMessageScope(){suppressMessageMirror=previous;}
+};
 thread_local Vec3 releaseVelocity,releasePosition;
 struct Impact {uint64_t epoch,born;};
 std::map<uint32_t,Impact> impacts;
@@ -159,7 +167,7 @@ extern "C" void mainCameraRender(uint8_t* rdram,recomp_context* ctx) {
     __real_mainCameraRender(rdram,ctx);
 }
 extern "C" void Msg_ShowMessage(uint8_t* rdram,recomp_context* ctx) {
-    if(snap::vr::requested.load()&&pointer(uint32_t(ctx->r4))) {
+    if(snap::vr::requested.load()&&!suppressMessageMirror&&pointer(uint32_t(ctx->r4))) {
         std::string source;
         for(unsigned i=0;i<1024;i++){char c=MEM_BU(i,(int32_t)ctx->r4);if(!c)break;source+=c;}
         auto text=snap::vr::messageText(source);
@@ -172,14 +180,21 @@ extern "C" void Msg_ShowMessage(uint8_t* rdram,recomp_context* ctx) {
 }
 extern "C" void Msg_Reset(uint8_t* rdram,recomp_context* ctx) {
     __real_Msg_Reset(rdram,ctx);
-    if(snap::vr::requested.load()&&!tutorialBlinkReset){auto& s=shared();std::lock_guard lock(s.mutex);s.game.message.clear();s.game.messageContinue=false;}
+    if(snap::vr::requested.load()&&!suppressMessageMirror){auto& s=shared();std::lock_guard lock(s.mutex);s.game.message.clear();s.game.messageContinue=false;}
+}
+extern "C" void showPokemonLabel(uint8_t* rdram,recomp_context* ctx) {
+    // Keep the original label in the camera image. A focus name (including
+    // the game's unknown-name glyph) is not a head-locked tutorial panel.
+    NativeMessageScope scope;
+    __real_showPokemonLabel(rdram,ctx);
 }
 extern "C" void Tutorial_ShowMessage(uint8_t* rdram,recomp_context* ctx) {
     const unsigned id=unsigned(ctx->r4);
     const bool active=requested.load()&&MEM_B(0,(int32_t)0x803AE516)!=1;
-    tutorialBlinkReset=active&&id==0;
-    __real_Tutorial_ShowMessage(rdram,ctx);
-    tutorialBlinkReset=false;
+    {
+        NativeMessageScope scope;
+        __real_Tutorial_ShowMessage(rdram,ctx);
+    }
     if(!active||id==0||id>4)return;
     static const char* instructions[]={"",
         "GRIP THE CAMERA IN THE HOLSTER TO AIM. KEEP HOLDING GRIP.",
@@ -188,6 +203,15 @@ extern "C" void Tutorial_ShowMessage(uint8_t* rdram,recomp_context* ctx) {
         "TURN YOUR HEAD TO LOOK AROUND. MOVE AND TURN THE CAMERA TO AIM."};
     auto& s=shared();std::lock_guard lock(s.mutex);
     s.game.message=instructions[id];s.game.messageContinue=id>=3;
+}
+extern "C" void Tutorial_ShowMessageAndWait(uint8_t* rdram,recomp_context* ctx) {
+    __real_Tutorial_ShowMessageAndWait(rdram,ctx);
+    // The game's id=0 is used both for blinking and for dismissal. Hold the
+    // VR text through blinks, but clear it when the actual wait completes.
+    if(requested.load()) {
+        auto& s=shared();std::lock_guard lock(s.mutex);
+        s.game.message.clear();s.game.messageContinue=false;
+    }
 }
 // Photo list filtering remains the game's original lens-frustum decision.
 // Add only the otherwise skipped draw, without allocating a detector region.

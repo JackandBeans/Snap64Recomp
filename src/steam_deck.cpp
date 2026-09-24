@@ -9,7 +9,7 @@
 #include <cstring>
 #include <fstream>
 #include <string>
-#if defined(__linux__)
+#if (defined(__linux__) && !defined(__ANDROID__))
 #include <dlfcn.h>
 #include <SDL2/SDL.h>
 #include <SDL2/SDL_syswm.h>
@@ -29,7 +29,7 @@ bool is_steam_deck() {
         if (env_is_one("SteamDeck")) {
             return true;
         }
-#if defined(__linux__)
+#if (defined(__linux__) && !defined(__ANDROID__))
         // The DMI board vendor: "Valve" on Jupiter (LCD) and Galileo (OLED).
         // Read once; a desktop launch outside Steam has no SteamDeck=1.
         std::ifstream in("/sys/devices/virtual/dmi/id/board_vendor");
@@ -47,7 +47,7 @@ bool is_steam_deck() {
 }
 
 bool in_gamescope() {
-#if defined(__linux__)
+#if (defined(__linux__) && !defined(__ANDROID__))
     static const bool inside = (std::getenv("GAMESCOPE_WAYLAND_DISPLAY") != nullptr);
     return inside;
 #else
@@ -56,7 +56,7 @@ bool in_gamescope() {
 }
 
 bool gamescope_request_output_size(void* sdl_window, char* note, unsigned long cap) {
-#if defined(__linux__)
+#if (defined(__linux__) && !defined(__ANDROID__))
     if (!in_gamescope() || (sdl_window == nullptr)) {
         snprintf(note, cap, "not inside gamescope; nothing to ask");
         return false;
