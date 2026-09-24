@@ -191,6 +191,9 @@ bool OpenXR::shouldRender()const{return impl->frame.shouldRender;}
 bool OpenXR::needsRestart()const{return impl->lost;}
 unsigned OpenXR::refreshRate()const {
     auto period=impl->frame.predictedDisplayPeriod;
-    return period>0?std::clamp(unsigned(std::lround(1e9/double(period))),60u,144u):90u;
+    // This is the runtime's application cadence, which can be below the
+    // physical display rate during reprojection. Forcing 45/48 Hz to 60
+    // generates extra interpolation frames that xrWaitFrame cannot consume.
+    return period>0?std::clamp(unsigned(std::lround(1e9/double(period))),1u,1000u):90u;
 }
 }

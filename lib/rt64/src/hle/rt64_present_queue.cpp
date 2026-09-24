@@ -19,6 +19,8 @@
 #include <thread>
 #include <vector>
 
+extern "C" bool snap_vr_enabled();
+
 // Pokemon Snap port: how many more presented images to photograph. Armed from
 // the game side (src/matrix_tags.cpp, src/anim_steps.cpp) and from the workload
 // queue on churn frames, and counted down here as the window is consumed. What
@@ -975,8 +977,12 @@ namespace {
                 // came back to Original pushed vsync off and nothing turned it
                 // on again, and presents free-ran unsynchronised from then on.
                 const uint32_t displayRate = ext.sharedResources->swapChainRate;
-                const bool softwarePaced = snapSoftwarePaced(targetRate, viOriginalRate, displayRate);
-                const bool wantVsync = !softwarePaced;
+                // xrWaitFrame already paces the workload producing this mirror.
+                // A second clock here stalls consumption of interpolated targets
+                // and feeds monitor timing back into headset frame submission.
+                const bool vrPaced = snap_vr_enabled();
+                const bool softwarePaced = !vrPaced && snapSoftwarePaced(targetRate, viOriginalRate, displayRate);
+                const bool wantVsync = !vrPaced && !softwarePaced;
                 if (!swapChainVsyncKnown || (wantVsync != swapChainVsyncEnabled)) {
                     ext.swapChain->setVsyncEnabled(wantVsync);
                     swapChainVsyncEnabled = wantVsync;
@@ -984,7 +990,7 @@ namespace {
                     if (snapdiag::statsEnabled()) {
                         fprintf(stdout, "[SNAP-VSYNC] %s: display %u Hz, target %u, game %u, presents paced by the %s\n",
                             wantVsync ? "on" : "off", displayRate, targetRate, viOriginalRate,
-                            wantVsync ? "display" : "software timer");
+                            vrPaced ? "OpenXR" : wantVsync ? "display" : "software timer");
                         fflush(stdout);
                     }
                 }
@@ -993,7 +999,7 @@ namespace {
                     Timer::preciseSleepUntil(presentTimestamp + std::chrono::nanoseconds(1'000'000'000 / targetRate));
                 }
 
-                if (presentWaitEnabled) {
+                if (presentWaitEnabled && !vrPaced) {
                     ext.swapChain->wait();
                 }
 
