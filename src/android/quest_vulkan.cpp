@@ -130,7 +130,10 @@ float snap_quest_display_refresh(XrSession session,bool request) {
     auto get=function<PFN_xrGetDisplayRefreshRateFB>("xrGetDisplayRefreshRateFB");
     if(request) {
         float wanted=80;
-        if(const char* value=std::getenv("SNAP_QUEST_REFRESH"))if(std::strcmp(value,"72")==0)wanted=72;
+        if(const char* value=std::getenv("SNAP_QUEST_REFRESH")) {
+            if(std::strcmp(value,"72")==0)wanted=72;
+            else if(std::strcmp(value,"90")==0)wanted=90;
+        }
         auto enumerate=function<PFN_xrEnumerateDisplayRefreshRatesFB>("xrEnumerateDisplayRefreshRatesFB");
         uint32_t count=0;check(enumerate(session,0,&count,nullptr),"refresh count");
         std::vector<float> rates(count);check(enumerate(session,count,&count,rates.data()),"refresh rates");

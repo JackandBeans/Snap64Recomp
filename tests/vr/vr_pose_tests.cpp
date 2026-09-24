@@ -17,7 +17,7 @@ static void prepare(RT64::RigidBody& body,const hlslpp::float4x4& a,const hlslpp
     body.updateDecomposition(a,b,true);
 }
 int main() {
-    for(unsigned sourceHz:{30u,60u})for(unsigned hz:{72u,80u}) {
+    for(unsigned sourceHz:{30u,60u})for(unsigned hz:{72u,80u,90u}) {
         snap::vr::AnimationClock clock;
         RT64::RigidBody body;
         for(unsigned i=0;i<hz*5;++i) {

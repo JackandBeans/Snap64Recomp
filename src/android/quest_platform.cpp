@@ -24,10 +24,10 @@ Java_org_snap64_quest_QuestActivity_nativeSetDataDirectory(JNIEnv* env,jclass,js
     unsetenv("SNAP_STATS");
     unsigned rate=80;
     if(auto* config=std::fopen("benchmark/refresh.txt","r")) {
-        unsigned requested=0;if(std::fscanf(config,"%u",&requested)==1&&(requested==72||requested==80))rate=requested;
+        unsigned requested=0;if(std::fscanf(config,"%u",&requested)==1&&(requested==72||requested==80||requested==90))rate=requested;
         std::fclose(config);
     }
-    setenv("SNAP_QUEST_REFRESH",rate==72?"72":"80",1);
+    setenv("SNAP_QUEST_REFRESH",rate==72?"72":rate==90?"90":"80",1);
 #endif
     env->ReleaseStringUTFChars(directory,path);
 }

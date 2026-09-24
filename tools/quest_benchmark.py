@@ -137,7 +137,7 @@ def analyze(path, refresh, complete=False, scene='beach'):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--serial', required=True)
-    parser.add_argument('--refresh', type=int, choices=(72,80), default=80)
+    parser.add_argument('--refresh', type=int, choices=(72,80,90), default=80)
     parser.add_argument('--build', action='store_true')
     parser.add_argument('--timeout', type=int, default=600)
     parser.add_argument('--capture', action='store_true')

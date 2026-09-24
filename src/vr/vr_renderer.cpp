@@ -45,6 +45,8 @@ struct Renderer {
     SnapshotWindow<RenderSnapshot> snapshotWindow;
     bool frameUsesMutableImages=false;
     uint64_t cpuTrackingFrame=0;
+    RenderTarget* latestViewfinder=nullptr;
+    bool lastViewfinderHeld=false;
     TransformProcessor poseTransforms;
     ProjectionProcessor poseProjection;
     TileProcessor poseTiles;
@@ -85,7 +87,7 @@ struct Renderer {
         std::array<RenderFramebufferStorage,3> framebuffers;
         unsigned textureLocks=0;
         bool pending=false;
-        uint64_t trackingFrame=0,viewfinderWorkload=UINT64_MAX;
+        uint64_t trackingFrame=0;
         std::shared_ptr<RenderSnapshot> snapshot;
     } alternate;
     void rotateFrameResources() {
@@ -94,7 +96,6 @@ struct Renderer {
         std::swap(framebuffers,alternate.framebuffers);
         std::swap(pendingTextureLocks,alternate.textureLocks);std::swap(framePending,alternate.pending);
         std::swap(gpuTrackingFrame,alternate.trackingFrame);std::swap(frameSnapshot,alternate.snapshot);
-        std::swap(viewfinderWorkload,alternate.viewfinderWorkload);
     }
     void collectFrame(double gpuMs) {
         viewGpuMs.fill(0);
@@ -629,6 +630,9 @@ struct Renderer {
         auto* worker=queue.ext.workloadGraphicsWorker;RenderTarget* screen=nullptr;
         bool cinema=g.cinematic&&!g.paused&&!options.open;
         bool course=g.course&&g.frame>0&&!g.paused&&!options.open&&!cinema;
+#ifdef __ANDROID__
+        if(!course){latestViewfinder=nullptr;lastViewfinderHeld=false;viewfinderWorkload=UINT64_MAX;}
+#endif
         int desiredView=cinema?2:course?1:0;
         if(desiredView!=transition.target&&std::getenv("SNAP_VR_TRANSITION_DIAG"))fprintf(stderr,"[SNAP-VR-VIEW] frame %llu epoch %llu view %d -> %d\n",(unsigned long long)t.frame,(unsigned long long)g.epoch,transition.target,desiredView);
         auto fade=transition.update(desiredView,t.seconds);
@@ -637,13 +641,21 @@ struct Renderer {
             bool refreshViewfinder=true;
 #ifdef __ANDROID__
             const auto sourceId=sourceData().workloads[frame.workloads.back()].workloadId;
-            refreshViewfinder=f.cameraHeld || viewfinderWorkload!=sourceId;
-            viewfinderWorkload=sourceId;
+            refreshViewfinder=f.cameraHeld || lastViewfinderHeld || !latestViewfinder || viewfinderWorkload!=sourceId;
 #endif
             // A docked camera can refresh at the game's own cadence. Keep a
             // held camera responsive to the current pose on every XR frame.
             if(refreshViewfinder)replay(frame,2,f.lens,{-horizontal,horizontal,vertical,-vertical},true);
             screen=colors[2].get();
+#ifdef __ANDROID__
+            // Share the last completed/scheduled view across frame slots while
+            // docked. Both targets live until renderer teardown; every draw and
+            // later overwrite uses the same queue with image barriers, so an
+            // earlier frame's read finishes before a target is written again.
+            // Slot rotation must not render the same docked source pose twice.
+            if(refreshViewfinder){latestViewfinder=screen;viewfinderWorkload=sourceId;}
+            screen=latestViewfinder;lastViewfinderHeld=f.cameraHeld;
+#endif
             // Bounded, preview-only capture of successive live viewfinder
             // samples. Readback stalls make this unsuitable for timing tests.
             if(preview&&modelTestFrame>120&&viewfinderTestFrames<12&&std::getenv("SNAP_VR_VIEWFINDER_TEST")) {

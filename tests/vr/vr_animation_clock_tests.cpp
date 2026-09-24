@@ -6,7 +6,7 @@
 static void check(bool value,const char* message){if(!value){std::cerr<<message<<'\n';std::exit(1);}}
 static bool close(double a,double b){return std::abs(a-b)<1e-5;}
 int main(){
-    for(unsigned sourceHz:{30u,60u})for(unsigned hz:{72u,80u}) {
+    for(unsigned sourceHz:{30u,60u})for(unsigned hz:{72u,80u,90u}) {
         snap::vr::AnimationClock clock;
         // A source pose reaches the renderer after a fixed pipeline delay.
         // Neither that delay nor fractional display cadence may collapse poses
@@ -34,7 +34,7 @@ int main(){
     snap::vr::AnimationClock clock;
     // Early publications must not replace the pair bracketing the delayed
     // presentation time. Exercise jitter that the ideal cadence test misses.
-    for(unsigned hz:{72u,80u}) {
+    for(unsigned hz:{72u,80u,90u}) {
         snap::vr::AnimationClock jitterClock;
         snap::vr::SnapshotWindow<int> window;
         double newest=10,lastPose=-1;

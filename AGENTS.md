@@ -5,6 +5,7 @@
 - Windows host: `powershell -NoProfile -ExecutionPolicy Bypass -File tools/build_quest.ps1 -Install -Launch -Serial SERIAL` builds and deploys the optimized release. The ROM is transferred separately, never packaged.
 - Benchmark builds use `-Benchmark`, package `org.snap64.quest.benchmark`, and isolated saves/settings. Never replace the user's release save with a benchmark fixture.
 - Run `python tools/quest_benchmark.py --serial SERIAL --refresh 80` for automated Beach measurement. Run 72 Hz separately if 80 Hz fails; do not describe a 72 Hz result as an 80 Hz pass.
+- The user also requested a 90 Hz stretch target. Use `--refresh 90` for a separate native-resolution run, with the same application-frame and animation acceptance thresholds. Keep 80/72 Hz results labeled with their actual rates; production defaults remain 80 Hz until the higher target qualifies.
 - Add `--scene intro --timeout 180` to measure the complete opening movie, including its authored camera and character interpolation. Intro runs use neutral input and a completion checkpoint; they do not qualify Beach.
 - Benchmark `pose_uploads.csv` audits the moving object/limb matrices submitted to both eye uploaders. Keep CPU pose evidence distinct from final image motion and deforming-vertex validation; a timing pass alone is not acceptance.
 - Shader compilation uses the checksum-pinned host DXC downloaded by `tools/build_quest.py` under ignored `build-quest/toolchains/`. Android runtime-format image shaders require its unknown-format support.
