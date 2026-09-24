@@ -45,6 +45,8 @@ struct Renderer {
     unsigned width(unsigned i)const{return preview?(stereoTest()?960:1280):xr.width(i);}
     unsigned height(unsigned i)const{return preview?(stereoTest()?1020:960):xr.height(i);}
     double accumulatedMs=0,accumulatedGpuMs=0,accumulatedWaitMs=0,workerWaitMs=0;uint64_t timedFrames=0;
+    std::chrono::steady_clock::time_point submissionWindow{};
+    unsigned submissionIntervals=0;
     void waitWorker(){auto start=std::chrono::steady_clock::now();queue.ext.workloadGraphicsWorker->wait();workerWaitMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();}
     Renderer(WorkloadQueue& q):queue(q) {
         if(q.ext.createdGraphicsAPI!=UserConfiguration::GraphicsAPI::D3D12)throw std::runtime_error("VR requires D3D12");
@@ -213,7 +215,11 @@ struct Renderer {
             return;
         }
         wasFocused=t.focused;
-        if(!preview)displayRate=xr.refreshRate();
+        if(!preview) {
+            const unsigned rate=xr.refreshRate();
+            if(displayRate.exchange(rate)!=rate)
+                fprintf(stderr,"[SNAP-VR] OpenXR application cadence changed to %u Hz; interpolation follows runtime pacing\n",rate);
+        }
         struct FrameGuard{OpenXR& xr;bool done=false;~FrameGuard(){if(!done){try{xr.end(false);}catch(...){}}}}frameGuard{xr};
         auto start=std::chrono::steady_clock::now();GameState g;bool recenter=false,focus=false;
         {auto& s=shared();std::lock_guard lock(s.mutex);g=s.game;recenter=s.recenter;s.recenter=false;focus=false;
@@ -393,6 +399,14 @@ struct Renderer {
         if(captureSubmitted){std::error_code error;std::filesystem::remove("vr-capture.request",error);}
         accumulatedGpuMs+=props->endTiming();accumulatedWaitMs+=workerWaitMs+props->fenceWaitMs();
         xr.end(true);frameGuard.done=true;
+        const auto submitted=std::chrono::steady_clock::now();
+        if(submissionWindow==std::chrono::steady_clock::time_point{})submissionWindow=submitted;
+        else if(++submissionIntervals==120) {
+            const double seconds=std::chrono::duration<double>(submitted-submissionWindow).count();
+            fprintf(stderr,"[SNAP-VR] %.1f submitted FPS, %u Hz interpolation target (%s; includes game pass and pacing)\n",
+                submissionIntervals/seconds,displayRate.load(),preview?"synthetic preview":"OpenXR application cadence");
+            submissionWindow=submitted;submissionIntervals=0;
+        }
         accumulatedMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();
         if(++timedFrames%120==0){
             fprintf(stderr,"[SNAP-VR] %u Hz, %ux%u: VR CPU %.2f ms, GPU queue span %.2f ms, fence waits %.2f ms (120-frame means; excludes original game pass)\n",

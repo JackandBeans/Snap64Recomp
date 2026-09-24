@@ -16,6 +16,9 @@ Initial VR release series:
   presses, and an inactive gray appearance until unlocked.
 - Pointer menus and a VR settings panel; the original Options pages are hidden in VR.
 - Corrected audio queue reporting to prevent growing sound delay.
+- Headset-paced frame interpolation without desktop VSync or frame-dropping
+  rules limiting VR; verified near 120 submitted FPS on a 120 Hz headset.
+- Runtime logs report measured submitted FPS separately from the interpolation target.
 - `Snap64RecompVR.exe` starts in VR by default; `--desktop` selects desktop mode.
 
 The build remains experimental. See the VR guide in `docs/VR.md` for tested

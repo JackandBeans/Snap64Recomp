@@ -1219,6 +1219,7 @@ namespace RT64 {
                 ElapsedTimer workloadTimer;
                 workloadProfiler.start();
                 threadConfigurationUpdate(workload.viFbSize, workloadConfig);
+                const bool vrPaced = snap_vr_enabled();
 
                 // FIXME: This is a very hacky way to find out if we need to advance the frame if the workload was paused for the first time.
                 if (!workload.paused || (!gameFrames[curFrameIndex].workloads.empty() && (gameFrames[curFrameIndex].workloads[0] != (uint32_t)processCursor))) {
@@ -1483,7 +1484,7 @@ namespace RT64 {
                     displayFrames = uint32_t((logicalTicks - displayTicks) / workload.viOriginalRate);
                     deltaTimeMs = 1.0f / float(workloadConfig.targetRate);
 
-                    if ((displayFrames > 1) && frameReduction) {
+                    if (!vrPaced && (displayFrames > 1) && frameReduction) {
                         displayTicks += workload.viOriginalRate;
                         displayFrames--;
                         frameReduction = false;
@@ -1850,7 +1851,10 @@ namespace RT64 {
                 bool snapHeldIntoFirstTarget = false;
                 for (uint32_t frame = 0; (frame < displayFrames) && !skipWorkloadNow; frame++) {
                     // Evaluate if this frame should be skipped. Measure the current time and compare it to what frame is estimated should be have been rendered by now.
-                    if ((frame > 0) && (originalTimeMicro > 0)) {
+                    // OpenXR waits for each headset frame inside snap_vr_render.
+                    // That wait is pacing, not rendering cost: applying the
+                    // desktop deadline here drops the next headset sample.
+                    if (!vrPaced && (frame > 0) && (originalTimeMicro > 0)) {
                         const int64_t currentTimeMicro = workloadTimer.elapsedMicroseconds() - setupTimeMicro;
                         const int64_t expectedTimeMicro = frame * maxTimePerFrameMicro;
                         const int64_t measuredFrameMicro = renderTimeTotalMicro / framesRendered;
@@ -1907,7 +1911,7 @@ namespace RT64 {
                                 // Wait until the target has finished presenting if the alternate frame counter (used by the present queue) is making use of this target.
                                 std::unique_lock<std::mutex> interpolatedLock(ext.sharedResources->interpolatedMutex);
                                 ext.sharedResources->interpolatedCondition.wait(interpolatedLock, [&]() {
-                                    frameReduction = frameReduction || (prevFrameCounters.presented <= targetIndex);
+                                    frameReduction = !vrPaced && (frameReduction || (prevFrameCounters.presented <= targetIndex));
                                     return prevFrameCounters.presented > targetIndex;
                                 });
                             }
@@ -2069,7 +2073,11 @@ namespace RT64 {
                     if (generateInterpolatedFrames && (usingMSAA || (frame > 0))) {
                         {
                             std::scoped_lock<std::mutex> cursorLock(cursorMutex);
-                            skipWorkloadNow = ((frame + 1) < displayFrames) && (writeCursor != threadCursor);
+                            // A new simulation tick normally arrives while XR
+                            // is pacing this tick's eye frames. Finish their
+                            // interpolation interval before advancing; the
+                            // desktop mirror must not shorten that interval.
+                            skipWorkloadNow = !vrPaced && ((frame + 1) < displayFrames) && (writeCursor != threadCursor);
                         }
 
                         {
