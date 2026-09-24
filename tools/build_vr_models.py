@@ -70,12 +70,12 @@ def screw(name,p,r,axis=(0,0,1)):
  o=box(name+' slot',p,(r*1.35,r*.22,r*.06),'dark',0)
  o.rotation_mode='QUATERNION';o.rotation_quaternion=vec((0,0,1)).rotation_difference(vec(axis));o.location+=vec(axis)*(r*.17)
 
-def surface(name,vertices,faces,mat):
+def surface(name,vertices,faces,mat,bevel=0):
  """Create a smooth closed surface in native game coordinates."""
  mesh=bpy.data.meshes.new(name);mesh.from_pydata([vec(p) for p in vertices],[],faces);mesh.update()
  bm=bmesh.new();bm.from_mesh(mesh);bmesh.ops.recalc_face_normals(bm,faces=list(bm.faces));bm.to_mesh(mesh);bm.free()
  o=bpy.data.objects.new(name,mesh);bpy.context.collection.objects.link(o)
- return finish(o,name,mat)
+ return finish(o,name,mat,bevel)
 
 def polar_surface(name,point,mat,rings=24,slices=48):
  # Unique poles avoid coincident vertices and zero-area export triangles.
@@ -192,11 +192,26 @@ cylinder('Front tire',(0,.22,-.94),.265,.23,'rubber',(1,0,0),64)
 for side in [-1,1]:cylinder('Front hub',(side*.13,.22,-.94),.16,.02,'yellow',(1,0,0))
 for i in range(24):
  a=math.tau*i/24;o=box('Front tread',(0,.22+.263*math.cos(a),-.94+.263*math.sin(a)),(.25,.036,.069),'dark',.007);o.rotation_euler.x=a
-box('Dashboard',(0,.72,-.67),(.65,.09,.22),'body',.045)
+# One continuous dashboard shell sweeps back into a rounded left control pod.
+# Its flute cap sits near flush with the gauges instead of on a separate slab.
+dash_outline=[(-.29,-.78),(.29,-.78),(.325,-.745),(.325,-.595),(.29,-.56),
+              (-.125,-.56),(-.151,-.46),(-.182,-.426),(-.24,-.414),
+              (-.292,-.431),(-.325,-.474),(-.325,-.745)]
+def dashboard_shell(name,bottom,top,mat,expand=1,bevel=.018):
+ outline=[(x*expand,-.60+(z+.60)*expand) for x,z in dash_outline];n=len(outline)
+ vertices=[(x,y,z) for y in (bottom,top) for x,z in outline]
+ faces=[tuple(range(n-1,-1,-1)),tuple(range(n,2*n))]
+ faces.extend((i,(i+1)%n,(i+1)%n+n,i+n) for i in range(n))
+ return surface(name,vertices,faces,mat,bevel)
+dashboard_shell('Dashboard',.675,.765,'body')
+flute_x,flute_z=-.24,-.49
+ring('Flute button gasket',(flute_x,.766,flute_z),.058,.046,.006,'rubber',(0,1,0),48)
+ring('Flute button bezel',(flute_x,.771,flute_z),.055,.047,.008,'silver',(0,1,0),48)
+# The colored cap, original game icon and music indicator are rendered at runtime.
 for i in range(3):
  cylinder('Dashboard gauge',(-.16+i*.16,.773,-.67),.044,.007,'silver',(0,1,0),32)
  cylinder('Gauge face',(-.16+i*.16,.778,-.67),.035,.003,'dark',(0,1,0),32)
-for x,mat in [(-.22,'green'),(.22,'red')]:
+for x,mat in [(.22,'red')]:
  cylinder('Dash switch collar',(x,.772,-.59),.026,.016,'silver',(0,1,0),24)
  cylinder('Dash switch',(x,.79,-.59),.022,.021,mat,(0,1,0),24)
 cylinder('Front lamp housing',(0,.56,-1.035),.17,.09,'gold')
@@ -239,7 +254,7 @@ for side in (-1,1):
  tube('Front bumper',[(side*.10,.36,-1.01),(side*.26,.39,-1.10),(side*.43,.43,-.96)],.021,'trim')
 for x in (-.12,.12):box('Hoop pad strap',(x,1.65,.43),(.025,.080,.110),'rubber',.018)
 tube('Camera holster support',[(.43,.60,-.38),(.35,.75,-.38),(.28,.847,-.38)],.025,'body')
-box('Dashboard gasket',(0,.705,-.67),(.675,.072,.235),'rubber',.03)
+dashboard_shell('Dashboard gasket',.670,.682,'rubber',1.018,.004)
 for i in range(3):
  x=-.16+i*.16
  for tick in range(11):
@@ -402,6 +417,7 @@ def review(filename,model,position,target,scale,width=1200,height=1000):
 
 review('vr-model-review.png','zero_one',(2.8,2.4,-3.8),(0,.79,-.12),2.75,1400,1200)
 review('vr-cockpit-review.png','zero_one',(1.8,2.6,2.5),(0,.73,-.15),2.65,1400,1200)
+review('vr-dashboard-review.png','zero_one',(-.05,1.35,.04),(-.10,.755,-.58),.80,1200,1000)
 review('vr-camera-front-review.png','camera',(.29,.20,-.40),(0,.006,-.043),.32)
 review('vr-camera-review.png','camera',(.30,.20,.38),(0,.012,-.025),.32)
 review('vr-camera-side-review.png','camera',(.38,.012,-.035),(0,.012,-.035),.275)

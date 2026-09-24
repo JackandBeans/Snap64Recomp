@@ -17,7 +17,7 @@ Pose Interaction::toWorld(Pose p,const GameState& g) const {
     p=localPose(p); p.position=p.position*settings.unitsPerMeter;
     return compose(cartPose(g),p);
 }
-InteractionFrame Interaction::update(const Tracking& t,const GameState& g) {
+InteractionFrame Interaction::update(const Tracking& t,const GameState& g,const std::array<FluteContact,2>& contacts) {
     InteractionFrame out; out.frame=t.frame; out.epoch=g.epoch;
     if (!centered && t.headValid) recenter(t);
     bool reset=(epoch!=g.epoch)||!g.course||!t.focused||!t.headValid||g.paused||g.cinematic;
@@ -82,13 +82,12 @@ InteractionFrame Interaction::update(const Tracking& t,const GameState& g) {
             }
             out.dash=out.dash||h.secondary;
             out.advance=out.advance||(h.primary&&!primary[i]);
-            // Reach to the labeled cap and press down, or pull trigger nearby.
+            // Contact comes from the visible skinned hand surface, in cart meters.
             // Re-arm only after withdrawing; tracking recovery inside cannot fire.
-            Vec3 delta=local.position-fluteButton;
-            if(length(delta)>.14f)fluteArmed[i]=true;
-            bool cap=std::abs(delta.x)<.065f&&std::abs(delta.z)<.065f&&delta.y>-.025f&&delta.y<.035f;
-            bool press=cap||(length(delta)<.11f&&trigger&&!triggering[i]);
-            if(fluteArmed[i]&&held[i]==Held::None&&g.fluteUnlocked&&press) {
+            if(!contacts[i].nearCap&&!contacts[i].touching)fluteArmed[i]=true;
+            bool press=held[i]==Held::None&&g.fluteUnlocked&&contacts[i].touching;
+            out.fluteTouch=out.fluteTouch||press;
+            if(fluteArmed[i]&&press) {
                 out.flute=true;fluteArmed[i]=false;
             }
             out.pause=out.pause||(h.menu&&!menus[i]);

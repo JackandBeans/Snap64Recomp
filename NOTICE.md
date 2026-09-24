@@ -107,6 +107,7 @@ build time or at run time, and never enter the repository:
 
 | What | Where it comes from |
 | --- | --- |
+| the original Poké Flute HUD icon on the VR dashboard button | decoded from the player's loaded game data in RDRAM at run time (`src/vr/vr_game_assets.h`, called by `src/vr/vr_game_bridge.cpp`); its RGBA32 pixels are uploaded to the native renderer without writing an asset file. No icon pixels are tracked or packaged. |
 | the letterforms of the Options screen, its bullet dot and its value chevrons, which the port composites its own menu text from | cut out of the game's own menu sprites in RDRAM at run time, the moment the game has decompressed its main menu (`src/menu_harvest.cpp`, called from the `dmaReadVPK0` wrapper in `src/overlay_hook.cpp`); the characters those sprites never contain are the port's own drawings, kept as code in the same file. `tools/harvest_menu_font.py` and `tools/extract_menu_dot.py` are the offline reference for that cut and write only under `build-win/`. |
 | the C++ translation of Nintendo's `aspMain` RSP audio microcode (ROM 0x3E580, 0xE20 bytes of RSP instructions, loaded at IMEM 0x1080) | generated into the build tree (`build-win/rsp/aspMain.cpp`) at build time by RSPRecomp, which CMake builds from the vendored `lib/N64ModernRuntime/N64Recomp` and runs on the ROM named by the `SNAP_ROM` cache variable (`rsp/aspMain.us.toml.in`, `CMakeLists.txt`). The ROM is therefore a build dependency as well as a run-time one. |
 

@@ -7,6 +7,12 @@ redistributing these assets.
 Regenerate with tools/vr_assets.py, passing HandSkinData.lua as its source.
 The native renderer uses meters and the source wrist-origin convention.
 
+The dashboard's Poké Flute icon is the original game's HUD sprite, decoded
+from the player's loaded ROM data at runtime by src/vr/vr_game_assets.h.
+Its pixels are not included in these assets, the Blender source or the
+repository. The new dashboard housing and button geometry are authored for
+this port; the original icon remains the game owners' work.
+
 Camera, ZERO-ONE-inspired vehicle, apple and Pester Ball meshes are authored in
 tools/build_vr_models.py, with an editable Blender source in snap_vr_props.blend.
 props.json contains validated meter-scale triangles, normals, UVs, and colors.

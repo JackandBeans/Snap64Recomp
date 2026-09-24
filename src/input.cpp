@@ -2605,6 +2605,9 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
     // The session tap: everything the game is about to be handed, recorded or
     // replaced. See snap_input_tap below.
     snap_input_tap(buttons, x, y);
+    // The latency replay navigates menus, then yields course input to the
+    // synthetic VR hand so shutter timing exercises the real pad bridge.
+    if(snap::vr::preview&&std::getenv("SNAP_VR_LATENCY_TEST"))snap::vr::input(buttons,x,y);
 
     return true;
 }

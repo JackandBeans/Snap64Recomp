@@ -243,6 +243,7 @@ struct Renderer {
             hand.grip.orientation={.70710678f,0,0,.70710678f};
             hand.aim.orientation={.70710678f,0,0,.70710678f};hand.squeeze=modelTestFrame>=5?1.f:0.f;
             if(std::getenv("SNAP_VR_GRIP_TEST"))hand.trigger=(modelTestFrame/180)%2?1.f:0.f;
+            if(std::getenv("SNAP_VR_LATENCY_TEST"))hand.trigger=modelTestFrame>180&&modelTestFrame%180<12?1.f:0.f;
         }
         if(preview&&g.course&&!g.cinematic&&modelTestFrame>500&&std::getenv("SNAP_VR_REAR_TEST")) {
             t.head.orientation=yaw(pi);
@@ -257,7 +258,14 @@ struct Renderer {
             t.head.orientation={-.29552f,0,0,.9553365f};
             for(unsigned i=0;i<2;i++){t.eyes[i].orientation=t.head.orientation;t.eyes[i].position=t.head.position+rotate(t.head.orientation,{i?.032f:-.032f,0,0});}
             auto& hand=t.hands[0];hand.grip.position=Interaction::fluteButton;
-            hand.grip.position.y+=(fluteTestFrame>=60&&fluteTestFrame<75)||(fluteTestFrame>=120&&fluteTestFrame<135)?0.f:.22f;
+            unsigned phase=fluteTestFrame<100?unsigned(fluteTestFrame):unsigned(fluteTestFrame-100);
+            float height=.34f;
+            if(fluteTestFrame<200) {
+                if(phase>=30&&phase<60)height=.34f-.18f*float(phase-30)/30;
+                else if(phase>=60&&phase<75)height=.16f;
+                else if(phase>=75&&phase<95)height=.16f+.18f*float(phase-75)/20;
+            }
+            hand.grip.position.y+=height;
             hand.squeeze=hand.trigger=0;
         }
         bool bothClicks=t.hands[0].tracked&&t.hands[1].tracked&&t.hands[0].stickClick&&t.hands[1].stickClick;
@@ -266,7 +274,8 @@ struct Renderer {
         bool openedOptions=options.update(t,interaction);
         if(options.recenterRequested)interaction.recenter(t);
         auto interactionGame=g;if(options.open)interactionGame.paused=true;
-        auto f=interaction.update(t,interactionGame);
+        auto contacts=g.course&&!g.cinematic?props->handContacts(t,interaction):std::array<FluteContact,2>{};
+        auto f=interaction.update(t,interactionGame,contacts);
         if(preview&&g.course&&std::getenv("SNAP_VR_ITEM_GRIP_TEST")){f.held[0]=Held::Apple;f.held[1]=Held::PesterBall;}
         if(g.course&&std::getenv("SNAP_VR_DIAG")&&diagnosticFrames++<90) {
             size_t interpolated=0,modified=0;
@@ -288,7 +297,7 @@ struct Renderer {
             if(t.focused&&t.headValid&&!options.open) {
                 if(g.course&&!g.paused&&!g.cinematic) {
                     if(f.cameraHeld)s.buttons|=0x2000;
-                    if(f.shutter)s.pulses|=0x8000;
+                    if(f.shutter){s.pulses|=0x8000;s.shutterTime=std::chrono::steady_clock::now();s.shutterPollTime={};++s.shutterSerial;}
                     if(f.dash)s.buttons|=0x10;
                     if(f.advance&&g.messageContinue)s.pulses|=0x8000;
                     if(f.flute)s.fluteRequest=true;

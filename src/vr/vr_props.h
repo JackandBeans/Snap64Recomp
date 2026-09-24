@@ -9,6 +9,7 @@ class Props {
 public:
     Props(ID3D12Device*,ID3D12CommandQueue*);
     ~Props();
+    std::array<FluteContact,2> handContacts(const Tracking&,const Interaction&);
     void draw(ID3D12Resource* color,ID3D12Resource* depth,ID3D12Resource* screen,
               Pose eye,Fov fov,const GameState&,const InteractionFrame&,const Tracking&,const Interaction&,bool focus,bool optionsOpen=false,int optionsRow=0);
     void copy(ID3D12Resource* source,ID3D12Resource* destination,unsigned width,unsigned height);

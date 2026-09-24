@@ -34,9 +34,23 @@ void box(std::vector<Vertex>& out,Pose p,Vec3 center,Vec3 half,Color color) {
     const int faces[][4]={{0,4,6,2},{1,3,7,5},{0,1,5,4},{2,6,7,3},{0,2,3,1},{4,5,7,6}};
     for(auto& f:faces){triangle(out,p,v[f[0]],v[f[1]],v[f[2]],color);triangle(out,p,v[f[0]],v[f[2]],v[f[3]],color);}
 }
-void screenQuad(std::vector<Vertex>& out,Pose p,float width,float height) {
+void screenQuad(std::vector<Vertex>& out,Pose p,float width,float height,float texture=1,Color tint={1,1,1}) {
     const float coords[][4]={{-1,-1,0,1},{-1,1,0,0},{1,1,1,0},{-1,-1,0,1},{1,1,1,0},{1,-1,1,1}};
-    for(auto c:coords)out.push_back({p.position+rotate(p.orientation,{c[0]*width/2,c[1]*height/2,0}),1,1,1,c[2],c[3],1});
+    for(auto c:coords)out.push_back({p.position+rotate(p.orientation,{c[0]*width/2,c[1]*height/2,0}),tint.r,tint.g,tint.b,c[2],c[3],texture});
+}
+void fluteCap(std::vector<Vertex>& out,Pose cap,Color color) {
+    constexpr unsigned segments=48;
+    auto point=[](float angle,float radius,float y){return Vec3{std::cos(angle)*radius,y,std::sin(angle)*radius};};
+    for(unsigned i=0;i<segments;i++) {
+        float a=2*pi*i/segments,b=2*pi*(i+1)/segments;
+        Vec3 topA=point(a,.0455f,0),topB=point(b,.0455f,0);
+        triangle(out,cap,{},topB,topA,color);
+        for(auto band:std::array<std::array<float,4>,2>{{{.0455f,0,.047f,-.003f},{.047f,-.003f,.047f,-.010f}}}) {
+            auto p=point(a,band[0],band[1]),q=point(b,band[0],band[1]);
+            auto r=point(b,band[2],band[3]),s=point(a,band[2],band[3]);
+            triangle(out,cap,p,q,r,color);triangle(out,cap,p,r,s,color);
+        }
+    }
 }
 void label(std::vector<Vertex>& out,Pose panel,const char* text,float x,float y,float pixel,Color color) {
     for(const char* c=text;*c;c++,x+=pixel*6) {
@@ -142,11 +156,18 @@ struct Rig {
 };
 const char* shader=R"(
 cbuffer Constants:register(b0){row_major float4x4 vp;}
-Texture2D screenTex:register(t0);SamplerState sampler0:register(s0);
+Texture2D screenTex:register(t0);Texture2D fluteTex:register(t1);SamplerState sampler0:register(s0);
 struct V{float3 p:POSITION;float3 c:COLOR0;float3 uv:TEXCOORD;float alpha:COLOR1;};
 struct P{float4 p:SV_POSITION;float3 c:COLOR0;float3 uv:TEXCOORD;float alpha:COLOR1;};
 P vs(V v){P o;o.p=mul(float4(v.p,1),vp);o.p.z=(o.p.z+o.p.w)*0.5;o.c=v.c;o.uv=v.uv;o.alpha=v.alpha;return o;}
-float4 ps(P p):SV_TARGET{return p.uv.z>.5?float4(screenTex.Sample(sampler0,p.uv.xy).rgb,1):float4(p.c,p.alpha);}
+float4 ps(P p):SV_TARGET {
+    if(p.uv.z>1.5) {
+        float4 ink=fluteTex.Sample(sampler0,p.uv.xy);
+        if(p.uv.z>2.5)ink.rgb=dot(ink.rgb,float3(.299,.587,.114))*.45;
+        return float4(p.c*(1-ink.a)+ink.rgb,1);
+    }
+    return p.uv.z>.5?float4(screenTex.Sample(sampler0,p.uv.xy).rgb,1):float4(p.c,p.alpha);
+}
 )";
 const char* presentationShader=R"(
 cbuffer Constants:register(b0){float4 origin;float4 right;float4 up;float4 forward;float4 tangents;float4 settings;}
@@ -175,6 +196,7 @@ struct Props::Impl {
     ComPtr<ID3D12RootSignature> presentationRoot;
     ComPtr<ID3D12DescriptorHeap> rtv,dsv,srv;
     ComPtr<ID3D12Resource> vertices,indices,timestampReadback;
+    ComPtr<ID3D12Resource> fluteTexture;
     ComPtr<ID3D12QueryHeap> timestampHeap;
     UINT64 timestampFrequency=0;
     double waitMs=0;
@@ -182,9 +204,13 @@ struct Props::Impl {
     std::array<Rig,2> hands;
     Mesh cameraMesh,vehicleMesh,appleMesh,pesterBallMesh;
     std::vector<Vertex> frameVertices;
+    std::array<std::vector<Vertex>,2> contactVertices;
+    std::array<bool,2> contactReady{};
+    uint64_t contactFrame=0;
     std::vector<unsigned> opaqueIndices;
     std::vector<TransparentTriangle> transparentTriangles;
     uint64_t geometryFrame=0;bool geometryReady=false;
+    double flutePressTime=-100;
     Impl(ID3D12Device* d,ID3D12CommandQueue* q):device(d),queue(q) {
         D3D12_QUERY_HEAP_DESC query{};query.Type=D3D12_QUERY_HEAP_TYPE_TIMESTAMP;query.Count=2;
         ok(d->CreateQueryHeap(&query,IID_PPV_ARGS(&timestampHeap)));ok(q->GetTimestampFrequency(&timestampFrequency));
@@ -197,8 +223,10 @@ struct Props::Impl {
         ok(d->CreateFence(0,D3D12_FENCE_FLAG_NONE,IID_PPV_ARGS(&fence)));event=CreateEventW(nullptr,FALSE,FALSE,nullptr);if(!event)throw std::runtime_error("VR fence event");
         D3D12_DESCRIPTOR_HEAP_DESC hd{};hd.NumDescriptors=1;hd.Type=D3D12_DESCRIPTOR_HEAP_TYPE_RTV;ok(d->CreateDescriptorHeap(&hd,IID_PPV_ARGS(&rtv)));
         hd.Type=D3D12_DESCRIPTOR_HEAP_TYPE_DSV;ok(d->CreateDescriptorHeap(&hd,IID_PPV_ARGS(&dsv)));
-        hd.Type=D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;hd.Flags=D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;ok(d->CreateDescriptorHeap(&hd,IID_PPV_ARGS(&srv)));
-        D3D12_DESCRIPTOR_RANGE range{D3D12_DESCRIPTOR_RANGE_TYPE_SRV,1,0,0,0};
+        hd.NumDescriptors=2;hd.Type=D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV;hd.Flags=D3D12_DESCRIPTOR_HEAP_FLAG_SHADER_VISIBLE;ok(d->CreateDescriptorHeap(&hd,IID_PPV_ARGS(&srv)));
+        D3D12_SHADER_RESOURCE_VIEW_DESC empty{};empty.Format=DXGI_FORMAT_R8G8B8A8_UNORM;empty.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2D;empty.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;empty.Texture2D.MipLevels=1;
+        auto iconHandle=srv->GetCPUDescriptorHandleForHeapStart();iconHandle.ptr+=d->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);d->CreateShaderResourceView(nullptr,&empty,iconHandle);
+        D3D12_DESCRIPTOR_RANGE range{D3D12_DESCRIPTOR_RANGE_TYPE_SRV,2,0,0,0};
         D3D12_ROOT_PARAMETER params[2]{};params[0].ParameterType=D3D12_ROOT_PARAMETER_TYPE_32BIT_CONSTANTS;params[0].Constants={0,0,16};params[0].ShaderVisibility=D3D12_SHADER_VISIBILITY_VERTEX;
         params[1].ParameterType=D3D12_ROOT_PARAMETER_TYPE_DESCRIPTOR_TABLE;params[1].DescriptorTable={1,&range};params[1].ShaderVisibility=D3D12_SHADER_VISIBILITY_PIXEL;
         D3D12_STATIC_SAMPLER_DESC sampler{};sampler.Filter=D3D12_FILTER_MIN_MAG_MIP_LINEAR;sampler.AddressU=sampler.AddressV=sampler.AddressW=D3D12_TEXTURE_ADDRESS_MODE_CLAMP;sampler.MaxLOD=D3D12_FLOAT32_MAX;sampler.ShaderVisibility=D3D12_SHADER_VISIBILITY_PIXEL;sampler.ComparisonFunc=D3D12_COMPARISON_FUNC_ALWAYS;
@@ -233,9 +261,62 @@ struct Props::Impl {
     ~Impl(){if(event)CloseHandle(event);}
     void begin(){ok(allocator->Reset());ok(list->Reset(allocator.Get(),nullptr));}
     void finish(){ok(list->Close());ID3D12CommandList* lists[]={list.Get()};queue->ExecuteCommandLists(1,lists);ok(queue->Signal(fence.Get(),++fenceValue));ok(fence->SetEventOnCompletion(fenceValue,event));auto start=std::chrono::steady_clock::now();if(WaitForSingleObject(event,10000)!=WAIT_OBJECT_0)throw std::runtime_error("VR GPU fence timed out");waitMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();}
+    void uploadFluteIcon(const FluteIcon& icon) {
+        D3D12_RESOURCE_DESC desc{};desc.Dimension=D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+        desc.Width=desc.Height=FluteIcon::side;desc.DepthOrArraySize=desc.MipLevels=1;
+        desc.Format=DXGI_FORMAT_R8G8B8A8_UNORM;desc.SampleDesc.Count=1;
+        D3D12_HEAP_PROPERTIES heap{};heap.Type=D3D12_HEAP_TYPE_DEFAULT;
+        ok(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&desc,D3D12_RESOURCE_STATE_COPY_DEST,nullptr,IID_PPV_ARGS(&fluteTexture)));
+        D3D12_PLACED_SUBRESOURCE_FOOTPRINT footprint{};UINT64 bytes=0;
+        device->GetCopyableFootprints(&desc,0,1,0,&footprint,nullptr,nullptr,&bytes);
+        D3D12_RESOURCE_DESC buffer{};buffer.Dimension=D3D12_RESOURCE_DIMENSION_BUFFER;buffer.Width=bytes;
+        buffer.Height=buffer.DepthOrArraySize=buffer.MipLevels=1;buffer.SampleDesc.Count=1;buffer.Layout=D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+        heap.Type=D3D12_HEAP_TYPE_UPLOAD;ComPtr<ID3D12Resource> upload;
+        ok(device->CreateCommittedResource(&heap,D3D12_HEAP_FLAG_NONE,&buffer,D3D12_RESOURCE_STATE_GENERIC_READ,nullptr,IID_PPV_ARGS(&upload)));
+        uint8_t* pixels;D3D12_RANGE read{0,0};ok(upload->Map(0,&read,reinterpret_cast<void**>(&pixels)));
+        for(unsigned y=0;y<FluteIcon::side;y++)for(unsigned x=0;x<FluteIcon::side;x++) {
+            const auto* src=&icon.rgba[(y*FluteIcon::side+x)*4];auto* dst=pixels+y*footprint.Footprint.RowPitch+x*4;
+            // Premultiply before filtering: transparent source texels are yellow.
+            for(unsigned channel=0;channel<3;channel++)dst[channel]=uint8_t((unsigned(src[channel])*src[3]+127)/255);
+            dst[3]=src[3];
+        }
+        upload->Unmap(0,nullptr);begin();
+        D3D12_TEXTURE_COPY_LOCATION src{};src.pResource=upload.Get();src.Type=D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;src.PlacedFootprint=footprint;
+        D3D12_TEXTURE_COPY_LOCATION dst{};dst.pResource=fluteTexture.Get();dst.Type=D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+        list->CopyTextureRegion(&dst,0,0,0,&src,nullptr);
+        D3D12_RESOURCE_BARRIER barrier{};barrier.Type=D3D12_RESOURCE_BARRIER_TYPE_TRANSITION;
+        barrier.Transition={fluteTexture.Get(),D3D12_RESOURCE_BARRIER_ALL_SUBRESOURCES,D3D12_RESOURCE_STATE_COPY_DEST,D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE};list->ResourceBarrier(1,&barrier);finish();
+        D3D12_SHADER_RESOURCE_VIEW_DESC view{};view.Format=desc.Format;view.ViewDimension=D3D12_SRV_DIMENSION_TEXTURE2D;view.Shader4ComponentMapping=D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;view.Texture2D.MipLevels=1;
+        auto handle=srv->GetCPUDescriptorHandleForHeapStart();handle.ptr+=device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
+        device->CreateShaderResourceView(fluteTexture.Get(),&view,handle);
+    }
 };
 Props::Props(ID3D12Device*d,ID3D12CommandQueue*q):impl(std::make_unique<Impl>(d,q)){}
 Props::~Props()=default;
+std::array<FluteContact,2> Props::handContacts(const Tracking& tracking,const Interaction& interaction) {
+    auto& x=*impl;std::array<FluteContact,2> contacts{};
+    x.contactReady={};x.contactFrame=tracking.frame;
+    if(!tracking.focused||!tracking.headValid)return contacts;
+    for(unsigned hand=0;hand<2;hand++) {
+        const auto& input=tracking.hands[hand];if(!input.tracked)continue;
+        Pose wrist=handMeshPose(interaction.localPose(input.grip));
+        if(length(wrist.position-Interaction::fluteButton)>.45f)continue;
+        // Use the same skinning and empty-hand pose as the rendered hands. The
+        // controller grip origin can be many centimeters above a touching finger.
+        auto& vertices=x.contactVertices[hand];vertices.clear();
+        x.hands[hand].draw(vertices,wrist,input,Held::None);
+        x.contactReady[hand]=true;
+        auto& contact=contacts[hand];
+        for(const auto& vertex:vertices)contact.include(vertex.position,Interaction::fluteButton);
+        // An edge can cross the cap between skin vertices during a downward push.
+        for(size_t i=0;i<vertices.size();i+=3)for(unsigned edge=0;edge<3;edge++) {
+            Vec3 a=vertices[i+edge].position,b=vertices[i+(edge+1)%3].position;
+            float ay=a.y-Interaction::fluteButton.y,by=b.y-Interaction::fluteButton.y;
+            if(ay*by<0)contact.include(a+(b-a)*(ay/(ay-by)),Interaction::fluteButton);
+        }
+    }
+    return contacts;
+}
 void Props::presentation(ID3D12Resource* color,Pose eye,Fov fov,float gain,bool portal,float height) {
     auto& x=*impl;
     Vec3 r=rotate(eye.orientation,{1,0,0}),u=rotate(eye.orientation,{0,1,0}),f=rotate(eye.orientation,{0,0,-1});
@@ -282,6 +363,7 @@ void Props::copy(ID3D12Resource*source,ID3D12Resource*dest,unsigned width,unsign
 }
 void Props::draw(ID3D12Resource*color,ID3D12Resource*depth,ID3D12Resource*screen,Pose eye,Fov fov,const GameState&g,const InteractionFrame&f,const Tracking&t,const Interaction&interaction,bool focus,bool optionsOpen,int optionsRow) {
     auto& x=*impl;auto& v=x.frameVertices;float unit=interaction.settings.unitsPerMeter;
+    if(g.fluteIcon&&!x.fluteTexture)x.uploadFluteIcon(*g.fluteIcon);
     bool rebuild=!x.geometryReady||x.geometryFrame!=t.frame;
     // Work in meters for props and transform the game-space eye into meters.
     auto meters=[&](Pose p){p.position=p.position*(1/unit);return p;};
@@ -304,19 +386,24 @@ void Props::draw(ID3D12Resource*color,ID3D12Resource*depth,ID3D12Resource*screen
             }
         }
         x.vehicleMesh.draw(v,cart);
-        // Reachable left dashboard extension, top-facing label and press cap.
+        // Shallow round control seated in the dashboard's molded left lobe.
         const Vec3 button=Interaction::fluteButton;
-        box(v,cart,{button.x,.765f,-.54f},{.11f,.02f,.13f},{.16f,.18f,.20f});
-        box(v,cart,{button.x,.795f,button.z},{.062f,.010f,.060f},{.70f,.58f,.28f});
-        box(v,cart,{button.x,button.y-.012f,button.z},{.053f,.014f,.051f},
-            !g.fluteUnlocked?Color{.24f,.24f,.24f}:g.fluteSeconds>0?Color{.25f,.90f,.42f}:Color{.95f,.65f,.12f});
-        Pose fluteLabel=compose(cart,Pose{{-.70710678f,0,0,.70710678f},{button.x,button.y+.004f,button.z}});
-        label(v,fluteLabel,"POKE FLUTE",-.049f,.009f,.00165f,{.03f,.03f,.03f});
-        char fluteStatus[32];
-        if(!g.fluteUnlocked)std::snprintf(fluteStatus,sizeof(fluteStatus),"LOCKED");
-        else if(g.fluteSeconds>0)std::snprintf(fluteStatus,sizeof(fluteStatus),"PLAYING %02d",int(std::ceil(g.fluteSeconds)));
-        else std::snprintf(fluteStatus,sizeof(fluteStatus),"PRESS  10S");
-        label(v,fluteLabel,fluteStatus,-.046f,-.017f,.0015f,{.03f,.03f,.03f});
+        if(f.fluteTouch)x.flutePressTime=t.seconds;
+        float travel=.003f*std::clamp(float(1-(t.seconds-x.flutePressTime)/.18),0.f,1.f);
+        Color capColor=g.fluteUnlocked?Color{.90f,.91f,.86f}:Color{.42f,.45f,.46f};
+        fluteCap(v,compose(cart,Pose{{},button+Vec3{0,-travel,0}}),capColor);
+        if(x.fluteTexture) {
+            Pose face=compose(cart,Pose{{-.70710678f,0,0,.70710678f},button+Vec3{0,.00025f-travel,0}});
+            screenQuad(v,face,.064f,.064f,g.fluteUnlocked?2.f:3.f,capColor);
+        }
+        for(unsigned segment=0;segment<48;segment++) {
+            float a=2*pi*segment/48-pi/2,b=2*pi*(segment+1)/48-pi/2;
+            auto point=[&](float angle,float radius){return Vec3{button.x+std::cos(angle)*radius,.7752f,button.z+std::sin(angle)*radius};};
+            bool playing=g.fluteSeconds>0&&segment<48*std::clamp(g.fluteSeconds/10.f,0.f,1.f);
+            Color light=!g.fluteUnlocked?Color{.10f,.12f,.12f}:playing?Color{.12f,.72f,.32f}:Color{.32f,.26f,.12f};
+            triangle(v,cart,point(a,.051f),point(b,.054f),point(a,.054f),light);
+            triangle(v,cart,point(a,.051f),point(b,.051f),point(b,.054f),light);
+        }
         for(int i=0;i<2;i++) {
             Vec3 p=i?Interaction::pesterBin:Interaction::appleBin;
 
@@ -334,7 +421,12 @@ void Props::draw(ID3D12Resource*color,ID3D12Resource*depth,ID3D12Resource*screen
             if(!t.hands[i].tracked)continue;
             Pose hand=meters(f.hands[i]);
             bool itemHeld=f.held[i]==Held::Apple||f.held[i]==Held::PesterBall;
-            x.hands[i].draw(v,itemHeld?itemHandPose(hand,i):handMeshPose(hand),t.hands[i],f.held[i],i==holdingHand?&shutterPoint:nullptr);
+            if(f.held[i]==Held::None&&x.contactReady[i]&&x.contactFrame==t.frame) {
+                // Render exactly the surface that touched the dashboard.
+                for(auto vertex:x.contactVertices[i]) {
+                    vertex.position=cart.position+rotate(cart.orientation,vertex.position);v.push_back(vertex);
+                }
+            }else x.hands[i].draw(v,itemHeld?itemHandPose(hand,i):handMeshPose(hand),t.hands[i],f.held[i],i==holdingHand?&shutterPoint:nullptr);
             if(f.held[i]!=Held::None&&f.held[i]!=Held::Camera)
                 (f.held[i]==Held::Apple?x.appleMesh:x.pesterBallMesh).draw(v,heldItemPose(hand,i));
         }

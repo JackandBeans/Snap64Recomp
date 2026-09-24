@@ -202,6 +202,15 @@ INNER_HOOKS = [
 # alone -- and loud: if neither form follows the anchor, a regeneration has
 # changed the code and the rewrite would otherwise go silently missing.
 INSTRUCTION_PATCHES = [
+    # Both inlined AI_LEN reads must query the live host queue. A scratch
+    # mailbox once moved without its generated reader, silently making every
+    # audio buffer look empty. The reset path also inlines this MMIO read.
+    ('auThreadMain', 0x800219DC,
+     'ctx->r25 = MEM_W(ctx->r24, 0X4);',
+     'ctx->r25 = S32(snap_audio_remaining_bytes());'),
+    ('auThreadMain', 0x80022278,
+     'ctx->r14 = MEM_W(ctx->r24, 0X4);',
+     'ctx->r14 = S32(snap_audio_remaining_bytes());'),
     # fx_draw's on-screen test: a particle whose projected x lies outside the
     # console's picture, -1..1 in the projection's own units, is not drawn (the
     # test at 0x800A4C8C rejects x below -1, the one at 0x800A4C9C above 1;
@@ -231,6 +240,7 @@ INSTRUCTION_PATCHES = [
 
 # What the rewritten statements call; declared in funcs.h like the callbacks.
 PATCH_DECLS = [
+    'uint32_t snap_audio_remaining_bytes(void);',
     'float snap_fx_x_bound(void);',
     'uint32_t snap_fx_x_translate(uint32_t bits);',
 ]

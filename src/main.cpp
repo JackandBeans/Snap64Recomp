@@ -47,7 +47,6 @@
 #include "steam_deck.h"
 #include "mod_api.h"
 namespace snap { extern uint8_t* g_rdram; }
-extern "C" void snap_publish_ai_len(uint8_t* rdram);
 // The stall report's three sources (update_gfx): the game's logic-step
 // count (frame_cost.cpp), the renderer's queues (rt64_render_context.cpp)
 // and the game's threads (ultramodern threads.cpp).
@@ -315,13 +314,6 @@ static void update_gfx(void* /*gfx_data*/) {
     // up, the ROM check has passed, and the window exists. It is stopped in
     // main() before SDL_Quit.
     snap::input_start_pad_thread();
-
-    // Publish SDL's real audio backlog where the game's patched AI_LEN read
-    // (auThreadMain, vram 0x800219D8) now looks for it. Without this the game
-    // believes the audio queue is always empty and synthesizes a full frame of
-    // samples every tick, so music advances faster than wall-clock and the
-    // queue overruns (sped-up, choppy audio).
-    snap_publish_ai_len(snap::g_rdram);
 
     // The fast-forward key: the runtime's clocks, the audio and the
     // renderer's interpolation switch follow it (src/fast_forward.cpp).

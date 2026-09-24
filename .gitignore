@@ -57,6 +57,10 @@ __pycache__/
 # The run-time harvest's SNAP_STATS dump (src/menu_harvest.cpp).
 menu_font_runtime.json
 
+# Local VR diagnostic captures contain imagery from the loaded game.
+/vr-preview-*-left.png
+/vr-preview-*-right.png
+
 # Editor / OS
 .vs/
 .vscode/

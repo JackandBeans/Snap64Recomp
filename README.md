@@ -2,14 +2,19 @@
 
 <p align="center">
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License: GPLv3"></a>
-<a href="https://github.com/JackandBeans/Snap64Recomp/releases/latest"><img src="https://img.shields.io/github/v/release/JackandBeans/Snap64Recomp?label=release" alt="Latest release"></a>
-<a href="https://github.com/JackandBeans/Snap64Recomp/releases"><img src="https://img.shields.io/github/downloads/JackandBeans/Snap64Recomp/total?label=downloads" alt="Downloads"></a>
+<a href="https://github.com/JackandBeans/Snap64Recomp/releases/latest"><img src="https://img.shields.io/github/v/release/JackandBeans/Snap64Recomp?label=desktop%20release" alt="Latest upstream desktop release"></a>
+<a href="https://github.com/JackandBeans/Snap64Recomp/releases"><img src="https://img.shields.io/github/downloads/JackandBeans/Snap64Recomp/total?label=desktop%20downloads" alt="Upstream desktop downloads"></a>
 <img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64%20%7C%20Linux%20x86__64%20%7C%20Steam%20Deck-lightgrey" alt="Platform: Windows 10 or 11 x64, Linux x86_64, Steam Deck">
 </p>
 
 # Snap64 Recomp
 
-This working tree includes an experimental [Windows OpenXR VR build](docs/VR.md). See that guide for the Quest PC VR launcher, controls, and validation status.
+**Experimental VR fork:** This working tree adds Windows PC VR through OpenXR.
+Build it from source with `SNAP_ENABLE_VR=ON` and launch with `--vr`.
+A Quest can connect through a PC OpenXR runtime such as SteamVR; standalone
+Quest play is not supported. The upstream release links on this page lead
+to the original desktop port and do **not** include this fork's VR changes. See the
+[VR guide](docs/VR.md) for setup, controls and validation status.
 
 Snap64 Recomp is a native PC port of Pokémon Snap (Nintendo 64, US release)
 for Windows, Linux and the Steam Deck. It is made with
@@ -17,20 +22,20 @@ for Windows, Linux and the Steam Deck. It is made with
 the game's own code so that it runs directly on a PC. The method is called
 static recompilation. [RT64](https://github.com/rt64/rt64) draws the picture.
 
-Out of the box it plays like the cartridge. Widescreen, higher frame rates,
-mouse and gyro aim, button rebinding, fast forward, photo export and the
+In desktop mode it plays like the cartridge by default. Widescreen, higher
+frame rates, mouse and gyro aim, button rebinding, fast forward, photo export and the
 Snap Station's printer are there when you want them, and each stays off
 until you turn it on.
 
-### [Download the latest release](https://github.com/JackandBeans/Snap64Recomp/releases/latest)
+### [Download the latest desktop release](https://github.com/JackandBeans/Snap64Recomp/releases/latest)
 
-**This repository and its releases contain no game assets. You need your own
-ROM of the US cartridge to play.**
+**No ROM is provided. You need your own ROM of the US cartridge to play.**
 
-The [Releases](https://github.com/JackandBeans/Snap64Recomp/releases) page
-of this repository is the only official download.
+The [upstream Releases](https://github.com/JackandBeans/Snap64Recomp/releases)
+page is the official download for the desktop port. To try this fork's VR
+changes, [build this source tree](docs/VR.md#build-and-run).
 
-**Contents:** [Get it running](#get-it-running) ·
+**Contents:** [Get it running](#get-it-running) · [VR](#experimental-pc-vr) ·
 [Screenshots](#screenshots) ·
 [System requirements](#system-requirements) · [Features](#features) ·
 [Faithful by default](#faithful-by-default) · [Controls](#controls) ·
@@ -55,8 +60,9 @@ The rest of the documentation is listed [near the end](#documentation).
 > the other enhancements are under Options > Graphics. They all start off,
 > set to what the console did.
 
-These steps are for Windows. Linux and the Steam Deck are [further
-down](#linux-and-steam-deck).
+These steps are for the upstream Windows desktop release. Linux and the Steam
+Deck are [further down](#linux-and-steam-deck); VR setup is
+[below](#experimental-pc-vr).
 
 1. Download `Snap64Recomp-1.0.9-win64.zip` from the
    [Releases](https://github.com/JackandBeans/Snap64Recomp/releases/latest)
@@ -97,6 +103,35 @@ If something goes wrong, [Running](docs/MANUAL.md#running) in the manual
 says what Windows or an antivirus may object to, and what to attach to a
 bug report.
 
+## Experimental PC VR
+
+This fork adds tracked stereo rendering and motion-controller interaction to
+the Windows build. It uses a connected headset through the PC's active OpenXR
+runtime and Direct3D 12. A Quest has reached a focused session and submitted
+frames through SteamVR. This is not a standalone Quest app or an upstream
+release feature. The full game, headset comfort, stereo alignment and
+refresh-rate performance have not been verified in VR.
+
+Complete the normal [build prerequisites and ROM generation](BUILDING.md),
+then follow the [VR build and run steps](docs/VR.md#build-and-run). Configure
+with `-DSNAP_ENABLE_VR=ON`, keep the copied `assets/vr` folder beside the
+executable, and start `Snap64Recomp.exe --vr`. Starting without `--vr` keeps
+desktop play. `--vr-preview` produces synthetic eye captures for diagnostics;
+it does not test a headset.
+
+In VR, point and press trigger or A/X to use menus. Grip near the right-hand
+holster to pick up the camera with either hand; the holding hand's trigger
+takes a photo, and its thumbstick adjusts zoom. Grip an unlocked item at its
+dispenser and release to throw it. Press both thumbsticks to recenter, or
+click the left thumbstick to open VR settings. The cart follows its original
+route, with room-scale head movement and no free locomotion. See the
+[VR controls and settings](docs/VR.md#controls) for the full mapping.
+
+Keep `saves/vr-photo-lenses.json` together with `saves/pokemonsnap.bin` when
+moving a VR save: it records lens information that the original photo record
+cannot hold. The [VR validation record](docs/VR.md#validation-record-2026-09-23)
+distinguishes preview and automated checks from headset testing.
+
 ## Screenshots
 
 <table><tr>
@@ -123,6 +158,8 @@ picture. The full set, with a caption for each, is in
 
 * **Windows:** 64-bit Windows 10 or 11, and a GPU whose driver supports
   Direct3D 12 with Shader Model 6.0.
+* **VR build:** Windows, a connected PC VR headset and an active OpenXR
+  runtime on the same graphics adapter as RT64. VR uses Direct3D 12.
 * **Linux and Steam Deck:** an x86_64 system with a Vulkan 1.2 driver, SDL2
   and GTK 3. The Linux build is experimental.
 * **CPU:** a 64-bit x86 processor with SSE4.1. That is Intel from 2008
@@ -185,6 +222,9 @@ every one in full.
 * **Linux and the Steam Deck.** A native Linux build, played on a Deck in
   Desktop Mode and in Gaming Mode. The Windows build also runs under Proton
   ([STEAM-DECK.md](docs/STEAM-DECK.md)).
+* **Experimental PC VR in this fork.** Tracked stereo eyes, a handheld camera,
+  controller-directed menus, item throws and an in-headset settings panel.
+  Build it separately on Windows ([VR.md](docs/VR.md)).
 * **Mods and texture packs.** The runtime's `.nrm` mod loader and RT64's
   texture-pack loader are built in, and the Options screen has a Mods page
   for them. A
@@ -196,8 +236,8 @@ every one in full.
 <a id="the-rule-the-port-follows"></a>
 ## Faithful by default
 
-The port behaves like the console by default, and every enhancement is
-something you turn on. Frame rate, aspect ratio, anti-aliasing, overscan,
+In desktop mode the port behaves like the console by default, and every
+enhancement is something you turn on. Frame rate, aspect ratio, anti-aliasing, overscan,
 texture filtering and dithering all start as the console had them. Only
 what you turn on changes.
 
@@ -211,7 +251,8 @@ the game's photo scoring.
 
 ## Controls
 
-Keyboard and mouse, as the port ships them:
+Desktop keyboard and mouse, as the port ships them. For motion controllers,
+see [VR controls](docs/VR.md#controls).
 
 | N64 | Key | Mouse | In a course |
 | --- | --- | --- | --- |
@@ -337,6 +378,9 @@ them, and how to write one.
 * With Overscan Crop off, a thin light strip shows at the left of the lab's
   panel. The console drew the same pixels; Overscan Crop (F2) is the
   television's view.
+* The VR build remains experimental. Stereo alignment, physical throw feel,
+  camera photos through Oak's scoring, transitions, and a full playthrough
+  need further headset verification ([VR.md](docs/VR.md#validation-record-2026-09-23)).
 
 [KNOWN-ISSUES.md](docs/KNOWN-ISSUES.md) explains each one in full.
 
@@ -383,8 +427,8 @@ are the way in. Questions and requests have a place under
 
 ## What has been verified
 
-The whole game has been played through on a Windows PC. That is every
-course, every course again with Widescreen on, Oak's evaluations, the
+In desktop mode, the whole game has been played through on a Windows PC.
+That is every course, every course again with Widescreen on, Oak's evaluations, the
 Report, the album, the Gallery and a Snap Station print. On a Steam Deck,
 the Beach, the menus, the settings and the station have been played.
 
@@ -394,6 +438,12 @@ checks, and the station's 5 of 5. [VERIFICATION.md](docs/VERIFICATION.md) says w
 each check does, what every release reported, and what has only been read
 from the code and not seen.
 
+The VR build has passed Windows Release builds, interaction tests and
+synthetic stereo previews. A Quest connected through SteamVR reached a focused
+OpenXR session and received submitted frames. These checks do not establish
+a full VR playthrough or headset comfort; see the
+[VR validation record](docs/VR.md#validation-record-2026-09-23).
+
 ## Building
 
 See [BUILDING.md](BUILDING.md). Short version: the decompilation and IDO
@@ -401,7 +451,10 @@ under WSL, N64Recomp for the game and the patches, CMake and MSVC on
 Windows, and a list of things git does not carry
 ([What a clean checkout is missing](BUILDING.md#what-a-clean-checkout-is-missing)).
 `cpack -C Release` in the build directory then writes
-`Snap64Recomp-1.0.9-win64.zip` ([step 13](BUILDING.md#13-package)).
+`Snap64Recomp-1.0.9-win64.zip` for the desktop port
+([step 13](BUILDING.md#13-package)).
+For this fork's Windows OpenXR build, use the additional
+[VR instructions](docs/VR.md#build-and-run).
 
 <a id="how-i-made-it"></a>
 ## How it was made
@@ -425,14 +478,14 @@ compiled with the decompilation's own IDO toolchain and loaded over the
 original. [BUILDING.md](BUILDING.md) has the whole chain, with the tools
 and inputs at each step.
 
-### Made with Claude Code
+### Original port's development
 
-I made this port with Claude Code, an AI coding tool. I decide what the
-port does, test it on my own PC and Steam Deck, and turn what players
-report into the next release. Claude writes the code, the tools and the
-documentation in sessions I direct. Each commit made that way names the
-model in its `Co-Authored-By` line, except 46 from the first week, before
-the line was added.
+JackandBeans made the original desktop port with Claude Code, an AI coding
+tool. They chose the features, tested them on a PC and Steam Deck, and
+incorporated player reports. Commits made that way name the model in their
+`Co-Authored-By` lines, except 46 from the first week, before that line was
+added. DramaticShape's VR work in this fork is credited in the license
+section and the [VR asset notice](assets/vr/NOTICE.md).
 
 ## Thanks
 
@@ -449,6 +502,9 @@ None of this would exist without:
   project whose structure it follows.
 * [RT64](https://github.com/rt64/rt64) by Dario and contributors, the
   renderer, whose frame interpolation this port extends.
+* DramaticShape for this fork's OpenXR implementation and VR assets, and
+  DigitalN8m4r3 for the CC0 hand source credited in
+  [the VR asset notice](assets/vr/NOTICE.md).
 * James Chambers (jamchamb), whose [2021
   write-up](https://jamchamb.net/2021/08/17/snap-station.html) recovered the
   Snap Station protocol from the cartridge, without a station to test
@@ -467,10 +523,11 @@ None of this would exist without:
   named in `NOTICE.md`.
 * The Roboto Project Authors, for the typeface the printer's lettering is
   set from.
-* Claude Code, the tool I built this with ([How it was made](#how-it-was-made)).
+* Claude Code, used to build the original port
+  ([How it was made](#how-it-was-made)).
 * Jack and Beans, the team at HAL Laboratory who made the game. Their name,
-  shown in the game's opening and at the head of its credits, gave me the
-  name I use here. It is on the title screen's credits line,
+  shown in the game's opening and at the head of its credits, gave the
+  original maintainer the name JackandBeans. It is on the title screen's credits line,
   `JackandBeans (Snap64 Recomp) · v1.0.9`, with the port's name and version
   ([the game's history](docs/HISTORY.md)).
 * [Video Game Esoterica](https://www.youtube.com/@VideoGameEsoterica), whose video on the port,
@@ -485,6 +542,7 @@ None of this would exist without:
 * [The manual](docs/MANUAL.md) -- every control, page, hotkey and setting
 * [The Snap Station](docs/SNAP-STATION.md)
 * [Linux and the Steam Deck](docs/STEAM-DECK.md)
+* [Experimental Windows PC VR](docs/VR.md)
 * [Known issues, in full](docs/KNOWN-ISSUES.md)
 * [What has been verified](docs/VERIFICATION.md)
 * [Mods](docs/MODS.md)
@@ -494,13 +552,22 @@ None of this would exist without:
 
 ## License
 
-Copyright (C) 2026 JackandBeans. The port's own code is GPLv3: see
-`LICENSE` and [NOTICE.md](NOTICE.md).
+The port's code is distributed under GPLv3. Copyright (C) 2026
+JackandBeans for the original port; this fork's VR contributions are by
+DramaticShape. See [LICENSE](LICENSE) and the
+[third-party notices](NOTICE.md). If you redistribute a VR build or its
+assets, retain the applicable license texts and
+[VR asset attribution](assets/vr/NOTICE.md), including the credit for the
+CC0 Godot XR Tools hand source and DramaticShape's glove changes.
 
 This project is not affiliated with, endorsed by or connected to Nintendo,
 Creatures Inc., GAME FREAK inc., HAL Laboratory or The Pokémon Company.
 Pokémon and Pokémon Snap are their trademarks, and the game is theirs. No
-game data is included; you supply your own ROM. The released program is
+ROM is included; you supply your own. The upstream released program is
 compiled from the game's code, which N64: Recompiled translated into C from
-my own cartridge dump. That is how a static recompilation works, and
+the original maintainer's cartridge dump. That is how a static recompilation
+works, and
 [NOTICE.md](NOTICE.md) says what is derived from the game and how.
+The VR camera, cart and item meshes are newly authored depictions of game
+objects, and the hand asset's provenance is recorded in its notice. These
+assets do not grant rights to Pokémon Snap or its characters and designs.

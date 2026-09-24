@@ -2,7 +2,7 @@
 
 ## ZERO-ONE flute button
 
-The left dashboard has a gold **POKE FLUTE** button within seated reach. With an empty hand, reach to the cap and press down, or pull trigger near it. Withdraw before pressing again. It is gray and marked **LOCKED** until the original flute unlock is earned. During playback it turns green and shows seconds remaining.
+The left dashboard curves into a shallow round button bearing the game's original **Poké Flute icon**. Its silver bezel matches the gauges. Press an empty hand into the cap: contact with the visible fingers or palm activates it, with no trigger pull. Withdraw before pressing again. The cap and icon stay gray and inactive until the original flute unlock is earned. During playback, a slim green arc around the rim shows the time remaining. The cap stays depressed while the hand touches it and returns when released.
 
 Each press plays native flute music and Pokemon reaction commands for **10 wall-clock seconds**. Pressing again during playback changes the tune and restarts the timer. Short tunes loop without switching melodies. Throwing bait or a Pester Ball does not interrupt the song. Pause, headset focus loss, and cutscenes cancel playback; scene changes discard pending requests. Native course music resumes through the existing music process.
 
@@ -47,7 +47,7 @@ and release grip to throw.
 D ? flute playback:
 
 ```text
-Press the POKE FLUTE button
+Press the round flute icon
 on the ZERO-ONE to play
 music for 10 seconds.
 ```
@@ -76,8 +76,8 @@ The hook identifies the matching USA runtime tables numerically in overlay 114:
 
 ## Validation
 
-Windows Release build and automated interaction tests pass. Tests cover both hands, unlocks, tracking loss/recovery, re-arming, nearby-trigger activation, cinematic suppression, dialogue advancement, timer boundaries/restart/cancellation, unique replacement IDs, and reserved text-buffer bounds.
+Windows Release build and automated interaction tests pass. Tests cover both hands, unlocks, tracking loss/recovery, re-arming, visible-hand contact, trigger-only rejection, cinematic suppression, dialogue advancement, timer boundaries/restart/cancellation, unique replacement IDs, and reserved text-buffer bounds.
 
 The scripted VR preview logged the native flute stop **10.000 seconds** after its second press. The cart button and all five replacement pages were visually checked in the game's VR preview, including preserved item artwork and the following interaction hint. Actual headset reach, audible output, and comfort have not been verified in this pass.
 
-Preview diagnostics: `SNAP_VR_FLUTE_TEST=1` simulates two button presses with a temporary host-only unlock. `SNAP_VR_TUTORIAL_TEST=bait`, `pester`, or `flute` exercises the selected dialogue at the first lab conversation and captures its display. These require `--vr-preview`; they do not write progression flags.
+Preview diagnostics: `SNAP_VR_FLUTE_TEST=1` simulates two downward hand presses with both triggers released and a temporary host-only unlock. Set it to `locked` to check the gray inactive button without changing the save. `SNAP_VR_TUTORIAL_TEST=bait`, `pester`, or `flute` exercises the selected dialogue at the first lab conversation and captures its display. These require `--vr-preview`; they do not write progression flags.

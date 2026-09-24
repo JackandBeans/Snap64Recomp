@@ -23,6 +23,8 @@ struct SharedState {
     uint16_t buttons=0, pulses=0;
     uint16_t pulseHeld=0;
     std::chrono::steady_clock::time_point pulseUntil{};
+    std::chrono::steady_clock::time_point shutterTime{},shutterPollTime{};
+    uint64_t shutterSerial=0;
     float stickX=0,stickY=0;
     uint64_t focusFrame=0;
     std::array<uint64_t,2> detectorFrames{};

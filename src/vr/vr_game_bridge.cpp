@@ -7,6 +7,7 @@
 #include <cstring>
 #include <cstdlib>
 #include "paths.h"
+#include "audio.h"
 #include <json/json.hpp>
 #include <fstream>
 #include <map>
@@ -93,11 +94,18 @@ extern "C" void mainCameraRender(uint8_t* rdram,recomp_context* ctx) {
     if(snap::vr::requested.load()) {
         auto& s=snap::vr::shared();std::lock_guard lock(s.mutex);
         auto& g=s.game;g.course=true;++g.frame;
+        if(!g.fluteIcon) {
+            auto icon=std::make_shared<FluteIcon>();
+            if(harvestFluteIcon(rdram,*icon)) {
+                g.fluteIcon=std::move(icon);
+                fprintf(stderr,"[SNAP-VR] Flute icon decoded from the loaded game sprite (28x28 RGBA32)\n");
+            }
+        }
         g.cartPosition=vector(rdram,movement+0xc);g.cartYaw=scalar(rdram,movement+0x1c);
         g.paused=MEM_BU(0,(int32_t)paused)!=0;
         g.cartVelocity=vector(rdram,0x80382CA0)*30;
         g.fluteUnlocked=(word(rdram,0x803AE51C)&4)!=0;
-        if(preview&&std::getenv("SNAP_VR_FLUTE_TEST"))g.fluteUnlocked=true;
+        if(preview)if(const char* test=std::getenv("SNAP_VR_FLUTE_TEST"))g.fluteUnlocked=std::strcmp(test,"locked")!=0;
         g.apples=word(rdram,0x803AE51C)&1;g.pesterBalls=word(rdram,0x803AE51C)&2;
         g.film=std::clamp(60-int(word(rdram,0x800AC0E0)),0,60);
         g.itemReady=word(rdram,0x80382CB4)==0&&!word(rdram,0x80382D0C);
@@ -207,10 +215,19 @@ extern "C" void PokemonDetector_InitDetector(uint8_t* rdram,recomp_context* ctx)
     }
 }
 extern "C" void makePhoto(uint8_t* rdram,recomp_context* ctx) {
+    const auto photoStart=std::chrono::steady_clock::now();
     auto index=word(rdram,0x800AC0E0);auto context=word(rdram,0x803AEF30)&1;
     __real_makePhoto(rdram,ctx);
     if(snap::vr::requested.load()&&index<60&&word(rdram,0x800AC0E0)>index) {
         loadPhotoLenses();photoLenses[photoKey(rdram,0x800B0598+index*0x3a0)]=detectorLens[context];savePhotoLenses();
+        if(std::getenv("SNAP_VR_LATENCY_DIAG")) {
+            auto& s=shared();double inputMs=-1,pollMs=-1;uint64_t serial;
+            {std::lock_guard lock(s.mutex);serial=s.shutterSerial;
+             if(s.shutterTime!=std::chrono::steady_clock::time_point{})inputMs=std::chrono::duration<double,std::milli>(photoStart-s.shutterTime).count();
+             if(s.shutterPollTime!=std::chrono::steady_clock::time_point{})pollMs=std::chrono::duration<double,std::milli>(s.shutterPollTime-s.shutterTime).count();}
+            fprintf(stderr,"[SNAP-VR-LATENCY] shutter %llu input-to-poll %.2f ms input-to-photo %.2f ms photo-save %.2f ms audio-queued %zu bytes\n",
+                (unsigned long long)serial,pollMs,inputMs,std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-photoStart).count(),snap::audio_queued_bytes());
+        }
     }
 }
 extern "C" void func_8009D8A8(uint8_t* rdram,recomp_context* ctx) {

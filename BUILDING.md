@@ -169,6 +169,12 @@ generated definition to `__real_<name>` and defining `<name>` itself
 inserts the inner hooks listed in its `INNER_HOOKS` table. Run it after every
 step 4.
 
+The script also replaces both inlined `AI_LEN` reads in `auThreadMain` with
+live host audio queue queries. This step is required even when reusing older
+generated files: the retired scratch-address patch can cause audio delay to
+grow toward a second. Instruction replacements validate their generated-code
+anchors and fail if those instructions have changed.
+
 ### 6. Regenerate the overlay table (only when step 4 changed anything)
 
     python3 tools/gen_overlays.py pokemonsnap.relocs.elf

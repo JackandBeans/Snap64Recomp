@@ -12,6 +12,33 @@ using namespace snap::vr;
 void check(bool v,const char* message) { if(!v){std::cerr<<message<<'\n';std::exit(1);} }
 bool near(float a,float b) {return std::abs(a-b)<0.001f;}
 int main() {
+    {
+        std::vector<uint8_t> memory(8*1024*1024);
+        constexpr uint32_t sprite=0x803880E8,bitmap=0x803880D8,pixels=0x80387498;
+        auto byte=[&](uint32_t a,uint8_t v){memory[(a-0x80000000u)^3u]=v;};
+        auto half=[&](uint32_t a,uint16_t v){byte(a,uint8_t(v>>8));byte(a+1,uint8_t(v));};
+        auto word=[&](uint32_t a,uint32_t v){half(a,uint16_t(v>>16));half(a+2,uint16_t(v));};
+        half(sprite+4,28);half(sprite+6,28);half(sprite+0x14,0x201);
+        half(sprite+0x28,1);byte(sprite+0x31,3);word(sprite+0x34,bitmap);
+        half(bitmap,28);half(bitmap+2,28);half(bitmap+12,28);word(bitmap+8,pixels);
+        for(unsigned y=0;y<28;y++)for(unsigned x=0;x<28;x++) {
+            uint32_t a=pixels+(y*28+x)*4;
+            byte(a,uint8_t(x));byte(a+1,uint8_t(y));byte(a+2,93);byte(a+3,uint8_t(x*9));
+        }
+        FluteIcon icon;
+        check(harvestFluteIcon(memory.data(),icon),"loaded RGBA32 flute sprite decodes");
+        check(icon.rgba[0]==0&&icon.rgba[4]==1,"even sprite row preserves horizontal order");
+        check(icon.rgba[112]==2&&icon.rgba[120]==0&&icon.rgba[113]==1,"odd RGBA32 row swaps 64-bit halves");
+        check(icon.rgba[114]==93&&icon.rgba[115]==18,"sprite preserves RGB and alpha independently");
+        half(sprite+0x14,1);
+        check(harvestFluteIcon(memory.data(),icon)&&icon.rgba[112]==0,"unshuffled sprite stays in source order");
+        byte(sprite+0x31,2);check(!harvestFluteIcon(memory.data(),icon),"wrong sprite format is refused");
+        byte(sprite+0x31,3);word(bitmap+8,0x807FFFF0);
+        check(!harvestFluteIcon(memory.data(),icon),"pixel range crossing RDRAM is refused");
+        word(sprite+0x34,0xFFFFFFF0);
+        check(!harvestFluteIcon(memory.data(),icon),"invalid sprite pointer is refused before dereferencing");
+        check(!harvestFluteIcon(nullptr,icon),"missing memory is refused");
+    }
     FluteTimer song;
     check(song.update(1,1,true,true)==FluteTimer::Play,"flute starts on request");
     check(song.update(10.999,1,true,false)==FluteTimer::None&&song.active,"flute lasts ten seconds");
@@ -33,31 +60,44 @@ int main() {
     }
     check(tutorialReplacements[0].page==2&&tutorialReplacements[1].page==4,"bait replaces controls and distance guidance");
     check(tutorialReplacements[2].page==1,"pester replaces controls page");
+    {
+        FluteContact above,contact,corner,under;
+        above.include(Interaction::fluteButton+Vec3{0,.02f,0},Interaction::fluteButton);
+        contact.include(Interaction::fluteButton+Vec3{.02f,-.002f,0},Interaction::fluteButton);
+        corner.include(Interaction::fluteButton+Vec3{.04f,0,.04f},Interaction::fluteButton);
+        under.include(Interaction::fluteButton+Vec3{0,-.08f,0},Interaction::fluteButton);
+        check(above.nearCap&&!above.touching,"hovering finger is near but does not press");
+        check(contact.nearCap&&contact.touching,"skin entering the cap presses");
+        check(corner.nearCap&&!corner.touching,"square corner outside round cap does not press");
+        check(under.nearCap&&!under.touching,"hand below dashboard cannot re-arm during penetration");
+    }
     for(int side=0;side<2;side++) {
         Interaction controls;Tracking tracking{};GameState game{};
+        std::array<FluteContact,2> contacts{};
+        auto update=[&]{return controls.update(tracking,game,contacts);};
         tracking.headValid=tracking.focused=true;tracking.head.position={0,1.2f,0};
         game.course=true;game.fluteUnlocked=true;game.epoch=1;
-        controls.update(tracking,game);
-        auto& hand=tracking.hands[side];hand.tracked=true;hand.grip.position=Interaction::fluteButton;
-        check(!controls.update(tracking,game).flute,"tracking appearing on cap never presses");
-        hand.grip.position.y+=.2f;controls.update(tracking,game);
-        hand.grip.position=Interaction::fluteButton;
-        check(controls.update(tracking,game).flute,"either hand presses physical cap");
-        check(!controls.update(tracking,game).flute,"resting hand cannot repeat press");
-        hand.grip.position.y+=.2f;controls.update(tracking,game);
-        hand.grip.position=Interaction::fluteButton;game.fluteUnlocked=false;
-        check(!controls.update(tracking,game).flute,"locked button cannot play");
+        update();
+        auto& hand=tracking.hands[side];hand.tracked=true;hand.grip.position=Interaction::fluteButton+Vec3{0,.20f,0};
+        contacts[side]={true,true};
+        check(!update().flute,"tracking appearing on cap never presses");
+        contacts[side]={};update();contacts[side]={true,true};
+        check(update().flute,"skin contact presses while controller grip is above cap and trigger is released");
+        auto resting=update();
+        check(!resting.flute&&resting.fluteTouch,"resting hand holds cap down without repeating music");
+        contacts[side]={};update();contacts[side]={true,true};game.fluteUnlocked=false;
+        auto locked=update();check(!locked.flute&&!locked.fluteTouch,"locked button cannot play or depress");
         game.fluteUnlocked=true;hand.tracked=false;
-        check(!controls.update(tracking,game).flute,"lost tracking cannot press");
+        check(!update().flute,"lost tracking cannot press");
         hand.tracked=true;hand.primary=true;
-        auto result=controls.update(tracking,game);
+        auto result=update();
         check(!result.flute&&result.advance,"A/X advances dialogue without playing music");
-        hand.grip.position.y+=.2f;controls.update(tracking,game);
-        hand.grip.position=Interaction::fluteButton;hand.grip.position.y+=.08f;hand.trigger=1;
-        check(controls.update(tracking,game).flute,"nearby trigger can press cart button");
-        hand.grip.position.y+=.2f;controls.update(tracking,game);
-        hand.grip.position=Interaction::fluteButton;game.cinematic=true;
-        check(!controls.update(tracking,game).flute,"cinematic cannot press button");
+        contacts[side]={};update();contacts[side]={true,false};hand.trigger=1;
+        check(!update().flute,"trigger pull near the cap cannot activate music");
+        hand.trigger=0;contacts[side]={true,true};
+        check(update().flute,"second physical press works after withdrawal");
+        contacts[side]={};update();contacts[side]={true,true};game.cinematic=true;
+        check(!update().flute,"cinematic cannot press button");
     }
 
     check(length(throwVelocity({{0,{}},{.04,{0,0,-.08f}},{.08,{0,0,-.16f}}})-Vec3{0,0,-4.6f})<.001f,"release uses the reduced 2.3x gain");

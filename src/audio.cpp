@@ -270,6 +270,11 @@ void audio_queue_samples(int16_t* samples, size_t count) {
         slow_prev_valid = false;
     }
     const size_t byte_count = count * sizeof(int16_t);
+    static const bool latency_diag=std::getenv("SNAP_VR_LATENCY_DIAG")!=nullptr;
+    static unsigned latency_buffers=0;
+    if(latency_diag&&++latency_buffers%120==0)
+        fprintf(stderr,"[SNAP-AUDIO-LATENCY] queued %.2f ms, submitting %.2f ms at %u Hz\n",
+            1000.0*SDL_GetQueuedAudioSize(audio_device)/(current_frequency*4.0),1000.0*byte_count/(current_frequency*4.0),current_frequency);
     if (SDL_QueueAudio(audio_device, swap_buffer.data(), static_cast<uint32_t>(byte_count)) != 0) {
         static bool reported = false;
         if (!reported) {
