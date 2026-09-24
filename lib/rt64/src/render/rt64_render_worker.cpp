@@ -20,6 +20,13 @@ namespace RT64 {
 
     RenderWorker::~RenderWorker() { }
 
+    RenderWorker::RenderWorker(RenderDevice *device, const std::string &name, std::shared_ptr<RenderCommandQueue> queue)
+        : device(device), name(name), commandQueue(std::move(queue)) {
+        assert(device && commandQueue);
+        commandList = commandQueue->createCommandList();
+        commandFence = device->createCommandFence();
+    }
+
     void RenderWorker::execute() {
         commandQueue->executeCommandLists(commandList.get(), commandFence.get());
     }

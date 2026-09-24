@@ -5,7 +5,13 @@
 - Windows host: `powershell -NoProfile -ExecutionPolicy Bypass -File tools/build_quest.ps1 -Install -Launch -Serial SERIAL` builds and deploys the optimized release. The ROM is transferred separately, never packaged.
 - Benchmark builds use `-Benchmark`, package `org.snap64.quest.benchmark`, and isolated saves/settings. Never replace the user's release save with a benchmark fixture.
 - Run `python tools/quest_benchmark.py --serial SERIAL --refresh 80` for automated Beach measurement. Run 72 Hz separately if 80 Hz fails; do not describe a 72 Hz result as an 80 Hz pass.
+- Add `--scene intro --timeout 180` to measure the complete opening movie, including its authored camera and character interpolation. Intro runs use neutral input and a completion checkpoint; they do not qualify Beach.
+- Benchmark `pose_uploads.csv` audits the moving object/limb matrices submitted to both eye uploaders. Keep CPU pose evidence distinct from final image motion and deforming-vertex validation; a timing pass alone is not acceptance.
+- Shader compilation uses the checksum-pinned host DXC downloaded by `tools/build_quest.py` under ignored `build-quest/toolchains/`. Android runtime-format image shaders require its unknown-format support.
+- For Vulkan validation, build with `--benchmark --validation-layer PATH_TO_LIBVK_LAYER_KHRONOS_VALIDATION_SO` and enable the Android per-app GPU debug layer for the benchmark package. Restore the previous global GPU debug settings afterward. Validation and `--capture` runs are excluded from performance qualification.
+- Include a synchronization-validation run (`adb shell setprop debug.vulkan.khronos_validation.validate_sync true`) when changing batching, uploads, or frame ownership; ordinary core validation does not find overlapping transfer writes. Restore the prior property afterward.
 - Routine performance iterations stop approximately halfway through Beach (77 seconds after confirmed entry). Add `--full-course` for final qualification; short iterations cannot satisfy the complete-course acceptance requirement.
+- The host runner keeps the USB-connected headset awake using stay-on and Meta's virtual proximity close broadcast, then restores normal proximity control and the prior stay-on setting. Do not require the user to wear the headset for automated runs. Real OpenXR focus and head tracking remain mandatory.
 - Native tests: `cmake -S tests/vr -B build-win/quest-vr-tests`, `cmake --build build-win/quest-vr-tests --config Release`, then `ctest --test-dir build-win/quest-vr-tests -C Release --output-on-failure`.
 - Changes to guest wrappers require updating `tools/hook_funcs.py` and running it. Generated `RecompiledFuncs/` files are ignored; do not hand-edit them as the sole implementation.
 

@@ -4,29 +4,62 @@
 #include <chrono>
 #include <cstdio>
 #include <filesystem>
+#include <cstring>
 
 namespace snap::vr {
 // Only compiled into the isolated benchmark. Never synthesize head/eye poses,
 // focus, or tracking validity: the real runtime must supply those.
 struct QuestBenchmark {
     FILE* frames=nullptr;
+    FILE* gpuFrames=nullptr;
+    FILE* animationFrames=nullptr;
+    FILE* poseFrames=nullptr;
+    std::array<char,65536> poseBuffer{};
     std::array<char,65536> buffer{};
     double started=0,lastFlush=0,courseStart=0;
     uint64_t courseEpoch=0;
     bool entered=false,complete=false,hadFocus=false,realControllers=false;
+    bool introSeen=false,introComplete=false;
     Pose origin{};
     uint64_t samples=0;
     static double clock() {return std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();}
     QuestBenchmark() {
         std::filesystem::create_directories("benchmark/results");
         frames=std::fopen("benchmark/results/frames.csv","w");
+        gpuFrames=std::fopen("benchmark/results/gpu.csv","w");
+        animationFrames=std::fopen("benchmark/results/animation.csv","w");
+        poseFrames=std::fopen("benchmark/results/pose_uploads.csv","w");
+        if(poseFrames){std::setvbuf(poseFrames,poseBuffer.data(),_IOFBF,poseBuffer.size());
+            std::fputs("tracking_frame,eye,object,matrix,alpha,source_motion,from_a,from_b,pose_hash,blends\n",poseFrames);}
+        if(animationFrames)std::fputs("tracking_frame,source_a,source_b,published,animation_time,source_age,alpha,stale,matched,mutable_images\n",animationFrames);
+        if(gpuFrames)std::fputs("tracking_frame,gpu_ms,left_gpu_ms,right_gpu_ms,viewfinder_gpu_ms\n",gpuFrames);
         if(frames) {
             std::setvbuf(frames,buffer.data(),_IOFBF,buffer.size());
-            std::fputs("time,predicted,tracking_frame,epoch,game_frame,source_frame,workload,alpha,course,cinematic,paused,focused,head_valid,width,height,hz,cpu_ms,gpu_ms,wait_ms,left_ms,right_ms,viewfinder_ms,props_ms,copy_ms,camera_held,film,level_id\n",frames);
+            std::fputs("time,predicted,tracking_frame,epoch,game_frame,source_frame,workload,alpha,course,cinematic,paused,focused,head_valid,width,height,hz,cpu_ms,gpu_ms,wait_ms,left_ms,right_ms,viewfinder_ms,props_ms,copy_ms,camera_held,film,level_id,left_gpu_ms,right_gpu_ms,viewfinder_gpu_ms,xr_wait_ms,xr_begin_ms,xr_end_ms,source_cpu_ms,source_gpu_ms\n",frames);
         }
         started=clock();
     }
-    ~QuestBenchmark(){if(frames)std::fclose(frames);}
+    ~QuestBenchmark(){if(frames)std::fclose(frames);if(gpuFrames)std::fclose(gpuFrames);if(animationFrames)std::fclose(animationFrames);if(poseFrames)std::fclose(poseFrames);}
+    void poseUpload(uint64_t frame,unsigned eye,uint32_t object,uint32_t matrix,float alpha,
+        const void* a,const void* b,const void* pose,bool blends) {
+        if(!poseFrames)return;
+        float av[16],bv[16],pv[16];std::memcpy(av,a,sizeof(av));std::memcpy(bv,b,sizeof(bv));std::memcpy(pv,pose,sizeof(pv));
+        float motion=0,fromA=0,fromB=0;
+        for(unsigned i=0;i<16;++i){motion=std::max(motion,std::abs(av[i]-bv[i]));fromA=std::max(fromA,std::abs(pv[i]-av[i]));fromB=std::max(fromB,std::abs(pv[i]-bv[i]));}
+        if(motion<1e-4f)return;
+        uint64_t hash=14695981039346656037ull;
+        const auto* bytes=static_cast<const unsigned char*>(pose);
+        for(unsigned i=0;i<sizeof(pv);++i){hash^=bytes[i];hash*=1099511628211ull;}
+        std::fprintf(poseFrames,"%llu,%u,%u,%u,%.6f,%.6f,%.6f,%.6f,%llu,%d\n",
+            (unsigned long long)frame,eye,object,matrix,alpha,motion,fromA,fromB,(unsigned long long)hash,blends);
+    }
+    void animationSample(uint64_t frame,double a,double b,double published,double time,double age,float alpha,bool stale,bool matched,bool mutableImages) {
+        if(animationFrames)std::fprintf(animationFrames,"%llu,%.6f,%.6f,%.6f,%.6f,%.6f,%.6f,%d,%d,%d\n",
+            (unsigned long long)frame,a,b,published,time,age,alpha,stale,matched,mutableImages);
+    }
+    void gpuSample(uint64_t frame,double span,const std::array<double,3>& views) {
+        if(gpuFrames)std::fprintf(gpuFrames,"%llu,%.3f,%.3f,%.3f,%.3f\n",(unsigned long long)frame,span,views[0],views[1],views[2]);
+    }
     void script(Tracking& t,const GameState& g) {
         realControllers=t.hands[0].tracked||t.hands[1].tracked;
         if(!t.focused||!t.headValid)return;
@@ -51,20 +84,27 @@ struct QuestBenchmark {
         }
     }
     void sample(const Tracking& t,const GameState& g,uint64_t source,uint64_t workload,float alpha,
-        unsigned width,unsigned height,float hz,double cpu,double gpu,double wait,const std::array<double,7>& stages,bool camera,uint32_t overlay) {
+        unsigned width,unsigned height,float hz,double cpu,double gpu,double wait,const std::array<double,7>& stages,bool camera,uint32_t overlay,
+        const std::array<double,3>& viewGpu,const std::array<double,3>& xrTimes,double sourceCpu,double sourceGpu) {
         if(!frames)return;
         double now=clock();
+        if(overlay==0xA08E30&&g.cinematic)introSeen=true;
+        if(introSeen&&!g.cinematic)introComplete=true;
         if(entered&&!g.course)complete=true;
-        std::fprintf(frames,"%.6f,%.6f,%llu,%llu,%llu,%llu,%llu,%.6f,%d,%d,%d,%d,%d,%u,%u,%.1f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%d,%d,%u\n",
+        std::fprintf(frames,"%.6f,%.6f,%llu,%llu,%llu,%llu,%llu,%.6f,%d,%d,%d,%d,%d,%u,%u,%.1f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%d,%d,%u,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f,%.3f\n",
             now,t.seconds,(unsigned long long)t.frame,(unsigned long long)g.epoch,(unsigned long long)g.frame,
             (unsigned long long)source,(unsigned long long)workload,alpha,g.course,g.cinematic,g.paused,t.focused,t.headValid,width,height,hz,
-            cpu,gpu,wait,stages[0],stages[1],stages[2],stages[3],stages[4],camera,g.film,unsigned(g.levelId));
+            cpu,gpu,wait,stages[0],stages[1],stages[2],stages[3],stages[4],camera,g.film,unsigned(g.levelId),
+            viewGpu[0],viewGpu[1],viewGpu[2],xrTimes[0],xrTimes[1],xrTimes[2],sourceCpu,sourceGpu);
         ++samples;
         if(now-lastFlush>=1||complete) {
             std::fflush(frames);lastFlush=now;
+            if(gpuFrames)std::fflush(gpuFrames);
+            if(animationFrames)std::fflush(animationFrames);
+            if(poseFrames)std::fflush(poseFrames);
             auto* status=std::fopen("benchmark/results/status.tmp","w");
-            if(status){std::fprintf(status,"{\"elapsed\":%.3f,\"entered\":%s,\"complete\":%s,\"focused\":%s,\"head_valid\":%s,\"samples\":%llu,\"overlay\":%u,\"real_controllers\":%s}",
-                now-started,entered?"true":"false",complete?"true":"false",t.focused?"true":"false",t.headValid?"true":"false",(unsigned long long)samples,overlay,realControllers?"true":"false");
+            if(status){std::fprintf(status,"{\"elapsed\":%.3f,\"entered\":%s,\"complete\":%s,\"focused\":%s,\"head_valid\":%s,\"samples\":%llu,\"overlay\":%u,\"real_controllers\":%s,\"intro_seen\":%s,\"intro_complete\":%s}",
+                now-started,entered?"true":"false",complete?"true":"false",t.focused?"true":"false",t.headValid?"true":"false",(unsigned long long)samples,overlay,realControllers?"true":"false",introSeen?"true":"false",introComplete?"true":"false");
                 std::fclose(status);std::rename("benchmark/results/status.tmp","benchmark/results/status.json");}
         }
     }

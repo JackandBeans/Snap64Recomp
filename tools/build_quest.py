@@ -14,6 +14,7 @@ import subprocess
 import sys
 import zipfile
 import xml.etree.ElementTree as ET
+import urllib.request
 
 ROOT = Path(__file__).resolve().parents[1]
 PACKAGE = 'org.snap64.quest'
@@ -46,6 +47,21 @@ def copy(source, destination):
     shutil.copy2(source, destination)
 
 
+def quest_shader_compiler(build):
+    # Pinned Microsoft release: unlike the old desktop toolchain it supports
+    # runtime-format SPIR-V texel buffers required by the Quest renderer.
+    directory=build/'toolchains/dxc-1.9.2607'
+    executable=directory/'bin/x64/dxc.exe'
+    if not executable.exists():
+        directory.mkdir(parents=True,exist_ok=True)
+        archive=directory/'dxc.zip'
+        urllib.request.urlretrieve('https://github.com/microsoft/DirectXShaderCompiler/releases/download/v1.9.2607/dxc_2026_07_29.zip',archive)
+        if hashlib.sha256(archive.read_bytes()).hexdigest()!='a1dfb116ba3eeae6a1582291b53a8e7bf65ad760676bd3194685c8f7367cd241':
+            raise RuntimeError('Quest shader compiler download checksum mismatch')
+        with zipfile.ZipFile(archive) as package:package.extractall(directory)
+    return require(executable)
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--install', action='store_true')
@@ -58,6 +74,7 @@ def main():
     parser.add_argument('--host-build', type=Path, default=ROOT / 'build-win')
     parser.add_argument('--jobs', type=int, default=8)
     parser.add_argument('--benchmark', action='store_true', help='Isolated optimized controller-free benchmark APK')
+    parser.add_argument('--validation-layer', type=Path, help='Package a Khronos Android arm64 validation layer in the benchmark only')
     args = parser.parse_args()
     if os.name != 'nt':
         parser.error('This script currently uses the Windows host shader compiler.')
@@ -116,6 +133,7 @@ def main():
         '-DANDROID_ABI=arm64-v8a', '-DANDROID_PLATFORM=android-29', '-DANDROID_STL=c++_shared',
         '-DCMAKE_BUILD_TYPE=Release', '-DSNAP_ENABLE_VR=ON', f'-DSNAP_ROM={rom}',
         f'-DSNAP_QUEST_BENCHMARK={"ON" if args.benchmark else "OFF"}',
+        f'-DSNAP_HOST_DXC={quest_shader_compiler(build)}',
         f'-DSNAP_HOST_RSPRECOMP={require(rsp[0])}', f'-DSNAP_HOST_FILE_TO_C={require(file_to_c[0])}')
     run('cmake', '--build', native, '--target', 'Snap64Recomp', '-j', args.jobs)
 
@@ -165,6 +183,7 @@ def main():
         root.set('package', package)
         app = root.find('application')
         app.set(f'{{{ns}}}label', 'Snap64 Quest Benchmark')
+        ET.SubElement(app, 'meta-data', {f'{{{ns}}}name': 'com.android.graphics.injectLayers.enable', f'{{{ns}}}value': 'true'})
         app.find('activity').set(f'{{{ns}}}name', PACKAGE + '.QuestActivity')
         ET.SubElement(root, 'uses-feature', {f'{{{ns}}}name': 'oculus.software.handtracking', f'{{{ns}}}required': 'false'})
         ET.SubElement(root, 'uses-permission', {f'{{{ns}}}name': 'com.oculus.permission.HAND_TRACKING'})
@@ -177,6 +196,10 @@ def main():
                  require(native / 'lib/SDL/libSDL2.so'),
                  require(newest(native.glob('_deps/openxr-build/**/libopenxr_loader.so'))),
                  require(ndk / 'toolchains/llvm/prebuilt/windows-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so')]
+    if args.validation_layer:
+        if not args.benchmark:
+            raise RuntimeError('Validation layers are restricted to the isolated benchmark APK')
+        libraries.append(require(args.validation_layer))
     with zipfile.ZipFile(unsigned, 'a', compression=zipfile.ZIP_DEFLATED) as apk:
         apk.write(require(dex / 'classes.dex'), 'classes.dex')
         for library in libraries:

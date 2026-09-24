@@ -3,6 +3,7 @@
 //
 
 #include "rt64_shader_library.h"
+#include "rt64_rsp_processor.h"
 
 #include "common/rt64_common.h"
 #include "shared/rt64_render_target_copy.h"
@@ -511,7 +512,7 @@ namespace RT64 {
         {
             RSPProcessDescriptorSet descriptorSet;
             layoutBuilder.begin();
-            layoutBuilder.addPushConstant(0, 0, sizeof(uint32_t) * 4, RenderShaderStageFlag::COMPUTE);
+            layoutBuilder.addPushConstant(0, 0, sizeof(RSPProcessor::ProcessCB), RenderShaderStageFlag::COMPUTE);
             layoutBuilder.addDescriptorSet(descriptorSet);
             layoutBuilder.end();
             rspProcess.pipelineLayout = layoutBuilder.create(device);

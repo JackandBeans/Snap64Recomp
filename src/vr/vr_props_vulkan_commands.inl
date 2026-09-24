@@ -9,8 +9,9 @@ void Props::presentation(VRTexture* color,Pose eye,Fov fov,float gain,bool porta
     x.list->setPipeline(x.presentationPipeline.get());x.list->setGraphicsPipelineLayout(x.presentationRoot.get());
     x.list->setGraphicsPushConstants(0,constants);x.list->drawInstanced(3,1,0,0);x.retainedFramebuffers.push_back(std::move(fb));x.finish();
 }
-void Props::beginTiming(){auto& x=*impl;x.drain();x.submission=x.drawIndex=x.copyIndex=0;x.retainedFramebuffers.clear();x.deferred=true;x.waitMs=0;x.begin();x.list->resetQueryPool(x.timestamps.get(),0,2);x.list->writeTimestamp(x.timestamps.get(),0);x.finish();}
-double Props::endTiming(){auto& x=*impl;x.begin();x.list->writeTimestamp(x.timestamps.get(),1);x.finish();x.drain();x.deferred=false;x.submission=0;x.timestamps->queryResults();auto* t=x.timestamps->getResults();return double(t[1]-t[0])/1e6;}
+void Props::beginTiming(){auto& x=*impl;x.drain();x.submission=x.retired=x.drawIndex=x.copyIndex=0;x.retainedFramebuffers.clear();x.retainedUploads.clear();x.deferred=true;x.waitMs=0;x.begin();x.list->resetQueryPool(x.timestamps.get(),0,2);x.list->writeTimestamp(x.timestamps.get(),0);x.finish();}
+double Props::endTiming(bool deferCompletion){auto& x=*impl;x.begin();x.list->writeTimestamp(x.timestamps.get(),1);x.finish();return deferCompletion?-1:retireTiming();}
+double Props::retireTiming(){auto& x=*impl;x.drain();x.deferred=false;x.submission=x.retired=0;x.timestamps->queryResults();auto* t=x.timestamps->getResults();return double(t[1]-t[0])/1e6;}
 double Props::fenceWaitMs()const{return impl->waitMs;}
 void Props::copy(VRTexture* source,VRTexture* destination,unsigned width,unsigned height) {
     auto& x=*impl;

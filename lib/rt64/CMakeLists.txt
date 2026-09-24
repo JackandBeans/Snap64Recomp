@@ -36,7 +36,10 @@ function(preprocess INFILE OUTFILE OPTIONS)
 endfunction()
 
 if(ANDROID AND CMAKE_HOST_WIN32)
-    set(DXC "${PROJECT_SOURCE_DIR}/src/contrib/dxc/bin/x64/dxc.exe")
+    if(NOT SNAP_HOST_DXC)
+        message(FATAL_ERROR "Quest shaders require SNAP_HOST_DXC; use tools/build_quest.py")
+    endif()
+    set(DXC "${SNAP_HOST_DXC}")
 elseif (WIN32)
     set (DXC "${PROJECT_SOURCE_DIR}/src/contrib/dxc/bin/x64/dxc.exe")
     add_compile_definitions(
@@ -123,6 +126,12 @@ endif()
 set (DXC_COMMON_OPTS "-I${PROJECT_SOURCE_DIR}/src")
 set (DXC_DXIL_OPTS "-Wno-ignored-attributes")
 set (DXC_SPV_OPTS "-spirv" "-fspv-target-env=vulkan1.0" "-fvk-use-dx-layout")
+if (ANDROID)
+    # Guest RDP buffers/images have runtime formats (R8/R16/R32, RGBA8, HDR).
+    # Hard-coding R32/rgba32f in OpTypeImage makes those descriptor reads and
+    # writes undefined. Let the bound view perform its declared conversion.
+    list(APPEND DXC_SPV_OPTS "-fspv-use-unknown-image-format" "-D" "SNAP_RUNTIME_IMAGE_FORMATS")
+endif()
 set (DXC_LB_OPTS "${DXC_COMMON_OPTS}" "-D" "LIBRARY" "-T" "lib_6_3")
 set (DXC_PS_OPTS "${DXC_COMMON_OPTS}" "-E" "PSMain" "-T ps_6_3")
 set (DXC_VS_OPTS "${DXC_COMMON_OPTS}" "-E" "VSMain" "-T vs_6_3" "-fvk-invert-y")

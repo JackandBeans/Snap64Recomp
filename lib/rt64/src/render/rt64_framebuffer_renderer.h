@@ -159,6 +159,8 @@ namespace RT64 {
             // Isolated VR replay: world geometry only, full eye viewport.
             bool snapVRWorldOnly = false;
             bool snapVRHighPrecisionDepth = false;
+            bool snapVRClip = false;
+            RenderRect snapVRClipRect;
         };
 
         FramebufferRenderer(RenderWorker *worker, bool rtSupport, UserConfiguration::GraphicsAPI graphicsAPI, const ShaderLibrary *shaderLibrary);

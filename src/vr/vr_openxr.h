@@ -22,6 +22,9 @@ public:
     bool needsRestart() const;
     unsigned refreshRate() const;
     float physicalRefreshRate() const;
+    // CPU elapsed wait/begin/end; wait is pacing, not render work.
+    std::array<double,3> pacingTimesMs() const;
+    double predictedMonotonicSeconds() const;
 private:
     struct Impl;
     std::unique_ptr<Impl> impl;

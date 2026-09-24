@@ -512,7 +512,8 @@ namespace RT64 {
         // Headset-only samples need matched poses but must not replay guest
         // framebuffer operations or photo-scoring passes. Eye replay uploads
         // these prepared arrays into its RSP/material buffers below.
-        if(vrPrepareOnly){rendererCPUProfiler.end();return;}
+        if(vrPrepareOnly){rendererCPUProfiler.end();rendererCPUProfiler.reset();return;}
+        snapSourceGpuMs=0;
 
         // Reset the max height tracking for all active framebuffers.
         fbManager.resetTracking();
@@ -1150,6 +1151,7 @@ namespace RT64 {
             queryPool->queryResults();
             const uint64_t *frameTimestamps = queryPool->getResults();
             rendererGPUProfiler.log(double(frameTimestamps[1] - frameTimestamps[0]) / 1000000.0);
+            snapSourceGpuMs+=double(frameTimestamps[1]-frameTimestamps[0])/1000000.0;
 
             // Indicate to the texture cache it's safe to delete the textures if no locks are active.
             ext.textureCache->decrementLock();
@@ -1161,6 +1163,7 @@ namespace RT64 {
 
         framebufferRenderer->advanceFrame(workloadConfig.raytracingEnabled);
         rendererCPUProfiler.end();
+        snapSourceCpuMs=rendererCPUProfiler.accumulation;
         rendererCPUProfiler.log();
         rendererCPUProfiler.reset();
 #   endif
@@ -1619,6 +1622,12 @@ namespace RT64 {
 #ifdef __ANDROID__
                 xrEyeOnly=vrPaced&&!usingMSAA&&snap_vr_world_active();
 #endif
+                if(xrEyeOnly&&displayFrames>1) {
+                    // The independent XR thread samples the published pair at
+                    // predicted display times. Producer performs one guest pass.
+                    displayTicks+=interpolationRate*(displayFrames-1);
+                    displayFrames=1;curFrameCounters.count=1;
+                }
                 curFrameCounters.snapVREyeOnly=xrEyeOnly;
                 const bool usesHDR = ext.sharedResources->renderTargetManager.usesHDR;
                 uint32_t requiredFrames = (usingMSAA && generateInterpolatedFrames) ? displayFrames : (displayFrames - 1);

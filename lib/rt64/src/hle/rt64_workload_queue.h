@@ -110,6 +110,7 @@ namespace RT64 {
         ProfilingTimer rendererGPUProfiler = ProfilingTimer(120);
         ProfilingTimer matchingProfiler = ProfilingTimer(120);
         ProfilingTimer workloadProfiler = ProfilingTimer(120);
+        double snapSourceGpuMs=0, snapSourceCpuMs=0;
         std::array<GameFrame, 2> gameFrames;
         uint32_t prevFrameIndex = uint32_t(gameFrames.size()) - 1;
         uint32_t curFrameIndex = 0;

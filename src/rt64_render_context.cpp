@@ -679,6 +679,11 @@ public:
                 // The opening movie polls the controller directly, bypassing
                 // menuInput. Observe its state on every submitted game frame.
                 vr.game.cinematic=app_->core.RDRAM[0xE832Bu^3u]==5;
+                // The opening movie has no course mainCameraRender callback.
+                // Give its source poses the same stable timestamp/identity as
+                // gameplay so predicted-time camera and limb sampling works.
+                ++vr.game.frame;
+                vr.game.sourceSeconds=std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
             }
             app_->state->snapVRFrame=vr.game.frame;app_->state->snapVREpoch=vr.game.epoch;
             if(vr.gameHistory.empty()||vr.gameHistory.back().frame!=vr.game.frame||vr.gameHistory.back().epoch!=vr.game.epoch) {

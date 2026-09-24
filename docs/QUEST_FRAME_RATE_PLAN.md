@@ -1,7 +1,33 @@
 # Quest frame rate and animation implementation plan
 
-Status: proposed next implementation, following measured baseline `c0e9528`.
-The current build has not passed 80 Hz or 72 Hz qualification.
+Status: implementation in progress, following measured baseline `c0e9528`.
+The current build has not passed complete Beach/thermal/animation qualification.
+
+Implemented: an independent OpenXR loop for both Beach and the opening movie,
+bounded timestamped source history, two frames of owned GPU resources, retained
+uploads and texture pins, and predicted-time camera/body/limb interpolation.
+The presentation delay follows the guest's reported source cadence, including
+the intro's 60 Hz sections. The intro's opaque surround now bounds world raster
+work without changing its visible picture or native eye dimensions.
+
+The runner now keeps the device awake, supports `--scene intro`, audits the
+installed APK, and records the actual matrices submitted to both eye uploaders.
+Separate Vulkan validation exposed and corrected the truncated RSP push-constant
+range, runtime image-format declarations, query resets inside render passes,
+and capture-image usage. CPU pose upload audits are stronger evidence than
+interpolation counters, but are not final rendered-animation verification.
+Synchronization validation also found duplicate source/pose copies to the same
+GPU buffers; display-pose buffers now have only one upload owner per frame.
+Swapchain acquire waits cover the first layout transition, and failed GPU
+submissions/completions stop the Android process instead of advancing counters
+over a frozen image.
+
+Remaining: robust deforming-vertex matching, shared immutable GPU geometry,
+narrower resource locks, the conditional multiview decision, persistent pipeline
+caching, complete resource/session lifetime tests, sequential motion/occlusion
+checks, and all final qualification gates below. Detailed run reports and images
+remain under ignored `artifacts/quest/`; do not mark the overhaul complete from
+a halfway Beach run or the standalone intro timing test.
 
 Deliver newly rendered gameplay **and interpolated Pokemon animation at 80 Hz**,
 with 72 Hz as an explicitly reported fallback. Head tracking, compositor refresh,

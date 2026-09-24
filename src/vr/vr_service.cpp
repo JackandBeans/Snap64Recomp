@@ -21,7 +21,7 @@ bool input(uint16_t* buttons,float* x,float* y) {
 extern "C" void snap_vr_shutdown(){shutdown();}
 extern "C" unsigned snap_vr_refresh_rate(){return displayRate.load();}
 extern "C" bool snap_vr_enabled(){return snap::vr::requested.load();}
-extern "C" bool snap_vr_world_active(){if(!requested.load())return false;auto& s=shared();std::lock_guard lock(s.mutex);return s.game.course&&!s.game.cinematic&&!s.game.paused;}
+extern "C" bool snap_vr_world_active(){if(!requested.load())return false;auto& s=shared();std::lock_guard lock(s.mutex);return (s.game.course||s.game.cinematic)&&!s.game.paused;}
 extern "C" void snap_vr_render(RT64::WorkloadQueue* q,RT64::GameFrame* f,const RT64::GameFrame* previous,float weight,RT64::RenderTarget* presented){snap::vr::render(*q,*f,*previous,weight,presented);}
 void sceneChanged(bool course) {
     auto& s=shared();std::lock_guard lock(s.mutex);

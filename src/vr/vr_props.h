@@ -12,7 +12,12 @@ public:
               Pose eye,Fov fov,const GameState&,const InteractionFrame&,const Tracking&,const Interaction&,bool focus,bool optionsOpen=false,int optionsRow=0);
     void copy(VRTexture* source,VRTexture* destination,unsigned width,unsigned height);
     void beginTiming();
+#ifdef __ANDROID__
+    double endTiming(bool deferCompletion=false);
+    double retireTiming();
+#else
     double endTiming();
+#endif
     double fenceWaitMs() const;
     void capture(VRTexture* source,const char* filename);
     void presentation(VRTexture* color,Pose calibratedEye,Fov fov,float gain,bool portal,float eyeHeight);

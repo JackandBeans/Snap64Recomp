@@ -26,25 +26,65 @@ def percentile(values, p):
     return values[min(len(values)-1, int((len(values)-1)*p))]
 
 
-def analyze(path, refresh, complete=False):
+def analyze_pose_uploads(path, frames):
+    """Audit the matrices actually passed to the eye uploaders, not alpha alone.
+
+    This establishes CPU pose progression and stereo agreement. It does not
+    replace sequential image checks or verification of deforming vertices.
+    """
+    eyes=[{},{}];objects=set();eligible=intermediate=malformed=0
+    if not path.exists():return {'available':False}
+    with path.open(newline='') as stream:
+        for row in csv.DictReader(stream):
+            try:
+                frame=int(row['tracking_frame']);eye=int(row['eye'])
+                if frame not in frames or eye not in (0,1):continue
+                key=(frame,int(row['object']),int(row['matrix']))
+                eyes[eye][key]=int(row['pose_hash']);objects.add(key[1])
+                if row['blends']=='1' and .02<float(row['alpha'])<.98 and float(row['source_motion'])>.01:
+                    eligible+=1
+                    intermediate+=min(float(row['from_a']),float(row['from_b']))>1e-4
+            except (ValueError,TypeError,KeyError):malformed+=1
+    shared=eyes[0].keys()&eyes[1].keys()
+    return {'available':True,'moving_objects':len(objects),'eligible_moving_matrix_samples':eligible,
+            'intermediate_matrix_samples':intermediate,'stereo_comparisons':len(shared),
+            'stereo_mismatches':sum(eyes[0][key]!=eyes[1][key] for key in shared),
+            'malformed_rows':malformed,'evidence':'CPU matrices submitted for GPU upload; final image motion remains a separate check'}
+
+
+def analyze(path, refresh, complete=False, scene='beach'):
     if not path.exists():
         return {'passed': False, 'reasons': ['No frame telemetry'], 'valid': False}
+    malformed=0
+    rows=[]
     with path.open(newline='') as stream:
-        rows = [{k: float(v) for k, v in r.items()} for r in csv.DictReader(stream)]
-    course = [r for r in rows if r['course'] and not r['cinematic']]
-    reasons = []
+        for row in csv.DictReader(stream):
+            try:rows.append({k:float(v) for k,v in row.items()})
+            except (ValueError,TypeError):malformed+=1
+    gpu_path=path.with_name('gpu.csv')
+    if gpu_path.exists():
+        with gpu_path.open(newline='') as stream:
+            completed={}
+            for r in csv.DictReader(stream):
+                try:completed[int(r['tracking_frame'])]={k:float(v) for k,v in r.items()}
+                except (ValueError,TypeError,KeyError):malformed+=1
+        for row in rows:
+            row.update(completed.get(int(row['tracking_frame']),{}))
+    course = [r for r in rows if (r['cinematic'] if scene=='intro' else r['course'] and not r['cinematic'])]
+    reasons = ['Incomplete or malformed frame telemetry'] if malformed else []
     if not complete:
-        reasons.append('Complete Beach route not confirmed')
+        reasons.append('Complete intro not confirmed' if scene=='intro' else 'Complete Beach route not confirmed')
     if len(course) < 2:
         return {'passed': False, 'valid': False, 'reasons': reasons + ['No measured gameplay']}
     # Reject truncated routes and untracked/unfocused samples, rather than
     # deleting inconvenient intervals from the measured run.
     elapsed = course[-1]['time'] - course[0]['time']
-    if elapsed < 60:
-        reasons.append('Gameplay shorter than 60 seconds')
+    minimum_seconds=10 if scene=='intro' else 60
+    if elapsed < minimum_seconds:
+        reasons.append(f'Measured scene shorter than {minimum_seconds} seconds')
     if any(not r['focused'] or not r['head_valid'] for r in course):
         reasons.append('Focus or tracking lost')
-    if any(r.get('level_id',-1)!=0 for r in course):
+    if scene=='beach' and any(r.get('level_id',-1)!=0 for r in course):
         reasons.append('Beach identity not confirmed')
     if any(abs(r['hz']-refresh) > .1 for r in course):
         reasons.append('Physical refresh differs from requested rate')
@@ -61,8 +101,8 @@ def analyze(path, refresh, complete=False):
         reasons.append(f'Application FPS {fps:.2f} below {refresh*.99:.2f}')
     if missed/expected >= .01:
         reasons.append('Missed display interval fraction is at least 1%')
-    # Changed interpolation weights count as new animation samples; reusing
-    # exactly the same source/weight across many submissions does not.
+    # These are interpolation samples, not proof of rendered Pokemon poses.
+    # Pose/vertex validation and visual motion evidence remain separate gates.
     stale = 0
     longest_stale = 0
     for a,b in zip(course, course[1:]):
@@ -71,18 +111,27 @@ def analyze(path, refresh, complete=False):
     if longest_stale >= refresh*.1:
         reasons.append('Repeated animation pose for at least 100 ms')
     distinct = len({(r['epoch'],r['source_frame']) for r in course})
-    if not any(r['camera_held'] for r in course):
+    poses=analyze_pose_uploads(path.with_name('pose_uploads.csv'),{int(r['tracking_frame']) for r in course})
+    if poses.get('stereo_mismatches',0) or poses.get('malformed_rows',0):
+        valid=False
+        reasons.append('Pose upload audit failed stereo agreement or data integrity')
+    if scene=='beach' and not any(r['camera_held'] for r in course):
         reasons.append('Held-camera checkpoint missing')
-    if min(r['film'] for r in course) >= max(r['film'] for r in course):
+    if scene=='beach' and min(r['film'] for r in course) >= max(r['film'] for r in course):
         reasons.append('Photo checkpoint missing')
     return {'passed': not reasons, 'valid': valid, 'reasons': reasons,
-            'refresh': refresh, 'eye_sizes': sizes, 'seconds': elapsed,
+            'refresh': refresh, 'confirmed_refresh_rates': sorted({r['hz'] for r in course}),
+            'eye_sizes': sizes, 'seconds': elapsed,
             'application_fps': fps, 'source_fps': distinct/elapsed,
             'missed_intervals': missed, 'missed_fraction': missed/expected,
-            'longest_identical_pose_frames': longest_stale,
+            'longest_identical_interpolation_samples': longest_stale,
+            'rendered_animation_verified': False,
+            'pose_uploads': poses,
             'interval_ms': {'median': statistics.median(intervals), 'p95': percentile(intervals,.95), 'p99': percentile(intervals,.99), 'max': max(intervals)},
-            'timings_ms': {key: {'median': statistics.median([r[key] for r in course]), 'p99': percentile([r[key] for r in course],.99)}
-                           for key in ('cpu_ms','gpu_ms','wait_ms','left_ms','right_ms','viewfinder_ms','props_ms','copy_ms')}}
+            'timings_ms': {key: {'median': statistics.median([r[key] for r in course if r[key]>=0]), 'p99': percentile([r[key] for r in course if r[key]>=0],.99)}
+                           for key in ('cpu_ms','gpu_ms','wait_ms','left_ms','right_ms','viewfinder_ms','props_ms','copy_ms',
+                                       'left_gpu_ms','right_gpu_ms','viewfinder_gpu_ms','xr_wait_ms','xr_begin_ms','xr_end_ms','source_cpu_ms','source_gpu_ms')
+                           if key in course[0] and any(r[key]>=0 for r in course)}}
 
 
 def main():
@@ -92,18 +141,19 @@ def main():
     parser.add_argument('--build', action='store_true')
     parser.add_argument('--timeout', type=int, default=600)
     parser.add_argument('--capture', action='store_true')
+    parser.add_argument('--scene', choices=('beach','intro'), default='beach')
     parser.add_argument('--full-course', action='store_true', help='Run the complete route for final qualification; default is a 77-second Beach iteration (approximately halfway)')
     parser.add_argument('--launch-check', action='store_true', help='Verify focused real XR startup with Touch controllers off; not an FPS qualification')
     parser.add_argument('--analyze', type=Path)
     args = parser.parse_args()
     if args.analyze:
-        print(json.dumps(analyze(args.analyze,args.refresh),indent=2));return
+        print(json.dumps(analyze(args.analyze,args.refresh,scene=args.scene),indent=2));return
     commit = subprocess.check_output(['git','rev-parse','--short','HEAD'],cwd=ROOT,text=True).strip()
     run = ROOT/'artifacts/quest'/(datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'-'+commit)
     for directory in ('logs','metrics','captures','traces'):
         (run/directory).mkdir(parents=True)
     report = {'passed':False,'valid':False,'reasons':[], 'commit':commit,'refresh':args.refresh,'capture_run':args.capture,
-              'scope':'full-course' if args.full_course else 'half-course-iteration'}
+              'scope':'intro' if args.scene=='intro' else 'full-course' if args.full_course else 'half-course-iteration'}
     def adb(*command, check=True):
         result = subprocess.run(['adb','-s',args.serial,*command],text=True,capture_output=True,timeout=30)
         with (run/'logs/adb.log').open('a',encoding='utf-8') as log:
@@ -111,14 +161,33 @@ def main():
         if check and result.returncode:
             raise RuntimeError('ADB command failed: '+' '.join(command)+' '+result.stderr)
         return result.stdout
+    previous_stayon=None
+    logcat_process=None
+    logcat_file=None
+    status={}
     try:
         if args.build:
             with (run/'logs/build.log').open('w') as log:
                 subprocess.run([sys.executable,str(ROOT/'tools/build_quest.py'),'--benchmark','--install','--serial',args.serial],cwd=ROOT,stdout=log,stderr=subprocess.STDOUT,check=True)
         apk = ROOT/'build-quest/Snap64RecompVR-quest-benchmark.apk'
         report['apk_sha256'] = hashlib.sha256(apk.read_bytes()).hexdigest()
+        installed=adb('shell','pm','path',PACKAGE).strip().removeprefix('package:')
+        if not installed.startswith('/data/app/') or not installed.endswith('/base.apk'):
+            raise RuntimeError('Installed benchmark APK path could not be verified')
+        report['installed_apk_sha256']=adb('shell','sha256sum',installed).split()[0]
+        if report['installed_apk_sha256']!=report['apk_sha256']:
+            raise RuntimeError('Installed APK differs from the build being measured; install the current benchmark first')
         report['dirty'] = bool(subprocess.check_output(['git','status','--porcelain'],cwd=ROOT,text=True).strip())
         report['model'] = adb('shell','getprop','ro.product.model').strip()
+        report['validation_run']=adb('shell','settings','get','global','enable_gpu_debug_layers').strip()=='1'
+        report['synchronization_validation']=adb('shell','getprop','debug.vulkan.khronos_validation.validate_sync').strip() in ('true','1')
+        previous_stayon=adb('shell','settings','get','global','stay_on_while_plugged_in').strip()
+        adb('shell','svc','power','stayon','usb')
+        # Meta's virtual proximity control prevents off-face suspend; actual
+        # head tracking and session focus are still required below.
+        adb('shell','am','broadcast','-a','com.oculus.vrpowermanager.prox_close')
+        adb('shell','input','keyevent','224')
+        report['keep_awake']='USB stay-on and virtual proximity close'
         # Android must create its own subdirectories: shell-created directories
         # are owned by shell and can make app asset installation fail EACCES.
         if not adb('shell','ls','-d',REMOTE+'/benchmark/results',check=False).strip().startswith('/'):
@@ -136,16 +205,23 @@ def main():
         adb('shell','chmod','666',REMOTE+'/saves/pokemonsnap.bin')
         rate = run/'metrics/refresh.txt';rate.write_text(str(args.refresh))
         adb('push',str(rate),REMOTE+'/benchmark/refresh.txt')
+        scene=run/'metrics/scene.txt';scene.write_text(args.scene)
+        adb('push',str(scene),REMOTE+'/benchmark/scene.txt')
         settings = run/'metrics/snapsettings.json'
         settings.write_text(json.dumps({'vr_render_scale':1.0,'resolution_scale':2}))
         adb('push',str(settings),REMOTE+'/snapsettings.json')
         adb('shell','chmod','666',REMOTE+'/snapsettings.json')
-        for name in ('frames.csv','status.json','status.tmp'):
+        for name in ('frames.csv','gpu.csv','animation.csv','pose_uploads.csv','status.json','status.tmp'):
             adb('shell','rm','-f',REMOTE+'/benchmark/results/'+name)
         adb('shell','am','start','-n',PACKAGE+'/org.snap64.quest.QuestActivity')
         started = time.monotonic();status={};last_sample=0;last_progress=started;next_capture=started+40;entered_at=None;focused_once=False
         while time.monotonic()-started < args.timeout:
             now=time.monotonic()
+            if logcat_process is None:
+                pid=adb('shell','pidof',PACKAGE,check=False).strip()
+                if pid:
+                    logcat_file=(run/'logs/logcat.txt').open('w',encoding='utf-8')
+                    logcat_process=subprocess.Popen(['adb','-s',args.serial,'logcat','--pid='+pid,'-v','threadtime'],stdout=logcat_file,stderr=subprocess.STDOUT)
             if now-started>5 and not adb('shell','pidof',PACKAGE,check=False).strip():
                 raise RuntimeError('Benchmark process exited or crashed; run invalid')
             power=adb('shell','dumpsys','power')
@@ -167,7 +243,8 @@ def main():
                     report['launch_passed']=status.get('real_controllers') is False
                     if not report['launch_passed']:report['reasons'].append('Controller-free startup not confirmed')
                     break
-                if status.get('complete'):break
+                if args.scene=='intro' and status.get('intro_complete'):break
+                if args.scene=='beach' and status.get('complete'):break
                 if status.get('entered') and entered_at is None:
                     entered_at=now
                 if not args.full_course and entered_at is not None and now-entered_at>=77:
@@ -175,7 +252,7 @@ def main():
                     break
             if now-last_progress>30:
                 raise RuntimeError('No new XR telemetry for 30 seconds; launch/focus stalled')
-            if now-started>120 and not status.get('entered'):
+            if args.scene=='beach' and now-started>120 and not status.get('entered'):
                 raise RuntimeError('Beach entry checkpoint timed out')
             if args.capture and now>=next_capture:
                 adb('shell','touch',REMOTE+'/vr-capture.request');next_capture=now+30
@@ -187,8 +264,12 @@ def main():
         # retained CSV describe the same measured interval.
         adb('shell','am','force-stop',PACKAGE)
         adb('pull',REMOTE+'/benchmark/results',str(run/'metrics'))
-        report.update(analyze(run/'metrics/results/frames.csv',args.refresh,status.get('complete',False)))
-        if not args.full_course:
+        report.update(analyze(run/'metrics/results/frames.csv',args.refresh,status.get('intro_complete' if args.scene=='intro' else 'complete',False),args.scene))
+        report['timing_passed']=report['passed']
+        if not report.get('rendered_animation_verified'):
+            report['passed']=False
+            report['reasons'].append('Rendered animation verification remains outstanding; interpolation counters alone do not qualify')
+        if args.scene=='beach' and not args.full_course:
             report['passed']=False
             report['reasons'].append('Half-course iteration only; full-course qualification still required')
         if args.launch_check:
@@ -196,9 +277,25 @@ def main():
             report['reasons']=['Launch check only; not a performance qualification']
         if args.capture:
             report['passed']=False;report['reasons'].append('Visual capture run, excluded from timing qualification')
+        if report.get('validation_run'):
+            report['passed']=False;report['reasons'].append('Vulkan validation run, excluded from timing qualification')
     except (RuntimeError,OSError,subprocess.SubprocessError,ValueError) as error:
         report['reasons'].append(str(error))
     finally:
+        if logcat_process is not None:
+            logcat_process.terminate()
+            logcat_process.wait(timeout=10)
+        if logcat_file is not None:logcat_file.close()
+        try:
+            (run/'logs/power.txt').write_text(adb('shell','dumpsys','vrpowermanager',check=False),encoding='utf-8')
+        except (OSError,subprocess.SubprocessError):pass
+        # Restore power even if subsequent evidence parsing or disk writes fail.
+        if previous_stayon is not None:
+            try:
+                if previous_stayon=='null':adb('shell','settings','delete','global','stay_on_while_plugged_in',check=False)
+                else:adb('shell','settings','put','global','stay_on_while_plugged_in',previous_stayon,check=False)
+                adb('shell','am','broadcast','-a','com.oculus.vrpowermanager.automation_disable',check=False)
+            except (OSError,subprocess.SubprocessError):pass
         try:
             (run/'logs/crash.txt').write_text(adb('logcat','-b','crash','-d',check=False),encoding='utf-8')
         except (OSError,subprocess.SubprocessError):pass
@@ -206,13 +303,23 @@ def main():
                                    (REMOTE+'/vr-submitted-left.png',run/'captures/left.png'),(REMOTE+'/vr-submitted-right.png',run/'captures/right.png')):
             try:adb('pull',remote,str(destination),check=False)
             except (OSError,subprocess.SubprocessError):pass
-        report['diagnostics']=analyze(run/'metrics/results/frames.csv',args.refresh,False)
+        report['diagnostics']=analyze(run/'metrics/results/frames.csv',args.refresh,status.get('intro_complete' if args.scene=='intro' else 'complete',False),args.scene)
+        renderer_log=run/'logs/snap64.log'
+        if renderer_log.exists():
+            log=renderer_log.read_text(encoding='utf-8',errors='replace')
+            if any(marker in log for marker in ('vkQueueSubmit failed','vkWaitForFences failed','vkGetQueryPoolResults failed','VK_ERROR_DEVICE_LOST')):
+                report['passed']=report['valid']=False
+                report['reasons'].append('Vulkan submission, completion, or query failure; frame counters are not valid rendered-frame evidence')
+        validation_log=run/'logs/logcat.txt'
+        if validation_log.exists() and 'Validation Error:' in validation_log.read_text(encoding='utf-8',errors='replace'):
+            report['passed']=report['valid']=False
+            report['reasons'].append('Vulkan validation errors; see logs/logcat.txt')
         (run/'report.json').write_text(json.dumps(report,indent=2))
         summary=['# Quest benchmark','',('PASS' if report['passed'] else 'NOT QUALIFIED'),'',
                  f"Scope: {report.get('scope')}. Build: {report.get('commit')} (dirty: {report.get('dirty')}).",
                  f"APK SHA-256: {report.get('apk_sha256')}",'']
         if 'application_fps' in report:
-            summary += [f"Rendered FPS: {report['application_fps']:.2f}; source FPS: {report['source_fps']:.2f}; physical refresh: {report['refresh']} Hz.",
+            summary += [f"Rendered FPS: {report['application_fps']:.2f}; source FPS: {report['source_fps']:.2f}; requested refresh: {report['refresh']} Hz; measured rates: {report.get('confirmed_refresh_rates',[])}.",
                         f"Eye dimensions: {report['eye_sizes']}; measured gameplay: {report['seconds']:.2f} seconds.",
                         f"Missed intervals: {report['missed_fraction']:.2%}; frame interval p95/p99: {report['interval_ms']['p95']:.2f}/{report['interval_ms']['p99']:.2f} ms.",'']
         summary += ['- '+r for r in report['reasons']]

@@ -102,6 +102,7 @@ extern "C" void mainCameraRender(uint8_t* rdram,recomp_context* ctx) {
     if(snap::vr::requested.load()) {
         auto& s=snap::vr::shared();std::lock_guard lock(s.mutex);
         auto& g=s.game;g.course=true;++g.frame;
+        g.sourceSeconds=std::chrono::duration<double>(std::chrono::steady_clock::now().time_since_epoch()).count();
         g.levelId=int32_t(word(rdram,0x800AC0C0));
         if(!g.fluteIcon) {
             auto icon=std::make_shared<FluteIcon>();

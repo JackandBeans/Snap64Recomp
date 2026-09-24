@@ -10,11 +10,13 @@ namespace RT64 {
     struct RenderWorker {
         RenderDevice *device = nullptr;
         std::string name;
-        std::unique_ptr<RenderCommandQueue> commandQueue;
+        std::shared_ptr<RenderCommandQueue> commandQueue;
         std::unique_ptr<RenderCommandList> commandList;
         std::unique_ptr<RenderCommandFence> commandFence;
 
         RenderWorker(RenderDevice *device, const std::string &name, RenderCommandListType commandListType);
+        // Independent recording/storage, ordered on an existing graphics queue.
+        RenderWorker(RenderDevice *device, const std::string &name, std::shared_ptr<RenderCommandQueue> queue);
         ~RenderWorker();
         void execute();
         void wait();

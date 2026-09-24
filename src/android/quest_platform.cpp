@@ -14,6 +14,13 @@ Java_org_snap64_quest_QuestActivity_nativeSetDataDirectory(JNIEnv* env,jclass,js
     std::filesystem::create_directories("benchmark/results");
     setenv("SNAP_QUEST_BENCHMARK","1",1);
     setenv("SNAP_REPLAY","benchmark/beach.inputs",1);
+    if(auto* scene=std::fopen("benchmark/scene.txt","r")) {
+        char name[16]{};std::fscanf(scene,"%15s",name);std::fclose(scene);
+        if(std::string(name)=="intro") {
+            if(auto* neutral=std::fopen("benchmark/intro.inputs","wb"))std::fclose(neutral);
+            setenv("SNAP_REPLAY","benchmark/intro.inputs",1);
+        }
+    }
     unsetenv("SNAP_STATS");
     unsigned rate=80;
     if(auto* config=std::fopen("benchmark/refresh.txt","r")) {

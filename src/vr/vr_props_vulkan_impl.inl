@@ -5,8 +5,9 @@ struct Props::Impl {
     struct Submission {std::unique_ptr<RenderCommandList> list;std::unique_ptr<RenderCommandFence> fence;};
     std::vector<Submission> submissions;
     std::vector<std::unique_ptr<RenderFramebuffer>> retainedFramebuffers;
+    std::vector<std::unique_ptr<RenderBuffer>> retainedUploads;
     RenderCommandList* list=nullptr;
-    unsigned submission=0,drawIndex=0,copyIndex=0;
+    unsigned submission=0,retired=0,drawIndex=0,copyIndex=0;
     bool deferred=false;
     std::unique_ptr<RenderPipelineLayout> root,presentationRoot;
     std::unique_ptr<RenderPipelineLayout> copyRoot;
@@ -94,8 +95,12 @@ struct Props::Impl {
         appleMesh.load(props.at("models").at("apple"));pesterBallMesh.load(props.at("models").at("pester_ball"));
     }
     void drain() {
-        if(!submission)return;
+        if(retired==submission)return;
         auto start=std::chrono::steady_clock::now();queue->waitForCommandFence(submissions[submission-1].fence.get());
+        // Completion of the last submission covers this queue's earlier work,
+        // but every fence must still be reset before it can be submitted again.
+        for(unsigned i=retired;i+1<submission;++i)queue->waitForCommandFence(submissions[i].fence.get());
+        retired=submission;
         waitMs+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();
     }
     ~Impl(){drain();}
@@ -106,7 +111,7 @@ struct Props::Impl {
     void finish(){
         list->end();static_cast<RenderCommandQueue*>(queue)->executeCommandLists(list,submissions[submission].fence.get());
         ++submission;
-        if(!deferred){drain();submission=0;}
+        if(!deferred){drain();submission=retired=0;}
     }
     void uploadIcon(const FluteIcon& icon,std::unique_ptr<RenderTexture>& texture) {
         constexpr unsigned side=FluteIcon::side;
@@ -121,6 +126,9 @@ struct Props::Impl {
         list->barriers(RenderBarrierStage::COPY,RenderTextureBarrier(texture.get(),RenderTextureLayout::COPY_DEST));
         list->copyTextureRegion(RenderTextureCopyLocation::Subresource(texture.get()),RenderTextureCopyLocation::PlacedFootprint(upload.get(),RenderFormat::R8G8B8A8_UNORM,side,side,1,side));
         list->barriers(RenderBarrierStage::GRAPHICS,RenderTextureBarrier(texture.get(),RenderTextureLayout::SHADER_READ));finish();
+        // finish() only submits during a headset frame. Keep one-time icon
+        // uploads alive until this slot's completion fence has retired.
+        if(deferred)retainedUploads.push_back(std::move(upload));
     }
     void uploadFluteIcon(const FluteIcon& icon){uploadIcon(icon,fluteTexture);}
     std::unique_ptr<RenderFramebuffer> framebuffer(VRTexture* color,VRTexture* depth=nullptr) {

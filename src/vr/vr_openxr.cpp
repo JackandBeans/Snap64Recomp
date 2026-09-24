@@ -17,6 +17,7 @@
 #include <cstring>
 #include <cstdio>
 #include <stdexcept>
+#include <chrono>
 
 namespace snap::vr {
 namespace {
@@ -25,6 +26,16 @@ Pose pose(XrPosef p) { return {{p.orientation.x,p.orientation.y,p.orientation.z,
 bool valid(XrSpaceLocationFlags f) { return (f&(XR_SPACE_LOCATION_POSITION_VALID_BIT|XR_SPACE_LOCATION_ORIENTATION_VALID_BIT))==(XR_SPACE_LOCATION_POSITION_VALID_BIT|XR_SPACE_LOCATION_ORIENTATION_VALID_BIT); }
 }
 struct OpenXR::Impl {
+    std::array<double,3> pacingMs{};
+#ifdef __ANDROID__
+    std::mutex* graphicsQueueMutex=nullptr;
+#endif
+    template<class Call> XrResult graphicsCall(Call&& call) {
+#ifdef __ANDROID__
+        std::lock_guard lock(*graphicsQueueMutex);
+#endif
+        return call();
+    }
     XrInstance instance=XR_NULL_HANDLE;
     XrSession session=XR_NULL_HANDLE;
     XrSpace local=XR_NULL_HANDLE,head=XR_NULL_HANDLE;
@@ -92,6 +103,7 @@ bool OpenXR::initialize(VRDevice* device,VRQueue* queue,float scale,std::string&
         XrGraphicsBindingVulkan2KHR binding{XR_TYPE_GRAPHICS_BINDING_VULKAN2_KHR};
         binding.instance=device->renderInterface->instance;binding.physicalDevice=physical;binding.device=device->vk;
         binding.queueFamilyIndex=queue->familyIndex;binding.queueIndex=queue->queueIndex;
+        x.graphicsQueueMutex=queue->queue->mutex.get();
 #else
         const char* extensions[]={XR_KHR_D3D12_ENABLE_EXTENSION_NAME};
         XrInstanceCreateInfo ci{XR_TYPE_INSTANCE_CREATE_INFO};
@@ -160,7 +172,7 @@ bool OpenXR::initialize(VRDevice* device,VRQueue* queue,float scale,std::string&
         for(unsigned i=0;i<2;i++) {
             auto& c=x.config[i];c.recommendedImageRectWidth=std::clamp(uint32_t(c.recommendedImageRectWidth*scale),1u,c.maxImageRectWidth);
             c.recommendedImageRectHeight=std::clamp(uint32_t(c.recommendedImageRectHeight*scale),1u,c.maxImageRectHeight);
-            XrSwapchainCreateInfo sc{XR_TYPE_SWAPCHAIN_CREATE_INFO};sc.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT;
+            XrSwapchainCreateInfo sc{XR_TYPE_SWAPCHAIN_CREATE_INFO};sc.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_SRC_BIT;
 #ifdef __ANDROID__
             sc.usageFlags|=XR_SWAPCHAIN_USAGE_MUTABLE_FORMAT_BIT;
 #endif
@@ -224,8 +236,12 @@ bool OpenXR::begin(Tracking& t) {
         event={XR_TYPE_EVENT_DATA_BUFFER};
     }
     if(!x.running)return false;
+    const auto beforeWait=std::chrono::steady_clock::now();
     XrFrameWaitInfo wait{XR_TYPE_FRAME_WAIT_INFO};check(xrWaitFrame(x.session,&wait,&x.frame),"wait frame");
-    XrFrameBeginInfo bi{XR_TYPE_FRAME_BEGIN_INFO};check(xrBeginFrame(x.session,&bi),"begin frame");x.begun=true;
+    const auto afterWait=std::chrono::steady_clock::now();
+    XrFrameBeginInfo bi{XR_TYPE_FRAME_BEGIN_INFO};check(x.graphicsCall([&]{return xrBeginFrame(x.session,&bi);}),"begin frame");x.begun=true;
+    x.pacingMs[0]=std::chrono::duration<double,std::milli>(afterWait-beforeWait).count();
+    x.pacingMs[1]=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-afterWait).count();
     t={};t.frame=++x.frameId;t.seconds=double(x.frame.predictedDisplayTime)*1e-9;t.focused=x.state==XR_SESSION_STATE_FOCUSED;
     XrSpaceLocation head{XR_TYPE_SPACE_LOCATION};check(xrLocateSpace(x.head,x.local,x.frame.predictedDisplayTime,&head),"locate head");t.head=pose(head.pose);t.headValid=valid(head.locationFlags);
     XrViewLocateInfo li{XR_TYPE_VIEW_LOCATE_INFO};li.viewConfigurationType=XR_VIEW_CONFIGURATION_TYPE_PRIMARY_STEREO;li.displayTime=x.frame.predictedDisplayTime;li.space=x.local;
@@ -250,7 +266,7 @@ bool OpenXR::begin(Tracking& t) {
     return true;
 }
 VRTexture* OpenXR::acquire(unsigned i) {
-    auto& x=*impl;XrSwapchainImageAcquireInfo ai{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};check(xrAcquireSwapchainImage(x.chains.at(i),&ai,&x.acquired[i]),"acquire eye");x.held[i]=true;
+    auto& x=*impl;XrSwapchainImageAcquireInfo ai{XR_TYPE_SWAPCHAIN_IMAGE_ACQUIRE_INFO};check(x.graphicsCall([&]{return xrAcquireSwapchainImage(x.chains.at(i),&ai,&x.acquired[i]);}),"acquire eye");x.held[i]=true;
     XrSwapchainImageWaitInfo wi{XR_TYPE_SWAPCHAIN_IMAGE_WAIT_INFO};wi.timeout=XR_INFINITE_DURATION;check(xrWaitSwapchainImage(x.chains[i],&wi),"wait eye");
 #ifdef __ANDROID__
     return x.textures[i][x.acquired[i]].get();
@@ -258,7 +274,7 @@ VRTexture* OpenXR::acquire(unsigned i) {
     return x.images[i][x.acquired[i]].texture;
 #endif
 }
-void OpenXR::release(unsigned i) {auto& x=*impl;if(!x.held.at(i))return;XrSwapchainImageReleaseInfo ri{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};check(xrReleaseSwapchainImage(x.chains[i],&ri),"release eye");x.held[i]=false;}
+void OpenXR::release(unsigned i) {auto& x=*impl;if(!x.held.at(i))return;XrSwapchainImageReleaseInfo ri{XR_TYPE_SWAPCHAIN_IMAGE_RELEASE_INFO};check(x.graphicsCall([&]{return xrReleaseSwapchainImage(x.chains[i],&ri);}),"release eye");x.held[i]=false;}
 void OpenXR::end(bool rendered) {
     auto& x=*impl;if(!x.begun)return;
     for(unsigned i=0;i<2;i++)release(i);
@@ -267,7 +283,9 @@ void OpenXR::end(bool rendered) {
     XrCompositionLayerProjection layer{XR_TYPE_COMPOSITION_LAYER_PROJECTION};layer.space=x.local;layer.viewCount=2;layer.views=views.data();
     const XrCompositionLayerBaseHeader* layers[]={reinterpret_cast<const XrCompositionLayerBaseHeader*>(&layer)};
     XrFrameEndInfo ei{XR_TYPE_FRAME_END_INFO};ei.displayTime=x.frame.predictedDisplayTime;ei.environmentBlendMode=XR_ENVIRONMENT_BLEND_MODE_OPAQUE;ei.layerCount=rendered&&x.frame.shouldRender?1:0;ei.layers=layers;
-    check(xrEndFrame(x.session,&ei),"end frame");x.begun=false;
+    const auto start=std::chrono::steady_clock::now();
+    check(x.graphicsCall([&]{return xrEndFrame(x.session,&ei);}),"end frame");x.begun=false;
+    x.pacingMs[2]=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();
 }
 void OpenXR::haptic(unsigned i,float strength) {auto& x=*impl;XrHapticActionInfo hi{XR_TYPE_HAPTIC_ACTION_INFO};hi.action=x.vibration;hi.subactionPath=x.hands.at(i);XrHapticVibration v{XR_TYPE_HAPTIC_VIBRATION};v.amplitude=strength;v.duration=30000000;v.frequency=XR_FREQUENCY_UNSPECIFIED;xrApplyHapticFeedback(x.session,&hi,reinterpret_cast<XrHapticBaseHeader*>(&v));}
 unsigned OpenXR::width(unsigned i)const{return impl->config.at(i).recommendedImageRectWidth;}
@@ -287,6 +305,14 @@ float OpenXR::physicalRefreshRate()const {
     return snap_quest_display_refresh(impl->session);
 #else
     return float(refreshRate());
+#endif
+}
+std::array<double,3> OpenXR::pacingTimesMs()const{return impl->pacingMs;}
+double OpenXR::predictedMonotonicSeconds()const {
+#ifdef __ANDROID__
+    return snap_quest_monotonic_time(impl->frame.predictedDisplayTime);
+#else
+    return 0; // The independent source-snapshot path is currently Quest-only.
 #endif
 }
 }

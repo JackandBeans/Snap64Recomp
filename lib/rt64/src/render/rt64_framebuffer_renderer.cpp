@@ -2161,7 +2161,7 @@ namespace RT64 {
                             triangles.scissor = viewportScissorIntersection(viewportClip, triangles.scissor);
                         }
                         if (p.snapVRWorldOnly) {
-                            triangles.scissor = RenderRect(0,0,p.targetWidth,p.targetHeight);
+                            triangles.scissor = p.snapVRClip ? p.snapVRClipRect : RenderRect(0,0,p.targetWidth,p.targetHeight);
                         }
                         if (p.snapVRHighPrecisionDepth && proj.type == Projection::Type::Perspective) {
                             // OpenXR already supplies the complete asymmetric

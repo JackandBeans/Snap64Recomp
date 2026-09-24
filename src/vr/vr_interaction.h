@@ -42,6 +42,7 @@ struct FluteContact {
 struct SmokePuff { Vec3 position; uint64_t born=0; };
 struct GameState {
     uint64_t epoch=0, frame=0;
+    double sourceSeconds=0; // CLOCK_MONOTONIC on Android, captured with the source pose.
     int levelId=-1;
     bool course=false, paused=false, apples=false, pesterBalls=false, itemReady=true;
     bool cinematic=false, fluteUnlocked=false;

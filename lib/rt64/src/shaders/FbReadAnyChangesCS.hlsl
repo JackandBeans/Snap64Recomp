@@ -10,7 +10,12 @@ Buffer<uint> gNewInput : register(t1, space0);
 Buffer<uint> gCurInput : register(t2, space0);
 RWStructuredBuffer<uint> gOutputCount : register(u3, space0);
 RWTexture2D<float4> gOutputChangeColor : register(u0, space1);
+#ifdef SNAP_RUNTIME_IMAGE_FORMATS
+// See FbReadAnyFullCS: color/depth descriptors alias a runtime-format target.
+RWTexture2D<float4> gOutputChangeDepth : register(u1, space1);
+#else
 RWTexture2D<float> gOutputChangeDepth : register(u1, space1);
+#endif
 RWTexture2D<uint> gOutputChangeBoolean : register(u2, space1);
 
 [numthreads(FB_COMMON_WORKGROUP_SIZE, FB_COMMON_WORKGROUP_SIZE, 1)]

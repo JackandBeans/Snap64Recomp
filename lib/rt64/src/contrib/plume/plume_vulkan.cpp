@@ -13,6 +13,7 @@
 #include <algorithm>
 #include <cmath>
 #include <climits>
+#include <cstdlib>
 #include <unordered_map>
 
 #if DLSS_ENABLED
@@ -62,6 +63,11 @@ namespace plume {
     };
 
     static const std::unordered_set<std::string> OptionalInstanceExtensions = {
+#   if defined(__ANDROID__)
+        // Meta's xrCreateVulkanInstanceKHR adds protected-surface capabilities,
+        // whose instance-extension dependency must also be enabled.
+        VK_KHR_GET_SURFACE_CAPABILITIES_2_EXTENSION_NAME,
+#   endif
 #   if defined(__APPLE__)
         // Tells the system Vulkan loader to enumerate portability drivers, if supported.
         VK_KHR_PORTABILITY_ENUMERATION_EXTENSION_NAME,
@@ -3493,6 +3499,9 @@ namespace plume {
 
     void VulkanCommandList::resetQueryPool(const RenderQueryPool *queryPool, uint32_t queryFirstIndex, uint32_t queryCount) {
         assert(queryPool != nullptr);
+        // vkCmdResetQueryPool is forbidden inside a render pass. Source
+        // framebuffer work may leave a pass open before profiling starts.
+        endActiveRenderPass();
 
         const VulkanQueryPool *interfaceQueryPool = static_cast<const VulkanQueryPool *>(queryPool);
         vkCmdResetQueryPool(vk, interfaceQueryPool->vk, queryFirstIndex, queryCount);
@@ -3640,11 +3649,14 @@ namespace plume {
         submitInfo.pCommandBuffers = commandBuffers.data();
         submitInfo.commandBufferCount = uint32_t(commandBuffers.size());
 
-        const VkPipelineStageFlags waitStages = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        // Acquired images can undergo a layout transition or transfer before
+        // color output. Cover that first use, and supply one mask per semaphore.
+        thread_local std::vector<VkPipelineStageFlags> waitStages;
+        waitStages.assign(waitSemaphoreVector.size(), VK_PIPELINE_STAGE_ALL_COMMANDS_BIT);
         if (!waitSemaphoreVector.empty()) {
             submitInfo.pWaitSemaphores = waitSemaphoreVector.data();
             submitInfo.waitSemaphoreCount = uint32_t(waitSemaphoreVector.size());
-            submitInfo.pWaitDstStageMask = &waitStages;
+            submitInfo.pWaitDstStageMask = waitStages.data();
         }
 
         if (!signalSemaphoreVector.empty()) {
@@ -3666,6 +3678,12 @@ namespace plume {
 
         if (res != VK_SUCCESS) {
             fprintf(stderr, "vkQueueSubmit failed with error code 0x%X.\n", res);
+#ifdef __ANDROID__
+            // Continuing would reuse uncompleted resources and report fresh
+            // headset frames while the GPU keeps displaying a frozen image.
+            fflush(stderr);
+            std::abort();
+#endif
             return;
         }
     }
@@ -3677,6 +3695,10 @@ namespace plume {
         VkResult res = vkWaitForFences(device->vk, 1, &interfaceFence->vk, VK_TRUE, UINT64_MAX);
         if (res != VK_SUCCESS) {
             fprintf(stderr, "vkWaitForFences failed with error code 0x%X.\n", res);
+#ifdef __ANDROID__
+            fflush(stderr);
+            std::abort();
+#endif
             return;
         }
 

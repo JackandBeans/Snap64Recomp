@@ -1,5 +1,7 @@
 #define XR_USE_PLATFORM_ANDROID
 #define XR_USE_GRAPHICS_API_VULKAN
+#define XR_USE_TIMESPEC
+#include <time.h>
 #include <jni.h>
 #include <android/native_window_jni.h>
 #include "quest_vulkan.h"
@@ -76,6 +78,7 @@ VkInstance vulkanInstance=VK_NULL_HANDLE;
 std::once_flag initialized;
 bool performanceSettings=false;
 bool displayRefresh=false;
+bool timespecTime=false;
 void check(XrResult r,const char* operation){if(XR_FAILED(r))throw std::runtime_error(std::string(operation)+": "+std::to_string(r));}
 template<class T> T function(const char* name){T value=nullptr;check(xrGetInstanceProcAddr(instance,name,reinterpret_cast<PFN_xrVoidFunction*>(&value)),name);return value;}
 void initialize() {
@@ -99,6 +102,9 @@ void initialize() {
         if(std::strcmp(extension.extensionName,XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME)==0) {
             extensions.push_back(XR_FB_DISPLAY_REFRESH_RATE_EXTENSION_NAME);displayRefresh=true;
         }
+        if(std::strcmp(extension.extensionName,XR_KHR_CONVERT_TIMESPEC_TIME_EXTENSION_NAME)==0) {
+            extensions.push_back(XR_KHR_CONVERT_TIMESPEC_TIME_EXTENSION_NAME);timespecTime=true;
+        }
     }
     XrInstanceCreateInfoAndroidKHR android{XR_TYPE_INSTANCE_CREATE_INFO_ANDROID_KHR};android.applicationVM=vm;android.applicationActivity=activity;
     XrInstanceCreateInfo ci{XR_TYPE_INSTANCE_CREATE_INFO};ci.next=&android;
@@ -113,6 +119,12 @@ void initialize() {
 }
 XrInstance snap_quest_xr_instance(){std::call_once(initialized,initialize);return instance;}
 XrSystemId snap_quest_xr_system(){snap_quest_xr_instance();return systemId;}
+double snap_quest_monotonic_time(XrTime time) {
+    if(!timespecTime)throw std::runtime_error("Predicted-time animation requires XR_KHR_convert_timespec_time");
+    timespec converted{};
+    check(function<PFN_xrConvertTimeToTimespecTimeKHR>("xrConvertTimeToTimespecTimeKHR")(instance,time,&converted),"convert predicted display time");
+    return double(converted.tv_sec)+double(converted.tv_nsec)*1e-9;
+}
 float snap_quest_display_refresh(XrSession session,bool request) {
     if(!displayRefresh)return 0;
     auto get=function<PFN_xrGetDisplayRefreshRateFB>("xrGetDisplayRefreshRateFB");

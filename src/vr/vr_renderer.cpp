@@ -4,6 +4,12 @@
 #include "vr_options.h"
 #include "vr_transition.h"
 #include "vr_benchmark.h"
+#include "vr_animation_clock.h"
+#include "vr_portal.h"
+#ifdef __ANDROID__
+#include "vr_render_snapshot.h"
+#include "vr_snapshot_window.h"
+#endif
 #include "settings.h"
 #include "hle/rt64_workload_queue.h"
 #include "render/rt64_render_target_manager.h"
@@ -31,6 +37,22 @@ VRTexture* nativeTexture(RenderTarget* target) {
 }
 struct Renderer {
     WorkloadQueue& queue;
+#ifdef __ANDROID__
+    RenderSnapshot* snapshotInput=nullptr;
+    std::shared_ptr<RenderSnapshot> snapshotOwner;
+    AnimationClock animationClock;
+    AnimationClock::Sample animationSample;
+    SnapshotWindow<RenderSnapshot> snapshotWindow;
+    bool frameUsesMutableImages=false;
+    uint64_t cpuTrackingFrame=0;
+    TransformProcessor poseTransforms;
+    ProjectionProcessor poseProjection;
+    TileProcessor poseTiles;
+    LookAtProcessor poseLookAt;
+    WorkloadQueue& sourceData(){return snapshotInput?snapshotInput->data:queue;}
+#else
+    WorkloadQueue& sourceData(){return queue;}
+#endif
     OpenXR xr;
     Interaction interaction;
     Options options;
@@ -42,23 +64,63 @@ struct Renderer {
     struct ViewResources {
         std::unique_ptr<FramebufferRenderer> renderer;
         std::unique_ptr<RSPProcessor> rsp;
-        std::unique_ptr<BufferUploader> upload,tiles;
-        std::unique_ptr<RenderCommandList> commands;
-        std::unique_ptr<RenderCommandFence> fence;
-        BufferPair viewProj,viewport,world,rdpTiles,lookAt,gpuTiles;
-        ComputedBuffer screenPos,texcoords,shaded,testZ;
+        std::unique_ptr<BufferUploader> upload,tiles,geometryUpload;
+        std::unique_ptr<RenderWorker> worker;
+        // No mutable Workload or GPU output is borrowed from the producer.
+        Workload work{};
+        uint64_t sourceId=UINT64_MAX;
+        std::unique_ptr<RenderQueryPool> timing;
         bool pending=false;
     };
     std::array<std::unique_ptr<ViewResources>,3> views;
     unsigned pendingTextureLocks=0;
+    std::array<double,3> viewGpuMs{};
+    bool framePending=false;
+    uint64_t gpuTrackingFrame=0;
+    std::shared_ptr<RenderSnapshot> frameSnapshot;
+    struct FrameResources {
+        std::unique_ptr<Props> props;
+        std::array<std::unique_ptr<ViewResources>,3> views;
+        std::array<std::unique_ptr<RenderTarget>,3> colors,depths;
+        std::array<RenderFramebufferStorage,3> framebuffers;
+        unsigned textureLocks=0;
+        bool pending=false;
+        uint64_t trackingFrame=0,viewfinderWorkload=UINT64_MAX;
+        std::shared_ptr<RenderSnapshot> snapshot;
+    } alternate;
+    void rotateFrameResources() {
+        std::swap(props,alternate.props);std::swap(views,alternate.views);
+        std::swap(colors,alternate.colors);std::swap(depths,alternate.depths);
+        std::swap(framebuffers,alternate.framebuffers);
+        std::swap(pendingTextureLocks,alternate.textureLocks);std::swap(framePending,alternate.pending);
+        std::swap(gpuTrackingFrame,alternate.trackingFrame);std::swap(frameSnapshot,alternate.snapshot);
+        std::swap(viewfinderWorkload,alternate.viewfinderWorkload);
+    }
+    void collectFrame(double gpuMs) {
+        viewGpuMs.fill(0);
+        for(unsigned i=0;i<views.size();++i)if(views[i]&&views[i]->pending) {
+            views[i]->timing->queryResults();const auto* ts=views[i]->timing->getResults();
+            viewGpuMs[i]=double(ts[1]-ts[0])/1e6;
+        }
+#ifdef SNAP_QUEST_BENCHMARK
+        questBenchmark().gpuSample(gpuTrackingFrame,gpuMs,viewGpuMs);
+#endif
+        retireViews(false);framePending=false;frameSnapshot.reset();
+    }
+    void retireFrame() {if(framePending)collectFrame(props->retireTiming());}
     void retireViews(bool wait) {
         for(auto& v:views)if(v&&v->pending) {
-            if(wait)queue.ext.workloadGraphicsWorker->commandQueue->waitForCommandFence(v->fence.get());
+            // The final frame fence already covers these submissions when
+            // wait=false. wait() also resets each fence for its next submit.
+            v->worker->wait();
             v->pending=false;
         }
         while(pendingTextureLocks){queue.ext.textureCache->decrementLock();--pendingTextureLocks;}
     }
-    ~Renderer(){retireViews(true);}
+    ~Renderer(){
+        retireFrame();retireViews(true);props.reset();
+        rotateFrameResources();retireFrame();retireViews(true);props.reset();
+    }
 #endif
     std::array<std::unique_ptr<RenderTarget>,3> colors,depths;
     std::unique_ptr<RenderTarget> menuImage;
@@ -107,9 +169,23 @@ struct Renderer {
             colors[i]->resize(q.ext.workloadGraphicsWorker,w,h);depths[i]->resize(q.ext.workloadGraphicsWorker,w,h);
             framebuffers[i].setup(q.ext.device,{},colors[i].get(),depths[i].get());
         }
+#ifdef __ANDROID__
+        // Both slots own complete mutable graphics state. They share only
+        // immutable pipeline/assets and the externally synchronized queue.
+        rotateFrameResources();
+        props=std::make_unique<Props>(device,nativeQueue);
+        for(unsigned i=0;i<3;++i) {
+            colors[i]=std::make_unique<RenderTarget>(0,Framebuffer::Type::Color,RenderMultisampling{},false);
+            depths[i]=std::make_unique<RenderTarget>(0,Framebuffer::Type::Depth,RenderMultisampling{},false);
+            const unsigned w=i==2?640:width(i),h=i==2?480:height(i);
+            colors[i]->resize(q.ext.workloadGraphicsWorker,w,h);depths[i]->resize(q.ext.workloadGraphicsWorker,w,h);
+            framebuffers[i].setup(q.ext.device,{},colors[i].get(),depths[i].get());
+        }
+        rotateFrameResources();
+#endif
         ready=true;printf("[SNAP-VR] %s initialized: %ux%u / %ux%u\n",preview?"diagnostic preview":"OpenXR",width(0),height(0),width(1),height(1));
     }
-    void replay(GameFrame& frame,unsigned target,Pose eye,Fov fov,bool world,bool cinematic=false) {
+    void replay(GameFrame& frame,unsigned target,Pose eye,Fov fov,bool world,bool cinematic=false,const RenderRect* clip=nullptr) {
         struct Timer {double& total;std::chrono::steady_clock::time_point start=std::chrono::steady_clock::now();~Timer(){total+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-start).count();}} timer{stageMs[target]};
         auto* worker=queue.ext.workloadGraphicsWorker;
         auto& color=*colors[target];auto& depth=*depths[target];
@@ -130,54 +206,77 @@ struct Renderer {
         };
         if(!world){clearEmpty();return;}
         for(uint32_t wi:frame.workloads) {
-            auto& w=queue.workloads[wi];auto& d=w.drawData;
+            auto& source=sourceData().workloads[wi];
             std::vector<uint32_t> pairs;
-            for(uint32_t f=0;f<w.fbPairCount;f++) {
-                const auto& pair=w.fbPairs[f];if(pair.colorImage.width!=320)continue;
+            for(uint32_t f=0;f<source.fbPairCount;f++) {
+                const auto& pair=source.fbPairs[f];if(pair.colorImage.width!=320)continue;
                 bool perspective=false;for(uint32_t p=0;p<pair.projectionCount;p++)perspective|=pair.projections[p].type==Projection::Type::Perspective;
                 if(perspective)pairs.push_back(f);
             }
             if(pairs.empty())continue;
 #ifdef __ANDROID__
-            // Each view owns every buffer, descriptor and command list it
-            // mutates. Immutable source geometry remains pinned by the active
-            // workload until the final frame fence completes.
-            ViewResources* asynchronous=nullptr;
-            if(frame.workloads.size()==1) {
-                auto& owned=views[target];
+            auto& owned=views[target];
                 if(!owned) {
                     owned=std::make_unique<ViewResources>();
-                    owned->renderer=std::make_unique<FramebufferRenderer>(worker,false,queue.ext.createdGraphicsAPI,queue.ext.shaderLibrary);
+                    owned->worker=std::make_unique<RenderWorker>(queue.ext.device,"Quest view",worker->commandQueue);
+                    owned->renderer=std::make_unique<FramebufferRenderer>(owned->worker.get(),false,queue.ext.createdGraphicsAPI,queue.ext.shaderLibrary);
                     owned->rsp=std::make_unique<RSPProcessor>(queue.ext.device);
                     owned->upload=std::make_unique<BufferUploader>(queue.ext.device);
                     owned->tiles=std::make_unique<BufferUploader>(queue.ext.device);
-                    owned->commands=worker->commandQueue->createCommandList();owned->fence=queue.ext.device->createCommandFence();
+                    owned->geometryUpload=std::make_unique<BufferUploader>(queue.ext.device);
+                    owned->timing=queue.ext.device->createQueryPool(2);
                 }
-                asynchronous=owned.get();
+            // Multiple source workloads can share a view in one frame. Retire
+            // that view before reuse; normal single-workload stereo is batched.
+            if(owned->pending){owned->worker->wait();owned->pending=false;}
+            auto* worker=owned->worker.get();
+            auto& renderer=owned->renderer;auto& rsp=owned->rsp;auto& upload=owned->upload;
+            auto& w=owned->work;
+            const bool newSource=owned->sourceId!=source.workloadId;
+            if(newSource) {
+                w.drawData=source.drawData;w.fbPairs=source.fbPairs;
+                w.fbPairCount=source.fbPairCount;w.submissionFrame=source.submissionFrame;
+                w.workloadId=source.workloadId;w.extended=source.extended;
+                // Only perspective world calls are replayed. Do not bind UI
+                // photo/framebuffer copies that this view never samples: their
+                // producer-owned lifetime must not leak into an XR submission.
+                std::vector<bool> usedTiles(w.drawData.callTiles.size(),false);
+                for(auto f:pairs)for(unsigned p=0;p<w.fbPairs[f].projectionCount;++p) {
+                    const auto& projection=w.fbPairs[f].projections[p];
+                    if(projection.type!=Projection::Type::Perspective)continue;
+                    for(unsigned c=0;c<projection.gameCallCount;++c) {
+                        const auto& call=projection.gameCalls[c].callDesc;
+                        for(unsigned tile=0;tile<call.tileCount;++tile)usedTiles.at(call.tileIndex+tile)=true;
+                    }
+                }
+                for(size_t i=0;i<usedTiles.size();++i)w.drawData.callTiles[i].valid&=usedTiles[i];
+                w.resetDrawDataRanges();w.updateDrawDataRanges();
+                // These buffers belong to the display-pose upload below.
+                // Recording both source and pose copies in the same setup
+                // batch creates overlapping unsynchronized transfer writes.
+                w.drawRanges.rdpTiles={0,0};w.drawRanges.rspViewports={0,0};w.drawRanges.rspLookAt={0,0};
+                w.uploadDrawData(worker,owned->geometryUpload.get());
+                // The pose uploader also writes the projection/tile upload
+                // storage; complete the source CPU upload before updating it.
+                owned->geometryUpload->wait();
+                owned->sourceId=source.workloadId;
+            }else {
+                w.drawData.modViewTransforms=source.drawData.modViewTransforms;
+                w.drawData.modProjTransforms=source.drawData.modProjTransforms;
+                w.drawData.modViewProjTransforms=source.drawData.modViewProjTransforms;
+                w.drawData.modRspViewports=source.drawData.modRspViewports;
+                w.drawData.lerpWorldTransforms=source.drawData.lerpWorldTransforms;
+                w.drawData.lerpRdpTiles=source.drawData.lerpRdpTiles;
+                w.drawData.lerpRspLookAt=source.drawData.lerpRspLookAt;
             }
-            struct ViewBorrow {
-                Renderer& owner;ViewResources* v;RenderWorker* worker;Workload& w;
-                void swap() {
-                    if(!v)return;
-                    std::swap(owner.renderer,v->renderer);std::swap(owner.rsp,v->rsp);std::swap(owner.upload,v->upload);
-                    std::swap(worker->commandList,v->commands);std::swap(worker->commandFence,v->fence);
-                    auto& b=w.drawBuffers;auto& out=w.outputBuffers;
-                    std::swap(b.viewProjTransformsBuffer,v->viewProj);std::swap(b.rspViewportsBuffer,v->viewport);
-                    std::swap(b.worldTransformsBuffer,v->world);std::swap(b.rdpTilesBuffer,v->rdpTiles);
-                    std::swap(b.rspLookAtBuffer,v->lookAt);std::swap(b.gpuTilesBuffer,v->gpuTiles);
-                    std::swap(out.screenPosBuffer,v->screenPos);std::swap(out.genTexCoordBuffer,v->texcoords);
-                    std::swap(out.shadedColBuffer,v->shaded);std::swap(out.testZIndexBuffer,v->testZ);
-                }
-                ViewBorrow(Renderer& o,ViewResources* view,RenderWorker* rw,Workload& work):owner(o),v(view),worker(rw),w(work){swap();}
-                ~ViewBorrow(){swap();}
-            }borrow{*this,asynchronous,worker,w};
-            // Private view outputs start empty and must be allocated before
-            // RSP descriptors and barriers reference them.
-            if(asynchronous)w.updateOutputBuffers(worker);
-            auto* tileUploader=asynchronous?asynchronous->tiles.get():queue.ext.workloadTilesUploader;
+            w.updateOutputBuffers(worker);
+            for(const auto& tile:w.drawData.callTiles)frameUsesMutableImages|=tile.valid&&tile.tileCopyUsed;
+            auto* tileUploader=owned->tiles.get();
 #else
+            auto& w=source;
             auto* tileUploader=queue.ext.workloadTilesUploader;
 #endif
+            auto& d=w.drawData;
             if(target==0&&std::getenv("SNAP_VR_STEREO_DIAG")) {
                 static unsigned samples=0;
                 if(samples++%120==0) {
@@ -240,6 +339,22 @@ struct Renderer {
             // Photo capture and scoring use the original game pass, not these
             // private replay targets.
             auto& transforms=(d.lerpWorldTransforms.size()==d.worldTransforms.size())?d.lerpWorldTransforms:d.worldTransforms;
+#ifdef SNAP_QUEST_BENCHMARK
+            if(target<2&&snapshotInput&&snapshotInput->previous.matched&&frame.frameMap.workloads[wi].mapped) {
+                const auto& map=frame.frameMap.workloads[wi];
+                const auto& previousData=sourceData().workloads[map.prevWorkloadIndex].drawData;
+                for(size_t i=0;i<transforms.size();++i) {
+                    const auto& group=d.transformGroups[d.worldTransformGroups[i]];
+                    const auto& matched=map.transforms[i];
+                    if(!group.coherenceId||!matched.mapped)continue;
+                    hlslpp::float4x4 a=previousData.worldTransforms[matched.prevTransformIndex];
+                    if(matched.snapRebasedPrev)a[3].xyz=a[3].xyz+frame.snapOriginDelta;
+                    const auto& body=matched.rigidBody;
+                    questBenchmark().poseUpload(cpuTrackingFrame,target,group.coherenceId,group.matrixId,worldWeight,
+                        &a,&d.worldTransforms[i],&transforms[i],body.lerpTranslation||body.lerpRotation||body.lerpScale);
+                }
+            }
+#endif
             uploads.push_back({transforms.data(),{0,transforms.size()},sizeof(interop::float4x4),RenderBufferFlag::STORAGE,{},&w.drawBuffers.worldTransformsBuffer});
             const auto& tiles=d.lerpRdpTiles.size()==d.rdpTiles.size()?d.lerpRdpTiles:d.rdpTiles;
             const auto& lookAt=d.lerpRspLookAt.size()==d.rspLookAt.size()?d.lerpRspLookAt:d.rspLookAt;
@@ -261,6 +376,7 @@ struct Renderer {
                 // Forcing the large fallback pixel shader for every eye draw
                 // leaves Adreno GPU-bound even after specialization completes.
                 p.ubershadersOnly=queue.ext.rasterShaderCache->multisampling.sampleCount>1;
+                p.snapVRClip=clip!=nullptr;if(clip)p.snapVRClipRect=*clip;
 #endif
                 renderer->addFramebuffer(p);
             }
@@ -268,16 +384,26 @@ struct Renderer {
                 renderer->createGPUTiles(d.callTiles.data(),uint32_t(d.callTiles.size()),d.gpuTiles.data(),&queue.ext.sharedResources->framebufferManager,queue.ext.textureCache,w.submissionFrame);
                 tileUploader->submit(worker,{{d.gpuTiles.data(),{0,d.gpuTiles.size()},sizeof(interop::GPUTile),RenderBufferFlag::STORAGE,{},&w.drawBuffers.gpuTilesBuffer}});
             }
-            worker->commandList->begin();renderer->endFramebuffers(worker,&w.drawBuffers,&w.outputBuffers,false);
+            worker->commandList->begin();
+#ifdef __ANDROID__
+            worker->commandList->resetQueryPool(owned->timing.get(),0,2);
+            worker->commandList->writeTimestamp(owned->timing.get(),0);
+#endif
+            renderer->endFramebuffers(worker,&w.drawBuffers,&w.outputBuffers,false);
             std::vector<BufferUploader*> uploaders{upload.get()};if(!d.gpuTiles.empty())uploaders.push_back(tileUploader);
+#ifdef __ANDROID__
+            if(newSource)uploaders.insert(uploaders.begin(),owned->geometryUpload.get());
+#endif
             renderer->recordSetup(worker,uploaders,rsp.get(),nullptr,&w.outputBuffers,false);
             for(uint32_t f=0;f<pairs.size();f++) {
                 renderer->recordFramebuffer(worker,f,needsClear,clearColor);needsClear=false;
             }
+#ifdef __ANDROID__
+            worker->commandList->writeTimestamp(owned->timing.get(),1);
+#endif
             worker->commandList->end();renderer->waitForUploaders();worker->execute();
 #ifdef __ANDROID__
-            if(asynchronous){asynchronous->pending=true;guard.deferred=true;++pendingTextureLocks;}
-            else waitWorker();
+            owned->pending=true;guard.deferred=true;++pendingTextureLocks;
 #else
             waitWorker();
 #endif
@@ -288,14 +414,19 @@ struct Renderer {
     }
     RenderTarget* desktop(GameFrame& frame) {
         RenderTarget* result=nullptr;
-        for(uint32_t wi:frame.workloads){auto& w=queue.workloads[wi];for(uint32_t f=0;f<w.fbPairCount;f++) {
+        for(uint32_t wi:frame.workloads){auto& w=sourceData().workloads[wi];for(uint32_t f=0;f<w.fbPairCount;f++) {
             const auto& p=w.fbPairs[f];if(p.colorImage.width!=320||!p.earlyPresentCandidate()||p.displayColorRect(false).height(false,true)<220)continue;
             RenderTargetKey key(p.colorImage.address,p.colorImage.width,p.colorImage.siz,Framebuffer::Type::Color);
             auto& target=queue.ext.sharedResources->renderTargetManager.get(key);if(!target.isEmpty())result=&target;
         }}return result;
     }
-    void render(GameFrame& frame,const GameFrame& previous,float weight,RenderTarget* presented) {
-        worldWeight=previous.matched?weight:1.f;
+    void render(GameFrame& suppliedFrame,const GameFrame& suppliedPrevious,float weight,RenderTarget* presented) {
+#ifdef __ANDROID__
+        // Retire only the slot about to be reused, before asking XR for its
+        // next predicted pose. The preceding slot can remain on the GPU.
+        rotateFrameResources();retireFrame();
+#endif
+        worldWeight=suppliedPrevious.matched?weight:1.f;
         Tracking t;
         if(preview) {
             t.focused=t.headValid=true;t.frame=++previewFrame;t.seconds=previewFrame/90.0;t.head.position={0,1.2f,0};
@@ -325,6 +456,31 @@ struct Renderer {
             return;
         }
         wasFocused=t.focused;
+#ifdef __ANDROID__
+        cpuTrackingFrame=t.frame;
+        if(snapshotInput) {
+            auto& newest=*snapshotInput;
+            const double desired=animationClock.target(newest.currentGame.epoch,newest.currentGame.sourceSeconds,xr.predictedMonotonicSeconds(),newest.sourcePeriod);
+            snapshotOwner=snapshotWindow.select(desired);
+            snapshotInput=snapshotOwner.get();
+        }
+        auto& frame=snapshotInput?snapshotInput->current:suppliedFrame;
+        const auto& previous=snapshotInput?snapshotInput->previous:suppliedPrevious;
+        if(snapshotInput) {
+            auto& snap=*snapshotInput;
+            animationSample=animationClock.sample(snap.currentGame.epoch,snap.previousGame.sourceSeconds,
+                snap.currentGame.sourceSeconds,xr.predictedMonotonicSeconds(),snap.sourcePeriod);
+            worldWeight=previous.matched?animationSample.alpha:1.f;
+            const auto* matchedPrevious=previous.matched&&!frame.frameMap.workloads.empty()?&previous:nullptr;
+            poseProjection.process({nullptr,&snap.data,&frame,matchedPrevious,worldWeight,1-worldWeight,1.f});
+            poseTransforms.process({nullptr,&snap.data,&frame,matchedPrevious,worldWeight,1-worldWeight});
+            poseTiles.process({nullptr,&snap.data,&frame,matchedPrevious,worldWeight,1-worldWeight});
+            poseLookAt.process({nullptr,&snap.data,&frame,matchedPrevious,worldWeight,1-worldWeight});
+        }else {animationClock.reset();snapshotWindow.clear();}
+#else
+        auto& frame=suppliedFrame;
+        const auto& previous=suppliedPrevious;
+#endif
         // The workload thread owns this source frame until render returns.
         // OpenXR pacing above needs no RT64 resources; do not block guest
         // workload production or the graphics worker while waiting for it.
@@ -341,11 +497,17 @@ struct Renderer {
 #endif
         {auto& s=shared();std::lock_guard lock(s.mutex);g=s.game;recenter=s.recenter;s.recenter=false;focus=false;
             if(!frame.workloads.empty()) {
-                const auto& source=queue.workloads[frame.workloads.back()];
+                const auto& source=sourceData().workloads[frame.workloads.back()];
                 focus=s.focusVisible&&source.snapVREpoch==g.epoch&&source.snapVRFrame==s.focusFrame;
                 auto snapshot=[&](const GameFrame& renderFrame,GameState& result) {
+#ifdef __ANDROID__
+                    if(snapshotInput) {
+                        result=&renderFrame==&frame?snapshotInput->currentGame:snapshotInput->previousGame;
+                        return result.frame>0;
+                    }
+#endif
                     if(renderFrame.workloads.empty())return false;
-                    const auto& w=queue.workloads[renderFrame.workloads.back()];
+                    const auto& w=sourceData().workloads[renderFrame.workloads.back()];
                     for(auto it=s.gameHistory.rbegin();it!=s.gameHistory.rend();++it)if(it->epoch==w.snapVREpoch&&it->frame==w.snapVRFrame){result=*it;return true;}
                     return false;
                 };
@@ -405,7 +567,7 @@ struct Renderer {
         if(preview&&g.course&&std::getenv("SNAP_VR_ITEM_GRIP_TEST")){f.held[0]=Held::Apple;f.held[1]=Held::PesterBall;}
         if(g.course&&std::getenv("SNAP_VR_DIAG")&&diagnosticFrames++<90) {
             size_t interpolated=0,modified=0;
-            for(auto wi:frame.workloads){auto& d=queue.workloads[wi].drawData;interpolated+=d.lerpWorldTransforms.size();modified+=d.modifyPosUints.size();}
+            for(auto wi:frame.workloads){auto& d=sourceData().workloads[wi].drawData;interpolated+=d.lerpWorldTransforms.size();modified+=d.modifyPosUints.size();}
             fprintf(stderr,"[SNAP-VR-DIAG] tick %llu alpha %.4f cart %.3f %.3f %.3f lerp %zu modified %zu message [%s]\n",(unsigned long long)g.frame,worldWeight,g.cartPosition.x,g.cartPosition.y,g.cartPosition.z,interpolated,modified,g.message.c_str());
         }
         f.pause=f.pause||(openedOptions&&g.course&&!g.paused);
@@ -461,6 +623,9 @@ struct Renderer {
         }
         if((!preview&&!xr.shouldRender())||!t.headValid){xr.end(false);frameGuard.done=true;return;}
         workerWaitMs=0;props->beginTiming();
+#ifdef __ANDROID__
+        frameUsesMutableImages=false;
+#endif
         auto* worker=queue.ext.workloadGraphicsWorker;RenderTarget* screen=nullptr;
         bool cinema=g.cinematic&&!g.paused&&!options.open;
         bool course=g.course&&g.frame>0&&!g.paused&&!options.open&&!cinema;
@@ -471,7 +636,7 @@ struct Renderer {
             float vertical=f.fovY*pi/360;float horizontal=std::atan(std::tan(vertical)*4/3);
             bool refreshViewfinder=true;
 #ifdef __ANDROID__
-            const auto sourceId=queue.workloads[frame.workloads.back()].workloadId;
+            const auto sourceId=sourceData().workloads[frame.workloads.back()].workloadId;
             refreshViewfinder=f.cameraHeld || viewfinderWorkload!=sourceId;
             viewfinderWorkload=sourceId;
 #endif
@@ -484,10 +649,14 @@ struct Renderer {
             if(preview&&modelTestFrame>120&&viewfinderTestFrames<12&&std::getenv("SNAP_VR_VIEWFINDER_TEST")) {
                 const std::string filename="vr-viewfinder-"+std::to_string(viewfinderTestFrames++)+".png";
                 props->capture(nativeTexture(screen),filename.c_str());
-                const auto& source=queue.workloads[frame.workloads.back()];
+                const auto& source=sourceData().workloads[frame.workloads.back()];
                 fprintf(stderr,"[SNAP-VR-VIEWFINDER] %s workload %llu alpha %.4f lens %.3f %.3f %.3f\n",
                     filename.c_str(),(unsigned long long)source.workloadId,worldWeight,f.lens.position.x,f.lens.position.y,f.lens.position.z);
             }
+        }else if(cinema) {
+            // Cinematic eye replay supplies its own scene and portal. There
+            // is no screen prop sampling the guest framebuffer in this mode.
+            screen=colors[2].get();
         }else {
             screen=presented?presented:desktop(frame);
             // Keep a private copy: score readbacks may render several scratch
@@ -511,7 +680,9 @@ struct Renderer {
             if(!fade.hold) {
             Pose eye=interaction.toWorld(t.eyes[i],g);
             if(cinema){eye=interaction.localPose(t.eyes[i]);eye.position.y-=interaction.settings.eyeHeight;eye.position=eye.position*interaction.settings.unitsPerMeter;}
-            replay(frame,i,eye,t.fovs[i],course||cinema,cinema);
+            const auto bounds=portalScissor(interaction.localPose(t.eyes[i]),t.fovs[i],interaction.settings.eyeHeight,int(width(i)),int(height(i)));
+            const RenderRect portalBounds(bounds[0],bounds[1],bounds[2],bounds[3]);
+            replay(frame,i,eye,t.fovs[i],course||cinema,cinema,cinema&&!fade.hold?&portalBounds:nullptr);
 #ifndef __ANDROID__
             worker->commandList->begin();
             worker->commandList->barriers(RenderBarrierStage::GRAPHICS,RenderTextureBarrier(screen->texture.get(),RenderTextureLayout::SHADER_READ));
@@ -545,10 +716,16 @@ struct Renderer {
             }
         }
         if(captureSubmitted){std::error_code error;std::filesystem::remove("vr-capture.request",error);}
-        const double gpuMs=props->endTiming();
 #ifdef __ANDROID__
-        // Props' final fence is on the same queue as all view submissions.
-        retireViews(false);
+        // Framebuffer-derived textures still belong to the source renderer.
+        // Drain those exceptional frames until their images are versioned too.
+        const bool defer=snapshotInput&&(course||cinema)&&!frameUsesMutableImages&&!captureSubmitted;
+        gpuTrackingFrame=t.frame;frameSnapshot=snapshotOwner;
+        const double gpuMs=props->endTiming(defer);
+        if(defer){framePending=true;viewGpuMs.fill(-1);}
+        else collectFrame(gpuMs);
+#else
+        const double gpuMs=props->endTiming();
 #endif
         if(!preview) {
             const auto releaseStart=std::chrono::steady_clock::now();
@@ -557,16 +734,22 @@ struct Renderer {
         }
         accumulatedGpuMs+=gpuMs;accumulatedWaitMs+=workerWaitMs+props->fenceWaitMs();
         xr.end(true);frameGuard.done=true;
-        const auto sourceWorkload=queue.workloads[frame.workloads.back()].workloadId;
+        const auto sourceWorkload=sourceData().workloads[frame.workloads.back()].workloadId;
         if(sourceWorkload!=lastSourceWorkload){++sourceFrames;lastSourceWorkload=sourceWorkload;}
         const auto submitted=std::chrono::steady_clock::now();
 #ifdef SNAP_QUEST_BENCHMARK
+        if(snapshotInput)questBenchmark().animationSample(t.frame,snapshotInput->previousGame.sourceSeconds,
+            snapshotInput->currentGame.sourceSeconds,snapshotInput->published,animationSample.time,
+            animationSample.sourceAge,worldWeight,animationSample.stale,previous.matched,frameUsesMutableImages);
         auto stages=stageMs;for(size_t i=0;i<stages.size();++i)stages[i]-=previousStages[i];
-        const auto& source=queue.workloads[frame.workloads.back()];
-        static float physicalHz=0;static double checkedAt=0;
-        if(t.seconds-checkedAt>=1){physicalHz=xr.physicalRefreshRate();checkedAt=t.seconds;}
+        const auto& source=sourceData().workloads[frame.workloads.back()];
+        // The opening movie starts during refresh negotiation. A one-second
+        // cache would falsely label its first rendered frames with the old Hz.
+        const float physicalHz=xr.physicalRefreshRate();
         questBenchmark().sample(t,g,source.snapVRFrame,source.workloadId,worldWeight,width(0),height(0),physicalHz,
-            std::chrono::duration<double,std::milli>(submitted-start).count(),gpuMs,workerWaitMs+props->fenceWaitMs(),stages,f.cameraHeld,snap::g_scene_overlay_rom.load());
+            std::chrono::duration<double,std::milli>(submitted-start).count(),gpuMs,workerWaitMs+props->fenceWaitMs(),stages,f.cameraHeld,snap::g_scene_overlay_rom.load(),
+            viewGpuMs,xr.pacingTimesMs(),snapshotInput?snapshotInput->sourceCpu:queue.snapSourceCpuMs,
+            snapshotInput?snapshotInput->sourceGpu:queue.snapSourceGpuMs);
 #endif
         if(submissionWindow==std::chrono::steady_clock::time_point{})submissionWindow=submitted;
         else if(++submissionIntervals==120) {
@@ -589,6 +772,48 @@ struct Renderer {
     }
 };
 std::unique_ptr<Renderer> renderer;
+#ifdef __ANDROID__
+// Latest-only mailbox plus a bounded four-pair presentation history. In-flight
+// frame slots retain their selected pair until GPU completion; there is no
+// unbounded queue of stale animation jobs.
+struct CourseRenderer {
+    Renderer& renderer;
+    std::mutex mutex;
+    std::condition_variable ready;
+    std::shared_ptr<RenderSnapshot> pending;
+    std::atomic<bool> running{true};
+    std::exception_ptr failure;
+    std::thread thread;
+    explicit CourseRenderer(Renderer& renderer):renderer(renderer),thread([this]{run();}){}
+    ~CourseRenderer(){running=false;ready.notify_all();thread.join();renderer.snapshotInput=nullptr;}
+    void publish(std::shared_ptr<RenderSnapshot> value) {
+        std::lock_guard lock(mutex);
+        if(failure)std::rethrow_exception(failure);
+        pending=std::move(value);ready.notify_one();
+    }
+    void run() {
+        std::shared_ptr<RenderSnapshot> current;
+        try {
+            while(running) {
+                {std::unique_lock lock(mutex);
+                    if(!current)ready.wait(lock,[&]{return pending||!running;});
+                    if(!running)break;
+                    if(pending) {
+                        current=std::exchange(pending,{});
+                        renderer.snapshotWindow.publish(current,current->currentGame.epoch,
+                            current->previousGame.sourceSeconds,current->currentGame.sourceSeconds);
+                    }
+                }
+                renderer.snapshotOwner=current;renderer.snapshotInput=current.get();
+                renderer.render(current->current,current->previous,1.f,nullptr);
+                if(!renderer.wasFocused)std::this_thread::sleep_for(std::chrono::milliseconds(10));
+            }
+        }catch(...) {std::lock_guard lock(mutex);failure=std::current_exception();running=false;}
+        renderer.snapshotInput=nullptr;renderer.snapshotOwner.reset();
+    }
+};
+std::unique_ptr<CourseRenderer> courseRenderer;
+#endif
 auto retryAfter=std::chrono::steady_clock::time_point{};
 }
 void render(RT64::WorkloadQueue& queue,RT64::GameFrame& frame,const RT64::GameFrame& previous,float weight,RenderTarget* presented) {
@@ -598,13 +823,34 @@ void render(RT64::WorkloadQueue& queue,RT64::GameFrame& frame,const RT64::GameFr
             std::scoped_lock lock(queue.ext.sharedResources->workloadMutex,queue.workerMutex);
             renderer=std::make_unique<Renderer>(queue);
         }
+#ifdef __ANDROID__
+        bool asynchronous=false;
+        {auto& s=shared();std::lock_guard lock(s.mutex);
+            asynchronous=!preview&&(s.game.course||s.game.cinematic)&&!s.game.paused&&
+                queue.ext.sharedResources->renderTargetManager.multisampling.sampleCount==1;
+        }
+        if(asynchronous) {
+            auto snapshot=std::make_shared<RenderSnapshot>(queue,frame,previous);
+            if(!courseRenderer)courseRenderer=std::make_unique<CourseRenderer>(*renderer);
+            courseRenderer->publish(std::move(snapshot));return;
+        }
+        courseRenderer.reset();
+#endif
         renderer->render(frame,previous,weight,presented);
     }catch(const std::exception& e){
         fprintf(stderr,"[SNAP-VR] %s; retrying in two seconds\n",e.what());
         auto& state=shared();{std::lock_guard lock(state.mutex);state.buttons=0;state.releases.clear();
             if(state.game.course&&!state.game.paused)state.pulses|=0x1000;}
+#ifdef __ANDROID__
+        courseRenderer.reset();
+#endif
         renderer.reset();retryAfter=std::chrono::steady_clock::now()+std::chrono::seconds(2);
     }
 }
-void shutdown(){renderer.reset();retryAfter={};}
+void shutdown(){
+#ifdef __ANDROID__
+    courseRenderer.reset();
+#endif
+    renderer.reset();retryAfter={};
+}
 }
