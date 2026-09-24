@@ -125,7 +125,8 @@ takes a photo, and its thumbstick adjusts zoom. Grip an unlocked item at its
 dispenser and release to throw it. Press both thumbsticks to recenter, or
 click the left thumbstick to open VR settings. The cart follows its original
 route, with room-scale head movement and no free locomotion. See the
-[VR controls and settings](docs/VR.md#controls) for the full mapping.
+[VR controls](#vr-controls) below for the full mapping, and
+[VR settings](docs/VR.md#settings-and-saves) for setup options.
 
 Keep `saves/vr-photo-lenses.json` together with `saves/pokemonsnap.bin` when
 moving a VR save: it records lens information that the original photo record
@@ -251,8 +252,37 @@ the game's photo scoring.
 
 ## Controls
 
-Desktop keyboard and mouse, as the port ships them. For motion controllers,
-see [VR controls](docs/VR.md#controls).
+### VR controls
+
+On Quest controllers, **A/B are on the right controller** and **X/Y are on
+the left**. **Grip** is the side button under your middle finger;
+**trigger** is under your index finger. Menu pointing and navigation use
+your dominant hand, selected in VR settings.
+
+| Action | VR control |
+| --- | --- |
+| Select a menu option | Point at it with your dominant hand, or move that hand's thumbstick. |
+| Confirm / go back | Trigger or A/X confirms; B/Y goes back. Use the dominant hand in menus. |
+| Pick up and hold the camera | Reach either hand to the holster on your right and hold grip. |
+| Take a photo | Pull the trigger on the hand holding the camera. Each press takes one photo. |
+| Zoom the lens | Move the camera-holding hand's thumbstick up or down. |
+| Steady the camera | Hold your free hand near the camera and squeeze its grip. |
+| Return the camera | Release the holding hand's grip. |
+| Throw an apple or Pester Ball | Hold grip near its dispenser, move your hand to throw, then release grip. Both dispensers are on your right; Pester Balls are farther forward. Items become available after their original unlocks. |
+| Play the Poké Flute | Physically press an empty hand into the round flute-icon button on the left dashboard. **No trigger pull is needed.** It stays **gray and inactive until unlocked**. Music plays for 10 seconds; the green rim shows time remaining. Withdraw your hand and press again to change tune and restart the timer. |
+| Dash | Hold B or Y during a course. |
+| Continue dialogue / tutorials | Press A or X. |
+| Pause | Press the left controller's menu button, where the headset runtime makes it available. |
+| Open VR settings | Click the left thumbstick. Opening settings during a course also requests pause. B/Y or Done closes the panel. |
+| Recenter | Press both thumbsticks together, or press F9 on the PC, while looking forward in your intended seated or standing position. |
+
+Look around and lean naturally; the ZERO-ONE follows the original course
+route. There is no free locomotion. The camera holster stays on your right
+regardless of the dominant-hand setting.
+
+### Desktop controls
+
+Desktop keyboard and mouse, as the port ships them:
 
 | N64 | Key | Mouse | In a course |
 | --- | --- | --- | --- |
