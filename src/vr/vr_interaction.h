@@ -32,6 +32,20 @@ struct Tracking {
     std::array<Fov,2> fovs{};
     std::array<HandInput,2> hands{};
 };
+// Menus accept either stick independently of the pointing hand. Pick one
+// complete vector so simultaneous input cannot double the speed or invent a
+// diagonal from two different hands. Untracked controllers contribute nothing.
+inline std::array<float,2> menuStick(const Tracking& tracking) {
+    std::array<float,2> result{};
+    float strongest=0;
+    for(const auto& hand:tracking.hands) {
+        const float strength=std::max(std::abs(hand.stickX),std::abs(hand.stickY));
+        if(hand.tracked&&strength>strongest) {
+            result={hand.stickX,hand.stickY};strongest=strength;
+        }
+    }
+    return result;
+}
 struct FluteContact {
     bool nearCap=false,touching=false;
     void include(Vec3 point,Vec3 button) {

@@ -612,7 +612,7 @@ struct Renderer {
                     for(auto release:f.throws)if(s.releases.size()<2)s.releases.push_back(release);
                 }else {
                     unsigned hand=interaction.settings.leftHanded?0:1;
-                    s.stickX=t.hands[hand].tracked?t.hands[hand].stickX:0;s.stickY=t.hands[hand].tracked?t.hands[hand].stickY:0;
+                    const auto stick=menuStick(t);s.stickX=stick[0];s.stickY=stick[1];
                     // Map the ray to the same 320x240 coordinates as the menu sprites.
                     if(t.hands[hand].tracked&&std::abs(s.stickX)<.15f&&std::abs(s.stickY)<.15f) {
                         Pose aim=interaction.localPose(t.hands[hand].aim);Vec3 ray=rotate(aim.orientation,{0,0,-1});

@@ -14,9 +14,10 @@ bool Options::update(const Tracking& t,Interaction& interaction) {
     unsigned dominant=interaction.settings.leftHanded?0:1;
     const auto& hand=t.hands[dominant];
     bool pressed=hand.tracked&&(hand.trigger>.6f||hand.primary),back=hand.tracked&&hand.secondary;
-    if(open&&hand.tracked) {
+    if(open) {
         if(back&&!cancel)open=false;
-        float x=hand.stickX,y=hand.stickY;bool edit=false;int direction=1;
+        const auto stick=menuStick(t);
+        float x=stick[0],y=stick[1];bool edit=false;int direction=1;
         if(std::abs(x)<.4f&&std::abs(y)<.4f)repeatAt=0;
         if(t.seconds>=repeatAt&&(std::abs(x)>.6f||std::abs(y)>.6f)) {
             if(std::abs(y)>std::abs(x))row=(row+(y>0?5:1))%6;
