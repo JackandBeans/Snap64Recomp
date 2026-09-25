@@ -52,6 +52,42 @@ def analyze_pose_uploads(path, frames):
             'malformed_rows':malformed,'evidence':'CPU matrices submitted for GPU upload; final image motion remains a separate check'}
 
 
+def analyze_vertex_motion(path, frames):
+    if not path.exists():return {'available':False}
+    samples=[];malformed=0
+    with path.open(newline='') as stream:
+        reader=csv.DictReader(stream)
+        if not reader.fieldnames or 'moving_vertices' not in reader.fieldnames:return {'available':False}
+        for row in reader:
+            try:
+                if int(row['tracking_frame']) in frames:samples.append({k:float(v) for k,v in row.items()})
+            except (ValueError,TypeError):malformed+=1
+    moving=[r for r in samples if r['moving_vertices']>0]
+    return {'available':True,'samples':len(samples),'moving_vertex_frames':len(moving),
+            'intermediate_vertex_frames':sum(.001<r['alpha']<.999 for r in moving),
+            'max_moving_vertices':max((r['moving_vertices'] for r in samples),default=0),
+            'max_changed_meshes':max((r.get('vertex_changed',0) for r in samples),default=0),
+            'max_local_delta':max((r['max_vertex_delta'] for r in samples),default=0),
+            'malformed_rows':malformed,
+            'evidence':'Snapshot correspondence and uploaded velocity inputs; final GPU vertex output remains unverified'}
+
+
+def analyze_gpu_vertices(path, frames):
+    if not path.exists():return {'available':False}
+    rows=[];malformed=0
+    with path.open(newline='') as stream:
+        for row in csv.DictReader(stream):
+            try:
+                if int(row['tracking_frame']) in frames:rows.append({k:float(v) for k,v in row.items()})
+            except (ValueError,TypeError):malformed+=1
+    return {'available':True,'samples':len(rows),'failures':sum(not r['passed'] for r in rows),
+            'deforming_samples':sum(bool(r['deforming']) for r in rows),
+            'moving_samples':sum(r['from_source']>.02 for r in rows),
+            'eyes':sorted({int(r['eye']) for r in rows}),'malformed_rows':malformed,
+            'max_error':max((r['max_error'] for r in rows),default=0),
+            'evidence':'Fenced readback of real RSP compute output compared with the predicted-time CPU pose; final raster visibility remains a separate check'}
+
+
 def analyze(path, refresh, complete=False, scene='beach'):
     if not path.exists():
         return {'passed': False, 'reasons': ['No frame telemetry'], 'valid': False}
@@ -112,6 +148,10 @@ def analyze(path, refresh, complete=False, scene='beach'):
         reasons.append('Repeated animation pose for at least 100 ms')
     distinct = len({(r['epoch'],r['source_frame']) for r in course})
     poses=analyze_pose_uploads(path.with_name('pose_uploads.csv'),{int(r['tracking_frame']) for r in course})
+    vertices=analyze_vertex_motion(path.with_name('animation.csv'),{int(r['tracking_frame']) for r in course})
+    gpu_vertices=analyze_gpu_vertices(path.with_name('vertex_gpu.csv'),{int(r['tracking_frame']) for r in course})
+    if gpu_vertices.get('failures',0) or gpu_vertices.get('malformed_rows',0):
+        valid=False;reasons.append('GPU vertex output audit failed')
     if poses.get('stereo_mismatches',0) or poses.get('malformed_rows',0):
         valid=False
         reasons.append('Pose upload audit failed stereo agreement or data integrity')
@@ -127,6 +167,8 @@ def analyze(path, refresh, complete=False, scene='beach'):
             'longest_identical_interpolation_samples': longest_stale,
             'rendered_animation_verified': False,
             'pose_uploads': poses,
+            'vertex_motion': vertices,
+            'gpu_vertex_audit': gpu_vertices,
             'interval_ms': {'median': statistics.median(intervals), 'p95': percentile(intervals,.95), 'p99': percentile(intervals,.99), 'max': max(intervals)},
             'timings_ms': {key: {'median': statistics.median([r[key] for r in course if r[key]>=0]), 'p99': percentile([r[key] for r in course if r[key]>=0],.99)}
                            for key in ('cpu_ms','gpu_ms','wait_ms','left_ms','right_ms','viewfinder_ms','props_ms','copy_ms',
@@ -137,22 +179,28 @@ def analyze(path, refresh, complete=False, scene='beach'):
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--serial', required=True)
-    parser.add_argument('--refresh', type=int, choices=(72,80,90), default=80)
+    parser.add_argument('--refresh', type=int, choices=(72,80,90), default=90)
     parser.add_argument('--build', action='store_true')
     parser.add_argument('--timeout', type=int, default=600)
     parser.add_argument('--capture', action='store_true')
+    parser.add_argument('--vertex-audit', action='store_true', help='Collect bounded deforming mesh pairs; excluded from timing qualification')
+    parser.add_argument('--eye-size',type=int,nargs=2,metavar=('WIDTH','HEIGHT'),help='Explicit per-eye dimensions for separate resolution experiments')
+    parser.add_argument('--aa',choices=('none','fxaa'),default='none',help='Headset output anti-aliasing; guest photo/scoring targets are unchanged')
     parser.add_argument('--scene', choices=('beach','intro'), default='beach')
     parser.add_argument('--full-course', action='store_true', help='Run the complete route for final qualification; default is a 77-second Beach iteration (approximately halfway)')
     parser.add_argument('--launch-check', action='store_true', help='Verify focused real XR startup with Touch controllers off; not an FPS qualification')
     parser.add_argument('--analyze', type=Path)
     args = parser.parse_args()
+    if args.eye_size and any(value<1 or value>8192 for value in args.eye_size):parser.error('Eye dimensions must be between 1 and 8192')
     if args.analyze:
         print(json.dumps(analyze(args.analyze,args.refresh,scene=args.scene),indent=2));return
     commit = subprocess.check_output(['git','rev-parse','--short','HEAD'],cwd=ROOT,text=True).strip()
     run = ROOT/'artifacts/quest'/(datetime.now(timezone.utc).strftime('%Y%m%dT%H%M%SZ')+'-'+commit)
     for directory in ('logs','metrics','captures','traces'):
         (run/directory).mkdir(parents=True)
-    report = {'passed':False,'valid':False,'reasons':[], 'commit':commit,'refresh':args.refresh,'capture_run':args.capture,
+    report = {'passed':False,'valid':False,'reasons':[], 'commit':commit,'refresh':args.refresh,'capture_run':args.capture,'vertex_audit_run':args.vertex_audit,
+              'requested_eye_size':args.eye_size,
+              'anti_aliasing':args.aa,
               'scope':'intro' if args.scene=='intro' else 'full-course' if args.full_course else 'half-course-iteration'}
     def adb(*command, check=True):
         result = subprocess.run(['adb','-s',args.serial,*command],text=True,capture_output=True,timeout=30)
@@ -207,11 +255,21 @@ def main():
         adb('push',str(rate),REMOTE+'/benchmark/refresh.txt')
         scene=run/'metrics/scene.txt';scene.write_text(args.scene)
         adb('push',str(scene),REMOTE+'/benchmark/scene.txt')
+        eye_size=run/'metrics/eye-size.txt';eye_size.write_text(' '.join(map(str,args.eye_size or [0,0])))
+        adb('push',str(eye_size),REMOTE+'/benchmark/eye-size.txt')
+        vertex_audit=run/'metrics/vertex-audit.txt';vertex_audit.write_text('1' if args.vertex_audit else '0')
+        adb('push',str(vertex_audit),REMOTE+'/benchmark/vertex-audit.txt')
+        early_capture=run/'metrics/early-capture.txt';early_capture.write_text('1' if args.capture and args.scene=='intro' else '0')
+        adb('push',str(early_capture),REMOTE+'/benchmark/early-capture.txt')
+        if args.capture and args.scene=='intro':
+            adb('shell','rm','-f',REMOTE+'/benchmark/captures/intro-*.png',REMOTE+'/benchmark/captures/intro-frames.csv')
+        adb('shell','rm','-f',*(REMOTE+f'/benchmark/results/vertex-pair-{index}.json' for index in range(1,17)))
         settings = run/'metrics/snapsettings.json'
-        settings.write_text(json.dumps({'vr_render_scale':1.0,'resolution_scale':2}))
+        settings.write_text(json.dumps({'vr_render_scale':1.0,'resolution_scale':2,'vr_fxaa':args.aa=='fxaa'}))
         adb('push',str(settings),REMOTE+'/snapsettings.json')
         adb('shell','chmod','666',REMOTE+'/snapsettings.json')
-        for name in ('frames.csv','gpu.csv','animation.csv','pose_uploads.csv','status.json','status.tmp'):
+        adb('shell','rm','-f',REMOTE+'/benchmark/finish.request')
+        for name in ('frames.csv','gpu.csv','animation.csv','pose_uploads.csv','vertex_gpu.csv','status.json','status.tmp','finished.json'):
             adb('shell','rm','-f',REMOTE+'/benchmark/results/'+name)
         adb('shell','am','start','-n',PACKAGE+'/org.snap64.quest.QuestActivity')
         started = time.monotonic();status={};last_sample=0;last_progress=started;next_capture=started+40;entered_at=None;focused_once=False
@@ -260,11 +318,20 @@ def main():
             with (run/'metrics/thermal.txt').open('a') as log:log.write(f'\n{now-started:.2f}\n{thermal}')
             print(f'{now-started:.0f}s: {status}',flush=True)
             time.sleep(5)
-        # Freeze the buffered evidence before either pull so the report and
-        # retained CSV describe the same measured interval.
+        # Retire both GPU slots and close all telemetry before force-stop.
+        # Acknowledgement is mandatory; force-stop alone can split CSV rows.
+        adb('shell','touch',REMOTE+'/benchmark/finish.request')
+        for _ in range(25):
+            finished=adb('shell','cat',REMOTE+'/benchmark/results/finished.json',check=False)
+            if finished.strip().startswith('{') and json.loads(finished).get('finished'):break
+            time.sleep(.2)
+        else:raise RuntimeError('Benchmark telemetry finalization timed out')
+        report['telemetry_finalized']=True
         adb('shell','am','force-stop',PACKAGE)
         adb('pull',REMOTE+'/benchmark/results',str(run/'metrics'))
         report.update(analyze(run/'metrics/results/frames.csv',args.refresh,status.get('intro_complete' if args.scene=='intro' else 'complete',False),args.scene))
+        if args.eye_size and report.get('eye_sizes')!=[tuple(args.eye_size)]:
+            report['passed']=report['valid']=False;report['reasons'].append('Measured eye dimensions differ from requested dimensions')
         report['timing_passed']=report['passed']
         if not report.get('rendered_animation_verified'):
             report['passed']=False
@@ -277,6 +344,8 @@ def main():
             report['reasons']=['Launch check only; not a performance qualification']
         if args.capture:
             report['passed']=False;report['reasons'].append('Visual capture run, excluded from timing qualification')
+        if args.vertex_audit:
+            report['passed']=False;report['reasons'].append('Vertex audit run, excluded from timing qualification')
         if report.get('validation_run'):
             report['passed']=False;report['reasons'].append('Vulkan validation run, excluded from timing qualification')
     except (RuntimeError,OSError,subprocess.SubprocessError,ValueError) as error:
@@ -304,12 +373,20 @@ def main():
             try:adb('pull',remote,str(destination),check=False)
             except (OSError,subprocess.SubprocessError):pass
         report['diagnostics']=analyze(run/'metrics/results/frames.csv',args.refresh,status.get('intro_complete' if args.scene=='intro' else 'complete',False),args.scene)
+        if args.capture and args.scene=='intro':
+            try:adb('pull',REMOTE+'/benchmark/captures',str(run/'captures/early-intro'),check=False)
+            except (OSError,subprocess.SubprocessError):pass
         renderer_log=run/'logs/snap64.log'
+        report['anti_aliasing_confirmed']=False
         if renderer_log.exists():
             log=renderer_log.read_text(encoding='utf-8',errors='replace')
+            aa_label='FXAA' if args.aa=='fxaa' else 'none'
+            report['anti_aliasing_confirmed']=f'Quest antialiasing: {aa_label}' in log
             if any(marker in log for marker in ('vkQueueSubmit failed','vkWaitForFences failed','vkGetQueryPoolResults failed','VK_ERROR_DEVICE_LOST')):
                 report['passed']=report['valid']=False
                 report['reasons'].append('Vulkan submission, completion, or query failure; frame counters are not valid rendered-frame evidence')
+        if not report['anti_aliasing_confirmed']:
+            report['passed']=report['valid']=False;report['reasons'].append('Requested anti-aliasing mode not confirmed by renderer')
         validation_log=run/'logs/logcat.txt'
         if validation_log.exists() and 'Validation Error:' in validation_log.read_text(encoding='utf-8',errors='replace'):
             report['passed']=report['valid']=False
@@ -317,11 +394,15 @@ def main():
         (run/'report.json').write_text(json.dumps(report,indent=2))
         summary=['# Quest benchmark','',('PASS' if report['passed'] else 'NOT QUALIFIED'),'',
                  f"Scope: {report.get('scope')}. Build: {report.get('commit')} (dirty: {report.get('dirty')}).",
+                 f"Anti-aliasing: {report.get('anti_aliasing')} (renderer confirmed: {report.get('anti_aliasing_confirmed')}).",
                  f"APK SHA-256: {report.get('apk_sha256')}",'']
         if 'application_fps' in report:
             summary += [f"Rendered FPS: {report['application_fps']:.2f}; source FPS: {report['source_fps']:.2f}; requested refresh: {report['refresh']} Hz; measured rates: {report.get('confirmed_refresh_rates',[])}.",
                         f"Eye dimensions: {report['eye_sizes']}; measured gameplay: {report['seconds']:.2f} seconds.",
                         f"Missed intervals: {report['missed_fraction']:.2%}; frame interval p95/p99: {report['interval_ms']['p95']:.2f}/{report['interval_ms']['p99']:.2f} ms.",'']
+        gpu_audit=report.get('gpu_vertex_audit',{})
+        if gpu_audit.get('available'):
+            summary += [f"GPU vertex audit: {gpu_audit['samples']} samples, {gpu_audit['failures']} mismatches, {gpu_audit['deforming_samples']} deforming samples. Zero deforming samples cannot verify deformation. Raster visibility remains unverified.",'']
         summary += ['- '+r for r in report['reasons']]
         (run/'report.md').write_text('\n'.join(summary)+'\n')
         print(json.dumps(report,indent=2));print('Evidence:',run)

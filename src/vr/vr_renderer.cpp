@@ -9,6 +9,7 @@
 #ifdef __ANDROID__
 #include "vr_render_snapshot.h"
 #include "vr_snapshot_window.h"
+#include "vr_vertex_audit.h"
 #endif
 #include "settings.h"
 #include "hle/rt64_workload_queue.h"
@@ -46,6 +47,7 @@ struct Renderer {
     bool frameUsesMutableImages=false;
     uint64_t cpuTrackingFrame=0;
     RenderTarget* latestViewfinder=nullptr;
+    std::array<RenderTarget*,2> lastPresentedEyes{};
     bool lastViewfinderHeld=false;
     TransformProcessor poseTransforms;
     ProjectionProcessor poseProjection;
@@ -73,6 +75,9 @@ struct Renderer {
         uint64_t sourceId=UINT64_MAX;
         std::unique_ptr<RenderQueryPool> timing;
         bool pending=false;
+#ifdef SNAP_QUEST_BENCHMARK
+        VertexAudit vertexAudit;
+#endif
     };
     std::array<std::unique_ptr<ViewResources>,3> views;
     unsigned pendingTextureLocks=0;
@@ -102,6 +107,9 @@ struct Renderer {
         for(unsigned i=0;i<views.size();++i)if(views[i]&&views[i]->pending) {
             views[i]->timing->queryResults();const auto* ts=views[i]->timing->getResults();
             viewGpuMs[i]=double(ts[1]-ts[0])/1e6;
+#ifdef SNAP_QUEST_BENCHMARK
+            views[i]->vertexAudit.collect(questBenchmark().vertexGpuFrames);
+#endif
         }
 #ifdef SNAP_QUEST_BENCHMARK
         questBenchmark().gpuSample(gpuTrackingFrame,gpuMs,viewGpuMs);
@@ -135,6 +143,10 @@ struct Renderer {
     bool hadTracking=false;
     float worldWeight=1;
     ViewTransition transition;
+#ifdef SNAP_QUEST_BENCHMARK
+    double earlyCaptureStart=-1;
+    unsigned earlyCaptures=0;
+#endif
     unsigned diagnosticFrames=0,viewfinderTestFrames=0;
     bool stereoTest()const{return preview&&std::getenv("SNAP_VR_STEREO_TEST");}
     unsigned width(unsigned i)const{return preview?(stereoTest()?960:1280):xr.width(i);}
@@ -229,7 +241,11 @@ struct Renderer {
                 }
             // Multiple source workloads can share a view in one frame. Retire
             // that view before reuse; normal single-workload stereo is batched.
-            if(owned->pending){owned->worker->wait();owned->pending=false;}
+            if(owned->pending){owned->worker->wait();owned->pending=false;
+#ifdef SNAP_QUEST_BENCHMARK
+                owned->vertexAudit.collect(questBenchmark().vertexGpuFrames);
+#endif
+            }
             auto* worker=owned->worker.get();
             auto& renderer=owned->renderer;auto& rsp=owned->rsp;auto& upload=owned->upload;
             auto& w=owned->work;
@@ -396,6 +412,9 @@ struct Renderer {
             if(newSource)uploaders.insert(uploaders.begin(),owned->geometryUpload.get());
 #endif
             renderer->recordSetup(worker,uploaders,rsp.get(),nullptr,&w.outputBuffers,false);
+#if defined(__ANDROID__) && defined(SNAP_QUEST_BENCHMARK)
+            owned->vertexAudit.record(worker,w,cpuTrackingFrame,target,worldWeight);
+#endif
             for(uint32_t f=0;f<pairs.size();f++) {
                 renderer->recordFramebuffer(worker,f,needsClear,clearColor);needsClear=false;
             }
@@ -687,8 +706,22 @@ struct Renderer {
         }
         if(!screen){xr.end(false);frameGuard.done=true;return;}
         const bool captureSubmitted=!preview&&std::filesystem::exists("vr-capture.request");
+#ifdef SNAP_QUEST_BENCHMARK
+        bool captureEarly=false;
+        if(cinema&&std::getenv("SNAP_QUEST_EARLY_CAPTURE")) {
+            if(earlyCaptureStart<0){earlyCaptureStart=t.seconds;std::filesystem::create_directories("benchmark/captures");}
+            captureEarly=t.seconds-earlyCaptureStart<2.2&&earlyCaptures<120;
+        }
+#endif
         for(unsigned i=0;i<2;i++) {
             auto native=nativeTexture;
+#ifdef __ANDROID__
+            // A hold must retain the last submitted image, not the image left
+            // in this alternating slot two frames ago. Otherwise fades show
+            // two different backgrounds and compound brightness out of phase.
+            if(fade.hold&&lastPresentedEyes[i]&&lastPresentedEyes[i]!=colors[i].get())
+                props->copyImage(native(lastPresentedEyes[i]),native(colors[i].get()));
+#endif
             if(!fade.hold) {
             Pose eye=interaction.toWorld(t.eyes[i],g);
             if(cinema){eye=interaction.localPose(t.eyes[i]);eye.position.y-=interaction.settings.eyeHeight;eye.position=eye.position*interaction.settings.unitsPerMeter;}
@@ -718,6 +751,12 @@ struct Renderer {
                 props->copy(native(colors[i].get()),image,width(i),height(i));
                 stageMs[4]+=std::chrono::duration<double,std::milli>(std::chrono::steady_clock::now()-copyReady).count();
                 if(captureSubmitted)props->capture(image,i?"vr-submitted-right.png":"vr-submitted-left.png");
+#ifdef SNAP_QUEST_BENCHMARK
+                if(captureEarly) {
+                    const auto name="benchmark/captures/intro-"+std::to_string(earlyCaptures)+(i?"-right.png":"-left.png");
+                    props->capture(image,name.c_str());
+                }
+#endif
             }
             if(!preview&&!capturedHeadset&&t.focused&&t.frame>=120&&std::getenv("SNAP_VR_CAPTURE")) {
                 props->capture(native(colors[i].get()),i?"vr-headset-right.png":"vr-headset-left.png");
@@ -728,12 +767,19 @@ struct Renderer {
             }
         }
         if(captureSubmitted){std::error_code error;std::filesystem::remove("vr-capture.request",error);}
+#ifdef SNAP_QUEST_BENCHMARK
+        if(captureEarly) {
+            std::ofstream("benchmark/captures/intro-frames.csv",std::ios::app)<<earlyCaptures++<<','<<t.frame<<','
+                <<t.seconds-earlyCaptureStart<<','<<worldWeight<<','<<fade.hold<<','<<fade.gain<<'\n';
+        }
+#endif
 #ifdef __ANDROID__
         // Framebuffer-derived textures still belong to the source renderer.
         // Drain those exceptional frames until their images are versioned too.
         const bool defer=snapshotInput&&(course||cinema)&&!frameUsesMutableImages&&!captureSubmitted;
         gpuTrackingFrame=t.frame;frameSnapshot=snapshotOwner;
         const double gpuMs=props->endTiming(defer);
+        for(unsigned i=0;i<2;++i)lastPresentedEyes[i]=colors[i].get();
         if(defer){framePending=true;viewGpuMs.fill(-1);}
         else collectFrame(gpuMs);
 #else
@@ -752,7 +798,8 @@ struct Renderer {
 #ifdef SNAP_QUEST_BENCHMARK
         if(snapshotInput)questBenchmark().animationSample(t.frame,snapshotInput->previousGame.sourceSeconds,
             snapshotInput->currentGame.sourceSeconds,snapshotInput->published,animationSample.time,
-            animationSample.sourceAge,worldWeight,animationSample.stale,previous.matched,frameUsesMutableImages);
+            animationSample.sourceAge,worldWeight,animationSample.stale,previous.matched,frameUsesMutableImages,
+            snapshotInput->vertexCandidates,snapshotInput->vertexMatched,snapshotInput->movingVertices,snapshotInput->maxVertexDelta,snapshotInput->vertexChanged);
         auto stages=stageMs;for(size_t i=0;i<stages.size();++i)stages[i]-=previousStages[i];
         const auto& source=sourceData().workloads[frame.workloads.back()];
         // The opening movie starts during refresh negotiation. A one-second
@@ -762,6 +809,12 @@ struct Renderer {
             std::chrono::duration<double,std::milli>(submitted-start).count(),gpuMs,workerWaitMs+props->fenceWaitMs(),stages,f.cameraHeld,snap::g_scene_overlay_rom.load(),
             viewGpuMs,xr.pacingTimesMs(),snapshotInput?snapshotInput->sourceCpu:queue.snapSourceCpuMs,
             snapshotInput?snapshotInput->sourceGpu:queue.snapSourceGpuMs);
+        if(std::filesystem::exists("benchmark/finish.request")) {
+            // Finish both slots before closing telemetry. Killing the process
+            // while a buffered CSV write is in progress can truncate a row.
+            retireFrame();rotateFrameResources();retireFrame();rotateFrameResources();
+            questBenchmark().finish();
+        }
 #endif
         if(submissionWindow==std::chrono::steady_clock::time_point{})submissionWindow=submitted;
         else if(++submissionIntervals==120) {

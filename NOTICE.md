@@ -151,3 +151,5 @@ archive. RT64's texture replacement system and librecomp's mod loader are
 vendored capability; any content for them is the player's own and under
 its own terms, and content derived from another game's data is outside
 what this project hosts, links, or helps install.
+
+Quest FXAA 3.11 is by Timothy Lottes / NVIDIA, under the BSD 3-clause license in `licenses/FXAA.txt`. The vendored source and pinned upstream reference are in `shaders/quest/third_party/`.

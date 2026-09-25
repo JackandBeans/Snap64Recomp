@@ -16,6 +16,7 @@
 #include "vr_openxr.h"
 #include <cstring>
 #include <cstdio>
+#include <cstdlib>
 #include <stdexcept>
 #include <chrono>
 
@@ -170,8 +171,20 @@ bool OpenXR::initialize(VRDevice* device,VRQueue* queue,float scale,std::string&
         else if(std::find(formats.begin(),formats.end(),x.colorFormat)==formats.end())
             throw std::runtime_error("Runtime exposes no copy-compatible RGBA8 swapchain format");
         for(unsigned i=0;i<2;i++) {
-            auto& c=x.config[i];c.recommendedImageRectWidth=std::clamp(uint32_t(c.recommendedImageRectWidth*scale),1u,c.maxImageRectWidth);
+            auto& c=x.config[i];
+            const auto recommendedWidth=c.recommendedImageRectWidth,recommendedHeight=c.recommendedImageRectHeight;
+            c.recommendedImageRectWidth=std::clamp(uint32_t(c.recommendedImageRectWidth*scale),1u,c.maxImageRectWidth);
             c.recommendedImageRectHeight=std::clamp(uint32_t(c.recommendedImageRectHeight*scale),1u,c.maxImageRectHeight);
+#ifdef __ANDROID__
+            if(const char* size=std::getenv("SNAP_QUEST_EYE_SIZE")) {
+                unsigned width=0,height=0;
+                if(std::sscanf(size,"%ux%u",&width,&height)!=2||!width||!height||width>c.maxImageRectWidth||height>c.maxImageRectHeight)
+                    throw std::runtime_error("Requested eye dimensions exceed OpenXR limits or are invalid");
+                c.recommendedImageRectWidth=width;c.recommendedImageRectHeight=height;
+            }
+#endif
+            std::fprintf(stderr,"[SNAP-VR] Eye %u: OpenXR recommended %ux%u, rendering %ux%u, maximum %ux%u\n",i,
+                recommendedWidth,recommendedHeight,c.recommendedImageRectWidth,c.recommendedImageRectHeight,c.maxImageRectWidth,c.maxImageRectHeight);
             XrSwapchainCreateInfo sc{XR_TYPE_SWAPCHAIN_CREATE_INFO};sc.usageFlags=XR_SWAPCHAIN_USAGE_COLOR_ATTACHMENT_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_DST_BIT|XR_SWAPCHAIN_USAGE_TRANSFER_SRC_BIT;
 #ifdef __ANDROID__
             sc.usageFlags|=XR_SWAPCHAIN_USAGE_MUTABLE_FORMAT_BIT;

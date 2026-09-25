@@ -109,6 +109,7 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         s.vr.leftHanded=j.value("vr_left_handed",false);
         s.vr.eyeHeight=std::clamp(j.value("vr_eye_height",1.2f),0.5f,2.2f);
         s.vr.renderScale=std::clamp(j.value("vr_render_scale",s.vr.renderScale),0.5f,1.5f);
+        s.vr.fxaa=j.value("vr_fxaa",false);
         s.vr.throwStrength=std::clamp(j.value("vr_throw_strength",1.0f),0.25f,2.0f);
         s.widescreen         = j.value("widescreen", s.widescreen);
         s.msaa               = j.value("msaa", s.msaa);
@@ -340,6 +341,7 @@ bool save_settings() {
         {"vr_left_handed", copy.vr.leftHanded},
         {"vr_eye_height", copy.vr.eyeHeight},
         {"vr_render_scale", copy.vr.renderScale},
+        {"vr_fxaa", copy.vr.fxaa},
         {"vr_throw_strength", copy.vr.throwStrength},
         {"widescreen",            copy.widescreen},
         {"msaa",                  copy.msaa},

@@ -1,4 +1,5 @@
 #include "vr_props.h"
+#include "settings.h"
 #include "vr_font.h"
 #include "vr_menu.h"
 #include "vr_messages.h"

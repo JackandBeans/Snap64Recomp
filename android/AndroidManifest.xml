@@ -10,8 +10,8 @@
     <application android:label="Snap64 Recomp VR" android:allowBackup="false"
         android:hasCode="true" android:extractNativeLibs="true" android:theme="@android:style/Theme.Black.NoTitleBar.Fullscreen">
         <meta-data android:name="com.oculus.supportedDevices" android:value="quest2|questpro|quest3|quest3s" />
-        <activity android:name=".QuestActivity" android:exported="true" android:launchMode="singleTask"
-            android:screenOrientation="landscape" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|screenLayout|uiMode|navigation|density">
+        <activity android:name="org.snap64.quest.QuestActivity" android:exported="true" android:launchMode="singleTask"
+            android:screenOrientation="landscape" android:configChanges="keyboard|keyboardHidden|orientation|screenSize|smallestScreenSize|screenLayout|uiMode|navigation|density">
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />

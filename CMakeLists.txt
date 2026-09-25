@@ -344,7 +344,7 @@ endif()
 
 if(ANDROID)
     add_library(Snap64Recomp SHARED ${SNAP_SOURCES})
-    target_sources(Snap64Recomp PRIVATE src/android/quest_platform.cpp)
+    target_sources(Snap64Recomp PRIVATE src/android/quest_platform.cpp src/android/quest_rom_import.cpp)
     if(SNAP_QUEST_BENCHMARK)
         target_compile_definitions(Snap64Recomp PRIVATE SNAP_QUEST_BENCHMARK=1)
     endif()

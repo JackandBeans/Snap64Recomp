@@ -22,7 +22,26 @@ Java_org_snap64_quest_QuestActivity_nativeSetDataDirectory(JNIEnv* env,jclass,js
         }
     }
     unsetenv("SNAP_STATS");
-    unsigned rate=80;
+    unsetenv("SNAP_QUEST_EYE_SIZE");
+    if(auto* config=std::fopen("benchmark/eye-size.txt","r")) {
+        unsigned width=0,height=0;
+        if(std::fscanf(config,"%u %u",&width,&height)==2&&width&&height) {
+            const auto size=std::to_string(width)+"x"+std::to_string(height);
+            setenv("SNAP_QUEST_EYE_SIZE",size.c_str(),1);
+        }
+        std::fclose(config);
+    }
+    unsetenv("SNAP_QUEST_VERTEX_AUDIT");
+    unsetenv("SNAP_QUEST_EARLY_CAPTURE");
+    if(auto* config=std::fopen("benchmark/early-capture.txt","r")) {
+        unsigned enabled=0;if(std::fscanf(config,"%u",&enabled)==1&&enabled==1)setenv("SNAP_QUEST_EARLY_CAPTURE","1",1);
+        std::fclose(config);
+    }
+    if(auto* config=std::fopen("benchmark/vertex-audit.txt","r")) {
+        unsigned enabled=0;if(std::fscanf(config,"%u",&enabled)==1&&enabled==1)setenv("SNAP_QUEST_VERTEX_AUDIT","1",1);
+        std::fclose(config);
+    }
+    unsigned rate=90;
     if(auto* config=std::fopen("benchmark/refresh.txt","r")) {
         unsigned requested=0;if(std::fscanf(config,"%u",&requested)==1&&(requested==72||requested==80||requested==90))rate=requested;
         std::fclose(config);

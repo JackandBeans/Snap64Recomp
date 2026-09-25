@@ -1419,9 +1419,15 @@ int main(int argc, char* argv[]) {
     // A first start with no ROM in the data directory: ask for the file and
     // copy it there (rom_picker.cpp), before recomp::start reads it. A No
     // means no game; the log says so.
+#ifdef __ANDROID__
+    extern bool snap_quest_import_rom();
+    try { if(!snap_quest_import_rom())return 0; }
+    catch(const std::exception& e) { error_message_box(e.what());return 1; }
+#else
     if (!snap::ensure_rom(SNAP_ROM_HASH)) {
         return 0;
     }
+#endif
     try {
         recomp::start(config);
     }

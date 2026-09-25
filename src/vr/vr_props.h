@@ -13,6 +13,9 @@ public:
     void copy(VRTexture* source,VRTexture* destination,unsigned width,unsigned height);
     void beginTiming();
 #ifdef __ANDROID__
+    void copyImage(VRTexture* source,VRTexture* destination);
+    void importSplash(VRTexture* color,VRTexture* depth,Pose eye,Fov fov,Pose panel,
+                      uint64_t frame,int state,int progress,const std::string& message,bool hover,Vec3 pointer,bool hasPointer);
     double endTiming(bool deferCompletion=false);
     double retireTiming();
 #else

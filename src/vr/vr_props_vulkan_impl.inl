@@ -11,7 +11,7 @@ struct Props::Impl {
     bool deferred=false;
     std::unique_ptr<RenderPipelineLayout> root,presentationRoot;
     std::unique_ptr<RenderPipelineLayout> copyRoot;
-    std::unique_ptr<RenderPipeline> copyPipeline;
+    std::unique_ptr<RenderPipeline> copyPipeline,fxaaPipeline;
     std::array<std::unique_ptr<RenderDescriptorSet>,2> copyDescriptors;
     std::unique_ptr<RenderPipeline> pipeline,transparentPipeline,presentationPipeline;
     std::unique_ptr<RenderDescriptorSet> descriptors;
@@ -80,13 +80,18 @@ struct Props::Impl {
         pd.inputSlots=nullptr;pd.inputSlotsCount=0;pd.inputElements=nullptr;pd.inputElementsCount=0;
         pd.depthEnabled=false;pd.depthTargetFormat=RenderFormat::UNKNOWN;
         presentationPipeline=d->createGraphicsPipeline(pd);
-        RenderDescriptorSetDesc copySet{ranges,1};
-        copyRoot=d->createPipelineLayout({nullptr,0,&copySet,1});
-        for(auto& set:copyDescriptors)set=d->createDescriptorSet(copySet);
+        RenderDescriptorRange copyRanges[]={ranges[0],ranges[2]};copyRanges[1].binding=1;
+        RenderDescriptorSetDesc copySet{copyRanges,2};
+        RenderPushConstantRange copyPush{0,0,0,16,RenderShaderStageFlag::PIXEL};
+        copyRoot=d->createPipelineLayout({&copyPush,1,&copySet,1});
+        for(auto& set:copyDescriptors){set=d->createDescriptorSet(copySet);set->setSampler(1,sampler.get());}
         vs=loadShader("copy.vs.spv","vs");ps=loadShader("copy.ps.spv","ps");
         pd.pipelineLayout=copyRoot.get();pd.vertexShader=vs.get();pd.pixelShader=ps.get();
         pd.renderTargetBlend[0]=RenderBlendDesc::Copy();pd.depthWriteEnabled=false;
         copyPipeline=d->createGraphicsPipeline(pd);
+        ps=loadShader("fxaa.ps.spv","ps");pd.pixelShader=ps.get();
+        fxaaPipeline=d->createGraphicsPipeline(pd);
+        std::fprintf(stderr,"[SNAP-VR] Quest antialiasing: %s\n",snap::settings().vr.fxaa?"FXAA":"none");
         FluteIcon blank{};uploadIcon(blank,blankTexture);
         std::ifstream file(snap::base_dir()/"assets/vr/hands.json");if(!file)throw std::runtime_error("Missing assets/vr/hands.json");
         nlohmann::json j;file>>j;hands[0].load(j.at("left"));hands[1].load(j.at("right"));

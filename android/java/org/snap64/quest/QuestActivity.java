@@ -3,12 +3,26 @@ package org.snap64.quest;
 import org.libsdl.app.SDLActivity;
 import org.libsdl.app.SDLSurface;
 import android.content.Context;
+import android.content.Intent;
 import android.os.Bundle;
 import android.view.Surface;
 import android.view.SurfaceHolder;
 import java.io.*;
 
 public class QuestActivity extends SDLActivity {
+    private RomImportController romImport;
+    public int romImportState() { return romImport.state; }
+    public int romImportProgress() { return romImport.progress; }
+    public String romImportMessage() { return romImport.message; }
+    public void chooseRom() { romImport.choose(); }
+    @Override protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        if (request == RomImportController.PICK_ROM) romImport.result(result, data);
+    }
+    @Override protected void onDestroy() {
+        if (romImport != null) romImport.stop();
+        super.onDestroy();
+    }
     private static native void nativeSetDataDirectory(String path);
     private static native void nativeSetSurface(Surface surface);
     @Override protected SDLSurface createSDLSurface(Context context) {
@@ -42,6 +56,7 @@ public class QuestActivity extends SDLActivity {
         System.loadLibrary("openxr_loader");
         System.loadLibrary("Snap64RecompVR");
         nativeSetDataDirectory(directory.getAbsolutePath());
+        romImport = new RomImportController(this, directory);
         super.onCreate(state);
     }
     private void copyAssets(String path, File destination) throws IOException {
