@@ -125,6 +125,9 @@ here should be assumed untried.
   chooser was answered Cancel; the same bundle, installed under WSL's
   Ubuntu 24.04 with Flatpak 1.14 on the release machine, did the same and
   wrote its log to that folder.
+* Widescreen at shapes other than 16:9 (2026-09-27, the 1.1.0 build with
+  the submodules, the Beach replay for 75 seconds in a window of each size,
+  a frame captured at the title and one in the course): in a 1920x1080 window the course picture spanned 1918 of 1920 columns (1.78, the window's shape), in a 1280x800 window all 1280 (1.60), and in a 2560x1080 window all 2560 (2.37), with the 2x super-sampling the settings carry and again without it; the title kept its 4:3 bars in every window (1440 of 2560 columns at 21:9). The pictures were screenshots of the window at the 60-second mark of the Beach replay, measured by their lit columns. The cull patch's widened bound changed no verdict in those first 60 seconds, which have no Pokémon near the wide edges; its 21:9 proof is the full evaluation ride of 2026-09-08.
   No other machine's build or run is recorded in this repository. Anything
   not listed here should be assumed untried.
 * The photo export (P, the controller's Back button, `photos/`) is checked

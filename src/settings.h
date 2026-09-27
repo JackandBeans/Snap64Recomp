@@ -20,7 +20,7 @@ namespace snap {
 
 struct Settings {
     bool  fullscreen        = false;
-    bool  widescreen        = false;  // RT64 Expand: true 16:9 FOV, not a stretch
+    bool  widescreen        = false;  // RT64 Expand: a true wider FOV, the window's own shape, not a stretch
     int   msaa              = 0;      // 0, 2, 4, 8
     // 0 = Original (native rate), 1 = Display refresh, 2 = Manual.
     //

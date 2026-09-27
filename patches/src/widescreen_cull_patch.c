@@ -28,8 +28,9 @@
  * The same test serves the photo's object list (func_803647BC_504BCC for
  * items, func_80364718_504B28 for Pokemon), which accepts at most twelve
  * entries; a wider bound admits edge Pokemon into that list too. Effect
- * sprites have a test of their own in fx_draw and still pop at the 4:3
- * edge; that is a separate patch.
+ * sprites have a test of their own in fx_draw; the host widens that one
+ * on the recompiled code (src/fx_tags.cpp, snap_fx_x_translate), so they
+ * reach the wide edge as well.
  */
 
 #include "common.h"

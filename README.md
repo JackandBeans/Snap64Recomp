@@ -158,8 +158,9 @@ every one in full.
   Mods pages to the game's own Options screen, drawn in the game's own
   font. The Graphics page has sixteen rows, from Render Scale and
   Anti-Aliasing to Widescreen and Frame Rate.
-* **Widescreen** shows more of the course: a wider 16:9 field of view, not
-  a stretched picture. The title, the lab and the menus stay 4:3.
+* **Widescreen** shows more of the course: a wider field of view that
+  fills the window's own shape, 16:9, the Deck's 16:10 or an ultrawide 21:9,
+  not a stretched picture. The title, the lab and the menus stay 4:3.
 * **Higher frame rates**, matched to your display or set to a rate you
   choose. The game's own logic still runs at its thirty frames a second;
   the renderer draws the frames in between (frame interpolation).
