@@ -36,12 +36,6 @@ patches/build/
 # build cannot run from a checkout without them. Regenerate with
 # tools/gen_reference_syms.py when the decomp's symbols change.
 
-# Vendored third-party trees (kept out to keep the repo reviewable).
-# lib/rt64/src outside contrib IS tracked: it holds this port's renderer work.
-lib/rt64/src/contrib/
-lib/SDL/
-lib/DirectX-Headers/
-
 # Python
 __pycache__/
 

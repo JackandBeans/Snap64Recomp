@@ -1,50 +1,26 @@
 #!/usr/bin/env python3
-"""Fetch the vendored trees a clean checkout of Snap64 Recomp does not carry.
+"""Fetch the trees a clean checkout of Snap64 Recomp does not carry.
 
-A `git clone` of this repository has no `lib/SDL`, no `lib/DirectX-Headers`
-and, under `lib/rt64/src/contrib`, only the port's five plume files. This script
-puts everything else there at the exact upstream commits the port was built
-against (VENDORING.md, "Recovered pins"), verifies it, and leaves the port's
-own changes to plume in place. It is idempotent: a tree already at its pin is
-left alone, and running the script twice does nothing the second time.
+Every third-party tree is a git submodule at an exact commit: `lib/rt64` and
+`lib/N64ModernRuntime` on Snap64 Recomp's forks (branch `snap64`, the
+upstream commit plus the port's changes), `lib/SDL` and `lib/DirectX-Headers`
+on their upstreams, and everything nested in them (RT64's `src/contrib`, the
+runtime's N64Recomp and third-party trees) at the commits those repositories
+record. This script does what `git submodule update --init --recursive`
+does, checks that every checkout sits at its recorded commit, and then does
+the one thing git cannot: it verifies RT64's dxc binaries by SHA-256 and puts
+Microsoft's v1.7.2308 `dxil.dll` in place of the one dxc-bin carries
+(`DXIL_OVERLAY` below says why).
 
-    python tools/fetch_deps.py            # fetch what is missing
-    python tools/fetch_deps.py --list     # print the pin table and exit
-    python tools/fetch_deps.py --dry-run  # say what would be done
-    python tools/fetch_deps.py --only SDL --only zstd
+    python tools/fetch_deps.py            # fetch what is missing, verify
+    python tools/fetch_deps.py --list     # print every submodule's commit and exit
+    python tools/fetch_deps.py --full     # whole histories instead of one commit each
 
 Needs Python 3 (standard library only), git on PATH and network access to
-github.com. Nothing here is a submodule: each tree is fetched by commit into a
-detached checkout of its own (`git init`, `git fetch --depth 1 <url> <sha>`,
-`git checkout --detach <sha>`), so no history is downloaded and no branch or
-tag has to survive upstream; only the commit does.
-
-What each entry is and how its pin was established is in VENDORING.md. The
-short version of the table below: `confidence` is `exact` when my tree was
-byte-identical to the pinned commit (file modes and symlinks aside,
-which NTFS does not keep), `high` when it matched apart from files the port
-changes on purpose or files nothing compiles.
-
-Two entries are not plain checkouts:
-
-* `dxc` is rt64's `dxc-bin` repository, whose 17 files are compiler binaries
-  and headers. After the checkout every file's SHA-256 is compared with the
-  table in `DXC_FILES`, which also records where each binary came from
-  (a Microsoft DirectXShaderCompiler release asset, or a private build that
-  matches no release; see VENDORING.md). A mismatch stops the script. One
-  file is not dxc-bin's: `bin/x64/dxil.dll` is replaced by the file of
-  Microsoft's release v1.7.2308, downloaded from the release asset and
-  checked by SHA-256 (`DXIL_OVERLAY` below says why).
-* `plume` carries five files of the port's own, `plume_d3d12.cpp`,
-  `plume_d3d12.h`, `plume_render_interface.h`, `plume_vulkan.cpp` and
-  `plume_metal.cpp`, all tracked by this repository. The clone writes upstream's versions over them, so they are put
-  back with `git checkout --` afterwards; an uncommitted local edit to one of
-  them is kept instead, and said so.
-
-The five directories rt64 keeps as plain files in its own tree (`json`,
-`miniz`, `plainargs`, `project64`, `utf8conv`) are taken from rt64's
-repository at the commit the port's `lib/rt64` is forked from and verified by
-git blob hash.
+github.com. It is idempotent: a checkout already at its commit is left
+alone, and a second run does nothing. The submodules are fetched one commit
+deep unless --full is given; `git fetch --unshallow` inside one gives it its
+history later (VENDORING.md, "Changing RT64 or the runtime").
 """
 import argparse
 import hashlib
@@ -60,133 +36,7 @@ import urllib.request
 import zipfile
 
 REPO = pathlib.Path(__file__).resolve().parent.parent
-
-CONTRIB = 'lib/rt64/src/contrib'
-
-# The commit of rt64/rt64 that lib/rt64 (outside contrib) is forked from. Its
-# .gitmodules is what the contrib pins below were read from, and its plain
-# contrib subtrees are copied from it (RT64_PLAIN_FILES).
-RT64_UPSTREAM = 'https://github.com/rt64/rt64.git'
-RT64_BASE = '43373749dac9bbc1b653e6a02aed40a9e1783bed'  # 2026-09-02, "Don't consider VIs with inverted regions as valid. (#264)"; the port's changes are lib/rt64/SNAP64-CHANGES.patch
-
-# One entry per git checkout, parents before the trees nested inside them.
-# path is relative to the repository root, forward slashes.
-GIT_PINS = [
-    dict(name='SDL', path='lib/SDL',
-         url='https://github.com/libsdl-org/SDL.git',
-         sha='fa24d868ac2f8fd558e4e914c9863411245db8fd',
-         describe='release-2.30.11', confidence='exact'),
-    dict(name='DirectX-Headers', path='lib/DirectX-Headers',
-         url='https://github.com/microsoft/DirectX-Headers.git',
-         sha='ee479f0bd5f7b884f202bcf0c3f076cc050dd256',
-         describe='v1.619.5', confidence='exact'),
-    # RT64's submodules, at the gitlinks recorded by rt64/rt64 RT64_BASE.
-    dict(name='ddspp', path=CONTRIB + '/ddspp',
-         url='https://github.com/redorav/ddspp.git',
-         sha='21ca0c4319dfd5a161c5f2a0c406e8f60194ea6c',
-         describe='tag 1.11, 2024-08-07', confidence='exact'),
-    dict(name='dxc', path=CONTRIB + '/dxc',
-         url='https://github.com/rt64/dxc-bin',
-         sha='cc15e715ee378a4f675b335bd1071ff105873fc8',
-         describe='dxc-bin 2024-05-16 "Add x64/macos v1.8.2403.2"', confidence='exact',
-         verify_sha256='DXC_FILES'),
-    dict(name='hlslpp', path=CONTRIB + '/hlslpp',
-         url='https://github.com/redorav/hlslpp',
-         sha='6f5274c66132e8f951c400103d897582b8f21491',
-         describe='tag 3.6, 2024-12-22', confidence='exact'),
-    dict(name='im3d', path=CONTRIB + '/im3d',
-         url='https://github.com/john-chapman/im3d',
-         sha='d03941725fd0bd08c78c46e3e5b0265526e9d060',
-         describe='2023-01-09 "Add Draw Cone. (#60)"', confidence='exact'),
-    dict(name='imgui', path=CONTRIB + '/imgui',
-         url='https://github.com/ocornut/imgui',
-         sha='277ae93c41314ba5f4c7444f37c4319cdf07e8cf',
-         describe='tag v1.90.4, 2024-02-22', confidence='exact'),
-    dict(name='implot', path=CONTRIB + '/implot',
-         url='https://github.com/epezent/implot',
-         sha='f156599faefe316f7dd20fe6c783bf87c8bb6fd9',
-         describe='v0.16-14-gf156599, 2024-01-22', confidence='exact'),
-    dict(name='mupen64plus-core', path=CONTRIB + '/mupen64plus-core',
-         url='https://github.com/mupen64plus/mupen64plus-core',
-         sha='860fac3fbae94194a392c1d9857e185eda6d083e',
-         describe='2.5.9-484-g860fac3, 2024-01-24', confidence='exact'),
-    dict(name='mupen64plus-win32-deps', path=CONTRIB + '/mupen64plus-win32-deps',
-         url='https://github.com/mupen64plus/mupen64plus-win32-deps',
-         sha='de8111fdcb89144abc16c85650ce4e21e028bfb5',
-         describe='2.5-21-gde8111f, 2023-03-02 (104 MB of prebuilt libraries)', confidence='exact'),
-    dict(name='nativefiledialog-extended', path=CONTRIB + '/nativefiledialog-extended',
-         url='https://github.com/btzy/nativefiledialog-extended',
-         sha='17b6e8ce219c0677f94b63636abb9296b28841ca',
-         describe='v1.1.1-6-g17b6e8c, 2024-02-24', confidence='exact'),
-    dict(name='plume', path=CONTRIB + '/plume',
-         url='https://github.com/renderbag/plume.git',
-         sha='d890ac899e505fb30040e037a4037cdeca68f033',
-         describe='2026-07-22 "manually reset nullbuffer (#105)", the commit rt64 4337374 pins',
-         confidence='exact',
-         why=('the gitlink of the RT64 commit the tree is rebased on; the five port files '
-              '(plume_d3d12.cpp, plume_d3d12.h, plume_render_interface.h, plume_vulkan.cpp, plume_metal.cpp) are put back below, '
-              'and lib/rt64/SNAP64-PLUME-CHANGES.patch is their difference from this commit.'),
-         port_files=['plume_d3d12.cpp', 'plume_d3d12.h', 'plume_render_interface.h', 'plume_vulkan.cpp', 'plume_metal.cpp']),
-    # plume's own submodules, at the gitlinks recorded by the plume commit above.
-    dict(name='plume/D3D12MemoryAllocator', path=CONTRIB + '/plume/contrib/D3D12MemoryAllocator',
-         url='https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator',
-         sha='9ef66bc14edd10dee0de3a545b98578363552f66',
-         describe='v3.0.1', confidence='exact'),
-    dict(name='plume/Vulkan-Headers', path=CONTRIB + '/plume/contrib/Vulkan-Headers',
-         url='https://github.com/KhronosGroup/Vulkan-Headers',
-         sha='2fa203425eb4af9dfc6b03f97ef72b0b5bcb8350',
-         describe='v1.4.335', confidence='exact'),
-    dict(name='plume/VulkanMemoryAllocator', path=CONTRIB + '/plume/contrib/VulkanMemoryAllocator',
-         url='https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator',
-         sha='29b35ea4232688c0f42cdff0c10848290760a417',
-         describe='v3.2.1-5-g29b35ea', confidence='exact'),
-    dict(name='plume/volk', path=CONTRIB + '/plume/contrib/volk',
-         url='https://github.com/zeux/volk',
-         sha='be3dbd49bf77052665e96b6c7484af855e7e5f67',
-         describe='vulkan-sdk-1.4.321.0-7-gbe3dbd4', confidence='exact'),
-    dict(name='re-spirv', path=CONTRIB + '/re-spirv',
-         url='https://github.com/rt64/re-spirv',
-         sha='5d6b756ee62760f71b65d37e41a0b5a3dab90507',
-         describe='2025-05-03 "Missing cstd include."', confidence='exact'),
-    # re-spirv's submodule, at the gitlink recorded by the re-spirv commit above.
-    dict(name='re-spirv/SPIRV-Headers', path=CONTRIB + '/re-spirv/external/SPIRV-Headers',
-         url='https://github.com/KhronosGroup/SPIRV-Headers',
-         sha='f013f08e4455bcc1f0eed8e3dd5e2009682656d9',
-         describe='vulkan-sdk-1.3.290.0-5-gf013f08, 2024-07-29', confidence='exact'),
-    dict(name='spirv-cross', path=CONTRIB + '/spirv-cross',
-         url='https://github.com/KhronosGroup/SPIRV-Cross.git',
-         sha='6173e24b31f09a0c3217103a130e74c4ddec14a6',
-         describe='vulkan-sdk-1.4.304.0-2-g6173e24b, 2024-12-13', confidence='exact'),
-    dict(name='stb', path=CONTRIB + '/stb',
-         url='https://github.com/nothings/stb',
-         sha='ae721c50eaf761660b4f90cc590453cdb0c2acd0',
-         describe='2024-02-12', confidence='exact'),
-    dict(name='xxHash', path=CONTRIB + '/xxHash',
-         url='https://github.com/Cyan4973/xxHash',
-         sha='1864a50c9b5cf8500d8e9e61ed92aa0dd3772750',
-         describe='dev branch, 2024-02-12 (v0.7.4-707-g1864a50)', confidence='exact'),
-    dict(name='zstd', path=CONTRIB + '/zstd',
-         url='https://github.com/facebook/zstd',
-         sha='0ff651dd876823b99fa5c5f53292be28381aee9b',
-         describe='dev branch, 2024-07-16 (merge of PR #4096)', confidence='high',
-         why=('636 of 638 files match; tests/cli-tests/bin/unzstd and zstdcat are symlinks '
-              'upstream and were empty files in my tree. Nothing compiled differs.')),
-]
-
-# Files rt64/rt64 keeps as plain files under src/contrib (not submodules), with
-# their git blob hashes at RT64_BASE. Copied from a temporary checkout of that
-# commit and verified with `git hash-object`, which applies the same line-ending
-# normalisation as a checkout, so the check holds with or without autocrlf.
-RT64_PLAIN_FILES = {
-    'src/contrib/json/json.hpp': '82d69f7c5d044c9887c96b90c97f5639083ecd14',
-    'src/contrib/miniz/miniz.c': 'b37a067ccee4c1ea297d7bbfb009713944767042',
-    'src/contrib/miniz/miniz.h': 'f54d01be956eb1d2a8d766ca8f9ceb8300621668',
-    'src/contrib/plainargs/plainargs.h': '18ee421a12cbccf34b5bcbd9159b8568ce41ff75',
-    'src/contrib/project64/Base.h': 'edd242e1b1bc44977633eeff7d1c3c8317f937e5',
-    'src/contrib/project64/Video.h': '32f3cdf9e4b66588d782ad6b7dc888e47422ec84',
-    'src/contrib/utf8conv/utf8conv.h': 'a541b328f8b9ee603aec431b44a6e65f39d44f82',
-    'src/contrib/utf8conv/utf8except.h': '7b2533098e698fe984b26eb9357bfe823faf5904',
-}
+DXC = REPO / 'lib' / 'rt64' / 'src' / 'contrib' / 'dxc'
 
 # Every file of dxc-bin at the pin, with its SHA-256 and where it came from.
 # "release" names the Microsoft DirectXShaderCompiler GitHub release asset the
@@ -276,12 +126,13 @@ class Failure(Exception):
 GIT = shutil.which('git')
 
 
-def git(args, cwd, check=True):
+def git(args, cwd=REPO, check=True):
     """Run git with the options every call here wants; return the CompletedProcess."""
-    cmd = [GIT, '-c', 'advice.detachedHead=false', '-c', 'core.longpaths=true'] + list(args)
+    cmd = [GIT, '-c', 'advice.detachedHead=false', '-c', 'core.longpaths=true',
+           '-c', 'protocol.version=2'] + list(args)
     p = subprocess.run(cmd, cwd=str(cwd), capture_output=True, text=True, encoding='utf-8', errors='replace')
     if check and p.returncode != 0:
-        raise Failure('git %s (in %s) failed with %d:\n%s' % (' '.join(args), cwd, p.returncode, p.stderr.strip()))
+        raise Failure('git %s failed with %d:\n%s' % (' '.join(args), p.returncode, p.stderr.strip()))
     return p
 
 
@@ -291,65 +142,6 @@ def rmtree_force(path):
         os.chmod(p, stat.S_IWRITE)
         func(p)
     shutil.rmtree(path, onerror=on_error)
-
-
-def repo_tracked(rel):
-    """Is rel (repo-relative, forward slashes) tracked by this repository?"""
-    return git(['ls-files', '--error-unmatch', '--', rel], REPO, check=False).returncode == 0
-
-
-def checkout_state(path):
-    """Classify what is at path: absent | empty | repo:<sha> | stale | nogit."""
-    if not path.exists():
-        return 'absent', None
-
-    def head():
-        # None when the repository has no commit yet (an earlier fetch failed).
-        p = git(['rev-parse', '--verify', '-q', 'HEAD^{commit}'], path, check=False)
-        return p.stdout.strip() or None
-
-    dotgit = path / '.git'
-    if dotgit.is_dir():
-        return 'repo', head()
-    if dotgit.is_file():
-        line = dotgit.read_text(encoding='utf-8', errors='replace').strip()
-        gitdir = line[len('gitdir:'):].strip() if line.startswith('gitdir:') else ''
-        target = (path / gitdir) if gitdir and not os.path.isabs(gitdir) else pathlib.Path(gitdir)
-        if gitdir and target.is_dir():
-            return 'repo', head()
-        return 'stale', gitdir
-    if any(path.iterdir()):
-        return 'nogit', None
-    return 'empty', None
-
-
-def fetch_pin(entry, path, dry_run):
-    """Bring path to entry['sha'] with a depth-1 fetch of that commit."""
-    if dry_run:
-        print('   would fetch %s and check it out' % entry['sha'])
-        return
-    path.mkdir(parents=True, exist_ok=True)
-    if not (path / '.git').exists():
-        git(['init', '-q'], path)
-    t0 = time.time()
-    p = git(['fetch', '-q', '--depth', '1', entry['url'], entry['sha']], path, check=False)
-    if p.returncode != 0:
-        raise Failure('%s: could not fetch %s from %s:\n%s' % (entry['name'], entry['sha'], entry['url'], p.stderr.strip()))
-    # -f: the checkout may have to write over files that were already in the
-    # directory (a fresh clone of this repository has plume/plume_d3d12.cpp
-    # there before plume is fetched); the port's files are put back afterwards.
-    git(['checkout', '-q', '-f', '--detach', entry['sha']], path)
-    head = git(['rev-parse', '--verify', 'HEAD^{commit}'], path).stdout.strip()
-    if head != entry['sha']:
-        raise Failure('%s: HEAD is %s after checkout, expected %s' % (entry['name'], head, entry['sha']))
-    print('   FETCHED  depth-1 fetch of the pin, checked out detached (%.1f s)' % (time.time() - t0))
-
-
-def modified_files(path, ignore):
-    """Tracked files of the checkout at path that differ from its HEAD."""
-    out = git(['status', '--porcelain', '--untracked-files=no'], path).stdout
-    names = [line[3:].strip().strip('"') for line in out.splitlines() if line.strip()]
-    return [n for n in names if n not in ignore]
 
 
 def sha256_of(path, text=False):
@@ -363,16 +155,73 @@ def sha256_of(path, text=False):
     return h.hexdigest()
 
 
-def ensure_dxil(path, dry_run):
+def submodule_status():
+    """(state, commit, path, describe) for every submodule, recursively.
+    state is ' ' (at its commit), '-' (not checked out), '+' (another commit)
+    or 'U' (merge conflict), as `git submodule status` prints it."""
+    out = git(['submodule', 'status', '--recursive']).stdout
+    rows = []
+    for line in out.splitlines():
+        if not line.strip():
+            continue
+        state, rest = line[0], line[1:].split()
+        rows.append((state, rest[0], rest[1], ' '.join(rest[2:])))
+    return rows
+
+
+def update_submodules(full):
+    """git submodule update --init --recursive, one commit deep unless full."""
+    git(['submodule', 'sync', '--recursive'])
+    t0 = time.time()
+    # As stored: no CRLF conversion in the trees checked out here, whatever
+    # the machine's git says (Git for Windows' own config turns it on).
+    args = ['-c', 'core.autocrlf=false', 'submodule', 'update', '--init', '--recursive', '--jobs', '8']
+    if not full:
+        args += ['--depth', '1']
+    p = git(args, check=False)
+    if p.returncode != 0 and not full:
+        # A server that will not hand out one commit by its hash: fetch whole histories.
+        print('   one-commit fetch refused (%s); fetching whole histories' % p.stderr.strip().splitlines()[-1])
+        git(['-c', 'core.autocrlf=false', 'submodule', 'update', '--init', '--recursive', '--jobs', '8'])
+    elif p.returncode != 0:
+        raise Failure('git submodule update failed:\n%s' % p.stderr.strip())
+    return time.time() - t0
+
+
+def keep_line_endings(rows):
+    """Every submodule keeps its files as its repository stores them (LF), on
+    every machine, so a build reads the same bytes on Windows as on GitHub's
+    Linux and Mac runners, and license texts ship as their authors wrote
+    them. The setting is written into each submodule, so later checkouts in
+    it keep the rule; a checkout made before the rule (CRLF) is written again,
+    but only when it holds no change of its own."""
+    rewritten, skipped = [], []
+    for state, sha, path, describe in rows:
+        where = REPO / path
+        if git(['config', '--get', 'core.autocrlf'], where, check=False).stdout.strip() == 'false':
+            continue
+        changes = [l for l in git(['status', '--porcelain', '--ignore-submodules=all'], where).stdout.splitlines()
+                   if l.strip() and not l[3:].strip().endswith(DXIL_OVERLAY['dest'])]
+        if changes:
+            skipped.append('%s (%d local changes)' % (path, len(changes)))
+            continue
+        git(['config', 'core.autocrlf', 'false'], where)
+        git(['rm', '--cached', '-r', '-q', '--ignore-unmatch', '.'], where)
+        git(['reset', '-q', '--hard'], where)
+        rewritten.append(path)
+    if rewritten:
+        print('   LF       %d checkouts written as their repositories store them' % len(rewritten))
+    for s in skipped:
+        print('   WARNING  %s: left as it is; commit or stash, then run this again' % s)
+
+
+def ensure_dxil():
     """Put the DXIL_OVERLAY validator in place of the one dxc-bin carries."""
     ov = DXIL_OVERLAY
-    dest = path / ov['dest']
+    dest = DXC / ov['dest']
     if dest.is_file() and sha256_of(dest) == ov['sha256']:
         print('   OK       %s is the %s file (%s)' % (ov['dest'], ov['release'], ov['version']))
-        return True
-    if dry_run:
-        print('   would download %s and take %s from it' % (ov['url'], ov['member']))
-        return False
+        return
     print('   DOWNLOAD %s' % ov['url'])
     t0 = time.time()
     tmp = pathlib.Path(tempfile.mkdtemp(prefix='fetch_deps_dxc_'))
@@ -396,15 +245,14 @@ def ensure_dxil(path, dry_run):
     finally:
         rmtree_force(tmp)
     print('   REPLACED %s with the %s file, %s (%.1f s)' % (ov['dest'], ov['release'], ov['version'], time.time() - t0))
-    return True
 
 
-def verify_dxc(path):
+def verify_dxc():
     """Compare every file of the dxc checkout with DXC_FILES."""
     bad = []
     present = set()
     for rel, (digest, origin) in sorted(DXC_FILES.items()):
-        f = path / rel
+        f = DXC / rel
         if not f.is_file():
             bad.append('%s: missing' % rel)
             continue
@@ -412,9 +260,9 @@ def verify_dxc(path):
         if actual != digest:
             bad.append('%s: sha256 %s, expected %s' % (rel, actual, digest))
         present.add(rel)
-    extra = sorted(str(p.relative_to(path)).replace('\\', '/') for p in path.rglob('*')
-                   if p.is_file() and '.git' not in p.relative_to(path).parts and
-                   str(p.relative_to(path)).replace('\\', '/') not in present)
+    extra = sorted(str(p.relative_to(DXC)).replace('\\', '/') for p in DXC.rglob('*')
+                   if p.is_file() and '.git' not in p.relative_to(DXC).parts and
+                   str(p.relative_to(DXC)).replace('\\', '/') not in present)
     if extra:
         bad.append('unexpected files: ' + ', '.join(extra))
     if bad:
@@ -424,196 +272,42 @@ def verify_dxc(path):
         print('      %-24s %s' % (rel, DXC_FILES[rel][1]))
 
 
-def restore_port_files(entry, path, kept, fetched):
-    """Put the port's own plume files back after (or check them after skipping) a checkout."""
-    rel_dir = entry['path']
-    warned = False
-    for name in entry.get('port_files', []):
-        rel = rel_dir + '/' + name
-        f = path / name
-        tracked = repo_tracked(rel)
-        if fetched:
-            if name in kept:
-                f.write_bytes(kept[name])
-            if tracked:
-                clean = git(['diff', '--quiet', 'HEAD', '--', rel], REPO, check=False).returncode == 0
-                if clean or name not in kept:
-                    git(['checkout', '--', rel], REPO)
-                    print('   RESTORED %s from this repository (git checkout -- %s)' % (name, rel))
-                else:
-                    print('   KEPT     %s: your uncommitted local version, not the committed one' % name)
-            elif name in kept:
-                print('   KEPT     %s (not tracked; the copy that was there before the fetch)' % name)
-        elif tracked:
-            if git(['diff', '--quiet', 'HEAD', '--', rel], REPO, check=False).returncode != 0:
-                print('   WARNING  %s differs from the committed version; left alone'
-                      ' (git checkout -- %s restores it)' % (name, rel))
-                warned = True
-    return warned
-
-
-def process_git_pin(entry, args):
-    path = REPO / entry['path']
-    tag = 'exact' if entry['confidence'] == 'exact' else 'NOT EXACT: %s' % entry['confidence']
-    print('== %-28s %s' % (entry['name'], entry['path']))
-    print('   pin %s  %s  [%s]' % (entry['sha'], entry.get('describe', ''), tag))
-    if entry['confidence'] != 'exact':
-        print('   NOTE     ' + entry['why'])
-    state, detail = checkout_state(path)
-    port_files = entry.get('port_files', [])
-    # Files allowed to differ from the checkout's HEAD: the port's own plume
-    # files, and the validator DXIL_OVERLAY puts in place.
-    ignore = set(port_files)
-    if entry.get('verify_sha256'):
-        ignore.add(DXIL_OVERLAY['dest'])
-    warned = False
-    if state == 'repo' and detail == entry['sha']:
-        mods = modified_files(path, ignore)
-        if mods:
-            print('   WARNING  already at the pin, but %d tracked file(s) are modified: %s'
-                  % (len(mods), ', '.join(mods[:5]) + (' ...' if len(mods) > 5 else '')))
-            warned = True
-        else:
-            print('   OK       already at the pin')
-        if entry.get('verify_sha256'):
-            if ensure_dxil(path, args.dry_run):
-                verify_dxc(path)
-        if not args.dry_run:
-            warned = restore_port_files(entry, path, {}, fetched=False) or warned
-        return 'ok', warned
-    if state == 'stale':
-        print('   UNVERIFIED  present, but its .git points at a git directory that no longer exists (%s);'
-              ' the contents were not checked. Delete the directory to fetch it at the pin.' % detail)
-        if entry.get('verify_sha256'):
-            # The validator that ships is the one file worth putting right
-            # even in a tree that is otherwise left alone.
-            ensure_dxil(path, args.dry_run)
-        return 'unverified', warned
-    if state == 'repo' and detail is None:
-        print('   initialised but empty (an earlier fetch did not finish), fetching the pin')
-    elif state == 'repo':
-        mods = modified_files(path, ignore)
-        if mods:
-            raise Failure('%s: checkout is at %s, not the pin, and has %d modified file(s) (%s); not touching it'
-                          % (entry['name'], detail, len(mods), ', '.join(mods[:5])))
-        print('   at %s, fetching the pin' % detail)
-    elif state == 'nogit':
-        extra = [str(p.relative_to(path)).replace('\\', '/') for p in path.rglob('*') if p.is_file()]
-        foreign = [f for f in extra if not repo_tracked(entry['path'] + '/' + f)]
-        if foreign:
-            raise Failure('%s: %s exists, is not a git checkout and holds %d file(s) this repository does not track'
-                          ' (%s); delete or move it to fetch the pin'
-                          % (entry['name'], entry['path'], len(foreign), ', '.join(foreign[:5])))
-    kept = {}
-    for name in port_files:
-        f = path / name
-        if f.is_file():
-            kept[name] = f.read_bytes()
-    fetch_pin(entry, path, args.dry_run)
-    if args.dry_run:
-        return 'would-fetch', warned
-    if entry.get('verify_sha256'):
-        ensure_dxil(path, False)
-        verify_dxc(path)
-    warned = restore_port_files(entry, path, kept, fetched=True) or warned
-    return 'fetched', warned
-
-
-def blob_hash(rel):
-    """git's blob hash of a working-tree file, with the repository's line-ending normalisation."""
-    return git(['hash-object', '--', rel], REPO).stdout.strip()
-
-
-def process_rt64_plain(args):
-    print('== %-28s %s/{json,miniz,plainargs,project64,utf8conv}' % ('rt64 plain subtrees', CONTRIB))
-    print('   pin %s  rt64/rt64 %s  [exact]' % (RT64_BASE, 'main, 2026-09-02'))
-    missing = []
-    for up_rel, blob in sorted(RT64_PLAIN_FILES.items()):
-        rel = 'lib/rt64/' + up_rel
-        f = REPO / rel
-        if not f.is_file():
-            missing.append((up_rel, 'missing'))
-        elif blob_hash(rel) != blob:
-            missing.append((up_rel, 'differs from the pinned blob'))
-    if not missing:
-        print('   OK       all %d files present and matching' % len(RT64_PLAIN_FILES))
-        return 'ok'
-    for up_rel, why in missing:
-        print('   %s: %s' % (up_rel, why))
-    if args.dry_run:
-        print('   would copy them from a temporary checkout of rt64/rt64 %s' % RT64_BASE)
-        return 'would-fetch'
-    t0 = time.time()
-    tmp = pathlib.Path(tempfile.mkdtemp(prefix='fetch_deps_rt64_'))
-    try:
-        git(['init', '-q'], tmp)
-        p = git(['fetch', '-q', '--depth', '1', RT64_UPSTREAM, RT64_BASE], tmp, check=False)
-        if p.returncode != 0:
-            raise Failure('rt64: could not fetch %s from %s:\n%s' % (RT64_BASE, RT64_UPSTREAM, p.stderr.strip()))
-        dirs = sorted({up_rel.rsplit('/', 1)[0] for up_rel in RT64_PLAIN_FILES})
-        git(['checkout', '-q', RT64_BASE, '--'] + dirs, tmp)
-        for up_rel, blob in sorted(RT64_PLAIN_FILES.items()):
-            src = tmp / up_rel
-            dst = REPO / 'lib/rt64' / up_rel
-            dst.parent.mkdir(parents=True, exist_ok=True)
-            shutil.copyfile(src, dst)
-            actual = blob_hash('lib/rt64/' + up_rel)
-            if actual != blob:
-                raise Failure('rt64: %s copied from %s hashes to %s, expected %s' % (up_rel, RT64_BASE, actual, blob))
-    finally:
-        rmtree_force(tmp)
-    print('   FETCHED  %d files copied from rt64/rt64 %s and verified by blob hash (%.1f s)'
-          % (len(RT64_PLAIN_FILES), RT64_BASE[:10], time.time() - t0))
-    return 'fetched'
-
-
-def print_table():
-    print('%-28s %-8s %-40s %s' % ('name', 'conf.', 'commit', 'path'))
-    for e in GIT_PINS:
-        print('%-28s %-8s %-40s %s' % (e['name'], e['confidence'], e['sha'], e['path']))
-        if e['confidence'] != 'exact':
-            print('%-28s %s' % ('', e['why']))
-    print('%-28s %-8s %-40s %s' % ('rt64 plain subtrees', 'exact', RT64_BASE, CONTRIB + '/{json,miniz,plainargs,project64,utf8conv}'))
-
-
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
-    ap.add_argument('--list', action='store_true', help='print the pin table and exit')
-    ap.add_argument('--dry-run', action='store_true', help='report what would be fetched without fetching')
-    ap.add_argument('--only', action='append', default=[], metavar='NAME',
-                    help='handle only this entry (repeatable; names as in --list)')
+    ap.add_argument('--list', action='store_true', help="print every submodule's commit and exit")
+    ap.add_argument('--full', action='store_true', help='fetch whole histories, not one commit each')
     args = ap.parse_args()
-    if args.list:
-        print_table()
-        return 0
     if GIT is None:
         print('fetch_deps: git was not found on PATH', file=sys.stderr)
         return 1
-    print('repository: %s' % REPO)
-    counts = {}
-    warned = []
-    unverified = []
+    if not (REPO / '.git').exists():
+        print('fetch_deps: %s is not a git checkout; clone the repository (a source archive has no submodules)' % REPO,
+              file=sys.stderr)
+        return 1
     try:
-        for entry in GIT_PINS:
-            if args.only and entry['name'] not in args.only:
-                continue
-            result, w = process_git_pin(entry, args)
-            counts[result] = counts.get(result, 0) + 1
-            if w:
-                warned.append(entry['name'])
-            if result == 'unverified':
-                unverified.append(entry['name'])
-        if not args.only or 'rt64' in args.only:
-            result = process_rt64_plain(args)
-            counts[result] = counts.get(result, 0) + 1
+        if args.list:
+            for state, sha, path, describe in submodule_status():
+                print('%s %s  %-62s %s' % (state, sha, path, describe))
+            print('  (then %s replaced by the %s file, sha256 %s)' % (
+                'lib/rt64/src/contrib/dxc/' + DXIL_OVERLAY['dest'], DXIL_OVERLAY['release'], DXIL_OVERLAY['sha256'][:16]))
+            return 0
+        print('repository: %s' % REPO)
+        before = {path for state, sha, path, d in submodule_status() if state == ' '}
+        seconds = update_submodules(args.full)
+        keep_line_endings(submodule_status())
+        rows = submodule_status()
+        wrong = [(s, p) for s, sha, p, d in rows if s != ' ']
+        if wrong:
+            raise Failure('not at their recorded commits:\n   ' + '\n   '.join('%s %s' % w for w in wrong))
+        fetched = len([r for r in rows if r[2] not in before])
+        print('== submodules: %d at their recorded commits (%d fetched now, %.0f s)' % (len(rows), fetched, seconds))
+        print('== dxc  lib/rt64/src/contrib/dxc')
+        ensure_dxil()
+        verify_dxc()
     except Failure as e:
         print('\nFAILED: %s' % e, file=sys.stderr)
         return 1
-    print('\nsummary: ' + ', '.join('%s %d' % (k, v) for k, v in sorted(counts.items())))
-    if unverified:
-        print('UNVERIFIED (present, not checked against the pin): ' + ', '.join(unverified))
-    if warned:
-        print('WARNINGS for: ' + ', '.join(warned))
+    print('\ndone')
     return 0
 
 

@@ -1,5 +1,23 @@
 # Changelog
 
+## Unreleased
+
+* RT64, N64ModernRuntime, plume and N64Recomp are git submodules on Snap64
+  Recomp's own forks, with the port's changes as commits on each fork's
+  `snap64` branch, where they had been tracked copies with their changes
+  written out as patch files; SDL and DirectX-Headers are submodules on
+  their upstreams. A clone gets every tree through
+  `python tools/fetch_deps.py`, which checks all 33 out as their
+  repositories store them on every machine. Applying each patch to its
+  upstream commit reproduced the tracked trees exactly, and turned up one
+  change no patch had recorded: N64Recomp's `recomp.h`, where relocated
+  addresses are summed through a volatile so MSVC keeps their 16-bit wrap.
+  The changes are not offered upstream: those projects do not accept
+  contributions made with an LLM.
+* GitHub's machines build the Windows and Linux archives on every push and
+  pull request (`.github/workflows/build.yml`), and a pull request from a
+  branch of this repository gets them linked in a comment.
+
 ## 1.1.0 -- 2026-09-27
 
 * The mod kit is public. The template and the symbol files went up on

@@ -27,9 +27,9 @@ git (`VENDORING.md` explains).
 
 | Component | License (as found) | Origin | In this tree |
 | --- | --- | --- | --- |
-| **N64Recomp** | MIT, "Copyright (c) 2024 Wiseguy" (`LICENSE`) | <https://github.com/N64Recomp/N64Recomp> | The tool itself runs under WSL (`~/N64Recomp`, upstream commit `ffb39cd`, unmodified) and is not in this tree. A copy of its sources and headers is bundled inside `lib/N64ModernRuntime/N64Recomp` (tracked; `recomp.h` is what the generated code includes); its upstream commit is not recorded. |
-| N64Recomp's own bundled libraries (in `N64ModernRuntime/N64Recomp/lib`, tracked) | sljit: BSD 2-Clause (Zoltan Herczeg); rabbitizer: MIT (Decompollaborate); fmt: MIT-form (Victor Zverovich); tomlplusplus: MIT (Mark Gillard); ELFIO: MIT (Serge Lamikhov-Center) | with N64Recomp | sljit is compiled into librecomp's live recompiler and statically linked, rabbitizer is linked; fmt and tomlplusplus are used by RSPRecomp at build time; ELFIO is tracked and not compiled. The texts of the four that reach the build ship in `licenses/`. |
-| **N64ModernRuntime** (`librecomp`, `ultramodern`) | GPLv3 (`lib/N64ModernRuntime/COPYING`, byte-identical to gnu.org's `gpl-3.0.txt`) | <https://github.com/N64Recomp/N64ModernRuntime> | Tracked as plain files: upstream commit `cdf5abb` (2026-08-30) with the port's changes on top, which are `lib/N64ModernRuntime/SNAP64-CHANGES.patch` (eighteen files, each marked `Pokemon Snap port`; `VENDORING.md` lists them). Statically linked. |
+| **N64Recomp** | MIT, "Copyright (c) 2024 Wiseguy" (`LICENSE`) | <https://github.com/N64Recomp/N64Recomp> | The tool itself runs under WSL (`~/N64Recomp`, upstream commit `ffb39cd`, unmodified) and is not in this tree. Its sources and headers are the runtime's submodule `lib/N64ModernRuntime/N64Recomp`, Snap64 Recomp's fork: upstream commit `81213c1` with one change, to `include/recomp.h`, the header the generated code includes (`VENDORING.md`). |
+| N64Recomp's own libraries (its submodules in `N64ModernRuntime/N64Recomp/lib`) | sljit: BSD 2-Clause (Zoltan Herczeg); rabbitizer: MIT (Decompollaborate); fmt: MIT-form (Victor Zverovich); tomlplusplus: MIT (Mark Gillard); ELFIO: MIT (Serge Lamikhov-Center) | with N64Recomp | sljit is compiled into librecomp's live recompiler and statically linked, rabbitizer is linked; fmt and tomlplusplus are used by RSPRecomp at build time; ELFIO is checked out and not compiled. The texts of the four that reach the build ship in `licenses/`. |
+| **N64ModernRuntime** (`librecomp`, `ultramodern`) | GPLv3 (`lib/N64ModernRuntime/COPYING`, byte-identical to gnu.org's `gpl-3.0.txt`) | <https://github.com/N64Recomp/N64ModernRuntime> | A submodule on Snap64 Recomp's fork, <https://github.com/JackandBeans/N64ModernRuntime>: upstream commit `cdf5abb` (2026-08-30) with the port's changes in one commit on its `snap64` branch (eighteen files, each marked `Pokemon Snap port`; `VENDORING.md` lists them). Statically linked. |
 | concurrentqueue (in `N64ModernRuntime/thirdparty`) | Simplified BSD, also Boost Software License (stated in the header) | Cameron Desrochers | header-only, used by both libraries |
 | nlohmann/json 3.12.0 (in `N64ModernRuntime/thirdparty/json`) | MIT (SPDX header only; the text is tracked as `licenses/nlohmann-json.txt`) | <https://github.com/nlohmann/json> | header-only, used by librecomp |
 | miniz (in `N64ModernRuntime/thirdparty/miniz`) | MIT (`LICENSE`: RAD Game Tools, Valve, Rich Geldreich) | <https://github.com/richgel999/miniz> | compiled by librecomp's CMake |
@@ -45,11 +45,11 @@ git (`VENDORING.md` explains).
 
 | Component | License (as found) | Origin | In this tree |
 | --- | --- | --- | --- |
-| **RT64** | MIT, "Copyright (c) 2024 RT64 Contributors" (`lib/rt64/LICENSE`) | <https://github.com/rt64/rt64>, forked from commit `4337374` (2026-09-02; the port's changes are `lib/rt64/SNAP64-CHANGES.patch`, `VENDORING.md`) | `lib/rt64` outside `contrib` tracked (301 files); **modified** by this port in 74 of them, carried as that patch (object identity and transform pairing, frame pacing and presentation, framebuffer readback, the texture decoder's declared format, diagnostics, configuration; the list, marked and unmarked, is in `VENDORING.md`). Statically linked. |
+| **RT64** | MIT, "Copyright (c) 2024 RT64 Contributors" (`lib/rt64/LICENSE`) | <https://github.com/rt64/rt64>, forked from commit `4337374` (2026-09-02); the fork is <https://github.com/JackandBeans/rt64>, branch `snap64` (`VENDORING.md`) | `lib/rt64` is a submodule on that fork, **modified** by this port in 74 files (object identity and transform pairing, frame pacing and presentation, framebuffer readback, the texture decoder's declared format, diagnostics, configuration; the list, marked and unmarked, is in `VENDORING.md`). Statically linked. |
 
-RT64's own third-party trees live in `lib/rt64/src/contrib`, which is ignored
-by git (except the five plume files named in the `plume` row below); `tools/fetch_deps.py` fetches them at
-the upstream commits recorded in `VENDORING.md`. Each entry, with what its
+RT64's own third-party trees are its submodules in `lib/rt64/src/contrib`,
+at the commits RT64 records (plume on Snap64 Recomp's fork);
+`tools/fetch_deps.py` checks them out (`VENDORING.md`). Each entry, with what its
 files say:
 
 | `contrib/` entry | License (as found) | Used by this build? |
@@ -66,7 +66,7 @@ files say:
 | `mupen64plus-win32-deps` | a bundle: SDL2 2.26.3 and SDL2_net 2.2.0 (zlib license), boost 1.81.0, freetype 2.13.0, libpng 1.6.39, zlib 1.2.13, nasm, gawk, OpenGL headers | only `SDL2-2.26.3/include` is referenced by RT64's CMake on Windows; the SDL2 that is linked and shipped is the one built from `lib/SDL`. The rest of the bundle is unused. |
 | `nativefiledialog-extended` | zlib (`LICENSE`) | yes, compiled and linked (`nfd`) |
 | `plainargs` | public domain (Unlicense text in the header) | header-only |
-| `plume` | MIT (renderbag and contributors, 2024) | yes, compiled and linked; five files carry this port's changes and are force-tracked (`plume_d3d12.cpp`, `plume_d3d12.h`, `plume_render_interface.h`, `plume_vulkan.cpp`, `plume_metal.cpp`; `VENDORING.md`). Its `contrib/metal-cpp`, Apple's C++ Metal headers (Apache-2.0, `LICENSE.txt`), is compiled into the macOS build only, whose package carries the text as `licenses/metal-cpp.txt` |
+| `plume` | MIT (renderbag and contributors, 2024) | yes, compiled and linked; five files carry this port's changes, one commit on Snap64 Recomp's fork (`plume_d3d12.cpp`, `plume_d3d12.h`, `plume_render_interface.h`, `plume_vulkan.cpp`, `plume_metal.cpp`; `VENDORING.md`). Its `contrib/metal-cpp`, Apple's C++ Metal headers (Apache-2.0, `LICENSE.txt`), is compiled into the macOS build only, whose package carries the text as `licenses/metal-cpp.txt` |
 | `project64` | **no license text in the tree** (two headers, `Base.h` and `Video.h`) | **no**: nothing outside `contrib` references them (checked by grep); not compiled |
 | `re-spirv` | MIT (renderbag and contributors, 2024) | yes, compiled and linked |
 | `spirv-cross` | Apache-2.0 (`LICENSE`), with Khronos free-use terms for some files | **no on Windows or Linux**: only RT64's macOS build uses it, at build time (the `spirv_cross_msl` tool that turns the shaders into MSL); nothing of it is in any executable |

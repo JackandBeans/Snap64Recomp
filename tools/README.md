@@ -8,7 +8,7 @@ belongs. Python 3.11 with Pillow, NumPy and SciPy covers all of them.
 
 | Script | What it does |
 | --- | --- |
-| `fetch_deps.py` | Fetches the vendored trees a clean checkout does not carry (SDL, DirectX-Headers, RT64's third-party trees) at the recorded upstream commits, and verifies them. |
+| `fetch_deps.py` | Checks out the vendored trees, the repository's git submodules and the ones nested in them, at their recorded commits and as their repositories store them; verifies them and the dxc binaries, and puts Microsoft's redistributable `dxil.dll` in place (BUILDING.md, step 10). |
 | `macos_bundle.py` | Lays the macOS application bundle out from a build directory's install tree, writes its `Info.plist`, signs it ad hoc and zips it with a START HERE text (BUILDING.md, step 15); `--dry-run` checks the layout on any machine. |
 | `gen_reference_syms.py` | Writes `patches/game_syms.ld` and `patches/pokemonsnap.syms.toml`, the symbol names, addresses and sizes the patch build and the recompiler need, and, given a fourth path, the data symbols a mod build names variables with (`docs/MODS.md`). |
 | `gen_overlays.py` | Generates `src/recomp_overlays.inl`, the port's overlay section table, from the recompiler's ELF input. |

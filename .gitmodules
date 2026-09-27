@@ -1,0 +1,14 @@
+[submodule "lib/rt64"]
+	path = lib/rt64
+	url = https://github.com/JackandBeans/rt64.git
+	branch = snap64
+[submodule "lib/N64ModernRuntime"]
+	path = lib/N64ModernRuntime
+	url = https://github.com/JackandBeans/N64ModernRuntime.git
+	branch = snap64
+[submodule "lib/SDL"]
+	path = lib/SDL
+	url = https://github.com/libsdl-org/SDL.git
+[submodule "lib/DirectX-Headers"]
+	path = lib/DirectX-Headers
+	url = https://github.com/microsoft/DirectX-Headers.git

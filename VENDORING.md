@@ -2,45 +2,61 @@
 
 What `lib/` actually contains, how each piece is tracked, and the upstream
 commit each piece is pinned to. `NOTICE.md` lists licenses; `BUILDING.md`
-lists what to fetch; `tools/fetch_deps.py` fetches it.
+says how to fetch it; `tools/fetch_deps.py` fetches it.
 
-## `.gitmodules` is gone, on purpose
+## Submodules, on forks
 
-Until 2026-09-02 a `.gitmodules` declared `lib/N64ModernRuntime` and `lib/rt64`
-as submodules of <https://github.com/N64Recomp/N64ModernRuntime.git> and
-<https://github.com/rt64/rt64.git>. No gitlink was ever committed for either
-(`git ls-tree -r HEAD | grep ^160000` is empty in every commit), so
-`git submodule update --init --recursive` was a no-op and a fresh clone could
-not configure. Both directories are ordinary tracked files that have been
-edited in place, so the declaration was fiction and has been deleted. If they
-are ever turned back into submodules, the local modifications below have to be
-carried as patches on top of the upstream commit. N64ModernRuntime's are, since
-2026-09-16: `lib/N64ModernRuntime/SNAP64-CHANGES.patch` applied to upstream
-`cdf5abb` reproduces the tracked tree byte for byte. RT64's base is known
-(below) and its changes are still edited in place.
+Every third-party tree under `lib/` except `SlotMap` is a git submodule at
+an exact commit. Where the port changes a tree, the submodule is Snap64
+Recomp's fork of it, and the changes are commits on the fork's `snap64`
+branch on top of the upstream commit; the fork's `main` is upstream's and
+carries nothing of the port's.
 
-## How each tree is tracked
+| Path | Repository, branch | Commit | What it is |
+| --- | --- | --- | --- |
+| `lib/rt64` | <https://github.com/JackandBeans/rt64>, `snap64` | `9cb7f28` | rt64/rt64 `4337374` plus two commits: the port's changes (74 files, and `.gitmodules` pointing plume at the fork), and dxc allowed to differ from its commit (below, "dxc") |
+| `lib/rt64/src/contrib/plume` | <https://github.com/JackandBeans/plume>, `snap64` | `da8649e` | plume `d890ac8`, the commit rt64 pins, plus one commit (five files) |
+| `lib/rt64/src/contrib/*`, the rest | rt64's own submodules | rt64's pins | the table below |
+| `lib/N64ModernRuntime` | <https://github.com/JackandBeans/N64ModernRuntime>, `snap64` | `7ab8900` | N64ModernRuntime `cdf5abb` plus one commit (eighteen files, and `.gitmodules` pointing N64Recomp at the fork) |
+| `lib/N64ModernRuntime/N64Recomp` | <https://github.com/JackandBeans/N64Recomp>, `snap64` | `a726e15` | N64Recomp `81213c1`, the commit the runtime pins, plus one commit (`include/recomp.h`) |
+| `lib/N64ModernRuntime/thirdparty/*` | the runtime's own submodules (miniz, o1heap, xxHash) | the runtime's pins | upstream, unchanged |
+| `lib/SDL` | <https://github.com/libsdl-org/SDL>, upstream | `fa24d86` | `release-2.30.11`, unchanged |
+| `lib/DirectX-Headers` | <https://github.com/microsoft/DirectX-Headers>, upstream | `ee479f0` | `v1.619.5`, unchanged |
 
-| Path | In git? | State |
-| --- | --- | --- |
-| `lib/N64ModernRuntime` | yes, plain files | upstream `cdf5abb` (2026-08-30) plus the port's changes, eighteen files, carried as `lib/N64ModernRuntime/SNAP64-CHANGES.patch`; no git directory |
-| `lib/N64ModernRuntime/N64Recomp` | yes (part of the above) | the runtime's bundled copy of N64Recomp's headers and sources; its `RSPRecomp` target is built by the port's CMake to recompile the audio microcode at build time (BUILDING.md step 9); upstream commit unrecorded |
-| `lib/rt64` (outside `src/contrib`) | yes, 300 files | forked from rt64/rt64 `a012a23` (established by content, below); `lib/rt64/.git` is an orphaned gitfile pointing at a deleted `.git/modules/lib/rt64` |
-| `lib/rt64/src/contrib/` | **no** (ignored), except the port's five plume files (below) | RT64's third-party trees, 396 MB; fetched by `tools/fetch_deps.py` at the pins below |
-| `lib/SDL` | no (ignored) | fetched by `tools/fetch_deps.py` at the pin below (my copy is a full clone with a live `.git`) |
-| `lib/DirectX-Headers` | no (ignored) | fetched by `tools/fetch_deps.py` at the pin below (same) |
+A fork's changes are the diff from the upstream commit to `snap64`, on
+GitHub as the fork's compare page, for example
+<https://github.com/JackandBeans/rt64/compare/43373749dac9bbc1b653e6a02aed40a9e1783bed...snap64>.
+`python tools/fetch_deps.py` checks all of it out (BUILDING.md step 10).
+The port's changes are not offered upstream: rt64, N64ModernRuntime and
+plume do not accept contributions made with an LLM (their `CONTRIBUTING.md`),
+and every change here was made with Claude Code.
 
-## Recovered pins
+The trees were carried three ways before this. Until 2026-09-02 a
+`.gitmodules` declared `lib/N64ModernRuntime` and `lib/rt64` as submodules
+with no gitlink ever committed, so a clone could not configure; it was
+deleted. From then until 2026-09-27 both were tracked copies edited in
+place, their changes written out as `SNAP64-CHANGES.patch` beside each (and
+plume's as `lib/rt64/SNAP64-PLUME-CHANGES.patch`, its five files
+force-tracked), and RT64's `src/contrib`, SDL and DirectX-Headers were
+fetched by `tools/fetch_deps.py` at the pins below. On 2026-09-27 each patch
+was applied to its upstream commit on a fork and the result compared blob for
+blob with the tracked tree: RT64's 301 files, the runtime's 76 and plume's
+five matched with no difference. The comparison found one change no patch
+had recorded, N64Recomp's `include/recomp.h` (below, "N64Recomp"), in the
+tree since 2026-08-17; it is the fork's one commit.
 
-`python tools/fetch_deps.py` fetches every row of this table except the first
-into a detached checkout of exactly that commit, verifies it, and is a no-op
-when the tree is already there (BUILDING.md step 10). The WSL-side tools are
-pinned in BUILDING.md (N64Recomp `ffb39cd`, decomp `3a236dc`).
+## Pins
+
+The commits every checkout sits at. The first two rows are the upstream
+commits the forks are based on; the rest are what `git submodule status
+--recursive` prints (`python tools/fetch_deps.py --list`). The WSL-side tools
+are pinned in BUILDING.md (N64Recomp `ffb39cd`, decomp `3a236dc`).
 
 | Path | Upstream | Commit | What it is | Confidence |
 | --- | --- | --- | --- | --- |
-| `lib/N64ModernRuntime` (fork base; not fetched, tracked) | https://github.com/N64Recomp/N64ModernRuntime.git | `cdf5abbd5026fef5c364c676e4667c45e42b6863` | main, 2026-08-30, "Add CLI options to select games and game modes. (#153)"; the port's changes are `SNAP64-CHANGES.patch` beside it | exact: the patch applied to this commit reproduces the tree (checked 2026-09-16) |
-| `lib/rt64` (fork base; not fetched, tracked) | https://github.com/rt64/rt64.git | `43373749dac9bbc1b653e6a02aed40a9e1783bed` | main, 2026-09-02, "Don't consider VIs with inverted regions as valid. (#264)"; the port's changes are `lib/rt64/SNAP64-CHANGES.patch` | exact: the tree is that commit plus the patch (rebased 2026-09-16; the earlier base `a012a23` had been inferred from content) |
+| `lib/N64ModernRuntime` (fork base) | https://github.com/N64Recomp/N64ModernRuntime.git | `cdf5abbd5026fef5c364c676e4667c45e42b6863` | main, 2026-08-30, "Add CLI options to select games and game modes. (#153)", still upstream's head on 2026-09-27 | exact |
+| `lib/N64ModernRuntime/N64Recomp` (fork base) | https://github.com/N64Recomp/N64Recomp | `81213c1831fab2521a6a5459c67b63437d67e253` | the runtime's pin, mod-tool-release-20-g81213c1 | exact |
+| `lib/rt64` (fork base) | https://github.com/rt64/rt64.git | `43373749dac9bbc1b653e6a02aed40a9e1783bed` | main, 2026-09-02, "Don't consider VIs with inverted regions as valid. (#264)", still upstream's head on 2026-09-27 | exact (rebased onto it 2026-09-16; the earlier base `a012a23` had been inferred from content) |
 | `lib/SDL` | https://github.com/libsdl-org/SDL.git | `fa24d868ac2f8fd558e4e914c9863411245db8fd` | `release-2.30.11` | exact |
 | `lib/DirectX-Headers` | https://github.com/microsoft/DirectX-Headers.git | `ee479f0bd5f7b884f202bcf0c3f076cc050dd256` | `v1.619.5` | exact |
 | `contrib/ddspp` | https://github.com/redorav/ddspp.git | `21ca0c4319dfd5a161c5f2a0c406e8f60194ea6c` | tag 1.11, 2024-08-07 | exact |
@@ -52,7 +68,7 @@ pinned in BUILDING.md (N64Recomp `ffb39cd`, decomp `3a236dc`).
 | `contrib/mupen64plus-core` | https://github.com/mupen64plus/mupen64plus-core | `860fac3fbae94194a392c1d9857e185eda6d083e` | 2.5.9-484-g860fac3, 2024-01-24 | exact |
 | `contrib/mupen64plus-win32-deps` | https://github.com/mupen64plus/mupen64plus-win32-deps | `de8111fdcb89144abc16c85650ce4e21e028bfb5` | 2.5-21-gde8111f, 2023-03-02 | exact |
 | `contrib/nativefiledialog-extended` | https://github.com/btzy/nativefiledialog-extended | `17b6e8ce219c0677f94b63636abb9296b28841ca` | v1.1.1-6-g17b6e8c, 2024-02-24 | exact |
-| `contrib/plume` | https://github.com/renderbag/plume.git | `51b1ad443b9f202c5cfc930ae25345d3f2ba7716` | 2026-01-28, "Force residency sets to off."; on branch `metal-release-pool-refactor-plus-sets-off`, not on `main` | high: 863 of 866 files match; the other three are the port's own (below) |
+| `contrib/plume` (fork base) | https://github.com/renderbag/plume.git | `d890ac899e505fb30040e037a4037cdeca68f033` | main, 2026-07-22, "manually reset nullbuffer (#105)", the commit rt64 `4337374` pins (until 2026-09-16 the port was on `51b1ad4`, a side branch) | exact |
 | `contrib/plume/contrib/D3D12MemoryAllocator` | https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator | `9ef66bc14edd10dee0de3a545b98578363552f66` | v3.0.1 (plume's gitlink) | exact |
 | `contrib/plume/contrib/Vulkan-Headers` | https://github.com/KhronosGroup/Vulkan-Headers | `2fa203425eb4af9dfc6b03f97ef72b0b5bcb8350` | v1.4.335 (plume's gitlink) | exact |
 | `contrib/plume/contrib/VulkanMemoryAllocator` | https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator | `29b35ea4232688c0f42cdff0c10848290760a417` | v3.2.1-5-g29b35ea (plume's gitlink) | exact |
@@ -63,14 +79,14 @@ pinned in BUILDING.md (N64Recomp `ffb39cd`, decomp `3a236dc`).
 | `contrib/stb` | https://github.com/nothings/stb | `ae721c50eaf761660b4f90cc590453cdb0c2acd0` | 2024-02-12 | exact |
 | `contrib/xxHash` | https://github.com/Cyan4973/xxHash | `1864a50c9b5cf8500d8e9e61ed92aa0dd3772750` | dev branch, 2024-02-12 (v0.7.4-707-g1864a50) | exact |
 | `contrib/zstd` | https://github.com/facebook/zstd | `0ff651dd876823b99fa5c5f53292be28381aee9b` | dev branch, 2024-07-16 (merge of PR #4096) | high: 636 of 638 files match; `tests/cli-tests/bin/unzstd` and `zstdcat` are symlinks upstream and were empty files here (nothing compiled) |
-| `contrib/json`, `miniz`, `plainargs`, `project64`, `utf8conv` | https://github.com/rt64/rt64.git | plain files of rt64's own tree at `a012a23` (8 files) | not submodules; copied from that commit and verified by blob hash | exact |
+| `contrib/json`, `miniz`, `plainargs`, `project64`, `utf8conv` | https://github.com/rt64/rt64.git | plain files of rt64's own tree | not submodules; they come with the fork's checkout | exact |
 
 `contrib/` above is `lib/rt64/src/contrib/`. rt64's `.gitmodules` also
 declares `src/contrib/xess`, for which no gitlink exists upstream either;
-nothing in the build refers to it, and `metal-cpp` (referenced by RT64's CMake
-for Apple builds) is not a submodule and not present.
+nothing in the build refers to it. `metal-cpp`, which the Apple build uses,
+is plain files inside plume.
 
-### How the pins were established (2026-09-02)
+### How the pins were established (2026-09-02, before the forks)
 
 The commits of the contrib submodules lived only in the deleted
 `.git/modules/lib/rt64` and could not be read from this repository. They were
@@ -150,24 +166,36 @@ and CMake with the Visual Studio 16 2019 x64 generator produced
 diffed against mine and matched apart from the two zstd symlink
 stand-ins (BUILDING.md, "What a clean checkout is missing", has the record).
 
+Proof of the conversion to submodules (2026-09-27): the fetched checkouts
+were compared byte for byte with the trees the 1.1.0 build had used. Of
+RT64's 10,262 files 9,034 were identical, 1,225 differed only in line
+endings, and three in content: the `.gitmodules` that points plume at the
+fork, and the two zstd symlinks, which git now writes as the symlinks'
+targets (nothing compiles them). The runtime's 1,197: 857 identical, 339 in
+line endings only, and its `.gitmodules`. The line endings are RT64's and the
+runtime's own sources, which the old tracked copies had in CRLF: every
+submodule is now checked out exactly as its repository stores it, on every
+machine (`tools/fetch_deps.py` sets `core.autocrlf=false` in each), as GitHub's
+Linux and Mac runners always had them. Those sources hold no raw string
+literal, so no line ending reaches the binary through them. The Windows
+build from the new checkouts recompiled everything: its 109 shader blobs are
+byte-identical to 1.1.0's, and its executable differs from 1.1.0's (SHA-256
+`3006d9b4...`) in four bytes, the two link timestamps.
+
 ## Local modifications to vendored trees
 
-Both tracked trees are **forked, not pristine**. Anything that re-syncs them
-from upstream must preserve the following. The string `Pokemon Snap port`
-marks most changed sites (grep for it), but not all of them.
+Both trees are **forks, not pristine**: the commits on each fork's `snap64`
+branch. Anything that moves them to a newer upstream must keep the following
+(below, "Changing RT64 or the runtime", says how). The string `Pokemon Snap
+port` marks most changed sites (grep for it), but not all of them.
 
 ### N64ModernRuntime
 
-The tree is upstream commit `cdf5abb` (2026-08-30) with the port's changes on
-top, and those changes are one file, `lib/N64ModernRuntime/SNAP64-CHANGES.patch`
-(`git diff` from that commit to this tree, eighteen files). Every changed
-file carries a `Pokemon Snap port` marker. To take a newer upstream: clone
-N64ModernRuntime, check out `cdf5abb`, branch, `git apply` the patch, commit,
-rebase onto the new upstream head, resolve, then copy `librecomp`,
-`ultramodern` and `CMakeLists.txt` back here and regenerate the patch from the
-new base. That is how the 2026-09-16 update was made, from a copy whose base
-had never been recorded (it matched the tree of `03c3bd8`, 2026-05-17; three
-files conflicted).
+The fork's `snap64` is upstream commit `cdf5abb` (2026-08-30) with the port's
+changes in one commit, eighteen files. Every changed file carries a `Pokemon
+Snap port` marker. The 2026-09-16 update to `cdf5abb` was made from a copy
+whose base had never been recorded (it matched the tree of `03c3bd8`,
+2026-05-17; three files conflicted).
 
 * `ultramodern/src/threads.cpp` -- pooled host threads, the replenisher, the
   per-guest-thread run clock, and the thread registry the stall report reads;
@@ -227,6 +255,22 @@ files conflicted).
   `add_option_disable_dependency`. Upstream's `main` has the same code
   (checked 2026-09-26, the file last changed there in `589bbf0`).
 
+### N64Recomp
+
+The runtime's copy of the recompiler (its headers are what the recompiled
+game includes; its `RSPRecomp` builds the audio microcode) is N64Recomp
+`81213c1` with one change, the fork's one commit:
+
+* `include/recomp.h` -- under MSVC, `RELOC_HI16` and `RELOC_LO16` compute
+  their sum through a volatile. MSVC folds `(int16_t)LO16(sum)` into an add
+  that is never truncated, so an address whose low half carries into the
+  high half lands 64 KB off; the volatile keeps the 16-bit wrap the MIPS
+  `lui`/`addiu` pair depends on. Clang, which the other recompilations use
+  on Windows, does not fold it. In the tree since the first commit
+  (2026-08-17) and recorded by no patch until 2026-09-27.
+
+### The runtime, continued
+
 Two things upstream changed after the old base are answered on the port's
 side rather than in the runtime: the runtime no longer switches present-early
 on for the port at the first task, so `src/rt64_render_context.cpp` does it
@@ -235,12 +279,10 @@ there itself; and `recomp::GameEntry` requires a display name, which
 
 ### RT64
 
-The tree is rt64/rt64 `4337374` (2026-09-02) with the port's changes on top,
-and those changes are `lib/rt64/SNAP64-CHANGES.patch` (`git diff` from that
-commit to this tree outside `src/contrib`, 74 files). To take a newer upstream: clone rt64, check out `4337374`,
-branch, `git apply` the patch, commit, rebase onto the new head, resolve,
-copy the tracked files back and regenerate the patch; plume is done the same
-way against its own pin (`SNAP64-PLUME-CHANGES.patch`). The 2026-09-16 rebase
+The fork's `snap64` is rt64/rt64 `4337374` (2026-09-02) with the port's
+changes in one commit (74 files outside `src/contrib`, and `.gitmodules`
+pointing plume at its fork) and a second that lets dxc's checkout differ from
+its commit (the `dxil.dll` below). The 2026-09-16 rebase
 from `a012a23` (eleven upstream commits: the RDNA4 Vulkan workaround, VIs
 with inverted regions, the viewport clip rect in draw-area detection, tile
 synchronisation, and the plume bump that fixes Metal leaks) applied with no
@@ -303,14 +345,13 @@ it is modified), `src/shared/rt64_other_mode.h` and
 counterpart). The marked files also contain the two hand back-ports named
 above (#259, #262).
 
-### plume (inside the ignored contrib tree)
+### plume
 
 Five files differ from plume `d890ac8` (the commit rt64 `4337374` pins;
-until 2026-09-16 the base was `51b1ad4`, on a side branch), none of their
-contents exists anywhere in plume's history, and all five are
-**force-tracked** in this repository (`git add -f`; the directory around
-them stays ignored). Their difference from that commit is
-`lib/rt64/SNAP64-PLUME-CHANGES.patch`:
+until 2026-09-16 the base was `51b1ad4`, on a side branch), and none of their
+contents exists anywhere in plume's history. They are the one commit on the
+fork's `snap64` (until 2026-09-27 they were force-tracked in this
+repository, the directory around them ignored):
 
 * `plume_d3d12.cpp` (tracked since commit `7d704d4`, which was `35bcba0`
   before the history rewrite of 2026-09-02). It carries four changes: the
@@ -341,16 +382,13 @@ them stays ignored). Their difference from that commit is
   `copyFromTexture`), for the same two captures on a Mac, where the image-to-
   image path would have dereferenced the same null.
 
-The `.cpp` does not compile against pristine plume headers, which is why the
-headers are tracked too (until 2026-09-02 they were not, and the only copy of
-their changes was my working tree). `tools/fetch_deps.py` clones
-plume at the pin, which writes upstream's versions over the three files, and
-then puts them back with `git checkout --`; an uncommitted local edit to one
-of them is kept and reported instead.
+The `.cpp` does not compile against pristine plume headers, so the headers
+are in the same commit (until 2026-09-02 they were not tracked at all, and
+the only copy of their changes was my working tree).
 
 The file that used to document the null guard
-(`lib/rt64/src/contrib/PLUME_PATCHES.md`) sits in the ignored directory and
-is not in a clone, so the substance is repeated here:
+(`lib/rt64/src/contrib/PLUME_PATCHES.md`, in the old ignored directory) is
+gone; its substance:
 
 `copyTextureRegion` calls `setSamplePositions(dstLocation.texture)`, and a
 texture-to-buffer copy (any readback through a `PlacedFootprint` destination)
@@ -368,10 +406,31 @@ if (texture == nullptr) {
 
 The `resetSamplePositions()` matters: a non-MSAA destination texture would have
 reached the else branch and reset any custom programmable sample positions
-before the copy; a buffer destination needs the same reset. **Re-vendoring or
-updating plume silently reverts all three changes**; whoever updates plume must
-re-apply them or confirm upstream has an equivalent. The null guard is worth
-offering upstream (renderbag/plume): the bug is theirs.
+before the copy; a buffer destination needs the same reset. Updating plume
+means rebasing the fork's commit onto the new one (below); the bug is
+upstream's, and stays fixed only in the fork.
+
+## Changing RT64 or the runtime
+
+`tools/fetch_deps.py` leaves each submodule detached at its recorded commit,
+one commit deep. To change one of the forked trees:
+
+1. In it (`lib/rt64`, `lib/N64ModernRuntime`, or a fork nested in them,
+   `lib/rt64/src/contrib/plume` or `lib/N64ModernRuntime/N64Recomp`):
+   `git fetch --unshallow` if the history is wanted, then `git switch snap64`.
+2. Change, build, and commit there, by this repository's commit rules.
+3. `git push origin snap64`. Only that branch is ever pushed to a fork.
+4. Record the new commit in the parent: `git add lib/rt64` here (for a
+   nested fork, `git add src/contrib/plume` in `lib/rt64` first, commit and
+   push that, then record `lib/rt64` here), and commit.
+
+A pushed parent that points at an unpushed commit leaves every fresh clone
+unable to check it out, so the fork is always pushed first. To move a fork to
+a newer upstream: `git remote add upstream <upstream URL>`, `git fetch
+upstream`, `git rebase <new commit> snap64`, resolve, build, run the release
+suite, `git push --force-with-lease origin snap64`, and record it here as in
+step 4. The Linux and Mac builds read the same forks, so their workflows
+build the new commits as they are.
 
 ## `assets/gamecontrollerdb.txt`
 

@@ -247,37 +247,35 @@ configure time. Pass `-DSNAP_ROM=<path>` to name another file. The ROM is a
 build dependency: changing it, the template or RSPRecomp regenerates the
 microcode on the next build.
 
-### 10. Vendored trees on the Windows side
+### 10. Vendored trees
 
-`lib/SDL`, `lib/DirectX-Headers` and `lib/rt64/src/contrib`
-are **not in git** and must exist before CMake runs. One command puts them there, at the
-upstream commits recorded in `VENDORING.md`:
+`lib/rt64`, `lib/N64ModernRuntime`, `lib/SDL` and `lib/DirectX-Headers` are
+git submodules, and more are nested inside the first two (RT64's
+`src/contrib`, the runtime's N64Recomp and third-party trees): 33 in all,
+each at an exact commit (`VENDORING.md`). They must be checked out before
+CMake runs. One command does it:
 
     python tools/fetch_deps.py
 
-It needs git on `PATH` and access to github.com, and fetches 23 trees (SDL
-2.30.11, DirectX-Headers v1.619.5, RT64's fifteen submodules with the five
-trees nested inside plume and re-spirv, and the five directories rt64 keeps as
-plain files), about 700 MB, each as a detached checkout of one commit (no
-history); it took two and a half minutes on the machine this was written on.
-Every tree is verified (`git rev-parse HEAD` against the pin; the `dxc`
-binaries file by file against SHA-256 values in the script), a mismatch stops
-the script naming the pin and the reason, and running it again is a no-op
-(`--dry-run` says what it would do, `--list` prints the pin table).
+It runs `git submodule update --init --recursive`, one commit deep, and
+checks that every checkout sits at its recorded commit; the first run took
+172 seconds on the machine this was written on, and a second run is a no-op
+(`--list` prints every commit, `--full` fetches whole histories). It needs
+git on `PATH` and access to github.com. A `git clone --recursive` fetches
+the same trees, but it does not do the two things the script adds:
 
-Two things it does that a plain clone would not: it puts the port's own three
-plume files back with `git checkout --` after cloning plume (`VENDORING.md`,
-"plume"), and it replaces `dxc/bin/x64/dxil.dll` with the file of Microsoft's
-release v1.7.2308, downloaded from the release archive (25 MB) and checked
-by SHA-256, because the copy in rt64's `dxc-bin` is under terms that do not
-allow distributing it (`VENDORING.md`, "dxc"). On a tree whose `.git` points
-at a git directory that no longer exists (my original checkouts)
-it reports `UNVERIFIED` and leaves the directory alone rather than replace
-the only copy, apart from that one `dxil.dll`; delete such a directory to have
-it fetched at the pin.
+* every submodule is checked out as its repository stores it, with
+  `core.autocrlf=false` set in each, so the build reads the same bytes on
+  every machine (Git for Windows otherwise converts text to CRLF);
+* `dxc/bin/x64/dxil.dll` is replaced with the file of Microsoft's release
+  v1.7.2308, downloaded from the release archive (25 MB) and checked by
+  SHA-256, because the copy in rt64's `dxc-bin` is under terms that do not
+  allow distributing it (`VENDORING.md`, "dxc"); the dxc binaries are then
+  checked file by file against SHA-256 values in the script.
 
-`lib/N64ModernRuntime` and `lib/rt64/src` (outside `contrib`) are tracked as
-plain files and carry local modifications; they are part of the checkout.
+RT64, the runtime, plume and N64Recomp are Snap64 Recomp's forks of them,
+with the port's changes on each fork's `snap64` branch; `VENDORING.md`,
+"Changing RT64 or the runtime", says how to change one.
 
 ### 11. CMake
 
@@ -413,8 +411,8 @@ files:
   leaves them implicit, which Clang 16 and later reject)
   (`tools/portable_patches.cmake`; the copy is made on Windows too, and the
   shim that used to bridge the names is gone).
-* `lib/rt64/src/contrib/plume/plume_vulkan.cpp` is the port's fourth
-  force-tracked plume file (VENDORING.md): upstream's Vulkan backend has
+* `lib/rt64/src/contrib/plume/plume_vulkan.cpp` carries one of the port's
+  changes to plume (the plume fork, VENDORING.md): upstream's Vulkan backend has
   no texture-to-buffer copy, which the presented-frame capture and the
   Snap Station's sheet capture use, and dereferenced a null texture.
 * `snap64.log` in the data directory is written on every launch: both
@@ -590,7 +588,7 @@ files and `if (APPLE)` blocks of the same `CMakeLists.txt`:
   (`-Xarch_x86_64`); on ARM the runtime's `sse2neon` serves.
 * `lib/rt64/src/common/rt64_hlslpp.h` includes the C standard library before
   hlsl++, which the pull request needed under Apple's libc++ (one more file
-  in `SNAP64-CHANGES.patch`).
+  in the RT64 fork's commit).
 
 The workflow, `.github/workflows/macos.yml`, runs the commands above on
 GitHub's `macos-15` runner (Apple Silicon, a virtual Mac whose GPU is Apple's
@@ -652,30 +650,29 @@ build.
 ## What a clean checkout is missing
 
 A `git clone` of this repository today contains the port's sources, the
-tracked copies of N64ModernRuntime and RT64, the recompiler configs, the
-tools, the patch sources, the microcode template `rsp/aspMain.us.toml.in` and
-the two symbol files. It does **not** contain:
+submodules' records (which commit of which repository each vendored tree
+is), the recompiler configs, the tools, the patch sources, the microcode
+template `rsp/aspMain.us.toml.in` and the two symbol files. It does **not**
+contain:
 
-1. `lib/SDL` and `lib/DirectX-Headers` -- ignored; `python tools/fetch_deps.py`
-   fetches them at the recorded pins (step 10).
-2. `lib/rt64/src/contrib` -- ignored except for the port's five plume files;
-   the same script fetches all of it at the pins recovered in VENDORING.md.
-   CMake cannot configure without it.
-3. `RecompiledFuncs/` and `RecompiledPatches/` -- generated (steps 4-5, 8);
+1. The vendored trees themselves -- `python tools/fetch_deps.py` checks the
+   33 submodules out at their recorded commits (step 10). CMake cannot
+   configure without them.
+2. `RecompiledFuncs/` and `RecompiledPatches/` -- generated (steps 4-5, 8);
    generating them needs the ROM, the decomp build and N64Recomp under WSL.
-4. `pokemonsnap.relocs.elf` and `pokemonsnap.z64` in the port root -- the
+3. `pokemonsnap.relocs.elf` and `pokemonsnap.z64` in the port root -- the
    recompiler's inputs (step 3); the ROM is also what CMake recompiles the
    audio microcode from (step 9, `SNAP_ROM`), so it is needed even when the
    recompiled code is copied in rather than generated.
-5. The decomp, IDO, the MIPS binutils and N64Recomp themselves.
+4. The decomp, IDO, the MIPS binutils and N64Recomp themselves.
 
-`.gitmodules` used to declare `lib/N64ModernRuntime` and `lib/rt64` as
-submodules without ever committing a gitlink; it has been removed, and
-VENDORING.md records what those directories actually are.
+Until 2026-09-27 RT64 and the runtime were tracked copies and the rest were
+ignored directories fetched at recorded pins; VENDORING.md has that history.
 
-Two workflows run on GitHub. `.github/workflows/docs.yml` runs
+Three workflows run on GitHub. `.github/workflows/docs.yml` runs
 `tools/check_docs.py`, which follows every relative link and anchor in the
 Markdown files, and compiles the Python tools, on every push.
+`.github/workflows/build.yml` builds the Windows and Linux archives (step 14).
 `.github/workflows/macos.yml` builds the macOS bundle (step 15): the ROM and
 what is made from it are build inputs no public workflow may hold, so it
 takes them from a private repository through a secret, as the other

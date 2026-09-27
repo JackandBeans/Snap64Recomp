@@ -21,9 +21,9 @@ here should be assumed untried.
   2; no physical Mac has run it. A report from any machine not on that list
   is welcome, good or bad.
 * **Buildable from a clean checkout, in two steps beyond `git clone`.**
-  `python tools/fetch_deps.py` fetches the vendored trees (SDL,
-  DirectX-Headers, RT64's third-party trees) at the recorded upstream commits
-  and verifies them; the recompiled game and the recompiler's inputs
+  `python tools/fetch_deps.py` checks out the vendored trees, git submodules
+  at recorded commits (RT64, the runtime, plume and N64Recomp on Snap64
+  Recomp's forks), and verifies them; the recompiled game and the recompiler's inputs
   (`RecompiledFuncs/`, `RecompiledPatches/`, the ROM) are generated under WSL
   from your own cartridge dump. A second checkout built this way, on this
   machine, on 2026-09-02 (`BUILDING.md`, "What a clean checkout is missing").
