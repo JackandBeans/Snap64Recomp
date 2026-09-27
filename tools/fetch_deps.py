@@ -16,6 +16,11 @@ Microsoft's v1.7.2308 `dxil.dll` in place of the one dxc-bin carries
     python tools/fetch_deps.py --list     # print every submodule's commit and exit
     python tools/fetch_deps.py --full     # whole histories instead of one commit each
 
+Afterwards each submodule is detached at its recorded commit, and each one
+on a fork of the project's also has the fork's `snap64` branch ref, so
+`git switch snap64` in it works (VENDORING.md, "Changing RT64 or the
+runtime").
+
 Needs Python 3 (standard library only), git on PATH and network access to
 github.com. It is idempotent: a checkout already at its commit is left
 alone, and a second run does nothing. The submodules are fetched one commit
@@ -201,17 +206,21 @@ def allow_long_paths(rows):
             git(['config', 'core.longpaths', 'true'], where)
 
 
-def keep_line_endings(rows):
+def keep_line_endings(rows, fresh):
     """Every submodule keeps its files as its repository stores them (LF), on
     every machine, so a build reads the same bytes on Windows as on GitHub's
     Linux and Mac runners, and license texts ship as their authors wrote
     them. The setting is written into each submodule, so later checkouts in
-    it keep the rule; a checkout made before the rule (CRLF) is written again,
-    but only when it holds no change of its own."""
+    it keep the rule. A checkout this run made is already as stored (the
+    update above carried the setting); one made before the rule (CRLF) is
+    written again, but only when it holds no change of its own."""
     rewritten, skipped = [], []
     for state, sha, path, describe in rows:
         where = REPO / path
         if git(['config', '--local', '--get', 'core.autocrlf'], where, check=False).stdout.strip() == 'false':
+            continue
+        if path in fresh:
+            git(['config', 'core.autocrlf', 'false'], where)
             continue
         changes = [l for l in git(['status', '--porcelain', '--ignore-submodules=all'], where).stdout.splitlines()
                    if l.strip() and not l[3:].strip().endswith(DXIL_OVERLAY['dest'])]
@@ -226,6 +235,39 @@ def keep_line_endings(rows):
         print('   LF       %d checkouts written as their repositories store them' % len(rewritten))
     for s in skipped:
         print('   WARNING  %s: left as it is; commit or stash, then run this again' % s)
+
+
+FORK_BRANCH = 'snap64'
+
+
+def fetch_fork_branches(rows):
+    """A one-commit checkout of a fork has the commit and no branch name:
+    `git switch snap64` in it fails. Fetch the fork's branch ref for every
+    submodule on one of the project's forks (a github.com/JackandBeans URL),
+    so the branch can be switched to, and say when the recorded commit is not
+    that branch's head (a newer fork commit not yet recorded here, or the
+    reverse)."""
+    behind = []
+    for state, sha, path, describe in rows:
+        where = REPO / path
+        url = git(['config', '--local', '--get', 'remote.origin.url'], where, check=False).stdout.strip()
+        if '/JackandBeans/' not in url:
+            continue
+        # A one-commit clone's fetch refspec names only the default branch, and
+        # `git switch <name>` finds a remote branch through that refspec, so a
+        # fetched ref alone is not enough: the refspec covers every branch.
+        full = '+refs/heads/*:refs/remotes/origin/*'
+        if git(['config', '--local', '--get-all', 'remote.origin.fetch'], where, check=False).stdout.split() != [full]:
+            git(['config', 'remote.origin.fetch', full], where)
+        args = ['fetch', '-q', 'origin', '+refs/heads/%s:refs/remotes/origin/%s' % (FORK_BRANCH, FORK_BRANCH)]
+        if git(['rev-parse', '--is-shallow-repository'], where).stdout.strip() == 'true':
+            args.insert(2, '--depth=1')
+        git(args, where)
+        head = git(['rev-parse', 'refs/remotes/origin/' + FORK_BRANCH], where).stdout.strip()
+        if head != sha:
+            behind.append("%s: %s is recorded, the fork branch %s is at %s" % (path, sha[:7], FORK_BRANCH, head[:7]))
+    for b in behind:
+        print('   NOTE     ' + b)
 
 
 def ensure_dxil():
@@ -307,8 +349,10 @@ def main():
         print('repository: %s' % REPO)
         before = {path for state, sha, path, d in submodule_status() if state == ' '}
         seconds = update_submodules(args.full)
-        allow_long_paths(submodule_status())
-        keep_line_endings(submodule_status())
+        rows = submodule_status()
+        allow_long_paths(rows)
+        keep_line_endings(rows, {path for state, sha, path, d in rows if path not in before})
+        fetch_fork_branches(rows)
         rows = submodule_status()
         wrong = [(s, p) for s, sha, p, d in rows if s != ' ']
         if wrong:

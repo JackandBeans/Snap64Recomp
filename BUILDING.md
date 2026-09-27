@@ -544,8 +544,8 @@ files and `if (APPLE)` blocks of the same `CMakeLists.txt`:
 * The presented-frame capture and the Snap Station's sheet capture copy a
   texture into a buffer, which plume's Metal backend could not do (the copy
   fell through to the image-to-image path and dereferenced a null texture,
-  as its Vulkan backend once did); `plume_metal.cpp` is the port's fifth
-  force-tracked plume file (VENDORING.md).
+  as its Vulkan backend once did); the change is in `plume_metal.cpp` on
+  the plume fork (VENDORING.md).
 * The host threads that run game code get an 8 MB stack
   (`ultramodern::threads::make_game_host_thread` and
   `start_detached_game_host_thread`, in the runtime; VENDORING.md). Windows
@@ -687,6 +687,11 @@ and the `menu_text` badge beside the executable (step 12). The ROM is the one
 file still placed by hand.
 
 ### The clean-checkout build, as verified
+
+This record is of the layout before 2026-09-27, when RT64 and the runtime
+were tracked copies and the other trees were fetched at recorded pins; the
+submodule layout's proof is in VENDORING.md ("Submodules, on forks") and in
+the build workflow's runs, which start from a clean clone every time.
 
 On 2026-09-02, on the machine above, the list was tested end to end: a plain
 local `git clone` into a second directory, then in it

@@ -14,10 +14,10 @@ carries nothing of the port's.
 
 | Path | Repository, branch | Commit | What it is |
 | --- | --- | --- | --- |
-| `lib/rt64` | <https://github.com/JackandBeans/rt64>, `snap64` | `9cb7f28` | rt64/rt64 `4337374` plus two commits: the port's changes (74 files, and `.gitmodules` pointing plume at the fork), and dxc allowed to differ from its commit (below, "dxc") |
+| `lib/rt64` | <https://github.com/JackandBeans/rt64>, `snap64` | `9cb7f28` | rt64/rt64 `4337374` plus two commits: the port's changes (74 files, with `.gitmodules` and the plume gitlink pointing at the plume fork), and dxc allowed to differ from its commit (below, "dxc") |
 | `lib/rt64/src/contrib/plume` | <https://github.com/JackandBeans/plume>, `snap64` | `da8649e` | plume `d890ac8`, the commit rt64 pins, plus one commit (five files) |
 | `lib/rt64/src/contrib/*`, the rest | rt64's own submodules | rt64's pins | the table below |
-| `lib/N64ModernRuntime` | <https://github.com/JackandBeans/N64ModernRuntime>, `snap64` | `7ab8900` | N64ModernRuntime `cdf5abb` plus one commit (eighteen files, and `.gitmodules` pointing N64Recomp at the fork) |
+| `lib/N64ModernRuntime` | <https://github.com/JackandBeans/N64ModernRuntime>, `snap64` | `7ab8900` | N64ModernRuntime `cdf5abb` plus one commit (eighteen files, with `.gitmodules` and the N64Recomp gitlink pointing at the N64Recomp fork) |
 | `lib/N64ModernRuntime/N64Recomp` | <https://github.com/JackandBeans/N64Recomp>, `snap64` | `a726e15` | N64Recomp `81213c1`, the commit the runtime pins, plus one commit (`include/recomp.h`) |
 | `lib/N64ModernRuntime/thirdparty/*` | the runtime's own submodules (miniz, o1heap, xxHash) | the runtime's pins | upstream, unchanged |
 | `lib/SDL` | <https://github.com/libsdl-org/SDL>, upstream | `fa24d86` | `release-2.30.11`, unchanged |
@@ -280,8 +280,8 @@ there itself; and `recomp::GameEntry` requires a display name, which
 ### RT64
 
 The fork's `snap64` is rt64/rt64 `4337374` (2026-09-02) with the port's
-changes in one commit (74 files outside `src/contrib`, and `.gitmodules`
-pointing plume at its fork) and a second that lets dxc's checkout differ from
+changes in one commit (74 files outside `src/contrib`, with `.gitmodules`
+and the plume gitlink pointing at the plume fork) and a second that lets dxc's checkout differ from
 its commit (the `dxil.dll` below). The 2026-09-16 rebase
 from `a012a23` (eleven upstream commits: the RDNA4 Vulkan workaround, VIs
 with inverted regions, the viewport clip rect in draw-area detection, tile
@@ -413,11 +413,14 @@ upstream's, and stays fixed only in the fork.
 ## Changing RT64 or the runtime
 
 `tools/fetch_deps.py` leaves each submodule detached at its recorded commit,
-one commit deep. To change one of the forked trees:
+one commit deep, with the fork's `snap64` branch ref fetched beside it (a
+one-commit fetch brings the commit and no branch name; the script fetches
+the name, and says so if the recorded commit is not that branch's head). To
+change one of the forked trees:
 
 1. In it (`lib/rt64`, `lib/N64ModernRuntime`, or a fork nested in them,
    `lib/rt64/src/contrib/plume` or `lib/N64ModernRuntime/N64Recomp`):
-   `git fetch --unshallow` if the history is wanted, then `git switch snap64`.
+   `git switch snap64`, and `git fetch --unshallow` if the history is wanted.
 2. Change, build, and commit there, by this repository's commit rules.
 3. `git push origin snap64`. Only that branch is ever pushed to a fork.
 4. Record the new commit in the parent: `git add lib/rt64` here (for a
