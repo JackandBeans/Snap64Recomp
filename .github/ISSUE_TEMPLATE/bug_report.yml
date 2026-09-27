@@ -7,7 +7,8 @@ body:
       value: |
         Thanks. The files asked for below are what make a report answerable;
         `snap64.log` is written next to the executable on every run (on Linux, in the
-        data directory the log's first line names).
+        data directory the log's first line names; on a Mac, in
+        `~/Library/Application Support/Snap64 Recomp/`).
   - type: textarea
     id: what
     attributes:
@@ -27,7 +28,7 @@ body:
     attributes:
       label: Port version
       description: From the window title, or Properties > Details on Snap64Recomp.exe.
-      placeholder: 1.0.8
+      placeholder: 1.1.0
     validations:
       required: true
   - type: dropdown
@@ -41,6 +42,8 @@ body:
         - Steam Deck, the Windows build through Proton
         - Linux desktop, the native build
         - Linux desktop, the Windows build through Wine or Proton
+        - Mac, Apple Silicon
+        - Mac, Intel
         - Something else (say what below)
     validations:
       required: true
@@ -57,7 +60,7 @@ body:
     attributes:
       label: Files
       description: |
-        Attach `snap64.log` and `snapsettings.json` from the executable's folder (drag them here).
+        Attach `snap64.log` and `snapsettings.json` from the executable's folder (on a Mac, from `~/Library/Application Support/Snap64 Recomp/`; drag them here).
         If the log has `[SNAP-AV]` lines, attach `Snap64Recomp.map` too. Never attach your ROM.
   - type: checkboxes
     id: rom
