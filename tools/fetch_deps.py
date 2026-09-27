@@ -188,6 +188,19 @@ def update_submodules(full):
     return time.time() - t0
 
 
+def allow_long_paths(rows):
+    """On Windows, core.longpaths in the checkout and every submodule. The
+    nested repositories' object stores and RT64's deepest test files pass 260
+    characters from a deep enough folder; this script's own git calls carry the
+    setting, and writing it into each repository lets every later git command
+    (a plain `git status` in the checkout) open them too."""
+    if sys.platform != 'win32':
+        return
+    for where in [REPO] + [REPO / path for state, sha, path, describe in rows]:
+        if git(['config', '--local', '--get', 'core.longpaths'], where, check=False).stdout.strip() != 'true':
+            git(['config', 'core.longpaths', 'true'], where)
+
+
 def keep_line_endings(rows):
     """Every submodule keeps its files as its repository stores them (LF), on
     every machine, so a build reads the same bytes on Windows as on GitHub's
@@ -198,7 +211,7 @@ def keep_line_endings(rows):
     rewritten, skipped = [], []
     for state, sha, path, describe in rows:
         where = REPO / path
-        if git(['config', '--get', 'core.autocrlf'], where, check=False).stdout.strip() == 'false':
+        if git(['config', '--local', '--get', 'core.autocrlf'], where, check=False).stdout.strip() == 'false':
             continue
         changes = [l for l in git(['status', '--porcelain', '--ignore-submodules=all'], where).stdout.splitlines()
                    if l.strip() and not l[3:].strip().endswith(DXIL_OVERLAY['dest'])]
@@ -294,6 +307,7 @@ def main():
         print('repository: %s' % REPO)
         before = {path for state, sha, path, d in submodule_status() if state == ' '}
         seconds = update_submodules(args.full)
+        allow_long_paths(submodule_status())
         keep_line_endings(submodule_status())
         rows = submodule_status()
         wrong = [(s, p) for s, sha, p, d in rows if s != ' ']

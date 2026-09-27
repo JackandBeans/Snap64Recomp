@@ -37,12 +37,14 @@ yet.
   (`tools/README.md`).
 * Git for Windows on `PATH`, and access to github.com for
   `tools/fetch_deps.py` (step 10).
-* A short path for the checkout, such as `C:\src\Snap64Recomp`. The tree's
-  longest tracked path is 140 characters (under the vendored rabbitizer),
-  the build directory adds more, and Windows refuses paths past 260 unless
-  long paths are enabled: a clone into a deep folder fails with "Filename
-  too long" before anything is built. `git config --global core.longpaths
-  true` together with Windows' long-path setting is the other way round it.
+* A short path for the checkout, such as `C:\src\Snap64Recomp`. The longest
+  path in a checkout is 184 characters (a SPIR-V Cross test file inside
+  RT64's trees), the build directory adds more, and Windows refuses paths
+  past 260 unless long paths are enabled. `tools/fetch_deps.py` turns git's
+  `core.longpaths` on in the checkout and in every submodule, so git copes
+  with a deeper folder; the compiler and the build do not, so a short path
+  is still the way. `git config --global core.longpaths true` together with
+  Windows' long-path setting is the other way round it.
 
 ### WSL
 
