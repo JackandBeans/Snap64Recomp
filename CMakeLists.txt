@@ -27,6 +27,14 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # for the release itself.
 set(SNAP_PRODUCT_NAME "Snap64 Recomp")
 set(SNAP_VERSION_PRERELEASE "" CACHE STRING "Prerelease label (rc1, ...); empty for a release")
+# The label is drawn on the title screen in the credits face, which has every
+# digit but, of the lower-case letters, only these (src/version.h.in); a label
+# with any other character would make the port withhold its whole title dress.
+if (SNAP_VERSION_PRERELEASE AND NOT SNAP_VERSION_PRERELEASE MATCHES "^[acdeikmnoprstuv0-9.]+$")
+    message(FATAL_ERROR "SNAP_VERSION_PRERELEASE '${SNAP_VERSION_PRERELEASE}': a prerelease label uses only "
+                        "the letters a c d e i k m n o p r s t u v, digits and dots (rc1, pre2), the characters "
+                        "the title screen's credits face can draw.")
+endif()
 if (SNAP_VERSION_PRERELEASE)
     set(SNAP_VERSION_SUFFIX "-${SNAP_VERSION_PRERELEASE}")
     set(SNAP_RC_FILEFLAGS "VS_FF_PRERELEASE")

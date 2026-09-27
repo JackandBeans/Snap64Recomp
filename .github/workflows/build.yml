@@ -98,7 +98,7 @@ jobs:
         env:
           PRERELEASE: ${{ inputs.prerelease }}
         run: |
-          case "$PRERELEASE" in *[!a-z0-9.]*) echo "::error::a prerelease label is lower-case letters, digits and dots"; exit 1;; esac
+          case "$PRERELEASE" in *[!acdeikmnoprstuv0-9.]*) echo "::error::a prerelease label uses only the letters a c d e i k m n o p r s t u v, digits and dots (rc1, pre2): what the title screen's credits face can draw"; exit 1;; esac
           cmake -S . -B build-win -G "Visual Studio 17 2022" -A x64 "-DSNAP_VERSION_PRERELEASE=$PRERELEASE"
 
       - name: Build
@@ -191,7 +191,7 @@ jobs:
         env:
           PRERELEASE: ${{ inputs.prerelease }}
         run: |
-          case "$PRERELEASE" in *[!a-z0-9.]*) echo "::error::a prerelease label is lower-case letters, digits and dots"; exit 1;; esac
+          case "$PRERELEASE" in *[!acdeikmnoprstuv0-9.]*) echo "::error::a prerelease label uses only the letters a c d e i k m n o p r s t u v, digits and dots (rc1, pre2): what the title screen's credits face can draw"; exit 1;; esac
           cmake -S . -B build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release \
             -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
             -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \

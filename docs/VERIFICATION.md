@@ -97,15 +97,24 @@ here should be assumed untried.
   release's, and the Windows one passed the suite's package checks. The
   macOS workflow's, on GitHub's virtual Mac (step 15), passed 15 of 15
   checks natively and 10 of 10 through Rosetta 2 on the 1.1.0 candidate.
-  The release workflow's first run (run 36342595034, 2026-09-27, a test
-  build labelled `dryrun1`) made and signed all three archives in ten
-  minutes: Windows ten, Linux two, the Mac's build three and a half and its
-  checks five more. On its first attempt the Mac's mod check through
-  Rosetta 2 crashed (signal 11, just after the mod's first hook ran), where
-  it had passed on the 1.1.0 candidate; the re-run of that job passed, as
-  did every other check, and the cause is not known. The package checks
-  passed on all three archives and each signature verified, in the
-  workflow and again on this machine with `gh attestation verify`.
+  The release workflow's first runs (2026-09-27, on the 1.1.0 tree with
+  the workflow added): run 36342595034, labelled `dryrun1`, made and signed
+  all three archives in ten minutes (Windows ten, Linux two, the Mac's
+  build three and a half and its checks five more). On its first attempt
+  the Mac's mod check through Rosetta 2 crashed (signal 11, just after the
+  mod's first hook ran) where it had passed on the 1.1.0 candidate; the
+  re-run of that job passed, and the cause is not known. Run 36344484310,
+  labelled `rc1`, passed every job at the first attempt. In both, the
+  package checks passed on all three archives and each signature verified,
+  in the workflow and again on this machine with `gh attestation verify`.
+  The release suite then ran on the Windows executables GitHub built with
+  Visual Studio 2022, where every release so far was built here with 2019:
+  on the `dryrun1` one, 25 of 29 checks in 1151 seconds, with 45 photos
+  scored, the 3x run's 45 identical and slow motion at 1.98; the four that
+  failed were the Options page and the three page checks, withheld because
+  that label has a `y` the credits face cannot draw (a rule the build now
+  enforces). Those four passed on the `rc1` executable, 4 of 4 in 175
+  seconds, and the Snap Station check on it 5 of 5 in 488.
   No other machine's build or run is recorded in this repository. Anything
   not listed here should be assumed untried.
 * The photo export (P, the controller's Back button, `photos/`) is checked

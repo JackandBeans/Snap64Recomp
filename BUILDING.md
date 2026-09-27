@@ -381,16 +381,22 @@ Anyone can check a published file with `gh attestation verify <file> --repo
 JackandBeans/Snap64Recomp`: it names the commit and the workflow that made
 it. A build that must not pass for the release takes a prerelease label
 (`-f prerelease=rc1`), and every surface then says `<version>-rc1`. The
+label is drawn on the title screen in the credits face, so it uses only the
+characters that face has: every digit, dots, and of the lower-case letters
+`a c d e i k m n o p r s t u v` (`rc1`, `pre2`, `test3`; not `beta1` or
+`dryrun1`); CMake refuses any other, and a label that slipped through would
+make the port withhold its whole title dress, the "Recomp" badge and the
+credits line together, as `dryrun1` did on the workflow's first run. The
 Windows executable is built with `/d1trimfile`, the Linux and Mac ones with
 `-ffile-prefix-map` and the Mac's link with `-oso_prefix` (until 1.1.0 they
 were not, and carried the build machine's folders), and the shipped linker
 map is filtered, so no build path reaches an archive; the package check
 looks for one in all three.
 The credits face on the title screen is harvested from the copyright block
-and has no hyphen and no `2`, `3` or `7` (`src/version.h.in`); a version
-that needs one of those is reported at the first main-menu load
-(`[SNAP-MENU] no glyph ...`) and the port's menu strings are withheld until
-the string is changed.
+and the port draws the digits it lacks, so any version number renders; a
+hyphen or a letter outside the set above is reported at the first main-menu
+load (`[SNAP-MENU] no glyph ...`) and the port's menu strings are withheld
+until the string is changed (`src/version.h.in`).
 
 ### 14. Linux build (experimental)
 

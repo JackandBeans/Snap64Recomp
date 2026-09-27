@@ -21,7 +21,7 @@ on:
   workflow_dispatch:
     inputs:
       prerelease:
-        description: "Empty for the release itself; a label (rc1, dryrun1) for a build that must not pass for it"
+        description: "Empty for the release itself; a label (rc1, pre2: letters a c d e i k m n o p r s t u v, digits, dots) for a build that must not pass for it"
         required: false
         default: ''
 

@@ -23,7 +23,9 @@
   JackandBeans/Snap64Recomp` shows which commit and workflow made a
   download; until now every archive was built on the one machine that cut
   the release. The release suite runs on those files before they are
-  published.
+  published; its first run on a GitHub-built Windows executable (Visual
+  Studio 2022, where the releases so far were built with 2019) passed every
+  check (`docs/VERIFICATION.md`).
 * The Linux and Mac executables no longer carry the build machine's
   folders. The Linux one named its source files by their full paths on the
   machine that built it, a home folder under WSL (`/home/<user>/...`; seen

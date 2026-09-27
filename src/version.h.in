@@ -37,9 +37,10 @@
 // The title-screen credits line; \x01 is the credits face's middle dot.
 // That face is harvested from the copyright block's first line
 // ("@1995 1996 1998 Nintendo/Creatures/GAMEFREAK", menu_harvest.cpp) plus
-// the port's own drawings there, so it has no '-' and no '2', '3' or '7':
-// the prerelease tag is set off with a space (SNAP_VERSION_CREDITS in
-// CMakeLists.txt), and a character the face lacks is reported by
+// the port's own drawings there (every digit, but of the lower-case letters
+// only a c d e i k m n o p r s t u v, and no '-'): the prerelease tag is set
+// off with a space (SNAP_VERSION_CREDITS in CMakeLists.txt, which refuses a
+// tag with any other character), and a character the face lacks is reported by
 // compose_credits() through note_missing(), which withholds the port's
 // menu strings rather than draw a line with a hole in it.
 #define SNAP_PORT_CREDITS SNAP_PORT_CODENAME " (" SNAP_PORT_NAME ") \x01 v" "@SNAP_VERSION_CREDITS@"
