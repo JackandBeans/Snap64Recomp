@@ -472,6 +472,17 @@ and never plays them; the port drops the queue and says so
 covers a Deck's sleep or a Bluetooth switch. Running the game on a Linux
 desktop or a Steam Deck is [unverified](docs/STEAM-DECK.md).
 
+GitHub's machines make both archives too. `.github/workflows/build.yml`
+runs on every push to `main` and on every pull request from a branch of
+this repository: Windows with Visual Studio 2022 on a `windows-2022`
+runner, Linux with Clang on `ubuntu-24.04`, each from a clean checkout
+plus `tools/fetch_deps.py` and the private inputs of step 15, ending in
+cpack's archive as an artifact, with the suite's package checks run on the
+Windows one. It runs no game. Its first run, on the 1.1.0 tree
+(2026-09-27), took ten minutes for Windows and six for Linux and made
+archives with the release's file lists. A pull request from a fork builds
+nothing there: the inputs are private, so its jobs are skipped.
+
 ### 15. macOS build (GitHub's Mac)
 
 I have no Mac, so this section is different in kind from the two above: it

@@ -35,5 +35,8 @@ Build instructions are in `BUILDING.md`. Build with your change, run the
 automated suite, `tools/release_check.py`, and say in the pull request what
 it reported. The suite needs a full build, your own ROM and about twenty
 minutes; if you cannot run it, say so in the pull request, and I will run it
-before merging.
+before merging. A pull request from a branch of this repository gets
+Windows and Linux builds made by the build workflow, linked from a comment
+on the pull request; one from a fork does not, because the inputs the build
+needs are private, so say what you built with.
 Everything is GPLv3, and a contribution is offered under the same terms.

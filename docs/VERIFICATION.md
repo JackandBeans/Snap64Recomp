@@ -30,9 +30,10 @@ here should be assumed untried.
 * No installer. The Windows and Linux archives are the ZIP and tarball that
   `cpack` writes here (`BUILDING.md`, steps 13 and 14), after the headless
   suite in `tools/release_check.py` has passed on them ("What has been
-  verified"); the macOS bundle is built and checked by the one workflow
-  that runs on GitHub's machines, on request (`.github/workflows/macos.yml`),
-  beside a check of the documentation's links on every push.
+  verified"). GitHub's machines build too: the Windows and Linux archives on
+  every push and pull request (`.github/workflows/build.yml`, kept as
+  artifacts, never released from there), the macOS bundle on request
+  (`macos.yml`), and the documentation's links are checked on every push.
 * Version `1.1.0`, typed once in `CMakeLists.txt` and shown in the title
   bar, the log banner, the credits line, the executable's file properties and
   the ZIP's name. `CHANGELOG.md` says what each release changed.
@@ -84,11 +85,17 @@ here should be assumed untried.
   and 487, 1.0.6 the 22 of 22 before that in 781 and 487, 1.0.5 the same in 781 and 489, 1.0.4
   in 781 and 487, 1.0.3, 1.0.2 and 1.0.1 in 781 and 491 each, and 1.0.0 in
   781 and 489 on a cold shader cache. The suite opens the game window for
-  each run and takes about nineteen minutes, plus eight for the station. The
-  one CI run is the macOS workflow's, on GitHub's virtual Mac (BUILDING.md,
-  step 15): on the 1.1.0 candidate its checks passed 15 of 15 natively and 10 of 10
-  through Rosetta 2. No build on any other machine is recorded in this
-  repository. Anything not listed here should be assumed untried.
+  each run and takes about nineteen minutes, plus eight for the station.
+  GitHub's machines record two kinds of run. The build workflow's
+  (BUILDING.md, step 14) configures, compiles and packages the tree and runs
+  no game: on the 1.1.0 tree (run 36301759264, 2026-09-27) it made the
+  Windows archive with Visual Studio 2022 in ten minutes and the Linux one
+  with Clang on Ubuntu 24.04 in six, each with the same file list as the
+  release's, and the Windows one passed the suite's package checks. The
+  macOS workflow's, on GitHub's virtual Mac (step 15), passed 15 of 15
+  checks natively and 10 of 10 through Rosetta 2 on the 1.1.0 candidate.
+  No other machine's build or run is recorded in this repository. Anything
+  not listed here should be assumed untried.
 * The photo export (P, the controller's Back button, `photos/`) is checked
   by `SNAP_PHOTO_AUTOEXPORT` on an input replay that reaches Oak's check,
   not by hand: saving from the keyboard and from the controller has not been

@@ -4,6 +4,7 @@
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License: GPLv3"></a>
 <a href="https://github.com/JackandBeans/Snap64Recomp/releases/latest"><img src="https://img.shields.io/github/v/release/JackandBeans/Snap64Recomp?label=release" alt="Latest release"></a>
 <a href="https://github.com/JackandBeans/Snap64Recomp/releases"><img src="https://img.shields.io/github/downloads/JackandBeans/Snap64Recomp/total?label=downloads" alt="Downloads"></a>
+<a href="https://github.com/JackandBeans/Snap64Recomp/actions/workflows/build.yml"><img src="https://github.com/JackandBeans/Snap64Recomp/actions/workflows/build.yml/badge.svg?branch=main" alt="Build"></a>
 <img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64%20%7C%20Linux%20x86__64%20%7C%20Steam%20Deck%20%7C%20macOS%2014%2B-lightgrey" alt="Platform: Windows 10 or 11 x64, Linux x86_64, Steam Deck, macOS 14 or newer">
 </p>
 
