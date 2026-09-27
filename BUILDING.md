@@ -355,15 +355,37 @@ are the other two; `NOTICE.md` describes both):
   the file is ever removed, configure warns and `cpack` stops on it: a package
   without the DXC licence is not meant to be produced.
 
-To cut a release: change `project(Snap64Recomp VERSION ...)` and
-`SNAP_VERSION_PRERELEASE` in `CMakeLists.txt`, grep `README.md` and
-`BUILDING.md` for the old version string, reconfigure, rebuild, run
-`python tools/release_check.py build-win/Release --zip <the zip>` and
-`--only station`, `cpack`, then `git tag -a v<version> -m "..."` on the
-commit the archive was built from and fast-forward `main` to it (the
-code lives on `snap-port`; `main` must show it). The executable is built
-with `/d1trimfile` and the shipped linker map is filtered, so no build
-path from the machine that made the release reaches the archive.
+To cut a release (from the release after 1.1.0 on, the archives are
+GitHub's, not this machine's):
+
+1. Change `project(Snap64Recomp VERSION ...)` in `CMakeLists.txt`, grep
+   `README.md` and `BUILDING.md` for the old version string, and commit.
+2. Rebuild the patches on the release tree (step 8), lay the private
+   inputs out with `python tools/ci_inputs.py <the inputs repository's
+   working copy>`, and push that repository (step 15).
+3. Put the release tree on `macos-build` as one commit on top of `main`
+   (`git commit-tree <tree> -p origin/main`, then push it there), and run
+   `gh workflow run release.yml --ref macos-build`. GitHub builds the three
+   archives, signs each with its build provenance, runs the Mac's checks
+   and the package checks over all three, verifies each signature, and
+   keeps them as the run's artifact `release-archives`, their checksums in
+   the run's summary.
+4. `gh run download <run> -n release-archives`, unpack the Windows zip, put
+   the ROM and `build-win/Release/saves` beside the executable, and run
+   `python tools/release_check.py <that folder>` and `--only station` on it.
+5. Fast-forward `main` to the candidate commit, `git tag -a v<version>` on
+   it, push both, and publish those same files with their `.sha256`
+   sidecars.
+
+Anyone can check a published file with `gh attestation verify <file> --repo
+JackandBeans/Snap64Recomp`: it names the commit and the workflow that made
+it. A build that must not pass for the release takes a prerelease label
+(`-f prerelease=rc1`), and every surface then says `<version>-rc1`. The
+Windows executable is built with `/d1trimfile`, the Linux and Mac ones with
+`-ffile-prefix-map` and the Mac's link with `-oso_prefix` (until 1.1.0 they
+were not, and carried the build machine's folders), and the shipped linker
+map is filtered, so no build path reaches an archive; the package check
+looks for one in all three.
 The credits face on the title screen is harvested from the copyright block
 and has no hyphen and no `2`, `3` or `7` (`src/version.h.in`); a version
 that needs one of those is reported at the first main-menu load
@@ -477,8 +499,8 @@ runs on every push to `main` and on every pull request from a branch of
 this repository: Windows with Visual Studio 2022 on a `windows-2022`
 runner, Linux with Clang on `ubuntu-24.04`, each from a clean checkout
 plus `tools/fetch_deps.py` and the private inputs of step 15, ending in
-cpack's archive as an artifact, with the suite's package checks run on the
-Windows one. It runs no game. Its first run, on the 1.1.0 tree
+cpack's archive as an artifact, with the suite's package checks run on both
+archives. It runs no game. Its first run, on the 1.1.0 tree
 (2026-09-27), took ten minutes for Windows and six for Linux and made
 archives with the release's file lists. A pull request from a fork builds
 nothing there: the inputs are private, so its jobs are skipped.
@@ -619,11 +641,15 @@ runs first and says how precisely the machine can wait one retrace.
 The inputs the ROM produces come from a private repository,
 `JackandBeans/Snap64RecompInputs` (`RecompiledFuncs/`, `RecompiledPatches/`,
 `patches/build/patches.bin`, `pokemonsnap.z64`, the replay's save and the
-test mod, laid out by `tools/macos_inputs.py` from the tree the workflow
+test mod, laid out by `tools/ci_inputs.py` from the tree the workflow
 builds), cloned with a fine-grained token limited to that repository's
 contents and kept as this repository's `SNAP64_INPUTS_TOKEN` secret; that is
 what the other recompilations' workflows do with their own private
-repositories. The job never runs for a pull request, so it never needs a
+repositories. `tools/ci_inputs.py` also writes `inputs.json`, a fingerprint
+of the tracked files the recompiled code is made from (`pokemonsnap.us.toml`,
+`patches.toml`, `patches/`); every workflow checks it against its own tree
+before building and stops when the inputs were made from another, which
+would have built that tree's patches. The job never runs for a pull request, so it never needs a
 fork's secrets, and without the secret it stops at that step. It uploads the
 zip with its checksum, and every check's log, frames and any crash report
 macOS wrote, whether the checks passed or not.
@@ -671,10 +697,12 @@ contain:
 Until 2026-09-27 RT64 and the runtime were tracked copies and the rest were
 ignored directories fetched at recorded pins; VENDORING.md has that history.
 
-Three workflows run on GitHub. `.github/workflows/docs.yml` runs
+Four workflows run on GitHub. `.github/workflows/docs.yml` runs
 `tools/check_docs.py`, which follows every relative link and anchor in the
 Markdown files, and compiles the Python tools, on every push.
 `.github/workflows/build.yml` builds the Windows and Linux archives (step 14).
+`.github/workflows/release.yml` makes a release's three archives through the
+other two and signs them (step 13, "To cut a release").
 `.github/workflows/macos.yml` builds the macOS bundle (step 15): the ROM and
 what is made from it are build inputs no public workflow may hold, so it
 takes them from a private repository through a secret, as the other

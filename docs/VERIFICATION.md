@@ -32,8 +32,11 @@ here should be assumed untried.
   suite in `tools/release_check.py` has passed on them ("What has been
   verified"). GitHub's machines build too: the Windows and Linux archives on
   every push and pull request (`.github/workflows/build.yml`, kept as
-  artifacts, never released from there), the macOS bundle on request
-  (`macos.yml`), and the documentation's links are checked on every push.
+  artifacts), the macOS bundle on request (`macos.yml`), and the
+  documentation's links on every push. From the release after 1.1.0 the
+  published archives are GitHub's: `release.yml` builds all three and signs
+  each with GitHub's build provenance, and the suite runs on those files
+  here before they are published (`BUILDING.md`, "To cut a release").
 * Version `1.1.0`, typed once in `CMakeLists.txt` and shown in the title
   bar, the log banner, the credits line, the executable's file properties and
   the ZIP's name. `CHANGELOG.md` says what each release changed.
@@ -94,6 +97,15 @@ here should be assumed untried.
   release's, and the Windows one passed the suite's package checks. The
   macOS workflow's, on GitHub's virtual Mac (step 15), passed 15 of 15
   checks natively and 10 of 10 through Rosetta 2 on the 1.1.0 candidate.
+  The release workflow's first run (run 36342595034, 2026-09-27, a test
+  build labelled `dryrun1`) made and signed all three archives in ten
+  minutes: Windows ten, Linux two, the Mac's build three and a half and its
+  checks five more. On its first attempt the Mac's mod check through
+  Rosetta 2 crashed (signal 11, just after the mod's first hook ran), where
+  it had passed on the 1.1.0 candidate; the re-run of that job passed, as
+  did every other check, and the cause is not known. The package checks
+  passed on all three archives and each signature verified, in the
+  workflow and again on this machine with `gh attestation verify`.
   No other machine's build or run is recorded in this repository. Anything
   not listed here should be assumed untried.
 * The photo export (P, the controller's Back button, `photos/`) is checked

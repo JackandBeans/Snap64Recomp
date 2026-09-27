@@ -28,7 +28,8 @@ belongs. Python 3.11 with Pillow, NumPy and SciPy covers all of them.
 
 | Script | What it does |
 | --- | --- |
-| `release_check.py` | The headless verification suite a release build goes through: windowed subsystem and icon, logging, the attract replay, pacing statistics, Oak's evaluation, the Options page, the settings file, the package, and the Snap Station print. |
+| `release_check.py` | The headless verification suite a release build goes through: windowed subsystem and icon, logging, the attract replay, pacing statistics, Oak's evaluation, the Options page, the settings file, the package, and the Snap Station print. `--only package --zip <archive>` checks any of the three archives (Windows zip, Linux tarball, Mac zip) without an executable, as the workflows do. |
+| `ci_inputs.py` | Lays out the private inputs the build workflows clone (the recompiled game and patches, the ROM, the replay's save, a test mod) with `inputs.json`, the fingerprint of the tree they were made from; `--check <folder>` is what each workflow runs before building (BUILDING.md, step 15). |
 | `dump_threads.py` | From a minidump: every thread's instruction pointer and stack return addresses, resolved through the linker map. |
 | `unlock_save.py` | Writes an "everything unlocked" copy of a save file (all courses and items), for testing. |
 

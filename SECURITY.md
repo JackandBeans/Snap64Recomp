@@ -10,7 +10,11 @@ in a download.
 **Verify what you download.** Every release ships a `.sha256` file beside
 the archive; `certutil -hashfile Snap64Recomp-<version>-win64.zip SHA256`
 prints yours to compare. Only archives on this repository's Releases page
-are the project's.
+are the project's. From the release after 1.1.0, each archive is also built
+on GitHub's machines and signed with GitHub's build provenance: with the
+GitHub CLI, `gh attestation verify Snap64Recomp-<version>-win64.zip --repo
+JackandBeans/Snap64Recomp` says which commit and workflow made it, and fails
+for any file this repository did not build.
 
 **Reporting.** If you find something you believe is a security problem
 (memory corruption reachable from a save file, a texture pack or a mod, for

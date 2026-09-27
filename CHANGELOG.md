@@ -17,6 +17,29 @@
 * GitHub's machines build the Windows and Linux archives on every push and
   pull request (`.github/workflows/build.yml`), and a pull request from a
   branch of this repository gets them linked in a comment.
+* A release's archives are made on GitHub's machines by
+  `.github/workflows/release.yml` and signed with GitHub's build
+  provenance, so `gh attestation verify <file> --repo
+  JackandBeans/Snap64Recomp` shows which commit and workflow made a
+  download; until now every archive was built on the one machine that cut
+  the release. The release suite runs on those files before they are
+  published.
+* The Linux and Mac executables no longer carry the build machine's
+  folders. The Linux one named its source files by their full paths on the
+  machine that built it, a home folder under WSL (`/home/<user>/...`; seen
+  in 1.0.9 and 1.1.0, and nothing in the build ever trimmed them), because
+  only the Windows build did (`/d1trimfile`). The 1.1.0 Mac one carried
+  GitHub's runner folder, in its source names and in the linker's debug
+  map, which named every object file it linked. Clang and GCC now map the
+  source and build folders away (`-ffile-prefix-map`), Apple's linker takes
+  the build folder off the object names (`-oso_prefix`), and the package
+  check, which looked only at the Windows zip and only for `C:\Users\`,
+  now searches all three archives for any build machine's folders.
+* The build workflows' private inputs name the tree they were made from
+  (`inputs.json`, written by `tools/ci_inputs.py`, which was
+  `tools/macos_inputs.py`), and every build stops when they belong to
+  another tree; before, a build could have carried a different tree's
+  patches without a word.
 
 ## 1.1.0 -- 2026-09-27
 
