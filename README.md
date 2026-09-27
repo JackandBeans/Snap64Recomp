@@ -4,13 +4,13 @@
 <a href="LICENSE"><img src="https://img.shields.io/badge/license-GPLv3-blue" alt="License: GPLv3"></a>
 <a href="https://github.com/JackandBeans/Snap64Recomp/releases/latest"><img src="https://img.shields.io/github/v/release/JackandBeans/Snap64Recomp?label=release" alt="Latest release"></a>
 <a href="https://github.com/JackandBeans/Snap64Recomp/releases"><img src="https://img.shields.io/github/downloads/JackandBeans/Snap64Recomp/total?label=downloads" alt="Downloads"></a>
-<img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64%20%7C%20Linux%20x86__64%20%7C%20Steam%20Deck-lightgrey" alt="Platform: Windows 10 or 11 x64, Linux x86_64, Steam Deck">
+<img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64%20%7C%20Linux%20x86__64%20%7C%20Steam%20Deck%20%7C%20macOS%2014%2B-lightgrey" alt="Platform: Windows 10 or 11 x64, Linux x86_64, Steam Deck, macOS 14 or newer">
 </p>
 
 # Snap64 Recomp
 
 Snap64 Recomp is a native PC port of Pokémon Snap (Nintendo 64, US release)
-for Windows, Linux and the Steam Deck. It is made with
+for Windows, Linux, the Steam Deck and macOS. It is made with
 [N64: Recompiled](https://github.com/N64Recomp/N64Recomp), which translates
 the game's own code so that it runs directly on a PC. The method is called
 static recompilation. [RT64](https://github.com/rt64/rt64) draws the picture.
