@@ -470,6 +470,11 @@ None of this would exist without:
   project whose structure it follows.
 * [RT64](https://github.com/rt64/rt64) by Dario and contributors, the
   renderer, whose frame interpolation this port extends.
+* appleforever11, whose [pull request
+  #2](https://github.com/JackandBeans/Snap64Recomp/pull/2) was the first
+  Apple Silicon build of the port: it started, drew with Metal and reached
+  a course on an M3 Pro. The Mac build grew from it, and its guard against
+  a null video mode has been in the port since 1.0.5.
 * James Chambers (jamchamb), whose [2021
   write-up](https://jamchamb.net/2021/08/17/snap-station.html) recovered the
   Snap Station protocol from the cartridge, without a station to test
