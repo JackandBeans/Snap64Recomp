@@ -29,9 +29,6 @@ void audio_queue_samples(int16_t* samples, size_t count);
  */
 size_t audio_get_frames_remaining();
 
-// Live queue depth in bytes, published to RDRAM as the game's AI_LEN value.
-size_t audio_queued_bytes();
-
 // The SOUND page's host-side controls: master volume (0..100), the window
 // focus state fed by the SDL event pump, and whether losing focus mutes.
 void set_master_volume(int percent);

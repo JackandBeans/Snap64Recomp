@@ -37,11 +37,14 @@
 #include <cstring>
 #include <filesystem>
 #include <functional>
+#include <map>
 #include <mutex>
+#include <set>
 #include <string>
 #include <vector>
 
 #include "audio.h"
+#include "dds_image.h"
 #include "hle/rt64_snap_diag.h"
 #include "input.h"
 #include "librecomp/game.hpp"
@@ -188,10 +191,15 @@ constexpr int StripHeight = kMenuFontCellH;
 
 // The BUTTON SETUP page's row values (ids kBindDynBase on, two banks of
 // eighteen) are composed while the page is open, for the device it shows,
-// so their pixels have a fixed home of their own: well past the staged
-// strings, which end near 0x80CA0000, and below librecomp's mod space at
-// 0x81000000. Three chunks a strip, 192 pixels, the widest a value gets.
-constexpr uint32_t DynPixelsAddr = 0x80D00000u;
+// so their pixels have a fixed home of their own: past the staged strings
+// and below the pages' arena at 0x80E00000 (the static_assert at
+// DetStValueAddr). Three chunks a strip, 192 pixels, the widest a value
+// gets. The staged strings reached 0x80D00A80 in 1.1.0's development, past
+// the 0x80D00000 this had been, into the first row value's pixels; they
+// end near 0x80D00000 now, and stage_menu_strings refuses to publish any
+// that would pass this (a guard, since the pool is not measured anywhere
+// else).
+constexpr uint32_t DynPixelsAddr = 0x80D40000u;
 constexpr int DynChunks = 3;
 constexpr uint32_t DynStripBytes = uint32_t(DynChunks * 64 * StripHeight * 2);
 constexpr uint32_t kStringBaseCount = 30;   // the strings[] table below, asserted there
@@ -211,8 +219,16 @@ constexpr int ModsHelpHeight = 12 + kMenuHlpCellH;          // compose_lines' he
 constexpr uint32_t ModsHelpBytes = uint32_t(ModsHelpChunks * 64 * ModsHelpHeight * 2);
 constexpr uint32_t ModsNamesAddr = DynPixelsAddr + uint32_t(2 * BindInputCount) * DynStripBytes;
 constexpr uint32_t ModsHelpsAddr = ModsNamesAddr + uint32_t(2 * ModsVisible) * DynStripBytes;
-constexpr int ModsNameInkWidth = 156;                       // the label column, before the page's values at x=212
-constexpr int ModsHelpInkWidth = 236;                       // the help box's text width (the stock sentences reach 238)
+constexpr int ModsNameInkWidth = 105;                       // the label column, before the values at x=163 (as on Graphics)
+// The help box's text width: its lines start their ink at x 50 and the box's
+// right side stands at x 279 (both measured on a capture), so 226 ends a line
+// two pixels short of it. 236 let a 234-pixel line run its last letters over
+// the side.
+constexpr int ModsHelpInkWidth = 226;
+// The details page's text and title line: from x 50 to 270, clear of the
+// scroll bar at 275 and as far in from the panel's right edge as the text
+// starts from its left.
+constexpr int DetTextInkWidth = 220;
 // Where a Mods page id's pixels live: names in one run of slots, help lines
 // in another, both banks side by side.
 static uint32_t mods_dyn_addr(uint32_t id) {
@@ -684,6 +700,165 @@ Strip compose_scroll_arrow(bool up) {
 
 // Two help-face lines stacked at the stock help sprites' own line pitch of
 // twelve rows -- the settings descriptions in the help box.
+// The header's legend in other words, for the pages whose A and B do other
+// things than OK and Cancel (the Mods page and a mod's details): the game's
+// own A and B icons, cut out of its "A OK  B Cancel" where the blue and the
+// green are (with the outline round each), each beside a word in the help
+// box's face, white as the legend's words and lined up with them, and the
+// whole ended where the stock legend ends, so the header does not move.
+// The strip is 128 texels wide and is drawn at x 150, the stock one's 161
+// less the width it does not use.
+MenuArt compose_legend(const char* aWord, const char* bWord) {
+    const MenuArt& art = g_font.legend;
+    MenuArt out;
+    out.w = 128;
+    out.h = art.h;
+    out.rgba.assign(size_t(out.w) * size_t(std::max(out.h, 0)), 0u);
+    if ((art.w <= 0) || (art.h <= 0)) {
+        return out;
+    }
+    auto px = [&](int x, int y) { return art.rgba[size_t(y) * size_t(art.w) + size_t(x)]; };
+    auto colour = [&](int x, bool blue) {
+        for (int y = 0; y < art.h; y++) {
+            const uint32_t v = px(x, y);
+            const int r = int(v >> 24), g = int((v >> 16) & 0xFF), b = int((v >> 8) & 0xFF), a = int(v & 0xFF);
+            if ((a > 128) && (blue ? ((b > r + 40) && (b > g + 20)) : ((g > r + 40) && (g > b + 40)))) {
+                return true;
+            }
+        }
+        return false;
+    };
+    auto inked = [&](int x) {
+        for (int y = 0; y < art.h; y++) {
+            if ((px(x, y) & 0xFF) != 0) {
+                return true;
+            }
+        }
+        return false;
+    };
+    // An icon: the run of its colour, widened to the ink round it.
+    auto icon = [&](bool blue, int& x0, int& x1) {
+        x0 = -1;
+        for (int x = 0; x < art.w; x++) {
+            if (colour(x, blue)) {
+                x0 = x;
+                break;
+            }
+        }
+        if (x0 < 0) {
+            return false;
+        }
+        x1 = x0;
+        while ((x1 + 1 < art.w) && colour(x1 + 1, blue)) {
+            x1++;
+        }
+        while ((x0 > 0) && inked(x0 - 1)) {
+            x0--;
+        }
+        while ((x1 + 1 < art.w) && inked(x1 + 1) && !colour(x1 + 2 < art.w ? x1 + 2 : x1, !blue)) {
+            x1++;
+            if (!inked(x1 + 1)) {
+                break;
+            }
+        }
+        return true;
+    };
+    int aX0, aX1, bX0, bX1;
+    if (!icon(true, aX0, aX1) || !icon(false, bX0, bX1)) {
+        return out;
+    }
+    // The stock words' top and the stock legend's right end.
+    int wordTop = art.h;
+    for (int x = aX1 + 1; x < bX0; x++) {
+        for (int y = 0; y < art.h; y++) {
+            if ((px(x, y) & 0xFF) != 0) {
+                wordTop = std::min(wordTop, y);
+            }
+        }
+    }
+    int right = 0;
+    for (int x = 0; x < art.w; x++) {
+        if (inked(x)) {
+            right = x;
+        }
+    }
+    if (wordTop >= art.h) {
+        wordTop = 1;
+    }
+
+    const Strip aStrip = compose_help(aWord);
+    const Strip bStrip = compose_help(bWord);
+    auto top_of = [](const Strip& st) {
+        for (int y = 0; y < st.height; y++) {
+            for (int x = 0; x < st.width; x++) {
+                if (st.alpha[size_t(y) * size_t(st.width) + size_t(x)] != 0) {
+                    return y;
+                }
+            }
+        }
+        return 0;
+    };
+    auto ink_of = [](const Strip& st) {
+        int r = 0;
+        for (int y = 0; y < st.height; y++) {
+            for (int x = st.width - 1; x >= r; x--) {
+                if (st.alpha[size_t(y) * size_t(st.width) + size_t(x)] != 0) {
+                    r = x + 1;
+                    break;
+                }
+            }
+        }
+        return r;
+    };
+    const int aInk = ink_of(aStrip);
+    const int bInk = ink_of(bStrip);
+    const int gapIcon = 3;
+    const int gapPair = 9;
+    const bool hasA = (aWord != nullptr) && (aWord[0] != '\0');
+    const int aPart = hasA ? ((aX1 - aX0 + 1) + gapIcon + aInk + gapPair) : 0;
+    const int width = aPart + (bX1 - bX0 + 1) + gapIcon + bInk;
+    // The end where the stock legend's is: its right end at 161 + right,
+    // this strip's column (161 + right) - 150.
+    const int end = std::min(out.w - 1, 11 + right);
+    int x = std::max(0, end + 1 - width);
+
+    auto blit_icon = [&](int from, int to) {
+        for (int sx = from; sx <= to; sx++, x++) {
+            for (int y = 0; y < art.h; y++) {
+                if (x < out.w) {
+                    out.rgba[size_t(y) * size_t(out.w) + size_t(x)] = px(sx, y);
+                }
+            }
+        }
+    };
+    auto blit_word = [&](const Strip& st, int ink) {
+        const int dy = wordTop - top_of(st);
+        for (int sx = 0; sx < ink; sx++, x++) {
+            for (int sy = 0; sy < st.height; sy++) {
+                const int y = sy + dy;
+                if ((y < 0) || (y >= out.h) || (x >= out.w)) {
+                    continue;
+                }
+                const uint32_t i = st.intensity[size_t(sy) * size_t(st.width) + size_t(sx)];
+                const uint32_t a = st.alpha[size_t(sy) * size_t(st.width) + size_t(sx)];
+                if (a != 0) {
+                    out.rgba[size_t(y) * size_t(out.w) + size_t(x)] = (i << 24) | (i << 16) | (i << 8) | a;
+                }
+            }
+        }
+    };
+    if (hasA) {
+        blit_icon(aX0, aX1);
+        x += gapIcon;
+        blit_word(aStrip, aInk);
+        x += gapPair;
+    }
+    blit_icon(bX0, bX1);
+    x += gapIcon;
+    blit_word(bStrip, bInk);
+    return out;
+}
+
 Strip compose_lines(const char* line1, const char* line2) {
     Strip a = compose_help(line1);
     Strip b = compose_help(line2);
@@ -1328,6 +1503,7 @@ constexpr uint32_t BindGenAddr    = MailboxAddr + 0xA8;
 constexpr uint32_t BindDeviceAddr = MailboxAddr + 0xAC;
 constexpr uint32_t BindOpenAddr   = MailboxAddr + 0xAD;
 constexpr uint32_t BindPadAddr    = MailboxAddr + 0xAE;
+constexpr uint32_t BindClearAddr  = MailboxAddr + 0x9C;   // u8: Delete or Backspace, for the page to take
 // The Mods page's bank (graphics_menu_patch.c, the MODS_ defines).
 constexpr uint32_t ModsReqAddr    = MailboxAddr + 0xB0;
 constexpr uint32_t ModsAckAddr    = MailboxAddr + 0xB4;
@@ -1337,8 +1513,13 @@ constexpr uint32_t ModsOpenAddr   = MailboxAddr + 0xBE;
 constexpr uint32_t ModsTopAddr    = MailboxAddr + 0xBF;
 constexpr uint32_t ModsStateAddr  = MailboxAddr + 0xC0;
 constexpr uint32_t ModsHasOptAddr = MailboxAddr + 0xC2;   // + bank: the window's rows with options
+constexpr uint32_t ModsNewAddr = MailboxAddr + 0xDA;      // + bank: the window's rows installed during play
+constexpr uint32_t ModsBadAddr = MailboxAddr + 0xDC;      // + bank: the window's rows that will not load
+constexpr uint32_t ModsNeededAddr = MailboxAddr + 0xDE;   // + bank: the window's rows on because a mod that is on needs them
+constexpr uint32_t ModsUnseenAddr = MailboxAddr + 0x35;   // + bank: the window's new rows whose details were never opened
+constexpr uint32_t DetNoByAddr = MailboxAddr + 0xC6;      // u8: the details page's mod names no author
 constexpr uint32_t ModsModCountAddr = MailboxAddr + 0xC4; // u16: the mods; the rows after are the actions
-constexpr int ModsActions = 2;                            // Open the mods folder, Restart the game
+constexpr int ModsActions = 3;                            // Install Mods, Open Mods Folder, Restart Game
 
 // A mod's options page (graphics_menu_patch.c snap_mod_options_page): its
 // own bank of the mailbox and its own dynamic slots -- two banks of six
@@ -1350,14 +1531,47 @@ constexpr uint32_t OptCountAddr = MailboxAddr + 0xD4;
 constexpr uint32_t OptOpenAddr  = MailboxAddr + 0xD6;
 constexpr uint32_t OptTopAddr   = MailboxAddr + 0xD7;
 constexpr uint32_t OptRowAddr   = MailboxAddr + 0xD8;
+constexpr uint32_t OptDisabledAddr = MailboxAddr + 0xEC;   // + bank: the window's rows another option disables
+constexpr uint32_t OptSelAfterAddr = MailboxAddr + 0xEE;   // u8: the row to select after a change, or 0xFF
+// u8: a text option being typed: 1 while it is, then 2 kept or 3 left, until
+// the page has answered (it plays the sound and writes 0).
+constexpr uint32_t OptEditAddr = MailboxAddr + 0xEF;
+// u8 a bank: the window's rows that are text options (A types there, so the
+// header says "A Type"); bank 0 at +0xC7, bank 1 at +0xD9, the two free bytes.
+static uint32_t opt_text_rows_addr(uint32_t bank) {
+    return MailboxAddr + ((bank == 0) ? 0xC7u : 0xD9u);
+}
 constexpr uint32_t kOptDynBase = kStringBaseCount + 238;   // graphics_menu_patch.c STR_OPT_DYN
 constexpr int OptVisible = 6;
 constexpr int OptBank = 3 * OptVisible;
 constexpr uint32_t OptNamesAddr = ModsHelpsAddr + uint32_t(2 * ModsVisible) * ModsHelpBytes;
 constexpr uint32_t OptValuesAddr = OptNamesAddr + uint32_t(2 * OptVisible) * DynStripBytes;
 constexpr uint32_t OptHelpsAddr = OptValuesAddr + uint32_t(2 * OptVisible) * DynStripBytes;
+// A mod's details page (graphics_menu_patch.c snap_mod_details_page): its
+// heading is staged with the strings (id kDetBase, "Mod Details"); its title
+// (the mod's name and version, in the rows' face), up to DetLines lines of
+// text in the help face (who made it, the whole description, what it needs
+// and what needs it) and its help box have fixed homes after the options
+// page's, composed when the page opens (details_compose).
+constexpr uint32_t kDetBase = kStringBaseCount + 279;      // graphics_menu_patch.c STR_DET_HDR
+constexpr uint32_t kDetTitleId = kDetBase + 1;
+constexpr uint32_t kDetLineId = kDetBase + 2;
+constexpr int DetLines = 24;
+constexpr uint32_t kDetHelpId = kDetLineId + uint32_t(DetLines);
+constexpr int DetChunks = 4;
+// The details page's fixed lines above its text: the version (right-aligned
+// in the rows' face), and "By ..." and the mod's status, each split into a
+// label and the rest so the page can colour the label (details_compose).
+constexpr uint32_t kWhiteTileId = kStringBaseCount + 309;   // graphics_menu_patch.c STR_WHITE_TILE
+constexpr uint32_t kDetVersionId = kStringBaseCount + 310;
+constexpr uint32_t kDetByLabelId = kDetVersionId + 1;
+constexpr uint32_t kDetByValueId = kDetVersionId + 2;
+constexpr uint32_t kDetStLabelId = kDetVersionId + 3;
+constexpr uint32_t kDetStValueId = kDetVersionId + 4;
+constexpr uint32_t DetTitleBytes = uint32_t(DetChunks * 64 * StripHeight * 2);
+constexpr uint32_t DetLineBytes = uint32_t(DetChunks * 64 * kMenuHlpCellH * 2);
 constexpr int OptNameInkWidth = 105;    // the label column, before the values at x=163
-constexpr int OptValueInkWidth = 110;   // the value column, to the right rail
+constexpr int OptValueInkWidth = 106;   // the value column, ending 6 short of the scroll bar at x 275
 static uint32_t opt_dyn_addr(uint32_t id) {
     const uint32_t k = id - kOptDynBase;
     const uint32_t bank = k / uint32_t(OptBank);
@@ -1370,6 +1584,33 @@ static uint32_t opt_dyn_addr(uint32_t id) {
     }
     return OptHelpsAddr + (bank * uint32_t(OptVisible) + (slot - uint32_t(2 * OptVisible))) * ModsHelpBytes;
 }
+constexpr uint32_t DetTitleAddr = OptHelpsAddr + uint32_t(2 * OptVisible) * ModsHelpBytes;
+constexpr uint32_t DetLinesAddr = DetTitleAddr + DetTitleBytes;
+constexpr uint32_t DetHelpAddr = DetLinesAddr + uint32_t(DetLines) * DetLineBytes;
+constexpr uint32_t DetVersionAddr = DetHelpAddr + ModsHelpBytes;
+constexpr uint32_t DetByLabelAddr = DetVersionAddr + DetTitleBytes;
+constexpr uint32_t DetByValueAddr = DetByLabelAddr + DetLineBytes;
+constexpr uint32_t DetStLabelAddr = DetByValueAddr + DetLineBytes;
+constexpr uint32_t DetStValueAddr = DetStLabelAddr + DetLineBytes;
+// Below the pages' own heap, which the pages from anywhere put at 0x80E00000
+// (patches/src/anywhere_patch.inc, SNAP_ARENA_START).
+static_assert(DetStValueAddr + DetLineBytes <= 0x80E00000u, "the details page's slots run into the pages' arena");
+// A mod's picture on its details page: thumb.png in the mod's file, which
+// the runtime keeps as it opens the mod, and which Zelda64Recomp's mod menu
+// shows too. It is fitted into 256 texels square, RGBA16, staged as eight
+// bands of 32 rows (a 64-texel block of 32 rows is the 4 KB one texture load
+// holds), and the page draws each band at 0.15625 scale: 40 pixels square,
+// 256 texels across, so it stays sharp at a high render scale. Its home is
+// past the pages' arena and below librecomp's mod space at 0x81000000.
+constexpr uint32_t kDetThumbId = kStringBaseCount + 315;   // graphics_menu_patch.c STR_DET_THUMB
+constexpr int ThumbSize = 256;
+constexpr int ThumbBandRows = 32;
+constexpr int ThumbBands = ThumbSize / ThumbBandRows;
+constexpr uint32_t ThumbAddr = 0x80F00000u;
+constexpr uint32_t ThumbBandBytes = uint32_t(ThumbSize * ThumbBandRows * 2);
+constexpr int ThumbRoom = 48;   // the picture's 40 pixels and a gap: the lines beside it end sooner
+static_assert(ThumbAddr + uint32_t(ThumbBands) * ThumbBandBytes <= 0x81000000u, "the picture runs into the mod space");
+
 // The pages from anywhere: the host's word that the menu key was pressed in
 // a course, for the pause code, and the patch's word that a page is up.
 constexpr uint32_t MenuReqAddr   = MailboxAddr + 0x39;
@@ -1420,9 +1661,31 @@ struct RainbowStrip {
     uint32_t addr = 0;
     int w = 0, h = 0;
     std::vector<uint8_t> mask;
+    int slope = 3;   // hue degrees a texel across: a short word takes a steeper one to show the whole spectrum
 };
 RainbowStrip g_credits;
 RainbowStrip g_arrows[2];
+// The Mods page's New for a mod installed during play and not opened yet
+// (graphics_menu_patch.c STR_MODS_VAL_NEW_GLOW): the same glide.
+RainbowStrip g_new_glow;
+
+// The help lines that name buttons are worded for the device the player
+// last pressed (input_last_device; hand_words below): the pad's own names,
+// the keys the table binds on a keyboard -- where "A" is the key that steers
+// left and "Z" is B -- and clicks with a mouse. The staged ones (these
+// offsets from BaseCount) keep one size, the help box's two lines of 256, and
+// are repainted in place when the device, the key table or the pad's layout
+// changes, even while they are on screen (refresh_hand_lines); the Mods
+// pages' lines are composed again when it does.
+constexpr int HandW = 256;
+constexpr int HandH = 12 + kMenuHlpCellH;
+bool hand_line(uint32_t off) {
+    return (off == 85) || (off == 98) || (off == 100) || (off == 125) || (off == 126) || (off == 128) ||
+           ((off >= 132) && (off <= 149)) || (off == 276);
+}
+std::map<uint32_t, uint32_t> g_hand_addr;   // a staged line's offset, and its pixels
+uint64_t g_hand_sig = 0;                     // what they were last worded for
+uint64_t g_hand_now = 0;                     // and what they are for this tick
 
 void hsv_to_rgb(int hue, uint8_t value, uint8_t &r, uint8_t &g, uint8_t &b) {
     // Saturation fixed at ~0.72 so every hue stays luminous on screen.
@@ -1457,7 +1720,7 @@ void animate_rainbow(const RainbowStrip& s, uint32_t tick) {
                 continue;
             }
             uint8_t r, g, b;
-            hsv_to_rgb(int((tick + x * 3) % 360), 0xFF, r, g, b);
+            hsv_to_rgb(int((tick + uint32_t(x * s.slope)) % 360), 0xFF, r, g, b);
             const uint16_t texel = uint16_t(((r >> 3) << 11) | ((g >> 3) << 6) | ((b >> 3) << 1) | 1);
             const int chunk = x / 64;
             const uint32_t off = uint32_t((chunk * 64 * h + y * 64 + (x % 64)) * 2);
@@ -1474,6 +1737,7 @@ void animate_credits() {
     // nothing when the Graphics page is closed and their sprite hidden.
     animate_rainbow(g_arrows[0], tick);
     animate_rainbow(g_arrows[1], tick);
+    animate_rainbow(g_new_glow, tick);
 }
 
 // The CONTROLS page's speed steps, as percentages of the shipped speed, and
@@ -1614,6 +1878,9 @@ void seed_mailbox() {
 
 } // namespace
 
+Strip hand_strip(uint32_t off, int device);   // below, with the help lines
+uint64_t hand_sig();
+
 // A setting changed outside the pages (a hotkey, the maximize button, the
 // fullscreen restored after the window opened): the pages' bytes are made
 // to say so, or their next edit would write the old value back.
@@ -1648,6 +1915,27 @@ void stage_menu_assets(uint8_t* rdram) {
 // succeeded; a failed harvest stages nothing, leaves the directory magic
 // unwritten so the game's own screens run as shipped, and is retried on the
 // next main-menu load.
+static int ink_width(const Strip& strip);
+
+// A strip's text centred in a canvas `width` wide (whole 64-texel blocks, as
+// the patch draws them).
+static Strip centred(const Strip& st, int width) {
+    Strip out;
+    out.width = width;
+    out.height = st.height;
+    out.intensity.assign(size_t(width) * size_t(st.height), 0);
+    out.alpha.assign(size_t(width) * size_t(st.height), 0);
+    const int ink = ink_width(st);
+    const int dx = std::max(0, (width - ink) / 2);
+    for (int y = 0; y < st.height; y++) {
+        for (int x = 0; (x < ink) && (x + dx < width); x++) {
+            out.intensity[size_t(y) * size_t(width) + size_t(x + dx)] = st.intensity[size_t(y) * size_t(st.width) + size_t(x)];
+            out.alpha[size_t(y) * size_t(width) + size_t(x + dx)] = st.alpha[size_t(y) * size_t(st.width) + size_t(x)];
+        }
+    }
+    return out;
+}
+
 void stage_menu_strings(uint8_t* rdram) {
     if (rdram == nullptr) {
         return;
@@ -1783,7 +2071,7 @@ void stage_menu_strings(uint8_t* rdram) {
     // Each line at most 41 characters, the widest the stock help box
     // shows without crowding its frame.
     static const char* const ctlDescs[6][2] = {
-        { "Hold zooms while Z is held down.",           "Switch zooms on a press, off on the next." },
+        { "", "" },   // +85, Zoom's: worded for the device in hand (hand_words)
         { "Normal tilts the camera up with the stick",  "pushed up. Reverse tilts it down instead." },
         { "Move the mouse to look around a course.",    "Off leaves the camera to the stick." },
         { "How far the mouse turns the camera.",        "Lower is slower, higher is faster." },
@@ -1863,40 +2151,22 @@ void stage_menu_strings(uint8_t* rdram) {
     // Seven lines for the page itself (ids +125..+131): the Device row,
     // Restore Defaults asking, the row while it listens, Restore Defaults
     // at rest, a refused key, a refused clear, a listen that timed out.
+    // The first, second and fourth name buttons, and are worded for the
+    // device in hand (hand_words).
     static const char* const bindDescs[7][2] = {
-        { "Left and Right pick what to set up.",      "B goes back with every change kept." },
-        { "Press A again to put this device back", "the way it came, B to keep it as it is." },
+        { "", "" },
+        { "", "" },
         { "Press the key or button to use for this.", "Wait a few seconds to leave it as it was." },
-        { "Puts every row back the way the game came", "for the device at the top. A asks first." },
+        { "", "" },
         { "That one already does something else.", "Choose another key or button." },
         { "Something must still press this button.", "Set another device before clearing this." },
         { "Nothing was pressed in time. The row", "stays as it was." },
     };
-    // What each input does in the game, one line per row (ids +132..+149),
-    // with what A and Z do on the second. L is honest: the cartridge never
-    // reads it (nothing in the decompilation tests L_TRIG outside the
-    // crash screen); the dash needs the Dash Engine.
-    static const char* const bindInputDescs[BindInputCount][2] = {
-        { "Zoomed in it takes the photo, zoomed out", "an apple. A changes it, Z clears it." },
-        { "Throws a pester ball to wake or move a", "Pokemon. A changes it, Z clears it." },
-        { "Zooms in for a photo, held down or as a", "switch. A changes it, Z clears it." },
-        { "Pauses the ride, and starts the game on", "the title. A changes it, Z clears it." },
-        { "Does nothing here, the game never reads", "L. A changes it, Z clears it." },
-        { "Makes the cart dash while held, once you", "own the dash engine. A changes, Z clears." },
-        { "Turns around to face behind the cart.", "A changes it, Z clears it." },
-        { "Plays the flute, once you have it.", "A changes it, Z clears it." },
-        { "Turns the camera to face left.", "A changes it, Z clears it." },
-        { "Turns the camera to face right.", "A changes it, Z clears it." },
-        { "Aims up in a course like the stick,", "and walks the menus. A changes, Z clears." },
-        { "Aims down in a course like the stick,", "and walks the menus. A changes, Z clears." },
-        { "Aims left in a course like the stick,", "and walks the menus. A changes, Z clears." },
-        { "Aims right in a course like the stick,", "and walks the menus. A changes, Z clears." },
-        { "Aims the camera up in a course, and", "walks the menus. A changes, Z clears." },
-        { "Aims the camera down in a course, and", "walks the menus. A changes, Z clears." },
-        { "Aims the camera left in a course, and", "walks the menus. A changes, Z clears." },
-        { "Aims the camera right in a course, and", "walks the menus. A changes, Z clears." },
-    };
-    constexpr uint32_t StringCount = BaseCount + 279;
+    // What each input does in the game (ids +132..+149) is worded for the
+    // device in hand (hand_words, kBindRowSays).
+    // Through the picture, "A OK  B Back", a fixed On, "A Type  B Cancel",
+    // the rainbow New and the empty Mods page's second line.
+    constexpr uint32_t StringCount = BaseCount + 315 + ThumbBands + 5;
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -1990,12 +2260,20 @@ void stage_menu_strings(uint8_t* rdram) {
     uint32_t cursor = PixelsAddr;
     write_u32(DirectoryAddr + 0x4, StringCount);
 
+    g_hand_sig = hand_sig();
     for (uint32_t id = 0; id < StringCount; id++) {
         int w, h;
         Strip strip;
-        if (id == 0) {
+        if ((id >= BaseCount) && hand_line(id - BaseCount)) {
+            // Worded for the device in hand, and repainted as it changes.
+            strip = hand_strip(id - BaseCount, input_last_device());
+            w = strip.width;
+            h = strip.height;
+        }
+        else if ((id == 0) || (id == kWhiteTileId)) {
             // The backdrop: a solid black tile the patch stretches over the
-            // whole screen under the page.
+            // whole screen under the page; and a white one, for the details
+            // page's scroll bar.
             w = 16;
             h = 16;
         }
@@ -2109,13 +2387,6 @@ void stage_menu_strings(uint8_t* rdram) {
             w = strip.width;
             h = strip.height;
         }
-        else if (id == BaseCount + 98) {
-            // What the help line becomes once the item is chosen; the
-            // next A closes the program, B withdraws.
-            strip = compose_help("Press A again to close the game, B to stay.");
-            w = strip.width;
-            h = strip.height;
-        }
         else if (id == BaseCount + 198) {
             strip = compose("Fast Forward");
             w = strip.width;
@@ -2190,21 +2461,30 @@ void stage_menu_strings(uint8_t* rdram) {
             }
             continue;
         }
-        else if (id == BaseCount + 274) {
-            // The Mods page's hint at the header's right, in its three
-            // forms: both of the page's extra buttons apply, only Z, only
-            // the order.
-            strip = compose("Z options   L R order");
-            w = strip.width;
-            h = strip.height;
-        }
-        else if (id == BaseCount + 275) {
-            strip = compose("Z opens its options");
-            w = strip.width;
-            h = strip.height;
-        }
-        else if (id == BaseCount + 276) {
-            strip = compose("L and R move it");
+        else if ((id == BaseCount + 274) || (id == BaseCount + 275) || (id == BaseCount + 316 + ThumbBands) ||
+                 (id == BaseCount + 318 + ThumbBands)) {
+            // The Mods page's values for rows that cannot be turned on or
+            // off: a mod installed during play, which loads at the next
+            // start, a mod file this release will not load, and a mod that
+            // is on because a mod that is on needs it. No chevrons: Left and
+            // Right do nothing there. (The first two ids were the page's
+            // hint at the header's right, retired when it took A OK and B
+            // Cancel.)
+            // Drawn where the word stands inside "< On >", its chevrons
+            // blanked, so it lines up with the other rows' values.
+            // NEW in capitals: a badge, not one more value like On and Off.
+            const std::string word = ((id == BaseCount + 274) || (id == BaseCount + 318 + ThumbBands)) ? "NEW"
+                                   : (id == BaseCount + 275) ? "Error" : "On";
+            strip = compose(("< " + word + " >").c_str(), true);
+            const int x0 = ink_width(compose("<", true)) + 1;
+            const int x1 = ink_width(compose(("< " + word).c_str(), true)) + 1;
+            for (int y = 0; y < strip.height; y++) {
+                for (int x = 0; x < strip.width; x++) {
+                    if ((x < x0) || (x >= x1)) {
+                        strip.alpha[size_t(y) * size_t(strip.width) + size_t(x)] = 0;
+                    }
+                }
+            }
             w = strip.width;
             h = strip.height;
         }
@@ -2217,6 +2497,55 @@ void stage_menu_strings(uint8_t* rdram) {
             strip = compose_lines("This mod has no options.", "");
             w = strip.width;
             h = strip.height;
+        }
+        else if (id == kDetBase) {
+            strip = compose_hdr("Mod Details");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if ((id >= kDetVersionId) && (id <= kDetStValueId)) {
+            // The details page's version, By and status strips: blank until
+            // a page opens (details_compose).
+            const uint32_t addr = (id == kDetVersionId) ? DetVersionAddr
+                                : (id == kDetByLabelId) ? DetByLabelAddr
+                                : (id == kDetByValueId) ? DetByValueAddr
+                                : (id == kDetStLabelId) ? DetStLabelAddr : DetStValueAddr;
+            const uint32_t bytes = (id == kDetVersionId) ? DetTitleBytes : DetLineBytes;
+            write_u32(DirectoryAddr + 0x8 + id * 8, addr);
+            write_u16(DirectoryAddr + 0xC + id * 8, 64);
+            write_u16(DirectoryAddr + 0xE + id * 8, uint16_t((id == kDetVersionId) ? StripHeight : kMenuHlpCellH));
+            for (uint32_t k = 0; k < bytes; k += 2) {
+                write_u16(addr + k, 0);
+            }
+            continue;
+        }
+        else if ((id >= kDetThumbId) && (id < kDetThumbId + uint32_t(ThumbBands))) {
+            // The details page's picture, a band of 32 rows each: a fixed
+            // home, clear until a page with a picture opens (thumb_stage).
+            const uint32_t addr = ThumbAddr + (id - kDetThumbId) * ThumbBandBytes;
+            write_u32(DirectoryAddr + 0x8 + id * 8, addr);
+            write_u16(DirectoryAddr + 0xC + id * 8, uint16_t(ThumbSize));
+            write_u16(DirectoryAddr + 0xE + id * 8, uint16_t(ThumbBandRows));
+            for (uint32_t k = 0; k < ThumbBandBytes; k += 2) {
+                write_u16(addr + k, 0);
+            }
+            continue;
+        }
+        else if ((id > kDetBase) && (id <= kDetHelpId)) {
+            // The details page's title, lines and help box: fixed homes,
+            // blank until a page opens (details_compose).
+            const uint32_t addr = (id == kDetTitleId) ? DetTitleAddr
+                                : (id == kDetHelpId) ? DetHelpAddr
+                                : DetLinesAddr + (id - kDetLineId) * DetLineBytes;
+            const uint32_t bytes = (id == kDetTitleId) ? DetTitleBytes : (id == kDetHelpId) ? ModsHelpBytes : DetLineBytes;
+            const int height = (id == kDetTitleId) ? StripHeight : (id == kDetHelpId) ? ModsHelpHeight : kMenuHlpCellH;
+            write_u32(DirectoryAddr + 0x8 + id * 8, addr);
+            write_u16(DirectoryAddr + 0xC + id * 8, 64);
+            write_u16(DirectoryAddr + 0xE + id * 8, uint16_t(height));
+            for (uint32_t k = 0; k < bytes; k += 2) {
+                write_u16(addr + k, 0);
+            }
+            continue;
         }
         else if ((id == BaseCount + 230) || (id == BaseCount + 234)) {
             // The pause menu's OPTIONS pill, plain and selected
@@ -2246,6 +2575,35 @@ void stage_menu_strings(uint8_t* rdram) {
             w = strip.width;
             h = strip.height;
         }
+        else if (((id >= BaseCount + 306) && (id <= BaseCount + 308)) || (id == BaseCount + 315 + ThumbBands) ||
+                 (id == BaseCount + 317 + ThumbBands)) {
+            // The header's legend in other words (compose_legend): the Mods
+            // page's "A Details  B Back" on a mod and "A OK  B Back" on the
+            // rows under the mods, a details page's "A Options  B Back" and
+            // "B Back", 32-bit as the stock one is.
+            const MenuArt art = (id == BaseCount + 306) ? compose_legend("Details", "Back")
+                              : (id == BaseCount + 307) ? compose_legend("Options", "Back")
+                              : (id == BaseCount + 308) ? compose_legend("", "Back")
+                              : (id == BaseCount + 317 + ThumbBands) ? compose_legend("Type", "Cancel")
+                              : compose_legend("OK", "Back");
+            const int lw = (art.w > 0) ? ((art.w + 63) & ~63) : 0;
+            write_u32(DirectoryAddr + 0x8 + id * 8, (lw > 0) ? cursor : 0u);
+            write_u16(DirectoryAddr + 0xC + id * 8, uint16_t(lw));
+            write_u16(DirectoryAddr + 0xE + id * 8, uint16_t((lw > 0) ? art.h : 0));
+            uint32_t at = cursor;
+            for (int k = 0; k < lw / 64; k++) {
+                for (int y = 0; y < art.h; y++) {
+                    for (int x = 0; x < 64; x++) {
+                        const int sx = k * 64 + x;
+                        const uint32_t v = (sx < art.w) ? art.rgba[size_t(y) * size_t(art.w) + size_t(sx)] : 0u;
+                        write_u32(at + uint32_t((y * 64 + x) * 4), v);
+                    }
+                }
+                at += uint32_t(64 * art.h * 4);
+            }
+            cursor = (at + 7u) & ~7u;
+            continue;
+        }
         else if (id == BaseCount + 237) {
             // The header's "A OK  B Cancel" as the game keeps it: 117x11,
             // 32-bit RGBA, its words' antialiasing in 8-bit alpha, in two
@@ -2271,6 +2629,15 @@ void stage_menu_strings(uint8_t* rdram) {
             cursor = (at + 7u) & ~7u;
             continue;
         }
+        else if (id == BaseCount + 319 + ThumbBands) {
+            // The empty Mods page's second line (before the Mods rows' ids,
+            // which take every id from kModsDynBase up).
+            // What a mod is; how to add one is the help box's (the Install
+            // row, selected when the page opens).
+            strip = centred(compose_help("Mods change or add to the game."), 256);
+            w = strip.width;
+            h = strip.height;
+        }
         else if (id >= kModsDynBase) {
             // A row of the Mods page: a fixed home of its own, blank until
             // the page opens (mods_compose writes it and the directory
@@ -2287,8 +2654,11 @@ void stage_menu_strings(uint8_t* rdram) {
             continue;
         }
         else if (id == BaseCount + 205) {
-            strip = compose_lines("No mods were found in the mods folder.",
-                                  "Put a mod there and start the game again.");
+            // The Mods page with no mod in the folder: its headline, in the
+            // rows' face, centred in 256 texels over the actions
+            // (graphics_menu_patch.c STR_MODS_NONE; the next line is
+            // STR_MODS_EMPTY_SUB).
+            strip = centred(compose("No mods yet", true), 256);   // a headline: no full stop
             w = strip.width;
             h = strip.height;
         }
@@ -2358,11 +2728,6 @@ void stage_menu_strings(uint8_t* rdram) {
             w = strip.width;
             h = strip.height;
         }
-        else if (id >= BaseCount + 132) {
-            strip = compose_lines(bindInputDescs[id - BaseCount - 132][0], bindInputDescs[id - BaseCount - 132][1]);
-            w = strip.width;
-            h = strip.height;
-        }
         else if (id >= BaseCount + 125) {
             strip = compose_lines(bindDescs[id - BaseCount - 125][0], bindDescs[id - BaseCount - 125][1]);
             w = strip.width;
@@ -2397,15 +2762,6 @@ void stage_menu_strings(uint8_t* rdram) {
             // screen ("Z Button Setup"); its B and e are the port's
             // (menu_harvest.cpp kHeaderSynth).
             strip = compose_hdr("Button Setup");
-            w = strip.width;
-            h = strip.height;
-        }
-        else if (id == BaseCount + 100) {
-            // The CONTROLS page's row that opens the page: no value, as the
-            // Option list's own Screen row has none, and the help line
-            // says what A does.
-            strip = compose_lines("Press A to choose what each key, mouse",
-                                  "button and pad button does.");
             w = strip.width;
             h = strip.height;
         }
@@ -2500,13 +2856,21 @@ void stage_menu_strings(uint8_t* rdram) {
         write_u32(DirectoryAddr + 0x8 + id * 8, cursor);
         write_u16(DirectoryAddr + 0xC + id * 8, uint16_t(w));
         write_u16(DirectoryAddr + 0xE + id * 8, uint16_t(h));
+        if ((id >= BaseCount) && hand_line(id - BaseCount)) {
+            g_hand_addr[id - BaseCount] = cursor;
+        }
 
-        if ((id == BaseCount + 23) || (id == BaseCount + 24) || (id == BaseCount + 25)) {
+        if ((id == BaseCount + 23) || (id == BaseCount + 24) || (id == BaseCount + 25) ||
+            (id == BaseCount + 318 + ThumbBands)) {
             RainbowStrip& rs = (id == BaseCount + 23) ? g_credits
-                                                      : g_arrows[id - BaseCount - 24];
+                             : (id == BaseCount + 318 + ThumbBands) ? g_new_glow
+                                                                    : g_arrows[id - BaseCount - 24];
             rs.addr = cursor;
             rs.w = w;
             rs.h = h;
+            // The title's line is long enough to show whole rainbows at three
+            // degrees a texel; a four-letter New takes twelve to show one.
+            rs.slope = (id == BaseCount + 318 + ThumbBands) ? 12 : 3;
             // Cores only: the animator must never touch the black border.
             rs.mask.assign(size_t(w) * h, 0);
             for (size_t px = 0; px < rs.mask.size(); px++) {
@@ -2547,11 +2911,20 @@ void stage_menu_strings(uint8_t* rdram) {
                     if (id == 0) {
                         texel = 0x00FF;   // black, opaque
                     }
+                    else if (id == kWhiteTileId) {
+                        texel = 0xFFFF;   // white, opaque
+                    }
                     else if (id == BaseCount + 22) {
                         texel = logo.texels[size_t(y) * w + (cx + x)];   // RGBA16
                     }
                     else if ((id == BaseCount + 230) || (id == BaseCount + 234)) {
                         texel = ((id == BaseCount + 230) ? pillPlain : pillSel).texels[size_t(y) * w + (cx + x)];   // RGBA16
+                    }
+                    else if (id == BaseCount + 318 + ThumbBands) {
+                        // The rainbow New: its letters start white and the
+                        // animator colours them; no border, the rest clear.
+                        const size_t src = size_t(y) * w + (cx + x);
+                        texel = ((strip.alpha[src] >= 128) && (strip.intensity[src] >= 128)) ? 0xFFFF : 0;
                     }
                     else if ((id == BaseCount + 23) || (id == BaseCount + 24) ||
                              (id == BaseCount + 25)) {
@@ -2577,6 +2950,16 @@ void stage_menu_strings(uint8_t* rdram) {
         cursor = (cursor + 7u) & ~7u;
     }
 
+    if (cursor > DynPixelsAddr) {
+        // The staged strings would run into the Button Setup page's slots,
+        // which it writes while it is open: withheld as a missing glyph is,
+        // said loudly, so no build ships a page that tramples another.
+        printf("[SNAP-MENU] ERROR: the staged strings end at 0x%08X, past the page slots at 0x%08X; "
+               "the strings are withheld. Move DynPixelsAddr up (menu_assets.cpp).\n",
+               cursor, DynPixelsAddr);
+        fflush(stdout);
+        g_missing_glyphs++;
+    }
     if (g_missing_glyphs != 0) {
         // Withheld: no magic, so the patch draws nothing of ours and the
         // next main-menu load tries again. The animators must not paint
@@ -2586,6 +2969,7 @@ void stage_menu_strings(uint8_t* rdram) {
         g_credits = RainbowStrip{};
         g_arrows[0] = RainbowStrip{};
         g_arrows[1] = RainbowStrip{};
+        g_new_glow = RainbowStrip{};
         return;
     }
     write_u32(DirectoryAddr + 0x0, DirectoryMagic);
@@ -2645,6 +3029,11 @@ static void bind_compose(int device) {
 // of the answer so the page finds them there the frame it wakes.
 static void poll_bind_bank() {
     write_u8(BindPadAddr, input_pad_attached() ? 1 : 0);
+    // Delete or Backspace clears the selected row, as Z does; a press while
+    // the page is shut is dropped.
+    if (input_take_clear_key() && (read_u8_mail(BindOpenAddr) != 0)) {
+        write_u8(BindClearAddr, 1);
+    }
     if (read_u8_mail(BindOpenAddr) == 0) {
         if (g_bind_capturing) {
             input_capture_end();
@@ -2736,26 +3125,114 @@ static void poll_bind_bank() {
 // which writes mods.json at once, and the window is recomposed ahead of the
 // answer so the row's value and line are new the frame the page wakes.
 // ---------------------------------------------------------------------------
+// A row of the Mods page: a mod the runtime has opened, a mod installed
+// during play (it loads at the next start; mod_installer.cpp), or a mod
+// file found at start that this release will not load. Only the first can
+// be turned on or off, moved, or opened for its options.
+enum class ModsKind { Mod, Fresh, Broken };
 struct ModsRow {
+    ModsKind kind = ModsKind::Mod;
     std::string id;
     std::string name;      // the display name, and its version after it
     std::string desc;
     std::string author;    // the first author, for the help line
-    std::string needs;     // an unmet dependency, said in the help line
+    std::string needs;     // an unmet dependency, or why it will not load, said in the help line
+    std::string waiting;   // "Version 1.0.1 loads after a restart."
     int optCount = 0;      // the options its manifest declares, hidden ones aside
     bool enabled = false;
     bool live = false;   // runtime-toggleable content, in force at once
+    // On because a mod that is on needs it (the runtime's auto-enabled
+    // set): the runtime loads it whatever its own switch says, so the page
+    // shows it on and names the mod that needs it.
+    bool needed = false;
+    std::string neededBy;               // that mod's display name
+    std::vector<std::string> deps;      // the mods it needs itself, by id
+    // For its details page: the manifest's whole text.
+    std::string title;                  // display name, as written
+    std::string version;                // "1.0.1", or empty
+    std::string fullDesc;               // the description, paragraphs and all
+    std::vector<std::string> authors;
+    std::vector<char> thumb;            // a mod installed during play: its picture's bytes
 };
-static std::vector<ModsRow> g_mods_rows;
-static int g_mods_shown_top = -1;
-static uint32_t g_mods_handled = 0;
 
+// On as the runtime will load it: turned on, or needed by a mod that is.
+static bool mods_on(const ModsRow& r) {
+    return r.enabled || r.needed;
+}
+static std::vector<ModsRow> g_mods_rows;
+// Mods installed during play whose details were opened: their New stops
+// its rainbow (graphics_menu_patch.c STR_MODS_VAL_NEW_GLOW).
+static std::set<std::string> g_mods_opened;
+static size_t g_mods_runtime_count = 0;      // the rows that are the runtime's mods
+static uint32_t g_mods_seen_generation = 0;  // the installer's, when the rows were gathered
+static int g_mods_shown_top = -1;
+static uint64_t g_mods_hand = 0;   // what its lines were worded for (hand_sig)
+static uint32_t g_mods_handled = 0;
+// Every mod's id and on/off in load order, as the game started, for the
+// Restart row to say when a change waits for the next start.
+using ModsState = std::vector<std::pair<std::string, bool>>;
+static ModsState g_mods_start;
+static bool g_mods_start_taken = false;
+
+
+// A mod's text in the faces' ASCII: the accented letters and typographic
+// marks a manifest is likely to hold become their plain forms (a mod about
+// Pokemon writes the e with an accent, and the byte pairs of UTF-8 would
+// otherwise be dropped or drawn as stand-in blocks); anything else outside
+// ASCII is left out.
+static std::string plain_ascii(const std::string& text) {
+    static const std::pair<uint32_t, const char*> kPlain[] = {
+        { 0xC0, "A" }, { 0xC1, "A" }, { 0xC2, "A" }, { 0xC3, "A" }, { 0xC4, "A" }, { 0xC5, "A" },
+        { 0xC7, "C" }, { 0xC8, "E" }, { 0xC9, "E" }, { 0xCA, "E" }, { 0xCB, "E" }, { 0xCC, "I" },
+        { 0xCD, "I" }, { 0xCE, "I" }, { 0xCF, "I" }, { 0xD1, "N" }, { 0xD2, "O" }, { 0xD3, "O" },
+        { 0xD4, "O" }, { 0xD5, "O" }, { 0xD6, "O" }, { 0xD9, "U" }, { 0xDA, "U" }, { 0xDB, "U" },
+        { 0xDC, "U" }, { 0xDD, "Y" }, { 0xDF, "ss" }, { 0xE0, "a" }, { 0xE1, "a" }, { 0xE2, "a" },
+        { 0xE3, "a" }, { 0xE4, "a" }, { 0xE5, "a" }, { 0xE7, "c" }, { 0xE8, "e" }, { 0xE9, "e" },
+        { 0xEA, "e" }, { 0xEB, "e" }, { 0xEC, "i" }, { 0xED, "i" }, { 0xEE, "i" }, { 0xEF, "i" },
+        { 0xF1, "n" }, { 0xF2, "o" }, { 0xF3, "o" }, { 0xF4, "o" }, { 0xF5, "o" }, { 0xF6, "o" },
+        { 0xF9, "u" }, { 0xFA, "u" }, { 0xFB, "u" }, { 0xFC, "u" }, { 0xFD, "y" }, { 0xFF, "y" },
+        { 0xD7, "x" }, { 0x2018, "'" }, { 0x2019, "'" }, { 0x201C, "\"" }, { 0x201D, "\"" },
+        { 0x2013, "-" }, { 0x2014, "-" }, { 0x2026, "..." }, { 0x00A0, " " },
+    };
+    std::string out;
+    size_t i = 0;
+    while (i < text.size()) {
+        const unsigned char c = static_cast<unsigned char>(text[i]);
+        uint32_t cp = 0;
+        size_t len = 1;
+        if (c < 0x80) {
+            out += char(c);
+            i++;
+            continue;
+        }
+        if (((c & 0xE0) == 0xC0) && (i + 1 < text.size())) {
+            cp = (uint32_t(c & 0x1F) << 6) | uint32_t(text[i + 1] & 0x3F);
+            len = 2;
+        }
+        else if (((c & 0xF0) == 0xE0) && (i + 2 < text.size())) {
+            cp = (uint32_t(c & 0x0F) << 12) | (uint32_t(text[i + 1] & 0x3F) << 6) | uint32_t(text[i + 2] & 0x3F);
+            len = 3;
+        }
+        else if (((c & 0xF8) == 0xF0) && (i + 3 < text.size())) {
+            len = 4;
+        }
+        for (const auto& kv : kPlain) {
+            if (kv.first == cp) {
+                out += kv.second;
+                break;
+            }
+        }
+        i += len;
+    }
+    return out;
+}
 
 // The text a mod wrote, made safe for a face: a character the face has no
 // glyph for is left out of a help line (compose_help would count it and the
 // next staging would withhold every string for it) and left to the body
 // face's stand-in block in a name; line breaks and tabs become spaces.
-static std::string face_text(const std::string& text, bool help) {
+static std::string face_text(const std::string& raw, bool help) {
+    const std::string text = plain_ascii(raw);
     std::string out;
     for (char c : text) {
         if ((c == '\n') || (c == '\r') || (c == '\t')) {
@@ -2815,51 +3292,638 @@ static std::string cut_to_fit(const std::string& text, int maxInk, const std::fu
     return cut;
 }
 
-// A mod's name in the label column, cut to end before the values.
+// Text to a width in a face: as it is when it fits; else cut on a word,
+// with "..." after it so the cut reads as a cut. A first word too long for
+// the width is cut by the character instead.
+static std::string fit_with_dots(const std::string& text, int maxInk, const std::function<int(const std::string&)>& inkOf) {
+    if (inkOf(text) <= maxInk) {
+        return text;
+    }
+    std::string best;
+    size_t at = 0;
+    while (at < text.size()) {
+        const size_t space = text.find(' ', at + 1);
+        const std::string upto = text.substr(0, (space == std::string::npos) ? text.size() : space);
+        if (inkOf(upto + "...") > maxInk) {
+            break;
+        }
+        best = upto;
+        if (space == std::string::npos) {
+            break;
+        }
+        at = space;
+    }
+    if (best.empty()) {
+        best = text;
+        while (!best.empty() && (inkOf(best + "...") > maxInk)) {
+            best.pop_back();
+        }
+    }
+    while (!best.empty() && ((best.back() == ' ') || (best.back() == ',') || (best.back() == ';') || (best.back() == '.'))) {
+        best.pop_back();
+    }
+    return best + "...";
+}
+
+static int help_ink(const std::string& s) {
+    return ink_width(compose_help(s.c_str()));
+}
+
+static int body_ink(const std::string& s) {
+    return ink_width(compose(s.c_str(), true));
+}
+
+// A help box line, cut with "..." when it must be.
+static std::string help_fit(const std::string& text) {
+    return fit_with_dots(text, ModsHelpInkWidth, help_ink);
+}
+
+// True when the help face has every letter of text.
+static bool help_has_all(const std::string& text) {
+    for (char c : text) {
+        if ((c != ' ') && (g_font.hlp.find(c) == nullptr)) {
+            return false;
+        }
+    }
+    return true;
+}
+
+
+// The words of text that fill one line `width` wide (the help box's by
+// default), and what is left.
+static std::pair<std::string, std::string> help_split(const std::string& text, int width = ModsHelpInkWidth) {
+    if (help_ink(text) <= width) {
+        return { text, "" };
+    }
+    size_t at = 0;
+    size_t lastFit = std::string::npos;
+    while (true) {
+        const size_t space = text.find(' ', at + 1);
+        if (space == std::string::npos) {
+            break;
+        }
+        if (help_ink(text.substr(0, space)) > width) {
+            break;
+        }
+        lastFit = space;
+        at = space;
+    }
+    if (lastFit == std::string::npos) {
+        return { fit_with_dots(text, width, help_ink), "" };
+    }
+    size_t rest = lastFit;
+    while ((rest < text.size()) && (text[rest] == ' ')) {
+        rest++;
+    }
+    return { text.substr(0, lastFit), text.substr(rest) };
+}
+
+// What the player calls one of the game's buttons on a device: the first
+// source the key table gives it there, as the Button Setup page names it
+// ("X", "Left Shift", "L Bumper"), or "" when that device has none.
+static std::string hand_name(const char* input, int device) {
+    std::string s = input_bind_display(input, device);
+    const size_t cut = s.find(" or ");
+    if (cut != std::string::npos) {
+        s.resize(cut);
+    }
+    return (s == "None") ? std::string() : s;
+}
+
+// The same, or the N64's own letter when the device has none.
+static std::string hand_key(const char* input, int device, const char* letter) {
+    const std::string s = hand_name(input, device);
+    return s.empty() ? std::string(letter) : s;
+}
+
+// What the lines are worded for: the device, the pad's layout (its shoulder
+// is Z or a bumper), and the key table's generation.
+uint64_t hand_sig() {
+    return (uint64_t(uint32_t(input_last_device())) << 40) | (uint64_t(input_pad_n64_layout() ? 1 : 0) << 32) |
+           uint64_t(input_bindings_generation());
+}
+
+// The first line the help face can spell that fits the box, else the last,
+// cut to fit. Every list ends with words it can always spell.
+static std::string first_fitting_of(const std::vector<std::string>& options) {
+    for (const std::string& o : options) {
+        if (help_has_all(o) && (help_ink(o) <= ModsHelpInkWidth)) {
+            return o;
+        }
+    }
+    return help_fit(options.back());
+}
+
+// A strip at a fixed size, the text at its top left, so a slot's pixels can
+// be repainted in place without the page building its sprite again.
+static Strip pad_strip(const Strip& text, int w, int h) {
+    Strip out;
+    out.width = w;
+    out.height = h;
+    out.intensity.assign(size_t(w) * h, 0);
+    out.alpha.assign(size_t(w) * h, 0);
+    for (int y = 0; y < std::min(text.height, h); y++) {
+        for (int x = 0; x < std::min(text.width, w); x++) {
+            out.intensity[size_t(y) * w + x] = text.intensity[size_t(y) * text.width + x];
+            out.alpha[size_t(y) * w + x] = text.alpha[size_t(y) * text.width + x];
+        }
+    }
+    return out;
+}
+
+// A paragraph on the help box's two lines: the first candidate the help face
+// can spell that fits them -- a '\n' breaks where it stands, else the words
+// wrap -- or the last, cut to fit. Every list ends with the controller's
+// words, which it can always spell. `last` says whether it came to that.
+static Strip compose_para(const std::vector<std::string>& candidates, bool* last = nullptr) {
+    auto lines_of = [](const std::string& c) {
+        const size_t br = c.find('\n');
+        return (br != std::string::npos) ? std::make_pair(c.substr(0, br), c.substr(br + 1)) : help_split(c);
+    };
+    for (size_t i = 0; i < candidates.size(); i++) {
+        std::string flat = candidates[i];
+        std::replace(flat.begin(), flat.end(), '\n', ' ');
+        if (!help_has_all(flat)) {
+            continue;
+        }
+        const auto l = lines_of(candidates[i]);
+        if ((help_ink(l.first) <= ModsHelpInkWidth) && (help_ink(l.second) <= ModsHelpInkWidth)) {
+            if (last != nullptr) {
+                *last = (i + 1 == candidates.size());
+            }
+            return compose_lines(l.first.c_str(), l.second.c_str());
+        }
+    }
+    if (last != nullptr) {
+        *last = true;
+    }
+    const auto l = lines_of(candidates.back());
+    return compose_lines(help_fit(l.first).c_str(), help_fit(l.second).c_str());
+}
+
+// A mouse button as a sentence says it: "the right button".
+static std::string mouse_part(const std::string& name) {
+    if (name == "Left") return "the left button";
+    if (name == "Right") return "the right button";
+    if (name == "Middle") return "the middle button";
+    if (name == "Back") return "the back side button";
+    if (name == "Forward") return "the forward side button";
+    return "";   // a wheel is never held
+}
+
+// What each input of the Button Setup page does in the game (+132..+149),
+// before what the buttons do to its row; and the lines as they were written
+// for the controller, which always fit. L is honest: the cartridge never
+// reads it (nothing in the decompilation tests L_TRIG outside the crash
+// screen); the dash needs the Dash Engine.
+static const char* const kBindRowSays[18] = {
+    "Zoomed in it takes the photo, zoomed out an apple.",
+    "Throws a pester ball to wake or move a Pokemon.",
+    "Zooms in for a photo, held down or as a switch.",
+    "Pauses the ride, and starts the game on the title.",
+    "Does nothing here, the game never reads L.",
+    "Dashes while held, once you own the dash engine.",
+    "Turns around to face behind the cart.",
+    "Plays the flute, once you have it.",
+    "Turns the camera to face left.",
+    "Turns the camera to face right.",
+    "Aims up in a course like the stick, and walks the menus.",
+    "Aims down in a course like the stick, and walks the menus.",
+    "Aims left in a course like the stick, and walks the menus.",
+    "Aims right in a course like the stick, and walks the menus.",
+    "Aims the camera up in a course, and walks the menus.",
+    "Aims the camera down in a course, and walks the menus.",
+    "Aims the camera left in a course, and walks the menus.",
+    "Aims the camera right in a course, and walks the menus.",
+};
+static const char* const kBindRowPad[18] = {
+    "Zoomed in it takes the photo, zoomed out\nan apple. A changes it, Z clears it.",
+    "Throws a pester ball to wake or move a\nPokemon. A changes it, Z clears it.",
+    "Zooms in for a photo, held down or as a\nswitch. A changes it, Z clears it.",
+    "Pauses the ride, and starts the game on\nthe title. A changes it, Z clears it.",
+    "Does nothing here, the game never reads\nL. A changes it, Z clears it.",
+    "Makes the cart dash while held, once you\nown the dash engine. A changes, Z clears.",
+    "Turns around to face behind the cart.\nA changes it, Z clears it.",
+    "Plays the flute, once you have it.\nA changes it, Z clears it.",
+    "Turns the camera to face left.\nA changes it, Z clears it.",
+    "Turns the camera to face right.\nA changes it, Z clears it.",
+    "Aims up in a course like the stick,\nand walks the menus. A changes, Z clears.",
+    "Aims down in a course like the stick,\nand walks the menus. A changes, Z clears.",
+    "Aims left in a course like the stick,\nand walks the menus. A changes, Z clears.",
+    "Aims right in a course like the stick,\nand walks the menus. A changes, Z clears.",
+    "Aims the camera up in a course, and\nwalks the menus. A changes, Z clears.",
+    "Aims the camera down in a course, and\nwalks the menus. A changes, Z clears.",
+    "Aims the camera left in a course, and\nwalks the menus. A changes, Z clears.",
+    "Aims the camera right in a course, and\nwalks the menus. A changes, Z clears.",
+};
+
+// A staged help line's words for a device, best first, the controller's
+// last. On a pad the buttons are the pad's own (an Xbox-style pad's Z is its
+// L Bumper); on a keyboard, the keys the table binds; with a mouse, clicks,
+// and the keyboard's key for what the mouse cannot press on a page (its
+// buttons are the pointer's there: Delete clears a Button Setup row).
+static std::vector<std::string> hand_words(uint32_t off, int device) {
+    const bool mouse = (device == kBindMouse);
+    const int keys = mouse ? kBindKeyboard : device;
+    const std::string a = hand_key("a", keys, "A");
+    const std::string b = hand_key("b", keys, "B");
+    const std::string z = hand_key("z", keys, "Z");
+    std::vector<std::string> v;
+    if ((off >= 132) && (off <= 149)) {
+        const std::string says = kBindRowSays[off - 132];
+        // On a keyboard, and with a mouse, Delete clears a row: the key
+        // every PC's list of bindings uses for it (Z's key when the table
+        // has taken both it and Backspace).
+        std::string clear = (device == kBindPad) ? z : input_clear_key_name();
+        if (clear.empty()) {
+            clear = z;
+        }
+        if (mouse) {
+            v = { says + " A click changes it, " + clear + " clears it.", says + " A click changes, " + clear + " clears." };
+        } else {
+            v = { says + " " + a + " changes it, " + clear + " clears it.", says + " " + a + " changes, " + clear + " clears." };
+        }
+        v.push_back(kBindRowPad[off - 132]);
+        return v;
+    }
+    switch (off) {
+        case 85: {
+            // The CONTROLS page's Zoom row.
+            std::string held = z;
+            if (mouse) {
+                const std::string part = mouse_part(hand_name("z", kBindMouse));
+                if (!part.empty()) {
+                    held = part;
+                }
+            }
+            v = { "Hold zooms while " + held + " is held down.\nSwitch zooms on a press, off on the next.",
+                  "Hold zooms while " + held + " is held.\nSwitch zooms on a press, off on the next.",
+                  "Hold zooms while Z is held down.\nSwitch zooms on a press, off on the next." };
+            break;
+        }
+        case 98:
+            // The Exit Game question: the next A closes the program, B withdraws.
+            if (mouse) {
+                v = { "Click again to close the game.\nRight click to stay." };
+            } else {
+                v = { "Press " + a + " again to close the game, " + b + " to stay.",
+                      "Press " + a + " again to close the game.\nPress " + b + " to stay." };
+            }
+            v.push_back("Press A again to close the game, B to stay.");
+            break;
+        case 100:
+            // The CONTROLS page's row that opens Button Setup: no value, as
+            // the Option list's own Screen row has none.
+            v = { mouse ? std::string("Click to choose what each key, mouse button and pad button does.")
+                        : ("Press " + a + " to choose what each key, mouse button and pad button does."),
+                  "Press A to choose what each key, mouse\nbutton and pad button does." };
+            break;
+        case 125:
+            // Button Setup's Device row.
+            if (mouse) {
+                v = { "Click the device to pick what to set up.\nRight click goes back with every change kept.",
+                      "Click the device to pick what to set up.\nRight click goes back, every change kept." };
+            } else {
+                v = { "Left and Right pick what to set up.\n" + b + " goes back with every change kept." };
+            }
+            v.push_back("Left and Right pick what to set up.\nB goes back with every change kept.");
+            break;
+        case 126:
+            // Restore Defaults, asking.
+            v = { mouse ? std::string("Click again to put this device back the way it came, right click to keep it as it is.")
+                        : ("Press " + a + " again to put this device back the way it came, " + b + " to keep it as it is."),
+                  "Press A again to put this device back\nthe way it came, B to keep it as it is." };
+            break;
+        case 128:
+            // Restore Defaults at rest.
+            v = { "Puts every row back the way the game came for the device at the top. " +
+                      (mouse ? std::string("A click asks first.") : (a + " asks first.")),
+                  "Puts every row back the way the game came\nfor the device at the top. A asks first." };
+            break;
+        case 276:
+            // The Mods page's Restart row after one A: the second restarts.
+            // The pages open over a course, where a restart loses it.
+            v = { mouse ? std::string("Click again to restart, right click to stay.\nAnything not saved at the lab is lost.")
+                        : ("Press " + a + " again to restart, " + b + " to stay.\nAnything not saved at the lab is lost."),
+                  "Press A again to restart, B to stay.\nAnything not saved at the lab is lost." };
+            break;
+        default:
+            v = { "" };
+            break;
+    }
+    return v;
+}
+
+Strip hand_strip(uint32_t off, int device) {
+    bool last = false;
+    const std::vector<std::string> words = hand_words(off, device);
+    const Strip text = compose_para(words, &last);
+    if (last && (words.size() > 1) && (device != kBindPad)) {
+        printf("[SNAP-MENU] help line %u: the %s's words do not fit the help box; the controller's are shown\n",
+               off, (device == kBindMouse) ? "mouse" : "keyboard");
+        fflush(stdout);
+    }
+    return pad_strip(text, HandW, HandH);
+}
+
+extern std::atomic<bool> g_app_level_resident;   // overlay_hook.cpp: a course's code is loaded
+
+// Every tick: the staged lines repainted in place when what they are worded
+// for has changed. Not in a course unless the pages are up: there a keyboard
+// and a mouse take turns many times a second, and no line is on screen.
+static void refresh_hand_lines() {
+    g_hand_now = hand_sig();
+    if (!g_staged || g_hand_addr.empty() || (g_hand_now == g_hand_sig)) {
+        return;
+    }
+    if (g_app_level_resident.load(std::memory_order_relaxed) && (read_u8_mail(PagesOpenAddr) == 0)) {
+        return;
+    }
+    g_hand_sig = g_hand_now;
+    const int device = input_last_device();
+    for (const auto& line : g_hand_addr) {
+        stage_dynamic_at(kStringBaseCount + line.first, line.second, hand_strip(line.first, device), HandW / 64, HandH);
+    }
+}
+
+// The details page's help box: what A leads to, and how to turn the mod on
+// or off or see the rest of its text, for the device in hand. The page is
+// repainted in place when that changes (poll_mods_bank), so the strip keeps
+// its slot's size.
+static ModsRow g_det_row;          // the mod the page shows
+static size_t g_det_lines = 0;     // and how many lines its text has
+static bool g_det_valid = false;
+static uint64_t g_det_hand = 0;    // what its help was worded for
+
+static Strip details_help_strip(const ModsRow& r, size_t lineCount) {
+    const int device = input_last_device();
+    const bool mouse = (device == kBindMouse);
+    const std::string a = hand_key("a", mouse ? kBindKeyboard : device, "A");
+    const bool hasOpt = (r.kind == ModsKind::Mod) && (r.optCount > 0);
+    std::string first;
+    if (r.kind == ModsKind::Broken) {
+        first = "Remove it from the mods folder.";
+    } else if ((r.kind == ModsKind::Fresh) && (r.optCount > 0)) {
+        first = (r.optCount == 1) ? "Its option can be set after a restart."
+                                  : ("Its " + std::to_string(r.optCount) + " options can be set after a restart.");
+    } else if (hasOpt) {
+        const std::string what = (r.optCount == 1) ? "this mod's option" : ("this mod's " + std::to_string(r.optCount) + " options");
+        first = mouse ? first_fitting_of({ "Click A Options above for " + what + ".", "Click A Options above to see them.",
+                                           "A opens " + what + "." })
+                      : first_fitting_of({ a + " opens " + what + ".", "A opens " + what + "." });
+    } else {
+        first = "This mod has no options to set.";
+    }
+    // The second line: how to turn the mod on or off, where it can be (not
+    // for a mod another one keeps on, nor one not loaded yet); else how to
+    // see the rest of the text, when there is more.
+    const bool scrolls = lineCount > 4;
+    const bool toggles = (r.kind == ModsKind::Mod) && !r.needed;
+    std::string second;
+    if (toggles) {
+        second = mouse ? "Click its status to turn it on or off." : "Left and Right turn it on or off.";
+    } else if (scrolls) {
+        second = mouse ? "The wheel, or the bar, shows the rest." : "Up and Down, or the wheel, show the rest.";
+    }
+    return pad_strip(compose_lines(help_fit(first).c_str(), help_fit(second).c_str()), ModsHelpChunks * 64, ModsHelpHeight);
+}
+
+// The help box: a description over a second line. With a second line, the
+// description has the first line and is cut with "..." when it is longer;
+// without one it has both lines. Every line is measured, so nothing a mod
+// writes can run past the box's frame.
+static Strip compose_help_box(const std::string& desc, const std::string& second) {
+    std::string l1, l2;
+    if (second.empty()) {
+        const auto split = help_split(desc);
+        l1 = split.first;
+        l2 = split.second.empty() ? "" : help_fit(split.second);
+    } else {
+        l1 = help_fit(desc);
+        l2 = help_fit(second);
+    }
+    return compose_lines(l1.c_str(), l2.c_str());
+}
+
+// The words of a mod's text that fill one line `width` wide, and what is
+// left, for its details page, where every word must be read whole: a word
+// longer than a line -- a web address, which has no spaces -- is broken
+// where it fills this line, after a '/', '.', '-', '_', '?', '&' or '=' where
+// it can be, else between two characters, and goes on on the next.
+static std::pair<std::string, std::string> wrap_split(const std::string& text, int width) {
+    if (help_ink(text) <= width) {
+        return { text, "" };
+    }
+    size_t at = 0;
+    size_t lastFit = std::string::npos;
+    while (true) {
+        const size_t space = text.find(' ', at + 1);
+        if ((space == std::string::npos) || (help_ink(text.substr(0, space)) > width)) {
+            break;
+        }
+        lastFit = space;
+        at = space;
+    }
+    size_t wordStart = (lastFit == std::string::npos) ? 0 : lastFit;
+    while ((wordStart < text.size()) && (text[wordStart] == ' ')) {
+        wordStart++;
+    }
+    size_t wordEnd = text.find(' ', wordStart);
+    if (wordEnd == std::string::npos) {
+        wordEnd = text.size();
+    }
+    if (help_ink(text.substr(wordStart, wordEnd - wordStart)) > width) {
+        size_t atMark = std::string::npos;
+        size_t atAny = std::string::npos;
+        for (size_t k = wordStart + 1; k < wordEnd; k++) {
+            if ((uint8_t(text[k]) & 0xC0) == 0x80) {
+                continue;   // inside a character
+            }
+            if (help_ink(text.substr(0, k)) > width) {
+                break;
+            }
+            atAny = k;
+            if (std::strchr("/.-_?&=", text[k - 1]) != nullptr) {
+                atMark = k;
+            }
+        }
+        const size_t cut = (atMark != std::string::npos) ? atMark : atAny;
+        if (cut != std::string::npos) {
+            return { text.substr(0, cut), text.substr(cut) };
+        }
+    }
+    if (lastFit == std::string::npos) {
+        return { fit_with_dots(text, width, help_ink), "" };
+    }
+    size_t rest = lastFit;
+    while ((rest < text.size()) && (text[rest] == ' ')) {
+        rest++;
+    }
+    return { text.substr(0, lastFit), text.substr(rest) };
+}
+
+// A mod's name in the label column, cut with "..." to end before the values.
 static Strip compose_mod_name(const std::string& text) {
-    const std::string cut = cut_to_fit(text, ModsNameInkWidth,
-        [](const std::string& s) { return ink_width(compose(s.c_str(), true)); });
+    const std::string cut = fit_with_dots(text, ModsNameInkWidth, body_ink);
     return compose(cut.c_str(), true);
 }
 
-// A mod's help line: its short description over the state sentence, each
-// cut to the help box's width.
-static std::string cut_help(const std::string& text) {
-    return cut_to_fit(text, ModsHelpInkWidth,
-        [](const std::string& s) { return ink_width(compose_help(s.c_str())); });
+// The first of the lines that fits the help box, or the last one cut.
+static std::string first_fitting(std::initializer_list<const char*> options) {
+    const char* last = "";
+    for (const char* o : options) {
+        if (help_ink(o) <= ModsHelpInkWidth) {
+            return o;
+        }
+        last = o;
+    }
+    return help_fit(last);
 }
 
-static Strip compose_mod_help(const std::string& desc, const std::string& state) {
-    const std::string cut1 = cut_help(desc);
-    const std::string cut2 = cut_help(state);
-    return compose_lines(cut1.c_str(), cut2.c_str());
-}
-
-// The state sentence, and who made the mod when the line has room for it.
-static std::string mods_state_line(const ModsRow& row) {
-    std::string line;
+// A mod row's second help line, a sentence as on the Graphics page: an
+// unmet dependency or a change waiting for a restart first; else what L and
+// R do when there are two mods or more (the header's legend says what A
+// does); else nothing, and the description has both lines.
+static std::string mods_second_line(const ModsRow& row, size_t modCount) {
+    if (row.kind == ModsKind::Broken) {
+        return "Remove it from the mods folder.";
+    }
+    if (row.kind == ModsKind::Fresh) {
+        return first_fitting({ "Installed; it loads after a restart.", "It loads after a restart." });
+    }
     if (!row.needs.empty()) {
-        return row.needs;
+        return help_fit(row.needs);
     }
-    if (row.live) {
-        line = row.enabled ? "This mod is on. A turns it off." : "This mod is off. A turns it on.";
-    } else {
-        line = row.enabled ? "This mod is on. A turns it off at the next start."
-                           : "This mod is off. A turns it on at the next start.";
+    if (!row.waiting.empty()) {
+        return help_fit(row.waiting);
     }
-    if (!row.author.empty()) {
-        line += " By " + row.author + ".";
+    // Turned on or off since the game started, and not yet in force.
+    bool changed = false;
+    if (g_mods_start_taken && !row.live) {
+        for (const auto& s : g_mods_start) {
+            if ((s.first == row.id) && (s.second != mods_on(row))) {
+                changed = true;
+            }
+        }
     }
-    return line;
+    // On because a mod that is on needs it: its own switch is off, or would
+    // make no difference, and Left and Right leave it as it is.
+    if (row.needed) {
+        const std::string by = row.neededBy.empty() ? std::string("another mod") : face_text(row.neededBy, true);
+        if (changed) {
+            return help_fit("On after a restart: " + by + " needs it.");
+        }
+        return help_fit("On: " + by + " needs it.");
+    }
+    if (changed) {
+        return mods_on(row) ? "Turns on after a restart." : "Turns off after a restart.";
+    }
+    if (modCount > 1) {
+        const int device = input_last_device();
+        if (device == kBindMouse) {
+            return first_fitting_of({ "Drag it up or down to move it in the load order.",
+                                      "Drag it to move it in the load order.",
+                                      "L and R move it in the load order." });
+        }
+        const std::string l = hand_key("l", device, "L");
+        const std::string r = hand_key("r", device, "R");
+        return first_fitting_of({ l + " and " + r + " move it up or down the load order.",
+                                  l + " and " + r + " move it in the load order.",
+                                  l + " and " + r + " change its load order.",
+                                  l + " and " + r + " move it in the order.",
+                                  "L and R move it in the load order." });
+    }
+    return "";
 }
 
 // The two rows under the mods, as the other recompilations' mod menus have
-// them as buttons.
-static const char* const kModsActionNames[ModsActions] = { "Open the mods folder", "Restart the game" };
+// them as buttons; the Restart row says when a change waits for it.
+static const char* const kModsActionNames[ModsActions] = { "Install Mods...", "Open Mods Folder",
+                                                            "Restart Game" };
+static const char* const kModsRestartPending = "Restart Game to Apply";
 static const char* const kModsActionHelps[ModsActions][2] = {
-    { "Shows the folder in the file browser. Drop a mod there,", "or on the window, and restart the game to load it." },
-    { "Closes the game and starts it again, loading", "the mods as they are set here." },
+    { "Chooses mods or their zips to install. They", "load after a restart." },
+    { "Opens the mods folder. Put a mod or its zip", "there, or drop it on the window, then restart." },
+    { "Closes the game and starts it again with", "the mods as they are set here." },
 };
+
+// The installer's reason as a help line: a capital and a full stop.
+static std::string mods_sentence(std::string s) {
+    if (!s.empty()) {
+        s[0] = char(toupper(uint8_t(s[0])));
+        if (s.back() != '.') {
+            s += '.';
+        }
+    }
+    return s;
+}
+
+// The same, as the runtime loads them: on by its switch or needed.
+static ModsState mods_in_force_now() {
+    ModsState s;
+    for (const ModsRow& r : g_mods_rows) {
+        if (r.kind == ModsKind::Mod) {
+            s.emplace_back(r.id, mods_on(r));
+        }
+    }
+    return s;
+}
+
+// Which mods are on because another needs them, and which one: the
+// runtime's auto-enabled set, named by the first mod that is on and lists
+// it among the mods it cannot do without.
+static void mods_refresh_needed() {
+    for (ModsRow& r : g_mods_rows) {
+        r.needed = false;
+        r.neededBy.clear();
+        if (r.kind != ModsKind::Mod) {
+            continue;
+        }
+        r.needed = recomp::mods::is_mod_auto_enabled(r.id);
+        if (!r.needed) {
+            continue;
+        }
+        for (const ModsRow& m : g_mods_rows) {
+            if ((m.kind == ModsKind::Mod) && (&m != &r) && (m.enabled || recomp::mods::is_mod_auto_enabled(m.id)) &&
+                (std::find(m.deps.begin(), m.deps.end(), r.id) != m.deps.end())) {
+                r.neededBy = m.title.empty() ? m.id : m.title;
+                break;
+            }
+        }
+    }
+}
+
+// A change the running game has not taken: a code mod turned on or off, or
+// the order moved, since the game started, or a mod installed during play. Content that is toggled live
+// takes effect at once and waits for nothing.
+static bool mods_restart_pending() {
+    // A mod installed during play loads at the next start (mod_installer.cpp).
+    if (mods_installed_during_play()) {
+        return true;
+    }
+    if (!g_mods_start_taken) {
+        return false;
+    }
+    std::vector<std::string> nowOrder, startOrder;
+    for (const ModsRow& r : g_mods_rows) {
+        if (r.kind != ModsKind::Mod) {
+            continue;
+        }
+        nowOrder.push_back(r.id);
+        if (r.live) {
+            continue;
+        }
+        for (const auto& s : g_mods_start) {
+            if ((s.first == r.id) && (s.second != mods_on(r))) {
+                return true;
+            }
+        }
+    }
+    for (const auto& s : g_mods_start) {
+        startOrder.push_back(s.first);
+    }
+    return nowOrder != startOrder;
+}
 
 // The runtime's list, in its order, and what mods.json says of each.
 static void mods_gather() {
@@ -2888,15 +3952,24 @@ static void mods_gather() {
             }
         }
         index++;
+        // The name alone: the version is on the mod's details page, and
+        // without it a long name is cut less often.
         row.name = face_text(d.display_name.empty() ? d.mod_id : d.display_name, false);
-        if ((d.version.major >= 0) && (d.version.minor >= 0) && (d.version.patch >= 0)) {
-            char v[48];
-            snprintf(v, sizeof(v), "  %d.%d.%d", d.version.major, d.version.minor, d.version.patch);
-            row.name += v;
-        }
         row.desc = face_text(d.short_description.empty() ? d.description : d.short_description, true);
         if (!d.authors.empty()) {
             row.author = face_text(d.authors[0], true);
+        }
+        row.title = d.display_name.empty() ? d.mod_id : d.display_name;
+        if ((d.version.major >= 0) && (d.version.minor >= 0) && (d.version.patch >= 0)) {
+            row.version = std::to_string(d.version.major) + "." + std::to_string(d.version.minor) + "." +
+                          std::to_string(d.version.patch);
+        }
+        row.fullDesc = d.description.empty() ? d.short_description : d.description;
+        row.authors = d.authors;
+        for (const recomp::mods::Dependency& dep : d.dependencies) {
+            if (!dep.optional) {
+                row.deps.push_back(dep.mod_id);
+            }
         }
         row.enabled = recomp::mods::is_mod_enabled(d.mod_id);
         row.live = d.runtime_toggleable;
@@ -2907,10 +3980,64 @@ static void mods_gather() {
         }
         g_mods_rows.push_back(row);
     }
+    g_mods_runtime_count = g_mods_rows.size();
+    mods_refresh_needed();
+
+    // Mods installed during play: a new one is a row of its own until the
+    // next start; an update is a line on the mod it replaces.
+    g_mods_seen_generation = mods_install_generation();
+    for (const InstalledMod& m : mods_installed_this_session()) {
+        bool isUpdate = false;
+        for (size_t i = 0; i < g_mods_runtime_count; i++) {
+            if (g_mods_rows[i].id == m.id) {
+                g_mods_rows[i].waiting = face_text("Version " + m.version + " loads after a restart.", true);
+                isUpdate = true;
+            }
+        }
+        if (!isUpdate) {
+            ModsRow row;
+            row.kind = ModsKind::Fresh;
+            row.id = m.id;
+            row.name = face_text(m.name, false);
+            row.desc = face_text(m.desc, true);
+            row.title = m.name;
+            row.version = m.version;
+            row.fullDesc = m.fullDesc.empty() ? m.desc : m.fullDesc;
+            row.authors = m.authors;
+            row.thumb = m.thumb;
+            row.optCount = m.optCount;
+            g_mods_rows.push_back(row);
+        }
+    }
+    // Mod files found at start that this release will not load: a line on
+    // the mod when the runtime lists it (it refuses it at load), else a row
+    // of their own, named by the file.
+    for (const BrokenMod& b : mods_broken_at_start()) {
+        bool listed = false;
+        for (size_t i = 0; i < g_mods_runtime_count; i++) {
+            if (!b.id.empty() && (g_mods_rows[i].id == b.id)) {
+                g_mods_rows[i].needs = face_text(mods_sentence(b.reason), true);
+                listed = true;
+            }
+        }
+        if (!listed) {
+            ModsRow row;
+            row.kind = ModsKind::Broken;
+            row.id = b.id;
+            row.name = face_text(b.file, false);
+            row.desc = face_text(mods_sentence(b.reason), true);
+            row.title = b.file;
+            row.fullDesc = mods_sentence(b.reason);
+            g_mods_rows.push_back(row);
+        }
+    }
     const size_t mods = std::min<size_t>(g_mods_rows.size(), 250 - ModsActions);
     write_u16(ModsModCountAddr, uint16_t(mods));
     write_u16(ModsCountAddr, uint16_t(mods + ModsActions));
-    printf("[SNAP-MENU] Mods page: %zu mod%s in the folder\n", g_mods_rows.size(), (g_mods_rows.size() == 1) ? "" : "s");
+    printf("[SNAP-MENU] Mods page: %zu mod%s the game opened, %zu installed during play, %zu that will not load\n",
+           g_mods_runtime_count, (g_mods_runtime_count == 1) ? "" : "s",
+           size_t(std::count_if(g_mods_rows.begin(), g_mods_rows.end(), [](const ModsRow& r) { return r.kind == ModsKind::Fresh; })),
+           size_t(std::count_if(g_mods_rows.begin(), g_mods_rows.end(), [](const ModsRow& r) { return r.kind == ModsKind::Broken; })));
     fflush(stdout);
 }
 
@@ -2922,6 +4049,11 @@ static void mods_compose(int top) {
     const size_t mods = std::min<size_t>(g_mods_rows.size(), 250 - ModsActions);
     uint8_t state = 0;
     uint8_t hasOpt = 0;
+    uint8_t fresh = 0;
+    uint8_t broken = 0;
+    uint8_t needed = 0;
+    uint8_t unseen = 0;
+    const bool pending = mods_restart_pending();
     for (int i = 0; i < ModsVisible; i++) {
         const size_t row = size_t(top) + size_t(i);
         const uint32_t nameId = kModsDynBase + bank * uint32_t(ModsBank) + uint32_t(i);
@@ -2931,18 +4063,31 @@ static void mods_compose(int top) {
         if (row < mods) {
             const ModsRow& r = g_mods_rows[row];
             name = compose_mod_name(r.name);
-            help = compose_mod_help(r.desc, mods_state_line(r));
-            if (r.enabled) {
+            help = compose_help_box(r.desc, mods_second_line(r, g_mods_runtime_count));
+            if (mods_on(r)) {
                 state |= uint8_t(1u << i);
             }
-            if (r.optCount > 0) {
+            if ((r.kind == ModsKind::Mod) && (r.optCount > 0)) {
                 hasOpt |= uint8_t(1u << i);
+            }
+            if (r.kind == ModsKind::Fresh) {
+                fresh |= uint8_t(1u << i);
+            }
+            if (r.kind == ModsKind::Broken) {
+                broken |= uint8_t(1u << i);
+            }
+            if ((r.kind == ModsKind::Mod) && r.needed) {
+                needed |= uint8_t(1u << i);
+            }
+            if ((r.kind == ModsKind::Fresh) && (g_mods_opened.count(r.id) == 0)) {
+                unseen |= uint8_t(1u << i);
             }
         }
         else if (row < mods + size_t(ModsActions)) {
             const size_t action = row - mods;
-            name = compose(kModsActionNames[action], true);
-            help = compose_lines(kModsActionHelps[action][0], kModsActionHelps[action][1]);
+            const bool restart = (action == 2);
+            name = compose((restart && pending) ? kModsRestartPending : kModsActionNames[action], true);
+            help = compose_lines(help_fit(kModsActionHelps[action][0]).c_str(), help_fit(kModsActionHelps[action][1]).c_str());
         }
         else {
             name = compose("", true);
@@ -2953,22 +4098,404 @@ static void mods_compose(int top) {
     }
     write_u8(ModsStateAddr + bank, state);
     write_u8(ModsHasOptAddr + bank, hasOpt);
+    write_u8(ModsNewAddr + bank, fresh);
+    write_u8(ModsBadAddr + bank, broken);
+    write_u8(ModsNeededAddr + bank, needed);
+    write_u8(ModsUnseenAddr + bank, unseen);
     write_u32(ModsGenAddr, gen + 1);
     g_mods_shown_top = top;
+    g_mods_hand = g_hand_now;
+}
+
+// A list of names in words: "A", "A and B", "A, B and C".
+static std::string names_in_words(const std::vector<std::string>& names) {
+    std::string out;
+    for (size_t i = 0; i < names.size(); i++) {
+        if (i > 0) {
+            out += (i + 1 == names.size()) ? " and " : ", ";
+        }
+        out += names[i];
+    }
+    return out;
+}
+
+// A mod's display name by its id, or the id when the folder has no such mod.
+static std::string mods_title_of(const std::string& id) {
+    for (const ModsRow& m : g_mods_rows) {
+        if ((m.id == id) && !m.title.empty()) {
+            return m.title;
+        }
+    }
+    return id;
+}
+
+// A strip with only its columns [x0, x1) left: two strips cut from one line
+// keep their places, so drawn at one x they read as the line, each in its
+// own colour.
+static Strip keep_columns(const Strip& st, int x0, int x1) {
+    Strip out = st;
+    for (int y = 0; y < out.height; y++) {
+        for (int x = 0; x < out.width; x++) {
+            if ((x < x0) || (x >= x1)) {
+                out.alpha[size_t(y) * size_t(out.width) + size_t(x)] = 0;
+            }
+        }
+    }
+    return out;
+}
+
+// The rightmost inked column plus one.
+static int strip_ink(const Strip& st) {
+    int r = 0;
+    for (int y = 0; y < st.height; y++) {
+        for (int x = st.width - 1; x >= r; x--) {
+            if (st.alpha[size_t(y) * size_t(st.width) + size_t(x)] != 0) {
+                r = x + 1;
+                break;
+            }
+        }
+    }
+    return r;
+}
+
+// A strip moved to end at the right of a canvas `width` wide.
+static Strip right_aligned(const Strip& st, int width) {
+    Strip out;
+    out.width = width;
+    out.height = st.height;
+    out.intensity.assign(size_t(width) * size_t(st.height), 0);
+    out.alpha.assign(size_t(width) * size_t(st.height), 0);
+    const int ink = strip_ink(st);
+    const int dx = width - ink;
+    for (int y = 0; y < st.height; y++) {
+        for (int x = 0; x < ink; x++) {
+            if ((x + dx >= 0) && (x + dx < width)) {
+                out.intensity[size_t(y) * size_t(width) + size_t(x + dx)] = st.intensity[size_t(y) * size_t(st.width) + size_t(x)];
+                out.alpha[size_t(y) * size_t(width) + size_t(x + dx)] = st.alpha[size_t(y) * size_t(st.width) + size_t(x)];
+            }
+        }
+    }
+    return out;
+}
+
+// A line with one word the page colours, "prefix word suffix", cut to
+// `room`, as two strips at one place: the word's columns, and every other.
+static void stage_marked(uint32_t wordId, uint32_t wordAddr, uint32_t restId, uint32_t restAddr,
+                         const std::string& prefix, const std::string& word, const std::string& suffix, int room) {
+    const std::string line = fit_with_dots(prefix + word + suffix, room, help_ink);
+    const Strip full = compose_help(line.c_str());
+    const int x0 = prefix.empty() ? 0 : std::min(full.width, strip_ink(compose_help(prefix.c_str())) + 1);
+    const int x1 = std::min(full.width, strip_ink(compose_help((prefix + word).c_str())) + 1);
+    Strip rest = full;
+    for (int y = 0; y < rest.height; y++) {
+        for (int x = x0; x < x1; x++) {
+            rest.alpha[size_t(y) * size_t(rest.width) + size_t(x)] = 0;
+        }
+    }
+    stage_dynamic_at(wordId, wordAddr, keep_columns(full, x0, x1), DetChunks, kMenuHlpCellH);
+    stage_dynamic_at(restId, restAddr, rest, DetChunks, kMenuHlpCellH);
+}
+
+// A mod's picture, fitted into ThumbSize square with its shape kept, centred,
+// and staged for the details page as RGBA16 with an ordered dither (five
+// bits a channel band a smooth gradient otherwise). The runtime keeps the
+// bytes of thumb.dds, or else thumb.png: src/dds_image.cpp reads the DDS
+// (uncompressed, BC1, BC2, BC3, BC7), stb_image the PNG. False when the mod
+// has no picture, or one that was not read.
+static bool thumb_stage(const ModsRow& r) {
+    if ((r.kind != ModsKind::Mod) && (r.kind != ModsKind::Fresh)) {
+        return false;
+    }
+    // A mod installed during play is not open in the runtime yet: its bytes
+    // came from the installer.
+    const std::vector<char>& bytes = (r.kind == ModsKind::Fresh) ? r.thumb : recomp::mods::get_mod_thumbnail(r.id);
+    if (bytes.empty()) {
+        return false;
+    }
+    int w = 0;
+    int h = 0;
+    std::vector<uint8_t> ddsPixels;
+    stbi_uc* decoded = nullptr;
+    const stbi_uc* src = nullptr;
+    if ((bytes.size() >= 4) && (std::memcmp(bytes.data(), "DDS ", 4) == 0)) {
+        std::string why;
+        if (!dds_decode_rgba(reinterpret_cast<const uint8_t*>(bytes.data()), bytes.size(), w, h, ddsPixels, why)) {
+            printf("[SNAP-MENU] Mods page: %s's picture was not read: %s\n", r.id.c_str(), why.c_str());
+            fflush(stdout);
+            return false;
+        }
+        src = ddsPixels.data();
+    } else {
+        decoded = stbi_load_from_memory(reinterpret_cast<const stbi_uc*>(bytes.data()), int(bytes.size()),
+                                        &w, &h, nullptr, 4);
+        if (decoded == nullptr) {
+            printf("[SNAP-MENU] Mods page: %s's picture was not read: %s\n", r.id.c_str(), stbi_failure_reason());
+            fflush(stdout);
+            return false;
+        }
+        src = decoded;
+    }
+    const double scale = std::min(double(ThumbSize) / double(w), double(ThumbSize) / double(h));
+    const int tw = std::max(1, int(std::lround(double(w) * scale)));
+    const int th = std::max(1, int(std::lround(double(h) * scale)));
+    const int ox = (ThumbSize - tw) / 2;
+    const int oy = (ThumbSize - th) / 2;
+    static const int bayer[4][4] = { { 0, 8, 2, 10 }, { 12, 4, 14, 6 }, { 3, 11, 1, 9 }, { 15, 7, 13, 5 } };
+    for (int y = 0; y < ThumbSize; y++) {
+        for (int x = 0; x < ThumbSize; x++) {
+            uint16_t texel = 0;
+            if ((x >= ox) && (x < ox + tw) && (y >= oy) && (y < oy + th)) {
+                // The source pixels under this texel, averaged by their alpha.
+                const int sx0 = std::min(w - 1, int(double(x - ox) / scale));
+                const int sy0 = std::min(h - 1, int(double(y - oy) / scale));
+                const int sx1 = std::min(w, std::max(sx0 + 1, int(std::ceil(double(x - ox + 1) / scale))));
+                const int sy1 = std::min(h, std::max(sy0 + 1, int(std::ceil(double(y - oy + 1) / scale))));
+                double sr = 0, sg = 0, sb = 0, sa = 0;
+                for (int v = sy0; v < sy1; v++) {
+                    for (int u = sx0; u < sx1; u++) {
+                        const stbi_uc* p = src + (size_t(v) * size_t(w) + size_t(u)) * 4;
+                        sr += double(p[0]) * p[3];
+                        sg += double(p[1]) * p[3];
+                        sb += double(p[2]) * p[3];
+                        sa += p[3];
+                    }
+                }
+                const double n = double((sx1 - sx0) * (sy1 - sy0));
+                if (sa / n >= 128.0) {
+                    const int t = bayer[y & 3][x & 3] * 16 + 8;
+                    auto q = [&](double c) { return std::min(31, (int(c / sa + 0.5) * 31 + t) / 255); };
+                    texel = uint16_t((q(sr) << 11) | (q(sg) << 6) | (q(sb) << 1) | 1);
+                }
+            }
+            const uint32_t at = ThumbAddr + uint32_t(y / ThumbBandRows) * ThumbBandBytes
+                              + uint32_t(x / 64) * uint32_t(64 * ThumbBandRows * 2)
+                              + uint32_t(((y % ThumbBandRows) * 64 + (x % 64)) * 2);
+            write_u16(at, texel);
+        }
+    }
+    if (decoded != nullptr) {
+        stbi_image_free(decoded);
+    }
+    return true;
+}
+
+// The details page of a row, in its slots:
+//   - the title (the name, in the rows' face) and, right-aligned on the same
+//     line, the version, which the page draws in the values' orange;
+//   - "By" and who made it, and the mod's status as a sentence ("This mod is
+//     on.", "On: Test User needs it."), each with one word the page colours;
+//   - the mod's picture at the right of those three lines, when it has one,
+//     the lines beside it ending ThumbRoom sooner;
+//   - the text: the whole description a paragraph at a time with a blank
+//     line between, then what it needs and what needs it, every line
+//     measured to DetTextInkWidth and broken between words, what goes past
+//     DetLines ending in "...";
+//   - the help box: what A leads to, and how to see the rest of the text.
+// Returns the text's lines, plus 64 when the status is an error (red), plus
+// 128 when there is a picture. The page's answer is one byte.
+static int details_compose(const ModsRow& r) {
+    const bool thumb = thumb_stage(r);
+    const int room = DetTextInkWidth - (thumb ? ThumbRoom : 0);
+    std::vector<std::string> lines;
+    auto add = [&](const std::string& text) {
+        std::string rest = face_text(text, true);
+        if (rest.empty()) {
+            lines.push_back("");
+            return;
+        }
+        while (!rest.empty()) {
+            const auto split = wrap_split(rest, DetTextInkWidth);
+            lines.push_back(split.first);
+            rest = split.second;
+        }
+    };
+
+    // The description, paragraph by paragraph.
+    {
+        std::string text = r.fullDesc;
+        for (size_t at; (at = text.find("\r\n")) != std::string::npos;) {
+            text.erase(at, 1);
+        }
+        size_t from = 0;
+        while (from <= text.size()) {
+            const size_t gap = text.find("\n\n", from);
+            const std::string para = text.substr(from, (gap == std::string::npos) ? std::string::npos : gap - from);
+            if (!face_text(para, true).empty()) {
+                if (!lines.empty()) {
+                    lines.push_back("");
+                }
+                add(para);
+            }
+            if (gap == std::string::npos) {
+                break;
+            }
+            from = gap + 2;
+        }
+    }
+    // What it needs, and what needs it.
+    std::vector<std::string> needs;
+    for (const std::string& dep : r.deps) {
+        needs.push_back(mods_title_of(dep));
+    }
+    std::vector<std::string> neededBy;
+    for (const ModsRow& m : g_mods_rows) {
+        if ((m.kind == ModsKind::Mod) && (std::find(m.deps.begin(), m.deps.end(), r.id) != m.deps.end())) {
+            neededBy.push_back(m.title.empty() ? m.id : m.title);
+        }
+    }
+    if ((!needs.empty() || (!neededBy.empty() && !(r.needed && (neededBy.size() == 1)))) && !lines.empty()) {
+        lines.push_back("");
+    }
+    if (!needs.empty()) {
+        add("Needs " + names_in_words(needs) + ".");
+    }
+    // Said once: the status line names the one mod that needs it.
+    const bool statusSaysIt = r.needed && (neededBy.size() == 1);
+    if (!neededBy.empty() && !statusSaysIt) {
+        add(names_in_words(neededBy) + ((neededBy.size() == 1) ? " needs it." : " need it."));
+    }
+    while (!lines.empty() && lines.back().empty()) {
+        lines.pop_back();
+    }
+    if (lines.size() > size_t(DetLines)) {
+        lines.resize(size_t(DetLines));
+        lines.back() = fit_with_dots(lines.back() + " ...", DetTextInkWidth, help_ink);
+    }
+
+    // The title and the version beside it.
+    const Strip version = compose(face_text(r.version, false).c_str(), true);
+    const int versionInk = r.version.empty() ? 0 : strip_ink(version);
+    const int nameRoom = room - (r.version.empty() ? 0 : (versionInk + 10));
+    stage_dynamic_at(kDetTitleId, DetTitleAddr,
+                     compose(fit_with_dots(face_text(r.title, false), nameRoom, body_ink).c_str(), true),
+                     DetChunks, StripHeight);
+    // Right-aligned in three whole blocks (the page draws whole 64-texel
+    // blocks only); the page puts the strip's end before the picture, or at
+    // the text's right edge.
+    stage_dynamic_at(kDetVersionId, DetVersionAddr, right_aligned(version, 3 * 64), DetChunks, StripHeight);
+
+    // Who made it.
+    if (!r.authors.empty()) {
+        stage_marked(kDetByLabelId, DetByLabelAddr, kDetByValueId, DetByValueAddr, "", "By",
+                     " " + face_text(names_in_words(r.authors), true), room);
+    } else {
+        stage_marked(kDetByLabelId, DetByLabelAddr, kDetByValueId, DetByValueAddr, "", "", "", room);
+    }
+    // No author: the page moves the status up a line, into the By line's place.
+    write_u8(DetNoByAddr, r.authors.empty() ? 1 : 0);
+
+    // Its status, a sentence: a bare "On" said nothing of what was on.
+    std::string prefix, label, rest;
+    int colour = 0;
+    if (r.kind == ModsKind::Fresh) {
+        label = "New";
+        rest = ": it loads after a restart.";
+    } else if (r.kind == ModsKind::Broken) {
+        label = "Error";
+        rest = ": it will not load.";
+        colour = 1;
+    } else {
+        const bool on = mods_on(r);
+        bool changed = false;
+        if (g_mods_start_taken && !r.live) {
+            for (const auto& st : g_mods_start) {
+                if ((st.first == r.id) && (st.second != on)) {
+                    changed = true;
+                }
+            }
+        }
+        label = on ? "On" : "Off";
+        const std::string by = r.neededBy.empty() ? std::string("another mod") : face_text(r.neededBy, true);
+        if (r.needed) {
+            rest = changed ? (" after a restart: " + by + " needs it.") : (": " + by + " needs it.");
+        } else if (changed) {
+            rest = " after a restart.";
+        } else {
+            prefix = "This mod is ";
+            label = on ? "on" : "off";
+            rest = ".";
+        }
+    }
+    stage_marked(kDetStLabelId, DetStLabelAddr, kDetStValueId, DetStValueAddr, prefix, label, rest, room);
+
+    // Stale lines past the text are cleared.
+    for (int i = 0; i < DetLines; i++) {
+        const std::string& line = (size_t(i) < lines.size()) ? lines[size_t(i)] : std::string();
+        stage_dynamic_at(kDetLineId + uint32_t(i), DetLinesAddr + uint32_t(i) * DetLineBytes,
+                         compose_help(line.c_str()), DetChunks, kMenuHlpCellH);
+    }
+
+    // The help box, worded for the device in hand and again when it changes
+    // while the page is up (poll_mods_bank).
+    g_det_row = r;
+    g_det_lines = lines.size();
+    g_det_valid = true;
+    g_det_hand = g_hand_now;
+    stage_dynamic_at(kDetHelpId, DetHelpAddr, details_help_strip(r, lines.size()), ModsHelpChunks, ModsHelpHeight);
+    return int(lines.size()) + 64 * colour + (thumb ? 128 : 0);
 }
 
 static void poll_mods_bank() {
     if (read_u8_mail(ModsOpenAddr) == 0) {
+        if (g_mods_shown_top >= 0) {
+            // The pages run on a game process's stack (graphics_menu_patch.c,
+            // snap_stack_mark): the least room they left on it, the far end
+            // being the canary a full stack tramples.
+            const uint32_t left = read_u32_mail(MailboxAddr + 0x94);
+            const uint32_t size = read_u32_mail(MailboxAddr + 0x98);
+            if (left != 0xFFFFFFFFu) {
+                printf("[SNAP-MENU] Mods page closed: the pages left %u of the %u bytes of their stack at the least\n",
+                       left, size);
+                // The strips the pool refused since boot, and the most it
+                // found in use at a sweep -- it sweeps only when all 64 slots
+                // have been handed out, so no sweep means it never filled
+                // (graphics_menu_patch.c, MBOX_POOL_FAIL and _PEAK).
+                const uint32_t peak = read_u32_mail(MailboxAddr + 0x80);
+                const uint32_t refused = read_u32_mail(MailboxAddr + 0x7C);
+                if (peak == 0) {
+                    printf("[SNAP-MENU] the strip pool: %u strips refused; it has not filled, so no sweep has counted it\n",
+                           refused);
+                } else {
+                    printf("[SNAP-MENU] the strip pool: %u strips refused; its fullest sweep found %u of its 64 slots in use\n",
+                           refused, peak);
+                }
+                fflush(stdout);
+            }
+        }
         g_mods_shown_top = -1;
         g_mods_handled = 0;
+        g_det_valid = false;
         return;
     }
     if (g_mods_shown_top < 0) {
+        write_u32(MailboxAddr + 0x94, 0xFFFFFFFFu);
+    }
+    if (g_mods_shown_top < 0) {
         mods_gather();
+        if (!g_mods_start_taken) {
+            // The first opening of the run: nothing has changed mods.json
+            // since the game read it at its start.
+            g_mods_start = mods_in_force_now();
+            g_mods_start_taken = true;
+        }
     }
     const int top = int(read_u8_mail(ModsTopAddr));
     const uint32_t req = read_u32_mail(ModsReqAddr);
     bool recompose = (top != g_mods_shown_top);
+    // Another device in hand: the help lines are worded for it.
+    if ((g_mods_shown_top >= 0) && (g_mods_hand != g_hand_now)) {
+        recompose = true;
+    }
+    if (g_det_valid && (g_det_hand != g_hand_now)) {
+        g_det_hand = g_hand_now;
+        stage_dynamic_at(kDetHelpId, DetHelpAddr, details_help_strip(g_det_row, g_det_lines), ModsHelpChunks, ModsHelpHeight);
+    }
+    // A mod dropped on the window while the page is up: the list takes it
+    // at once (the page reads the new count when the bank turns).
+    if ((g_mods_shown_top >= 0) && (mods_install_generation() != g_mods_seen_generation)) {
+        mods_gather();
+        recompose = true;
+    }
     uint32_t ack = 0;
     if (req == 0) {
         g_mods_handled = 0;
@@ -2977,24 +4504,32 @@ static void poll_mods_bank() {
         const int op = int((req >> 16) & 0xFF);
         const size_t row = size_t(req & 0xFFFF);
         uint32_t result = 3;
-        if ((op == 1) && (row < g_mods_rows.size())) {
+        if ((op == 1) && (row < g_mods_runtime_count) && g_mods_rows[row].needed) {
+            // Needed by a mod that is on: the runtime loads it whatever its
+            // switch says, so the switch is left alone and the page says why.
+            printf("[SNAP-MENU] Mods page: %s stays on; %s needs it\n", g_mods_rows[row].id.c_str(),
+                   g_mods_rows[row].neededBy.c_str());
+            fflush(stdout);
+        }
+        else if ((op == 1) && (row < g_mods_runtime_count)) {
             ModsRow& r = g_mods_rows[row];
             recomp::mods::enable_mod(r.id, !r.enabled);
             r.enabled = recomp::mods::is_mod_enabled(r.id);
+            mods_refresh_needed();
             result = r.enabled ? 1 : 2;
             recompose = true;
             printf("[SNAP-MENU] Mods page: %s is %s in mods.json%s\n", r.id.c_str(),
                    r.enabled ? "on" : "off", r.live ? "" : "; in force at the next start");
             fflush(stdout);
         }
-        else if (((op == 2) || (op == 3)) && (row < g_mods_rows.size())) {
+        else if (((op == 2) || (op == 3)) && (row < g_mods_runtime_count)) {
             // The mod one place up or down the load order, which the
             // runtime keeps in mods.json; the list is read again in the
-            // new order.
+            // new order. The rows after the runtime's mods are not in it.
             const std::string id = g_mods_rows[row].id;
             const size_t at = recomp::mods::get_mod_order_index(id);
             const size_t to = (op == 2) ? ((at > 0) ? at - 1 : 0) : at + 1;
-            if (to != at) {
+            if ((to != at) && (to < g_mods_runtime_count)) {
                 recomp::mods::set_mod_index("pokemonsnap", id, to);
                 mods_gather();
                 result = 4;
@@ -3004,6 +4539,17 @@ static void poll_mods_bank() {
             }
         }
         else if (op == 4) {
+            // Install: the window's thread shows the file picker (a modal
+            // dialog on this thread would stop the game's clock long enough
+            // to be reported as a hang) and installs what is chosen, as a
+            // drop on the window does; the list takes the new rows when the
+            // installer's generation turns.
+            mods_request_pick();
+            result = 4;
+            printf("[SNAP-MENU] Mods page: choosing mods to install\n");
+            fflush(stdout);
+        }
+        else if (op == 5) {
             const std::filesystem::path dir = recomp::mods::get_mods_directory();
             std::error_code ec;
             std::filesystem::create_directories(dir, ec);
@@ -3012,11 +4558,23 @@ static void poll_mods_bank() {
             printf("[SNAP-MENU] Mods page: opening the mods folder\n");
             fflush(stdout);
         }
-        else if (op == 5) {
+        else if (op == 6) {
             printf("[SNAP-MENU] Mods page: restarting the game\n");
             fflush(stdout);
             mods_restart_game();
             result = 4;
+        }
+        else if ((op == 9) && (row < g_mods_rows.size())) {
+            // The row's details page: its lines composed into their slots;
+            // the answer is how many there are, past the other results.
+            result = 32 + uint32_t(details_compose(g_mods_rows[row]));
+            // A new mod's rainbow stops once its details have been seen.
+            if ((g_mods_rows[row].kind == ModsKind::Fresh) && g_mods_opened.insert(g_mods_rows[row].id).second) {
+                recompose = true;
+            }
+            printf("[SNAP-MENU] Mods page: details of %s, %u lines%s\n", g_mods_rows[row].id.c_str(), (result - 32) & 63,
+                   (((result - 32) & 128) != 0) ? ", with its picture" : "");
+            fflush(stdout);
         }
         g_mods_handled = req;
         ack = (result << 24) | req;
@@ -3039,14 +4597,32 @@ static void poll_mods_bank() {
 // ---------------------------------------------------------------------------
 struct OptRow {
     recomp::config::ConfigOption option;
+    size_t index = 0;       // in the mod's schema
     std::string name;
     std::string desc;
-    std::string hint;   // what Left and Right do to it
+    std::string hint;       // the help box's second line: only a text option has one
+    bool disabled = false;  // another option's value disables it (disabled_from)
+    bool stepWords = false; // no description of its own: the help says how to change it
+    std::string why;        // and which: "Unavailable while Extra Film is Off."
 };
+// Every option but those the manifest marks hidden, and those of them shown
+// now: an option another one hides (hidden_from) leaves the list while that
+// option has the value that hides it, and comes back when it changes.
+static std::vector<OptRow> g_opt_all;
 static std::vector<OptRow> g_opt_rows;
 static std::string g_opt_mod_id;
+// The mod's option values when its page opened, for B to put back.
+static std::vector<std::pair<std::string, recomp::config::ConfigValueVariant>> g_opt_entry;
 static int g_opt_shown_top = -1;
+static uint64_t g_opt_hand = 0;   // what its lines were worded for (hand_sig)
 static uint32_t g_opt_handled = 0;
+// The text option being typed (input.cpp has the keyboard): its row and id,
+// the text as last shown, and the cursor's blink.
+static int g_opt_edit_row = -1;
+static std::string g_opt_edit_id;
+static std::string g_opt_edit_text;
+static bool g_opt_edit_caret = true;
+constexpr size_t OptTextMaxBytes = 64;
 
 static std::string number_text(double v, int precision) {
     char buf[48];
@@ -3054,75 +4630,161 @@ static std::string number_text(double v, int precision) {
     return buf;
 }
 
-static std::string opt_value_text(const OptRow& r) {
+// An option's value as the page says it: an enum's name, On or Off, a number
+// to its precision (a percent with its sign), a text as it is.
+static std::string opt_value_of(const recomp::config::ConfigOption& o, const recomp::config::ConfigValueVariant& v) {
     using namespace recomp::config;
-    const ConfigValueVariant v = recomp::mods::get_mod_config_value(g_opt_mod_id, r.option.id);
-    std::string text;
-    switch (r.option.type) {
+    switch (o.type) {
         case ConfigOptionType::Enum: {
-            const ConfigOptionEnum& e = std::get<ConfigOptionEnum>(r.option.variant);
+            const ConfigOptionEnum& e = std::get<ConfigOptionEnum>(o.variant);
             const uint32_t val = std::holds_alternative<uint32_t>(v) ? std::get<uint32_t>(v) : e.default_value;
             const auto it = e.find_option_from_value(val);
-            text = (it != e.options.end()) ? it->name : std::to_string(val);
-            break;
+            return (it != e.options.end()) ? it->name : std::to_string(val);
         }
         case ConfigOptionType::Bool: {
-            const ConfigOptionBool& b = std::get<ConfigOptionBool>(r.option.variant);
-            const bool on = std::holds_alternative<bool>(v) ? std::get<bool>(v) : b.default_value;
-            text = on ? "On" : "Off";
-            break;
+            const ConfigOptionBool& b = std::get<ConfigOptionBool>(o.variant);
+            return (std::holds_alternative<bool>(v) ? std::get<bool>(v) : b.default_value) ? "On" : "Off";
         }
         case ConfigOptionType::Number: {
-            const ConfigOptionNumber& n = std::get<ConfigOptionNumber>(r.option.variant);
+            const ConfigOptionNumber& n = std::get<ConfigOptionNumber>(o.variant);
             const double d = std::holds_alternative<double>(v) ? std::get<double>(v) : n.default_value;
-            text = number_text(d, n.precision);
-            break;
+            return number_text(d, n.precision) + (n.percent ? "%" : "");
         }
         case ConfigOptionType::String: {
-            const ConfigOptionString& s = std::get<ConfigOptionString>(r.option.variant);
-            text = std::holds_alternative<std::string>(v) ? std::get<std::string>(v) : s.default_value;
-            break;
+            const ConfigOptionString& t = std::get<ConfigOptionString>(o.variant);
+            return std::holds_alternative<std::string>(v) ? std::get<std::string>(v) : t.default_value;
         }
         default:
-            break;
+            return "";
     }
-    text = face_text(text, false);
-    return "< " + text + " >";
+}
+
+static std::string opt_value_text(const OptRow& r) {
+    return face_text(opt_value_of(r.option, recomp::mods::get_mod_config_value(g_opt_mod_id, r.option.id)), false);
+}
+
+// A value in the values' column: "< text >", its text cut with "..." to fit
+// between the arrows. Without arrows -- a value Left and Right cannot change
+// -- the text stands where it would between them, so the column stays in line.
+static Strip compose_value(const std::string& text, bool arrows, bool* cut = nullptr, bool tail = false) {
+    auto inkOf = [](const std::string& t) { return ink_width(compose(("< " + t + " >").c_str(), true)); };
+    std::string inner;
+    if (tail) {
+        // A text being typed shows its end, where the cursor is: characters
+        // go from its start until it fits.
+        inner = text;
+        bool front = false;
+        while (!inner.empty() && (inkOf(front ? ("..." + inner) : inner) > OptValueInkWidth)) {
+            size_t n = 1;
+            while ((n < inner.size()) && ((uint8_t(inner[n]) & 0xC0) == 0x80)) {
+                n++;
+            }
+            inner.erase(0, n);
+            front = true;
+        }
+        if (front) {
+            inner = "..." + inner;
+        }
+    } else {
+        inner = fit_with_dots(text, OptValueInkWidth, inkOf);
+    }
+    if (cut != nullptr) {
+        *cut = (inner != text);
+    }
+    Strip strip = compose(("< " + inner + " >").c_str(), true);
+    if (!arrows) {
+        const int x0 = ink_width(compose("<", true)) + 1;
+        const int x1 = ink_width(compose(("< " + inner).c_str(), true)) + 1;
+        for (int y = 0; y < strip.height; y++) {
+            for (int x = 0; x < strip.width; x++) {
+                if ((x < x0) || (x >= x1)) {
+                    strip.alpha[size_t(y) * size_t(strip.width) + size_t(x)] = 0;
+                }
+            }
+        }
+    }
+    return strip;
+}
+
+// The rows shown now, by the manifest's rules between options (the runtime
+// keeps the rules in the schema but applies them only where recompui sets a
+// value; the page sets values through set_mod_config_value, so it applies
+// them itself, from every option's value as it stands): an option hidden by
+// another's value leaves the list, one disabled by it stays and says why.
+static void opt_refresh() {
+    using namespace recomp::config;
+    // A copy: the dependency lookups are not const.
+    ConfigSchema schema = recomp::mods::get_mod_config_schema(g_opt_mod_id);
+    const size_t n = schema.options.size();
+    std::vector<int> hiddenBy(n, -1);
+    std::vector<int> disabledBy(n, -1);
+    for (size_t src = 0; src < n; src++) {
+        const ConfigValueVariant v = recomp::mods::get_mod_config_value(g_opt_mod_id, schema.options[src].id);
+        for (const auto& [dep, match] : schema.hidden_dependencies.check_option_dependencies(src, v)) {
+            if (match && (dep < n) && (hiddenBy[dep] < 0)) {
+                hiddenBy[dep] = int(src);
+            }
+        }
+        for (const auto& [dep, match] : schema.disable_dependencies.check_option_dependencies(src, v)) {
+            if (match && (dep < n) && (disabledBy[dep] < 0)) {
+                disabledBy[dep] = int(src);
+            }
+        }
+    }
+    g_opt_rows.clear();
+    for (const OptRow& all : g_opt_all) {
+        if ((all.index < n) && (hiddenBy[all.index] >= 0)) {
+            continue;
+        }
+        OptRow r = all;
+        r.disabled = (r.index < n) && (disabledBy[r.index] >= 0);
+        if (r.disabled) {
+            const ConfigOption& src = schema.options[size_t(disabledBy[r.index])];
+            const ConfigValueVariant v = recomp::mods::get_mod_config_value(g_opt_mod_id, src.id);
+            r.why = face_text("Unavailable while " + (src.name.empty() ? src.id : src.name) + " is " +
+                              opt_value_of(src, v) + ".", true);
+        }
+        g_opt_rows.push_back(r);
+    }
+    // The options, then Restore Defaults.
+    write_u16(OptCountAddr, uint16_t(g_opt_rows.empty() ? 0 : std::min<size_t>(g_opt_rows.size() + 1, 250)));
 }
 
 static void opt_gather(const std::string& mod_id) {
     using namespace recomp::config;
-    g_opt_rows.clear();
+    g_opt_all.clear();
     g_opt_mod_id = mod_id;
-    for (const ConfigOption& o : recomp::mods::get_mod_config_schema(mod_id).options) {
+    const ConfigSchema& schema = recomp::mods::get_mod_config_schema(mod_id);
+    for (size_t i = 0; i < schema.options.size(); i++) {
+        const ConfigOption& o = schema.options[i];
         if (o.hidden) {
             continue;
         }
         OptRow row;
         row.option = o;
+        row.index = i;
         row.name = face_text(o.name.empty() ? o.id : o.name, false);
         row.desc = face_text(o.description, true);
-        switch (o.type) {
-            case ConfigOptionType::Enum: {
-                const size_t n = std::get<ConfigOptionEnum>(o.variant).options.size();
-                row.hint = (n > 1) ? "Left and Right pick the next one." : "This one has a single choice.";
-                break;
-            }
-            case ConfigOptionType::Bool:
-                row.hint = "Left and Right turn it on or off.";
-                break;
-            case ConfigOptionType::Number:
-                row.hint = "Left and Right change it a step at a time.";
-                break;
-            default:
-                row.hint = "Text: set in the mod's own settings file.";
-                break;
+        // Left and Right change a value here as on every other page, and the
+        // chevrons say so: the help box gives both its lines to the option's
+        // own description. Only a text option, which the page cannot change,
+        // keeps a second line saying where it is set.
+        const bool changeable = (o.type == ConfigOptionType::Enum) || (o.type == ConfigOptionType::Bool) ||
+                                (o.type == ConfigOptionType::Number);
+        if (!changeable) {
+            row.hint = "";   // the header says "A Type" on this row
+        } else if (row.desc.empty()) {
+            row.stepWords = true;   // worded for the device in hand (opt_compose)
         }
-        g_opt_rows.push_back(row);
+        g_opt_all.push_back(row);
     }
-    write_u16(OptCountAddr, uint16_t(std::min<size_t>(g_opt_rows.size(), 250)));
-    printf("[SNAP-MENU] Mod options: %s has %zu option%s\n", mod_id.c_str(), g_opt_rows.size(),
-           (g_opt_rows.size() == 1) ? "" : "s");
+    g_opt_entry.clear();
+    for (const OptRow& r : g_opt_all) {
+        g_opt_entry.emplace_back(r.option.id, recomp::mods::get_mod_config_value(mod_id, r.option.id));
+    }
+    opt_refresh();
+    printf("[SNAP-MENU] Mod options: %s has %zu option%s, %zu shown\n", mod_id.c_str(), g_opt_all.size(),
+           (g_opt_all.size() == 1) ? "" : "s", g_opt_rows.size());
     fflush(stdout);
 }
 
@@ -3132,6 +4794,9 @@ static void opt_change(size_t row, int delta) {
         return;
     }
     const OptRow& r = g_opt_rows[row];
+    if (r.disabled) {
+        return;
+    }
     const ConfigValueVariant v = recomp::mods::get_mod_config_value(g_opt_mod_id, r.option.id);
     switch (r.option.type) {
         case ConfigOptionType::Enum: {
@@ -3175,9 +4840,40 @@ static void opt_change(size_t row, int delta) {
     }
 }
 
+// An option's default, as a value the runtime stores.
+static recomp::config::ConfigValueVariant opt_default(const recomp::config::ConfigOption& o) {
+    using namespace recomp::config;
+    switch (o.type) {
+        case ConfigOptionType::Enum:
+            return std::get<ConfigOptionEnum>(o.variant).default_value;
+        case ConfigOptionType::Bool:
+            return std::get<ConfigOptionBool>(o.variant).default_value;
+        case ConfigOptionType::Number:
+            return std::get<ConfigOptionNumber>(o.variant).default_value;
+        case ConfigOptionType::String:
+            return std::get<ConfigOptionString>(o.variant).default_value;
+        default:
+            return std::monostate();
+    }
+}
+
+static bool opt_all_default() {
+    for (const OptRow& r : g_opt_all) {
+        const recomp::config::ConfigValueVariant def = opt_default(r.option);
+        if (!std::holds_alternative<std::monostate>(def) &&
+            (recomp::mods::get_mod_config_value(g_opt_mod_id, r.option.id) != def)) {
+            return false;
+        }
+    }
+    return true;
+}
+
 static void opt_compose(int top) {
+    using namespace recomp::config;
     const uint32_t gen = read_u32_mail(OptGenAddr);
     const uint32_t bank = (gen + 1) & 1;
+    uint8_t disabled = 0;
+    uint8_t textRows = 0;
     for (int i = 0; i < OptVisible; i++) {
         const size_t row = size_t(top) + size_t(i);
         const uint32_t nameId = kOptDynBase + bank * uint32_t(OptBank) + uint32_t(i);
@@ -3188,13 +4884,63 @@ static void opt_compose(int top) {
         Strip help;
         if (row < g_opt_rows.size()) {
             const OptRow& r = g_opt_rows[row];
-            const std::string nameCut = cut_to_fit(r.name, OptNameInkWidth,
-                [](const std::string& s) { return ink_width(compose(s.c_str(), true)); });
-            const std::string valueCut = cut_to_fit(opt_value_text(r), OptValueInkWidth,
-                [](const std::string& s) { return ink_width(compose(s.c_str(), true)); });
+            const std::string nameCut = fit_with_dots(r.name, OptNameInkWidth,
+                [](const std::string& t) { return ink_width(compose(t.c_str(), true)); });
+            const bool changeable = !r.disabled && (r.option.type != ConfigOptionType::String);
             name = compose(nameCut.c_str(), true);
-            value = compose(valueCut.c_str(), true);
-            help = compose_mod_help(r.desc, r.hint);
+            bool valueCut = false;
+            const std::string valueText = opt_value_text(r);
+            const bool editing = (int(row) == g_opt_edit_row);
+            if (editing) {
+                // The text so far and the cursor, blinking (a space in its
+                // place when off, so nothing moves).
+                value = compose_value(face_text(g_opt_edit_text, false) + (g_opt_edit_caret ? "_" : " "), false,
+                                      nullptr, true);
+                // The keyboard types; A and B are named only for a pad.
+                help = (input_last_device() == kBindPad)
+                     ? compose_lines("Type it, then Enter or A to keep it.", "Esc or B leaves it as it was.")
+                     : compose_lines("Type it, then Enter to keep it.", "Esc leaves it as it was.");
+                stage_dynamic_at(nameId, opt_dyn_addr(nameId), name, DynChunks, StripHeight);
+                stage_dynamic_at(valueId, opt_dyn_addr(valueId), value, DynChunks, StripHeight);
+                stage_dynamic_at(helpId, opt_dyn_addr(helpId), help, ModsHelpChunks, ModsHelpHeight);
+                continue;
+            }
+            value = compose_value(valueText, changeable, &valueCut);
+            // A name cut to fit is said whole in the help box, first; a value
+            // cut to fit, on its second line when that is free.
+            const std::string own = r.stepWords ? ((input_last_device() == kBindMouse) ? "Click its value to change it."
+                                                                                    : "Left and Right change it.")
+                                                : r.desc;
+            const std::string desc = (nameCut != r.name) ? (r.name + ": " + own) : own;
+            std::string second = r.disabled ? r.why : r.hint;
+            if (second.empty() && valueCut) {
+                second = "Now set to " + valueText + ".";
+            }
+            help = compose_help_box(desc, second);
+            if (r.disabled) {
+                disabled |= uint8_t(1u << i);
+            }
+            if (!r.disabled && (r.option.type == ConfigOptionType::String)) {
+                textRows |= uint8_t(1u << i);
+            }
+        }
+        else if ((row == g_opt_rows.size()) && !g_opt_rows.empty()) {
+            name = compose("Restore Defaults", true);
+            value = compose("", true);
+            if (opt_all_default()) {
+                help = compose_lines("Every option is at its default already.", "");
+            } else {
+                const int device = input_last_device();
+                const std::string b = hand_key("b", (device == kBindMouse) ? kBindKeyboard : device, "B");
+                const std::string undo = (device == kBindMouse)
+                    ? first_fitting_of({ "Right click undoes it, as it undoes any change here.",
+                                         "Right click undoes it, like any change here.",
+                                         "B undoes it, as it undoes any change here." })
+                    : first_fitting_of({ b + " undoes it, as it undoes any change here.",
+                                         b + " undoes it, like any change here.",
+                                         "B undoes it, as it undoes any change here." });
+                help = compose_lines("Puts every option back to its default.", undo.c_str());
+            }
         }
         else {
             name = compose("", true);
@@ -3205,17 +4951,44 @@ static void opt_compose(int top) {
         stage_dynamic_at(valueId, opt_dyn_addr(valueId), value, DynChunks, StripHeight);
         stage_dynamic_at(helpId, opt_dyn_addr(helpId), help, ModsHelpChunks, ModsHelpHeight);
     }
+    write_u8(OptDisabledAddr + bank, disabled);
+    write_u8(opt_text_rows_addr(bank), textRows);
     write_u32(OptGenAddr, gen + 1);
     g_opt_shown_top = top;
+    g_opt_hand = g_hand_now;
+}
+
+// The typing ends: the text kept as the option's value, or left as it was.
+static void opt_edit_end(bool keep) {
+    std::string text;
+    snap::input_text_poll(text);
+    snap::input_text_end();
+    if (keep && !g_opt_edit_id.empty()) {
+        recomp::mods::set_mod_config_value(g_opt_mod_id, g_opt_edit_id, recomp::config::ConfigValueVariant(text));
+    }
+    printf("[SNAP-MENU] Mod options: %s %s \"%s\"\n", g_opt_edit_id.c_str(), keep ? "set to" : "left as it was, not",
+           text.c_str());
+    fflush(stdout);
+    g_opt_edit_row = -1;
+    g_opt_edit_id.clear();
+    write_u8(OptEditAddr, keep ? 2 : 3);
 }
 
 static void poll_opt_bank() {
     if (read_u8_mail(OptOpenAddr) == 0) {
+        // The page gone (Start closes every page) with a text half typed:
+        // the keyboard goes back to the game, the text as it was.
+        if (g_opt_edit_row >= 0) {
+            snap::input_text_end();
+            g_opt_edit_row = -1;
+            g_opt_edit_id.clear();
+        }
         g_opt_shown_top = -1;
         g_opt_handled = 0;
         return;
     }
     if (g_opt_shown_top < 0) {
+        write_u8(OptEditAddr, 0);
         const size_t modRow = read_u8_mail(OptRowAddr);
         if (modRow < g_mods_rows.size()) {
             opt_gather(g_mods_rows[modRow].id);
@@ -3227,6 +5000,25 @@ static void poll_opt_bank() {
     const int top = int(read_u8_mail(OptTopAddr));
     const uint32_t req = read_u32_mail(OptReqAddr);
     bool recompose = (top != g_opt_shown_top);
+    // Another device in hand: the help lines are worded for it.
+    if ((g_opt_shown_top >= 0) && (g_opt_hand != g_hand_now)) {
+        recompose = true;
+    }
+    // Typing: Enter or Esc from the keyboard ends it here; else the text and
+    // the cursor's blink are shown as they change.
+    if (g_opt_edit_row >= 0) {
+        std::string text;
+        const int state = snap::input_text_poll(text);
+        const bool caret = ((SDL_GetTicks() / 500) % 2) == 0;
+        if (state != 0) {
+            opt_edit_end(state == 1);
+            recompose = true;
+        } else if ((text != g_opt_edit_text) || (caret != g_opt_edit_caret)) {
+            g_opt_edit_text = text;
+            g_opt_edit_caret = caret;
+            recompose = true;
+        }
+    }
     uint32_t ack = 0;
     if (req == 0) {
         g_opt_handled = 0;
@@ -3236,10 +5028,85 @@ static void poll_opt_bank() {
         const int delta = int(int8_t((req >> 8) & 0xFF));
         const size_t row = size_t(req & 0xFF);
         uint32_t result = 3;
-        if ((op == 6) && (row < g_opt_rows.size())) {
-            opt_change(row, delta);
+        if ((op == 10) && (row < g_opt_rows.size()) && !g_opt_rows[row].disabled &&
+            (g_opt_rows[row].option.type == recomp::config::ConfigOptionType::String) && (g_opt_edit_row < 0)) {
+            // A on a text option: the keyboard is the editor's until Enter,
+            // Esc, or the pad's A or B.
+            const OptRow& r = g_opt_rows[row];
+            const std::string cur = opt_value_of(r.option, recomp::mods::get_mod_config_value(g_opt_mod_id, r.option.id));
+            snap::input_text_begin(cur, OptTextMaxBytes);
+            g_opt_edit_row = int(row);
+            g_opt_edit_id = r.option.id;
+            g_opt_edit_text = cur;
+            g_opt_edit_caret = true;
+            write_u8(OptEditAddr, 1);
+            printf("[SNAP-MENU] Mod options: typing %s\n", r.option.id.c_str());
+            fflush(stdout);
+            result = 5;
+            recompose = true;
+        }
+        else if (((op == 11) || (op == 12)) && (g_opt_edit_row >= 0)) {
+            opt_edit_end(op == 11);   // the pad's A keeps it, its B leaves it
             result = 4;
             recompose = true;
+        }
+        else if ((op == 6) && (row < g_opt_rows.size())) {
+            if (g_opt_rows[row].disabled || (g_opt_rows[row].option.type == recomp::config::ConfigOptionType::String)) {
+                result = 3;   // nothing to change: the page stays silent
+            } else {
+                // The change may hide or show other rows: the list is made
+                // again, and the page moves its selection to where the
+                // option it changed now stands.
+                const std::string id = g_opt_rows[row].option.id;
+                opt_change(row, delta);
+                opt_refresh();
+                uint8_t after = 0xFF;
+                for (size_t i = 0; i < g_opt_rows.size(); i++) {
+                    if (g_opt_rows[i].option.id == id) {
+                        after = uint8_t(std::min<size_t>(i, 254));
+                    }
+                }
+                write_u8(OptSelAfterAddr, after);
+                result = 4;
+                recompose = true;
+            }
+        }
+        else if (op == 8) {
+            // Restore Defaults: every option to the default its manifest names.
+            using namespace recomp::config;
+            unsigned changed = 0;
+            for (const OptRow& r : g_opt_all) {
+                const ConfigValueVariant def = opt_default(r.option);
+                if (std::holds_alternative<std::monostate>(def)) {
+                    continue;
+                }
+                if (recomp::mods::get_mod_config_value(g_opt_mod_id, r.option.id) != def) {
+                    recomp::mods::set_mod_config_value(g_opt_mod_id, r.option.id, def);
+                    changed++;
+                }
+            }
+            opt_refresh();
+            write_u8(OptSelAfterAddr, uint8_t(std::min<size_t>(g_opt_rows.size(), 254)));   // Restore Defaults' row
+            // Nothing to restore: the page answers as to any press that does
+            // nothing, not with the sound of a change.
+            result = (changed > 0) ? 4 : 3;
+            recompose = true;
+            printf("[SNAP-MENU] Mod options: defaults restored; %u change%s\n", changed, (changed == 1) ? "" : "s");
+            fflush(stdout);
+        }
+        else if (op == 7) {
+            // B: the options as they were when the page opened.
+            unsigned undone = 0;
+            for (const auto& e : g_opt_entry) {
+                if (recomp::mods::get_mod_config_value(g_opt_mod_id, e.first) != e.second) {
+                    recomp::mods::set_mod_config_value(g_opt_mod_id, e.first, e.second);
+                    undone++;
+                }
+            }
+            result = 4;
+            recompose = true;
+            printf("[SNAP-MENU] Mod options: cancelled; %u change%s undone\n", undone, (undone == 1) ? "" : "s");
+            fflush(stdout);
         }
         g_opt_handled = req;
         ack = (result << 24) | req;
@@ -3308,6 +5175,7 @@ void poll_menu_mailbox(uint8_t* rdram) {
         SDL_PushEvent(&quit);
     }
     animate_credits();
+    refresh_hand_lines();
 
     // The SOUND bank first: the patched audio functions read its bytes
     // live, so all the host adds is persistence and its own knobs.
@@ -3697,31 +5565,5 @@ void menu_anywhere_tick(uint8_t* rdram, void* ctxIn) {
     arena_leave(swap);
 }
 
-void mods_drop_file(const char* path) {
-    if (path == nullptr) {
-        return;
-    }
-    const std::filesystem::path src = std::filesystem::u8path(path);
-    std::string ext = src.extension().string();
-    for (char& c : ext) {
-        c = char(tolower(uint8_t(c)));
-    }
-    if ((ext != ".nrm") && (ext != ".zip")) {
-        printf("[SNAP-MENU] dropped %s: not a mod (.nrm); ignored\n", path);
-        fflush(stdout);
-        return;
-    }
-    const std::filesystem::path dir = recomp::mods::get_mods_directory();
-    std::error_code ec;
-    std::filesystem::create_directories(dir, ec);
-    const std::filesystem::path dst = dir / src.filename();
-    std::filesystem::copy_file(src, dst, std::filesystem::copy_options::overwrite_existing, ec);
-    if (ec) {
-        printf("[SNAP-MENU] dropped %s: could not copy it into the mods folder (%s)\n", path, ec.message().c_str());
-    } else {
-        printf("[SNAP-MENU] dropped %s: copied into the mods folder; it loads at the next start\n", path);
-    }
-    fflush(stdout);
-}
 
 } // namespace snap

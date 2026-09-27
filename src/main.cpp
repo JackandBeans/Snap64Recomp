@@ -17,6 +17,7 @@
 #include <utility>
 #include <chrono>
 #include <cstdlib>
+#include "ultramodern/ultramodern.hpp"
 #include <mutex>
 #include <stdexcept>
 #if defined(__linux__) || defined(__APPLE__)
@@ -47,7 +48,6 @@
 #include "steam_deck.h"
 #include "mod_api.h"
 namespace snap { extern uint8_t* g_rdram; }
-extern "C" void snap_publish_ai_len(uint8_t* rdram);
 // The stall report's three sources (update_gfx): the game's logic-step
 // count (frame_cost.cpp), the renderer's queues (rt64_render_context.cpp)
 // and the game's threads (ultramodern threads.cpp).
@@ -70,6 +70,15 @@ extern "C" void snap_render_surface_size(uint32_t* w, uint32_t* h);
 // comparison against nothing, and the fade quad it should have widened
 // stayed as it was.
 #include "../RecompiledPatches/recomp_overlays.inl"
+// A mod's hook on a function the patches replace recompiles the patch live
+// through this table, and as the recompiler writes it the table does not
+// fit the port: its relocations number the game's sections by the symbol
+// file, and it leaves out the patches' unnamed static functions.
+// tools/hook_funcs.py (finish_patch_table) fixes both; without it such a
+// hook fails to load or stops the game.
+#ifndef SNAP_PATCH_TABLE_FINISHED
+#error "RecompiledPatches/recomp_overlays.inl was not finished: run python tools/hook_funcs.py after N64Recomp patches.toml"
+#endif
 extern "C" const unsigned char snap_patches_bin[];
 extern "C" const size_t snap_patches_bin_size;
 static void snap_register_patches() {
@@ -305,6 +314,30 @@ static void snap_confirm_quit() {
 
 void snap_show_deferred_message_boxes();
 
+// After a drop: what was installed, or why not, in one box over the game,
+// as the quit box is shown (the window is borderless or a window, never
+// exclusive, and the cursor is let go first so the box can be clicked).
+static void snap_show_drop_summary() {
+    std::string text;
+    bool anyInstalled = false;
+    if (!snap::mods_drop_summary(text, anyInstalled)) {
+        return;
+    }
+    // A scripted drop (SNAP_DROP_TEST) or pick (SNAP_PICK_TEST) is a test
+    // run: the box would hold it, so its text goes to the log.
+    if ((getenv("SNAP_DROP_TEST") != nullptr) || (getenv("SNAP_PICK_TEST") != nullptr)) {
+        printf("[SNAP-MODS] the install box, not shown in a scripted test:\n%s", text.c_str());
+        fflush(stdout);
+        return;
+    }
+    snap::input_release_mouse();
+    if (SDL_ShowSimpleMessageBox(anyInstalled ? SDL_MESSAGEBOX_INFORMATION : SDL_MESSAGEBOX_WARNING,
+                                 SNAP_PORT_NAME, text.c_str(), sdl_window) != 0) {
+        printf("[SNAP] the install box could not be shown: %s\n", SDL_GetError());
+        fflush(stdout);
+    }
+}
+
 // True only while frames are running, so a background thread knows whether
 // anything will come to show a dialog it defers (see error_message_box).
 static std::atomic<bool> s_defer_boxes{false};
@@ -314,13 +347,6 @@ static void update_gfx(void* /*gfx_data*/) {
     // up, the ROM check has passed, and the window exists. It is stopped in
     // main() before SDL_Quit.
     snap::input_start_pad_thread();
-
-    // Publish SDL's real audio backlog where the game's patched AI_LEN read
-    // (auThreadMain, vram 0x800219D8) now looks for it. Without this the game
-    // believes the audio queue is always empty and synthesizes a full frame of
-    // samples every tick, so music advances faster than wall-clock and the
-    // queue overruns (sped-up, choppy audio).
-    snap_publish_ai_len(snap::g_rdram);
 
     // The fast-forward key: the runtime's clocks, the audio and the
     // renderer's interpolation switch follow it (src/fast_forward.cpp).
@@ -427,6 +453,13 @@ static void update_gfx(void* /*gfx_data*/) {
     // The mouse's capture follows the settings, the focus and whether a
     // course is running; decided here, on the thread that pumps events.
     snap::input_update_mouse_capture();
+    snap::input_update_text();
+
+    // The Mods page's Install row: the file picker, on this thread, then
+    // the same box a drop gets.
+    if (snap::mods_pick_and_install()) {
+        snap_show_drop_summary();
+    }
 
     // A stall report, once per stall. The game's main thread runs a logic
     // step many times a second on every screen (gtlUpdate, frame_cost.cpp),
@@ -477,12 +510,49 @@ static void update_gfx(void* /*gfx_data*/) {
     static bool escHeld = false;
     static bool escArmed = false;
     static std::chrono::steady_clock::time_point escDownAt;
+    // Between SDL_DROPBEGIN and SDL_DROPCOMPLETE: the install box waits for
+    // the drop's last file.
+    static bool dropBatch = false;
 
     // A frame is running, so there is something to empty the queue: from here
     // a background thread may defer instead of forking. Anything it left is
     // said now, on the thread SDL can safely fork from.
     s_defer_boxes.store(true, std::memory_order_relaxed);
     snap_show_deferred_message_boxes();
+
+    // SNAP_DROP_TEST=<file>,<file>: the files dropped on the window eight
+    // seconds after the first frame, as SDL delivers a real drop (begin,
+    // each file, complete), so a run can exercise the installer and its box.
+    {
+        static const char* dropTest = getenv("SNAP_DROP_TEST");
+        static const auto dropTestAt = std::chrono::steady_clock::now() + std::chrono::seconds(8);
+        if ((dropTest != nullptr) && (std::chrono::steady_clock::now() >= dropTestAt)) {
+            SDL_Event e{};
+            e.type = SDL_DROPBEGIN;
+            SDL_PushEvent(&e);
+            std::string list = dropTest;
+            size_t at = 0;
+            while (at <= list.size()) {
+                const size_t comma = list.find(',', at);
+                const std::string one = list.substr(at, (comma == std::string::npos) ? std::string::npos : comma - at);
+                if (!one.empty()) {
+                    SDL_Event f{};
+                    f.type = SDL_DROPFILE;
+                    f.drop.file = SDL_strdup(one.c_str());
+                    SDL_PushEvent(&f);
+                }
+                if (comma == std::string::npos) {
+                    break;
+                }
+                at = comma + 1;
+            }
+            e.type = SDL_DROPCOMPLETE;
+            SDL_PushEvent(&e);
+            printf("[SNAP-MODS] SNAP_DROP_TEST: dropped %s\n", dropTest);
+            fflush(stdout);
+            dropTest = nullptr;
+        }
+    }
 
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -502,7 +572,7 @@ static void update_gfx(void* /*gfx_data*/) {
                 // The BUTTON SETUP page is listening for a key: the input layer
                 // took this one as the binding (or refused it), and it is
                 // neither a hotkey nor Esc's Start here.
-                if (snap::input_capture_active()) {
+                if (snap::input_capture_active() || snap::input_text_active()) {
                     break;
                 }
                 if (snap::handle_settings_hotkey(event.key.keysym.scancode)) {
@@ -542,14 +612,25 @@ static void update_gfx(void* /*gfx_data*/) {
                     }
                 }
                 break;
+            case SDL_DROPBEGIN:
+                dropBatch = true;
+                break;
             case SDL_DROPFILE:
-                // A mod dropped on the window goes into the mods folder,
-                // as the other recompilations take one; it loads at the
-                // next start (menu_assets.cpp).
+                // A mod, a texture pack, or a zip holding them (as
+                // Thunderstore packages a mod) dropped on the window is
+                // installed for the next start (mod_installer.cpp); one box
+                // after the drop's last file says what was installed.
                 if (event.drop.file != nullptr) {
                     snap::mods_drop_file(event.drop.file);
                     SDL_free(event.drop.file);
                 }
+                if (!dropBatch) {
+                    snap_show_drop_summary();
+                }
+                break;
+            case SDL_DROPCOMPLETE:
+                dropBatch = false;
+                snap_show_drop_summary();
                 break;
             case SDL_AUDIODEVICEREMOVED:
                 // Headphones unplugged, a Bluetooth switch, a wake from
@@ -1406,6 +1487,12 @@ int main(int argc, char* argv[]) {
     if (!snap::ensure_rom(SNAP_ROM_HASH)) {
         return 0;
     }
+    // After a session that did not end normally with mods on, the player
+    // may start with them off; then what a drop staged last time, and any
+    // zip left in mods/, installed before the runtime opens the folder
+    // (mod_installer.cpp).
+    snap::mods_safe_start();
+    snap::mods_install_at_start();
     try {
         recomp::start(config);
     }
@@ -1426,6 +1513,8 @@ int main(int argc, char* argv[]) {
     if (snap::settings_dirty()) {
         snap::save_settings();
     }
+    // A normal end: the next start does not ask about mods.
+    snap::session_mark_clean();
 
     // No more frames are coming, so nothing may be deferred from here on: a
     // message raised during shutdown is shown where it stands. Whatever is

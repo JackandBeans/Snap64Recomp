@@ -15,6 +15,7 @@
 #include <algorithm>
 #include <atomic>
 #include <mutex>
+#include <string>
 #include <vector>
 #include <SDL2/SDL.h>
 
@@ -34,6 +35,60 @@ static SDL_AudioDeviceID audio_device = 0;
 static uint32_t current_frequency = 32000;
 // Scratch for the channel swap below; reused so queueing allocates nothing.
 static std::vector<int16_t> swap_buffer;
+
+// settings.cpp; set on the first overlay load, long before any buffer here.
+extern uint8_t* g_rdram;
+
+// What the game's own mix sounded like while the pages from anywhere held
+// the screen (mailbox byte 0x4C up; patches/src/anywhere_patch.inc): the
+// music is held there and every sound effect playing at the press is
+// turned down, so the mix should be silent but for the pages' own sounds.
+// The peak of each half second is kept, read before the mute and the
+// master volume, and the line is printed when the hold ends, with the
+// count of effects the patch turned down (byte 0x40).
+static bool held_now = false;
+static uint32_t held_frames = 0;
+static int held_peaks[40];
+static int held_windows = 0;
+
+static void measure_held_mix(const int16_t* mix, size_t count) {
+    if (g_rdram == nullptr) {
+        return;
+    }
+    const bool held = g_rdram[0x00C0004C ^ 3] != 0;
+    if (held && !held_now) {
+        held_now = true;
+        held_frames = 0;
+        held_windows = 0;
+    }
+    if (!held && held_now) {
+        held_now = false;
+        std::string peaks;
+        for (int i = 0; i < held_windows; i++) {
+            peaks += (i ? " " : "") + std::to_string(held_peaks[i]);
+        }
+        printf("[SNAP-SFX] %u sound effects turned down with the screen; the game's own sound peaked at "
+               "%s of 32767 in each half second held\n",
+               unsigned(g_rdram[0x00C00040 ^ 3]), peaks.c_str());
+        fflush(stdout);
+        return;
+    }
+    if (!held) {
+        return;
+    }
+    const uint32_t window_frames = std::max<uint32_t>(current_frequency / 2, 1);
+    for (size_t i = 0; i + 1 < count; i += 2) {
+        const int w = int(held_frames / window_frames);
+        held_frames++;
+        if (w >= int(sizeof(held_peaks) / sizeof(held_peaks[0]))) {
+            break;
+        }
+        while (held_windows <= w) {
+            held_peaks[held_windows++] = 0;
+        }
+        held_peaks[w] = std::max({held_peaks[w], std::abs(int(mix[i])), std::abs(int(mix[i + 1]))});
+    }
+}
 // The game's speed as a ratio (audio_set_speed), 1/1 at the console's; the
 // whole stereo pairs a buffer left over from averaging above 1x; the last
 // pair of a buffer stretched below 1x, for the line to the next buffer's
@@ -178,6 +233,8 @@ void audio_queue_samples(int16_t* samples, size_t count) {
         swap_buffer[count - 1] = samples[count - 1];
     }
 
+    measure_held_mix(swap_buffer.data(), count);
+
     // Silence on request, without changing anything else about the audio path.
     // The samples are still submitted at their normal rate and the backlog the
     // game reads is still the real one, so muting cannot alter the timing the
@@ -302,18 +359,6 @@ size_t audio_get_frames_remaining() {
     // units was tried and reasoned wrong: at 3x it would have let the queue
     // fall to a third of its depth, under one device chunk.
     return static_cast<size_t>(queued_bytes / (2 * sizeof(int16_t)));
-}
-
-size_t audio_queued_bytes() {
-    std::lock_guard<std::mutex> lock(audio_mutex);
-    if (audio_device == 0) {
-        // Matches audio_get_frames_remaining: a plausible backlog, in bytes.
-        return 1024 * 2 * sizeof(int16_t);
-    }
-    // Stereo signed-16 => 4 bytes per frame, which is exactly the unit the N64's
-    // AI_LEN register reports. The game shifts this right by 2 to get frames.
-    // The real backlog at any speed, as audio_get_frames_remaining says.
-    return static_cast<size_t>(queued_bytes_bounded());
 }
 
 void audio_set_speed(uint32_t num, uint32_t den) {

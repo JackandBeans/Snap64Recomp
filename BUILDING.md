@@ -19,7 +19,7 @@ Two machines are involved:
 Steps 1 to 9 are the same on every platform. Steps 10 to 13 are the Windows
 build; [step 14](#14-linux-build-experimental) is the Linux one, which has
 been built and started under WSL and not yet run on real Linux hardware;
-[step 15](#15-macos-build-unverified) is the macOS one, which carries the
+[step 15](#15-macos-build-githubs-mac) is the macOS one, which carries the
 glue a community Apple Silicon build proved and is built by a workflow on
 GitHub's Mac, because I have no Mac: no build of this tree has run on one
 yet.
@@ -138,15 +138,11 @@ Keep the ELF's name: N64Recomp writes its stem into
 `RecompiledFuncs/lookup.cpp` (`get_rom_name` returns `pokemonsnap.relocs.z64`;
 nothing reads it, but renaming the file changes generated output).
 
-**One hand edit in the generated code.** `RecompiledFuncs/funcs_48.c` carries
-`auThreadMain`'s read of the audio interface's length register (vram
-`0x800219D8`, `lui $t8, 0xA450` / `lw $t9, 4($t8)` in the ROM) rewritten to
-`lui $t8, 0x80C0` / `lw $t9, 0x40($t8)`: the port publishes SDL's real audio
-backlog at `0x80C00040` every frame (`src/overlay_hook.cpp`) and the game reads
-it there. The word must stay outside `0x80400000`-`0x807FFFF0`: the game's
-Snap Station boot sweeps that range with a read-back memory test, and a word
-rewritten during the sweep fails it. Regenerated `RecompiledFuncs` need the
-same two-line edit.
+No hand edits in the generated code: what the port changes in it,
+`tools/hook_funcs.py` changes after every generation (step 5), and it stops
+the build when a change no longer finds its place. That includes
+`auThreadMain`'s two reads of the audio interface's length register, which
+it turns into calls that ask the audio queue.
 
 ### 4. Recompile the game
 
@@ -166,8 +162,9 @@ MSVC has no `--wrap`, so the port intercepts game functions by renaming the
 generated definition to `__real_<name>` and defining `<name>` itself
 (`src/overlay_hook.cpp`, `src/matrix_tags.cpp`, ...). The script edits
 `RecompiledFuncs/funcs_*.c` and `funcs.h` in place, is idempotent, and also
-inserts the inner hooks listed in its `INNER_HOOKS` table. Run it after every
-step 4.
+inserts the inner hooks listed in its `INNER_HOOKS` table. It also finishes
+`RecompiledPatches/recomp_overlays.inl` for mods' hooks (step 8). Run it after
+every step 4 and every step 8.
 
 ### 6. Regenerate the overlay table (only when step 4 changed anything)
 
@@ -175,9 +172,11 @@ step 4.
 
 Writes `src/recomp_overlays.inl`, which is tracked. The table is wider than
 N64Recomp's own (every ALLOC section of the ELF, data and bss included, with
-`.index` equal to the ELF section header index) and drops librecomp's
-`*_recomp` reimplementations from the function arrays; the tool's docstring
-lists every rule. Against the recompiler output in this tree the tool
+`.index` equal to the ELF section header index) and keeps every function of
+the recompiler's arrays but the renamed entrypoint; the tool's docstring
+lists every rule. When only the functions changed, `python3
+tools/gen_overlays.py --arrays-only` rewrites the function arrays from
+`RecompiledFuncs` and leaves the section rows alone, with no ELF needed. Against the recompiler output in this tree the tool
 reproduces the tracked file exactly, apart from the address shifts caused by
 the stale ELF described in step 2.
 
@@ -201,6 +200,7 @@ mod tool agree on.
 
     make -C patches DECOMP=$HOME/pokemonsnap
     ~/N64Recomp/build/N64Recomp patches.toml
+    python3 tools/hook_funcs.py
 
 The first compiles `patches/src/*.c` with the decomp's IDO 7.1 against the
 decomp's headers and links `patches/build/patches.elf` with
@@ -209,11 +209,22 @@ The first also writes `patches/build/patches.bin`, the ELF's loadable bytes;
 CMake embeds them in the executable and librecomp copies them into memory at
 start-up, which is how the patches' `.data` section -- every float literal
 and table IDO puts there -- becomes readable (`patches/patch.ld`,
-`src/main.cpp`).
+`src/main.cpp`). The bytes come from a second link of the same objects with
+every game function defined at its address (`tools/gen_patch_funcs_ld.py`):
+in `patches.elf` a call into the game is left as zero for the recompiler to
+match, but the runtime recompiles a patched function live from these bytes
+when a mod hooks it, so there the calls must be real. The Makefile checks
+that the two links lay out the same.
 
 The second writes `RecompiledPatches/patches.c`, which CMake compiles straight
 into the executable so that each patched function is resolved before the
 linker reaches the recompiled game. `patches/README.md` explains the mechanism.
+
+The third finishes `RecompiledPatches/recomp_overlays.inl`, the table the
+runtime reads when a mod hooks a function the patches replace: it renumbers
+the relocations' sections from the symbol file's order to the port's own
+table's, and lists the patches' unnamed static functions (`finish_patch_table`
+in `tools/hook_funcs.py`). `src/main.cpp` will not build without it.
 
 ### 9. The audio microcode (generated by the build, from your ROM)
 
@@ -461,42 +472,45 @@ and never plays them; the port drops the queue and says so
 covers a Deck's sleep or a Bluetooth switch. Running the game on a Linux
 desktop or a Steam Deck is [unverified](docs/STEAM-DECK.md).
 
-### 15. macOS build (unverified)
+### 15. macOS build (GitHub's Mac)
 
 I have no Mac, so this section is different in kind from the two above: it
-describes what the tree carries and what the workflow does, not a build I
-have run. The glue is the community's Apple Silicon build of 1.0.0 (pull
+describes a build made and run on GitHub's virtual Mac, not on a machine
+of mine. The glue is the community's Apple Silicon build of 1.0.0 (pull
 request #2, by appleforever11, which started, drew with Metal and reached a
 course on an Apple M3 Pro), ported onto today's tree piece by piece behind
 `__APPLE__` and `if (APPLE)`, so Windows and Linux compile exactly what they
-did: the Windows build was rebuilt with these changes and the suite's
-scoring check passed on it. Nothing here has been compiled on a Mac. The
-first evidence will be the workflow's own first run, and this section will
-say so when it exists.
+did, and completed on 2026-09-26 with what Zelda64Recomp's macOS build
+carries and what the port's own features need there. What the runner's
+runs found and showed is at the end of this section.
 
-What a Mac needs: Apple Silicon and macOS 14 or newer (the deployment
-target, `CMAKE_OSX_DEPLOYMENT_TARGET` in `CMakeLists.txt`; an Intel build is
-not ruled out by the code, only untried), Xcode with its Metal compiler (the
-command-line tools alone have no `metal`; Xcode 26 keeps the Metal toolchain
-as a separate download, `xcodebuild -downloadComponent MetalToolchain`),
-CMake 3.20 or newer, Ninja and Python 3, and the same generated inputs as
-every other build (steps 1 to 9: `RecompiledFuncs/`, `RecompiledPatches/`,
-`patches/build/patches.bin` and the ROM; the pull request made them on the
-Mac itself, with Homebrew's `mips-linux-gnu-binutils` and clang as the
-decompilation's preprocessor). Then, in the port root:
+What a Mac needs: macOS 14 or newer (the deployment target,
+`CMAKE_OSX_DEPLOYMENT_TARGET` in `CMakeLists.txt`) on Apple Silicon or an
+Intel Mac: the build is universal, one executable with both halves,
+Xcode with its Metal compiler (the command-line tools alone have no `metal`;
+Xcode 26 keeps the Metal toolchain as a separate download, `xcodebuild
+-downloadComponent MetalToolchain`), CMake 3.20 or newer, Ninja and Python 3,
+and the same generated inputs as every other build (steps 1 to 9:
+`RecompiledFuncs/`, `RecompiledPatches/`, `patches/build/patches.bin` and the
+ROM; the pull request made them on the Mac itself, with Homebrew's
+`mips-linux-gnu-binutils` and clang as the decompilation's preprocessor).
+Then, in the port root:
 
     python3 tools/fetch_deps.py
-    cmake -S . -B build-macos -G Ninja -DCMAKE_BUILD_TYPE=Release -DCMAKE_OSX_ARCHITECTURES=arm64 -DSNAP_ROM=/path/to/pokemonsnap.z64
+    python3 tools/hook_funcs.py
+    cmake -S . -B build-macos -G Ninja -DCMAKE_BUILD_TYPE=Release "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64" -DSNAP_ROM=/path/to/pokemonsnap.z64
     cmake --build build-macos --target Snap64Recomp
     python3 tools/macos_bundle.py build-macos
 
 The last line installs the flat folder into `build-macos/bundle-stage`, lays
 `build-macos/Snap64Recomp.app` out from it, writes its `Info.plist`, signs
-it ad hoc (no developer account and no notarisation, which is how the other
+it ad hoc with the hardened runtime and `tools/macos/entitlements.plist` (no
+developer account and no notarisation, which is how the other
 recompilations ship too: the first launch is a right-click and Open, or on
 macOS 15 System Settings > Privacy & Security > Open Anyway) and zips it as
-`Snap64Recomp-<version>-macos-arm64.zip` with a `.sha256` beside it and a
-START HERE text for macOS inside.
+`Snap64Recomp-<version>-macos-universal.zip` with a `.sha256` beside it and
+a START HERE text for macOS inside. `-DCMAKE_OSX_ARCHITECTURES=arm64` alone
+makes an Apple Silicon build half the size, named `-macos-arm64`.
 
 What differs from the other two builds, all in `#if` branches of the same
 files and `if (APPLE)` blocks of the same `CMakeLists.txt`:
@@ -510,6 +524,34 @@ files and `if (APPLE)` blocks of the same `CMakeLists.txt`:
 * The window is created with `SDL_WINDOW_METAL`, and RT64 is handed the
   `NSWindow` and the `CAMetalLayer` SDL attaches to it (`src/main.cpp`,
   `create_window`), the pair ultramodern's `WindowHandle` holds on Apple.
+  SDL's Metal view would also set that layer's size whenever the window
+  changes, and plume's swap chain updates the size of the pictures it draws
+  only when it finds the layer at another size than the window: after a
+  resize or a switch to or from fullscreen it would have drawn at the old
+  size into pictures of the new one. `src/macos_support.mm` turns SDL's
+  update into nothing before SDL makes the view, as Zelda64Recomp does.
+* The presented-frame capture and the Snap Station's sheet capture copy a
+  texture into a buffer, which plume's Metal backend could not do (the copy
+  fell through to the image-to-image path and dereferenced a null texture,
+  as its Vulkan backend once did); `plume_metal.cpp` is the port's fifth
+  force-tracked plume file (VENDORING.md).
+* The host threads that run game code get an 8 MB stack
+  (`ultramodern::threads::make_game_host_thread` and
+  `start_detached_game_host_thread`, in the runtime; VENDORING.md). Windows
+  gives every thread the executable's `/STACK`, 8 MB, and Linux 8 MB, but
+  macOS gives every thread but the main one 512 KB, a sixteenth of what the
+  game has ever run on.
+* A mod patches game functions inside the executable's own code, which macOS
+  allows only when the code segment's maximum protection includes writing.
+  ld64 will not link that, so `tools/macos/ld64` (clang's `-fuse-ld`) runs
+  the real linker and then sets `__TEXT`'s `maxprot` to rwx in every image
+  of the output, the approach of Zelda64Recomp's `.github/macos/ld64`
+  without its macholib dependency; the edit breaks the signature ld64 put on
+  each Apple Silicon image, so a post-build step signs the build tree's
+  executable again, ad hoc. The bundle's entitlements (Zelda64Recomp's:
+  JIT, unsigned executable memory, executable page protection off, library
+  validation off) let the signed program patch itself and run a mod's
+  recompiled code.
 * SDL2 is built from the vendored tree, as on Windows, but static: the
   bundle then carries no dylib of its own to re-path or sign.
 * The data directory is `~/Library/Application Support/Snap64 Recomp/`
@@ -518,11 +560,11 @@ files and `if (APPLE)` blocks of the same `CMakeLists.txt`:
   `Contents/Resources`, which is what `SDL_GetBasePath` returns to a bundled
   program and so what `snap::exe_dir()` is (`src/paths.cpp`). The ROM is
   looked for in the data directory, and the first run's chooser copies it
-  there.
+  there; `mods/`, `mods.json` and the mods' settings live there too.
 * The log, the single-instance lock and the message-box deferral are the
-  Linux ones (POSIX). The Snap Station's relaunch `execv`s the image
-  `_NSGetExecutablePath` names, and the sheet's folder opens with `open`
-  (`src/snap_station.cpp`).
+  Linux ones (POSIX). The Snap Station's relaunch and the Mods page's Restart
+  `execv` the image `_NSGetExecutablePath` names, and a folder opens with
+  `open` (`src/snap_station.cpp`).
 * The controller subsystem is started and stopped by the pad thread, not by
   `SDL_Init` on the main thread (`src/input.cpp`, `pad_thread_main`): SDL's
   IOKit driver binds its device matching to the run loop of the thread that
@@ -533,34 +575,68 @@ files and `if (APPLE)` blocks of the same `CMakeLists.txt`:
 * ld64 gets neither `--allow-multiple-definition` nor the group switches:
   under Clang the recompiler declares every game function weak
   (`RECOMP_FUNC`), so a patch's definition wins on its own. The `-msse4.1`
-  flag on the audio microcode's source applies to x86 only; on ARM the
-  runtime's `sse2neon` serves.
+  flag on the audio microcode's source goes to the Intel half only
+  (`-Xarch_x86_64`); on ARM the runtime's `sse2neon` serves.
 * `lib/rt64/src/common/rt64_hlslpp.h` includes the C standard library before
   hlsl++, which the pull request needed under Apple's libc++ (one more file
   in `SNAP64-CHANGES.patch`).
-* Not done: the runtime's mod support patches game functions inside the
-  executable's own code, which macOS forbids unless the code segment is
-  linked with a writable maximum protection; the other recompilations wrap
-  ld64 for it (Zelda64Recomp's `.github/macos/ld64`). Until this port does
-  the same, a mod is expected not to load on a Mac; the base game does not
-  need it.
 
-The workflow, `.github/workflows/macos.yml`, runs the four commands above on
-GitHub's `macos-15` runner (Apple Silicon; Xcode 16.4, CMake and Ninja
-preinstalled) on request; it will run on every push to `snap-port` or
-`main` that touches the sources once the repository and the secret below
-exist, and not before, since without them a push would only record a
-failure. The inputs the ROM produces come from a private
-repository, `JackandBeans/Snap64RecompInputs`, holding `RecompiledFuncs/`,
-`RecompiledPatches/`, `patches/build/patches.bin` and `pokemonsnap.z64`,
-cloned with a fine-grained token limited to that repository's contents and
-kept as this repository's `SNAP64_INPUTS_TOKEN` secret; that is what the
-other recompilations' workflows do with their own private repositories. The
-job never runs for a pull request, so it never needs a fork's secrets,
-and without the secret it stops at that step. It
-uploads two artifacts: the zip with its checksum, and the log and captured
-frames of a first run of the bundle on the runner (90 seconds,
-`SNAP_PCAP_ATFRAME`), which is the nearest thing to a Mac I can look at.
+The workflow, `.github/workflows/macos.yml`, runs the commands above on
+GitHub's `macos-15` runner (Apple Silicon, a virtual Mac whose GPU is Apple's
+paravirtual one: Metal works there for correctness, not for speed) when it
+is started by hand, and checks what it made: both halves in the executable
+and each one's `__TEXT` writable at most (`otool -l`), the signature and its
+entitlements, and then the bundle itself with `tools/macos_smoke.py`, which
+runs it as a player's first start does (a fresh data folder, `SNAP_DATA_DIR`)
+and reads what it prints: the title screen from a cold start with frames
+captured and lit, the same boot under Metal's API validation
+(`MTL_DEBUG_LAYER`), the release suite's scoring replay (45 photos in the
+healthy signature, compared line by line with the Windows build's scores in
+`tools/replays/eval.scores`; a difference is reported, not failed) and a mod
+whose hooks run (Snap64RecompMods' `zz_hooktest`). The Intel half is run the
+same way through Rosetta 2, the only way an Intel Mac's code path runs on
+that machine. The script was run against the Windows build before it ever
+ran on a Mac (with the Metal line failing, as it must there): 45 of 45 score
+lines identical to the reference, the mod's hooks fired, three lit frames.
+The score stage passes on the lines scored (twenty or more, all inside the
+healthy signature) and reports how many photos stayed in step with Windows:
+a tape of presses per pad reading holds only while the machine keeps the
+console's pace at every press, and a shared virtual Mac does not always
+(`SNAP_TICK_DELAY_MS`, the port's switch that makes every tick longer,
+stops the same tape in the lab on a PC). `tools/macos_timer_probe.py`
+runs first and says how precisely the machine can wait one retrace.
+The inputs the ROM produces come from a private repository,
+`JackandBeans/Snap64RecompInputs` (`RecompiledFuncs/`, `RecompiledPatches/`,
+`patches/build/patches.bin`, `pokemonsnap.z64`, the replay's save and the
+test mod, laid out by `tools/macos_inputs.py` from the tree the workflow
+builds), cloned with a fine-grained token limited to that repository's
+contents and kept as this repository's `SNAP64_INPUTS_TOKEN` secret; that is
+what the other recompilations' workflows do with their own private
+repositories. The job never runs for a pull request, so it never needs a
+fork's secrets, and without the secret it stops at that step. It uploads the
+zip with its checksum, and every check's log, frames and any crash report
+macOS wrote, whether the checks passed or not.
+
+What GitHub's Mac showed (2026-09-26 and 27, macOS 15.7, Xcode 16.4, a
+`VirtualMac2,1` with three CPUs and Apple's paravirtual GPU): the universal
+executable links, both halves carry the writable code segment, the bundle
+signs with the entitlements and verifies after the zip; the game boots to
+the intro at 57 frames a second, natively and under Rosetta 2, with three
+captured frames showing the Nintendo logo and the port's name card; Metal's
+API validation reports no failed assertion; the Beach ride scores its
+photos inside the healthy signature, within a few units of the Windows
+numbers; the hook test mod loads and its hooks run; the program quits
+without a crash report. Three faults the runs found are fixed in the tree:
+Apple's paravirtual GPU driver failed an assertion inside
+`sampleCountersInBuffer` after saying it supported the sampling point
+(plume's Metal backend takes no timestamp counter set from a device named
+Paravirtual, or under `RT64_NO_GPU_TIMESTAMPS`); the runtime's detached
+threads locked destroyed mutexes at exit (their objects are never
+destroyed now); and the virtual machine woke a plain 16.7 ms sleep 61 ms
+late, so the game ran at 13 retraces a second (the VI and timer threads
+take macOS's time-constraint scheduling policy and wait with
+`mach_wait_until`, measured at 0.04 ms). No physical Mac has run the
+build.
 
 ## What a clean checkout is missing
 
@@ -571,7 +647,7 @@ the two symbol files. It does **not** contain:
 
 1. `lib/SDL` and `lib/DirectX-Headers` -- ignored; `python tools/fetch_deps.py`
    fetches them at the recorded pins (step 10).
-2. `lib/rt64/src/contrib` -- ignored except for the port's four plume files;
+2. `lib/rt64/src/contrib` -- ignored except for the port's five plume files;
    the same script fetches all of it at the pins recovered in VENDORING.md.
    CMake cannot configure without it.
 3. `RecompiledFuncs/` and `RecompiledPatches/` -- generated (steps 4-5, 8);

@@ -19,10 +19,12 @@ sidecar, and inside the zip a START HERE text next to the bundle. In order:
    ~/Library/Application Support/Snap64 Recomp/.
 3. Contents/Info.plist, written here rather than kept as a file so the
    version in it is the build's (read from the generated version header).
-4. An ad-hoc signature (`codesign --force --deep --sign -`), which is what
-   the other N64 recompilations ship: no developer account and no
-   notarisation, so the first launch is a right-click > Open, or on macOS 15
-   System Settings > Privacy & Security > Open Anyway. `--no-sign` skips it.
+4. An ad-hoc signature with the hardened runtime and the entitlements in
+   tools/macos/entitlements.plist (JIT for mods' code, and a code segment
+   that mods may patch; see tools/macos/ld64), which is what Zelda64Recomp
+   ships: no developer account and no notarisation, so the first launch is a
+   right-click > Open, or on macOS 15 System Settings > Privacy & Security >
+   Open Anyway. `--no-sign` skips it.
 5. The zip, made by ditto so the bundle survives the trip, and its SHA-256
    in the two-column form cpack writes.
 
@@ -46,14 +48,17 @@ DISPLAY_NAME = 'Snap64 Recomp'
 BUNDLE_ID = 'io.github.jackandbeans.snap64recomp'
 MIN_SYSTEM = '14.0'          # CMAKE_OSX_DEPLOYMENT_TARGET in CMakeLists.txt
 ICON_FILE = 'Snap64Recomp.icns'
+ENTITLEMENTS = pathlib.Path(__file__).resolve().parent / 'macos' / 'entitlements.plist'
 
 START_HERE = """SNAP64 RECOMP FOR MACOS
 
-This build has not been run on a Mac by me: read the last section.
+This build has run on GitHub's virtual Mac and not yet on a physical one:
+read the last section.
 
 
 1. THE APP
 ----------
+One app for Apple Silicon and Intel Macs, macOS 14 (Sonoma) or newer.
 Move Snap64Recomp.app to your Applications folder, or anywhere you like.
 
 
@@ -91,12 +96,13 @@ screen, the keys and the pads are in the README inside the bundle
 (Contents/Resources/README.md) and at github.com/JackandBeans/Snap64Recomp.
 
 
-THIS BUILD IS UNVERIFIED
-------------------------
-I have no Mac. The macOS support was ported from a community build that ran
-on an Apple M3, and this file's bundle was compiled by GitHub's own Mac;
-whether it starts, draws and plays on your machine is the question nobody
-has answered yet. Whichever way it goes, an issue at
+WHAT HAS BEEN SEEN
+------------------
+I have no Mac. This app was built by GitHub's own Mac, a virtual one, and
+run there: the game boots to the intro, plays the Beach with its photos
+scored, loads a mod and quits cleanly, on Apple Silicon and through Rosetta
+2. No physical Mac has run it yet, so whether it plays well on yours is the
+question. Whichever way it goes, an issue at
 github.com/JackandBeans/Snap64Recomp with snap64.log attached (the folder
 above) is how it gets verified, or fixed.
 """
@@ -134,11 +140,14 @@ def read_version(build, override):
 
 
 def read_arch(build):
+    """The machine in the zip's name: CMAKE_OSX_ARCHITECTURES, `universal`
+    when it names more than one (one executable for Apple Silicon and Intel
+    Macs), else this machine."""
     cache = build / 'CMakeCache.txt'
     if cache.is_file():
         m = re.search(r'^CMAKE_OSX_ARCHITECTURES:\w+=(\S+)$', cache.read_text(encoding='utf-8'), re.M)
-        if m and ';' not in m.group(1):
-            return m.group(1)
+        if m:
+            return 'universal' if ';' in m.group(1) else m.group(1)
     return platform.machine()
 
 
@@ -202,9 +211,13 @@ def write_plist(app, version):
 def sign(app):
     # A cloud-synced or downloaded tree can carry Finder attributes that make
     # codesign refuse the bundle; strip them first, then seal everything.
+    if not ENTITLEMENTS.is_file():
+        die('no entitlements at %s' % ENTITLEMENTS)
     run(['xattr', '-cr', app])
-    run(['codesign', '--force', '--deep', '--sign', '-', '--timestamp=none', app])
+    run(['codesign', '--force', '--deep', '--options=runtime', '--entitlements', ENTITLEMENTS,
+         '--sign', '-', '--timestamp=none', app])
     run(['codesign', '--verify', '--deep', '--strict', '--verbose=2', app])
+    run(['codesign', '--display', '--entitlements', '-', app])
 
 
 def zip_bundle(build, app, name):

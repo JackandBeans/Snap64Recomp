@@ -25,10 +25,13 @@
  * stick as the C buttons, the left stick as the stick.
  *
  * The mouse's buttons and wheel work whenever the window has focus, so a
- * click advances Oak's text and confirms a menu the way A does. Its motion
- * feeds the game only while it is captured: mouse aim on in the settings,
- * the window focused, and a course running (.app_level resident,
- * src/overlay_hook.cpp). Then the cursor is hidden and its motion turns
+ * click advances Oak's text the way A does. A menu that handles the
+ * mouse itself (the title's list, the lab's panel, the pause menu, the
+ * Options pages) claims it, and then a click reaches that menu as a click
+ * on the item under the pointer instead of as A (the pointer block below).
+ * Its motion feeds the game only while it is captured: mouse aim on in the
+ * settings, the window focused, a course running (.app_level resident,
+ * src/overlay_hook.cpp), and no menu claiming it. Then the cursor is hidden and its motion turns
  * the view directly, the way a mouse does in any first-person game: each
  * pixel is an angle, added to the game's own view yaw and pitch in memory
  * (apply_mouse_look below), not a stick deflection. The stick is a rate in
@@ -55,6 +58,7 @@
 #include <chrono>
 #include <memory>
 #include <mutex>
+#include <string>
 #include "hle/rt64_snap_diag.h"
 #include <vector>
 #include <cstdio>
@@ -181,6 +185,52 @@ static bool g_pad_layout_n64 = false;
 // Written by the pad thread at open and close, read by the game's threads
 // (source_down) and the window's (main.cpp).
 static std::atomic<bool> g_deck_pad_keys_ignored{false};
+
+// The device of the last press (input_last_device). The window's thread writes
+// it from the events; the game's thread reads it.
+static std::atomic<int> g_last_device{kBindPad};
+
+// Presses of the Button Setup page's clear keys (input_take_clear_key).
+static std::atomic<uint32_t> g_clear_key_presses{0};
+
+static void note_press_device(const SDL_Event& event) {
+    int device = -1;
+    switch (event.type) {
+        case SDL_KEYDOWN:
+            // The Deck's desktop layout sends these for its pad's A and B.
+            if (!event.key.repeat &&
+                !(g_deck_pad_keys_ignored.load(std::memory_order_relaxed) &&
+                  ((event.key.keysym.scancode == SDL_SCANCODE_RETURN) ||
+                   (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE)))) {
+                device = kBindKeyboard;
+            }
+            break;
+        case SDL_MOUSEBUTTONDOWN:
+            if (event.button.which != SDL_TOUCH_MOUSEID) {
+                device = kBindMouse;
+            }
+            break;
+        case SDL_MOUSEWHEEL:
+            if (event.wheel.which != SDL_TOUCH_MOUSEID) {
+                device = kBindMouse;
+            }
+            break;
+        case SDL_CONTROLLERBUTTONDOWN:
+            device = kBindPad;
+            break;
+        case SDL_CONTROLLERAXISMOTION:
+            // Past half its travel: a stick at rest, or drifting, is no press.
+            if ((event.caxis.value > 16000) || (event.caxis.value < -16000)) {
+                device = kBindPad;
+            }
+            break;
+        default:
+            break;
+    }
+    if (device >= 0) {
+        g_last_device.store(device, std::memory_order_relaxed);
+    }
+}
 
 // The pad's buttons and axes, out of the snapshot the pad thread took.
 static bool snapshot_button(const PadSnapshot& pad, int code) {
@@ -356,6 +406,36 @@ std::atomic<int64_t> g_esc_start_until{0};
 // A press of the menu key not yet taken by the game thread.
 std::atomic<int> g_menu_request{0};
 
+// The pointer, for the game's menus. A menu that handles the mouse itself
+// (patches/src/graphics_menu_patch.c, snap_mouse_*) raises the claim byte
+// of the mailbox every frame it runs; while it is up, the mouse's buttons
+// and wheel leave the binding table -- a click is no longer A, which chose
+// whatever the menu had highlighted wherever the pointer was -- and reach
+// the menu instead as counts: the menu turns a click into the item under
+// the pointer. Where nothing claims it, the mouse is what it always was
+// (a click advances Oak's text as A does). The pointer's window position
+// is turned into the game's 320 by 240 with the viewport the renderer last
+// drew with (snapdiag::PresentedView). Under SNAP_REPLAY the real mouse is
+// left out, so a hand on the desk cannot steer a replayed run; the
+// scripted one (SNAP_MOUSE_TEST) stands in for it.
+std::atomic<int32_t> g_ptr_wx{-1};            // window points; -1: not over the window
+std::atomic<int32_t> g_ptr_wy{-1};
+std::atomic<int32_t> g_ptr_win_w{0};          // the window's size in points at that moment
+std::atomic<int32_t> g_ptr_win_h{0};
+std::atomic<uint32_t> g_ptr_moved{0};         // counts, a byte of each reaches the game
+std::atomic<uint32_t> g_ptr_click{0};
+std::atomic<uint32_t> g_ptr_back{0};
+std::atomic<uint32_t> g_ptr_wheel_up{0};
+std::atomic<uint32_t> g_ptr_wheel_down{0};
+std::atomic<int64_t> g_ptr_moved_at{0};       // for the pointer shown in fullscreen
+std::atomic<int64_t> g_ptr_quiet_until{0};    // the capture just changed: its warp is no move
+std::atomic<bool> g_menu_claimed{false};
+std::atomic<int32_t> g_test_gx{-1};           // SNAP_MOUSE_TEST: the pointer, game coordinates
+// N64 buttons a menu's mouse asked to press for one reading (input_inject_press).
+std::atomic<uint32_t> g_inject_buttons{0};
+std::atomic<int32_t> g_test_gy{-1};
+std::atomic<bool> g_test_held{false};         // SNAP_MOUSE_TEST's press and release, for a drag
+
 // A press is reported for at least this long. The game samples its pad
 // once per frame (33 ms), so a click shorter than a frame could fall
 // between two reads; held this long it is seen by one frame or two, and
@@ -397,6 +477,15 @@ int32_t read_s32(uint8_t* rdram, uint32_t addr) {
 // tutorial_patch.c) reads this byte of the port's mailbox: one on a frame
 // the view was turned by mouse or gyro, zero otherwise.
 constexpr uint32_t ADDR_MailboxViewTurned       = 0x80C0003B;  // u8, written here every frame
+// The mouse block (the patch's map at SNAP_GFX_MAILBOX): the pointer as
+// x << 16 | y, each a signed halfword, all ones when it is off the picture;
+// then a byte apiece of the move, click, right-click and wheel counts; the
+// claim, which a menu raises and each reading here lowers.
+constexpr uint32_t ADDR_MailboxPointer          = 0x80C00088;  // u32
+constexpr uint32_t ADDR_MailboxPointerCounts    = 0x80C0008C;  // u32: moved, click, back, wheel up
+constexpr uint32_t ADDR_MailboxWheelDown        = 0x80C00090;  // u8
+constexpr uint32_t ADDR_MailboxMouseClaim       = 0x80C00091;  // u8
+constexpr uint32_t ADDR_MailboxMouseHeld        = 0x80C00092;  // u8: 1 while the left button is down, for a drag
 void write_u8(uint8_t* rdram, uint32_t addr, uint8_t v) {
     rdram[(addr - 0x80000000u) ^ 3u] = v;
 }
@@ -533,7 +622,12 @@ void apply_mouse_look(uint8_t* rdram) {
 }
 #undef SNAP_GYRO_DROP
 
-bool source_down(const Source& src, const uint8_t* keys, uint32_t held, int64_t t, const PadSnapshot& pad) {
+bool source_down(const Source& src, const uint8_t* keys, uint32_t held, int64_t t, const PadSnapshot& pad,
+                 bool mouse_live = true) {
+    if (!mouse_live && ((src.kind == SourceKind::MouseButton) || (src.kind == SourceKind::WheelUp) ||
+                        (src.kind == SourceKind::WheelDown))) {
+        return false;
+    }
     switch (src.kind) {
         case SourceKind::Key:
             if (g_deck_pad_keys_ignored.load(std::memory_order_relaxed) &&
@@ -1127,6 +1221,51 @@ bool input_pad_attached() {
     return pad_snapshot().attached;
 }
 
+int input_last_device() {
+    return g_last_device.load(std::memory_order_relaxed);
+}
+
+// True when the table in force binds a key to an input (or to the port's
+// fast forward or slow motion).
+static bool key_in_table(int sc) {
+    const std::shared_ptr<const Resolved> table = resolved();
+    if (!table) {
+        return false;
+    }
+    auto has = [sc](const std::vector<Source>& v) {
+        for (const Source& s : v) {
+            if ((s.kind == SourceKind::Key) && (s.code == sc)) {
+                return true;
+            }
+        }
+        return false;
+    };
+    for (int i = 0; i < IN_COUNT; i++) {
+        if (has(table->sources[i])) {
+            return true;
+        }
+    }
+    return has(table->fast_forward) || has(table->slow_motion);
+}
+
+bool input_take_clear_key() {
+    return g_clear_key_presses.exchange(0, std::memory_order_relaxed) != 0;
+}
+
+std::string input_clear_key_name() {
+    if (!key_in_table(SDL_SCANCODE_DELETE)) {
+        return "Delete";
+    }
+    if (!key_in_table(SDL_SCANCODE_BACKSPACE)) {
+        return "Backspace";
+    }
+    return "";
+}
+
+bool input_pad_n64_layout() {
+    return pad_snapshot().n64_layout;
+}
+
 std::string input_bind_display(const char* input, int device) {
     const Bindings table = input_bindings();
     const auto it = table.find(input);
@@ -1330,12 +1469,141 @@ void input_capture_end() {
     g_capture_settle.store(true, std::memory_order_relaxed);
 }
 
+// --- the text editor ---------------------------------------------------
+struct TextEdit {
+    std::mutex mutex;
+    std::string text;
+    size_t maxBytes = 64;
+    int result = 0;   // 0 typing, 1 kept, 2 left
+};
+TextEdit g_text;
+std::atomic<bool> g_text_active{false};
+std::atomic<bool> g_text_hold_keys{false};
+
+void input_text_begin(const std::string& value, size_t maxBytes) {
+    std::lock_guard<std::mutex> lock(g_text.mutex);
+    g_text.text = value.substr(0, maxBytes);
+    g_text.maxBytes = maxBytes;
+    g_text.result = 0;
+    g_text_active.store(true, std::memory_order_relaxed);
+}
+
+bool input_text_active() {
+    return g_text_active.load(std::memory_order_relaxed);
+}
+
+int input_text_poll(std::string& text) {
+    std::lock_guard<std::mutex> lock(g_text.mutex);
+    text = g_text.text;
+    return g_text.result;
+}
+
+void input_text_end() {
+    g_text_active.store(false, std::memory_order_relaxed);
+    g_text_hold_keys.store(true, std::memory_order_relaxed);
+}
+
+void input_update_text() {
+    static bool on = false;
+    static uint32_t testEndAt = 0;
+    const bool want = g_text_active.load(std::memory_order_relaxed);
+    if (want && !on) {
+        SDL_StartTextInput();
+        on = true;
+        // SNAP_TEXT_TEST=<text> (SNAP_TEXT_TEST_ESC=1 to leave instead):
+        // SDL's own events once typing begins -- the text and one character
+        // more, a Backspace for that one, and Enter or Esc 1.5 s later -- so
+        // a replay types through the same path as a keyboard.
+        const char* test = std::getenv("SNAP_TEXT_TEST");
+        if ((test != nullptr) && (test[0] != '\0')) {
+            SDL_Event e{};
+            e.type = SDL_TEXTINPUT;
+            SDL_snprintf(e.text.text, sizeof(e.text.text), "%sx", test);
+            SDL_PushEvent(&e);
+            SDL_Event bs{};
+            bs.type = SDL_KEYDOWN;
+            bs.key.keysym.scancode = SDL_SCANCODE_BACKSPACE;
+            SDL_PushEvent(&bs);
+            testEndAt = SDL_GetTicks() + 1500;
+        }
+    } else if (want && (testEndAt != 0) && (SDL_GetTicks() >= testEndAt)) {
+        testEndAt = 0;
+        SDL_Event e{};
+        e.type = SDL_KEYDOWN;
+        const char* esc = std::getenv("SNAP_TEXT_TEST_ESC");
+        e.key.keysym.scancode = ((esc != nullptr) && (esc[0] == '1')) ? SDL_SCANCODE_ESCAPE : SDL_SCANCODE_RETURN;
+        SDL_PushEvent(&e);
+    } else if (!want && on) {
+#if defined(__linux__)
+        SDL_StopTextInput();
+#endif
+        on = false;
+    }
+}
+
+// A key or a typed text while the editor is on: every one is the editor's.
+static bool text_event(const SDL_Event& event) {
+    switch (event.type) {
+        case SDL_TEXTINPUT: {
+            std::lock_guard<std::mutex> lock(g_text.mutex);
+            if (g_text.result != 0) {
+                return true;
+            }
+            std::string add;
+            for (const char* c = event.text.text; *c != '\0'; c++) {
+                if (uint8_t(*c) >= 0x20) {
+                    add += *c;
+                }
+            }
+            if (g_text.text.size() + add.size() <= g_text.maxBytes) {
+                g_text.text += add;
+            }
+            return true;
+        }
+        case SDL_KEYDOWN: {
+            const int sc = event.key.keysym.scancode;
+            std::lock_guard<std::mutex> lock(g_text.mutex);
+            if (g_text.result != 0) {
+                return true;
+            }
+            if (sc == SDL_SCANCODE_BACKSPACE) {
+                // One character, whole: the bytes of a UTF-8 sequence after
+                // its first all start 10.
+                while (!g_text.text.empty() && ((uint8_t(g_text.text.back()) & 0xC0) == 0x80)) {
+                    g_text.text.pop_back();
+                }
+                if (!g_text.text.empty()) {
+                    g_text.text.pop_back();
+                }
+            } else if ((sc == SDL_SCANCODE_RETURN) || (sc == SDL_SCANCODE_KP_ENTER)) {
+                g_text.result = 1;
+            } else if (sc == SDL_SCANCODE_ESCAPE) {
+                g_text.result = 2;
+            }
+            return true;
+        }
+        case SDL_KEYUP:
+        case SDL_TEXTEDITING:
+            return true;
+        default:
+            return false;
+    }
+}
+
 bool input_capture_active() {
     return g_capture_active.load(std::memory_order_relaxed);
 }
 
 void input_tap_start() {
     g_esc_start_until.store(now_us() + PressHoldUs, std::memory_order_relaxed);
+}
+
+// A click on one of the game's photo screens (src/menu_mouse.cpp): the
+// item is selected at once, and its A (or B) is pressed on the next reading
+// and released on the one after, so the screen's own edge detection sees
+// one press, whatever order it reads its buttons in.
+void input_inject_press(uint16_t n64_buttons) {
+    g_inject_buttons.fetch_or(n64_buttons, std::memory_order_relaxed);
 }
 
 void input_request_menu() {
@@ -1354,16 +1622,115 @@ void input_release_mouse() {
     }
 }
 
+static bool replaying_run() {
+    static const bool replaying = (getenv("SNAP_REPLAY") != nullptr);
+    return replaying;
+}
+
+// Where the pointer is, from an event: its window position and the window's
+// size then. A touch is not a pointer (a Steam Deck's screen under the
+// thumbs), and neither is the warp SDL makes when the capture changes.
+static void pointer_seen(uint32_t windowID, int32_t x, int32_t y, uint32_t which, bool motion) {
+    if ((which == SDL_TOUCH_MOUSEID) || replaying_run()) {
+        return;
+    }
+    int w = 0, h = 0;
+    if (SDL_Window* win = SDL_GetWindowFromID(windowID)) {
+        SDL_GetWindowSize(win, &w, &h);
+    }
+    g_ptr_win_w.store(w, std::memory_order_relaxed);
+    g_ptr_win_h.store(h, std::memory_order_relaxed);
+    g_ptr_wx.store(x, std::memory_order_relaxed);
+    g_ptr_wy.store(y, std::memory_order_relaxed);
+    const int64_t t = now_us();
+    if (motion && (t >= g_ptr_quiet_until.load(std::memory_order_relaxed))) {
+        g_ptr_moved.fetch_add(1, std::memory_order_relaxed);
+        g_ptr_moved_at.store(t, std::memory_order_relaxed);
+    }
+}
+
+// The window position in the game's coordinates, through the viewport the
+// renderer last drew with -- the mapping of its debugger's own pick. False
+// when the pointer is off the picture.
+static bool pointer_in_game(int32_t& gx, int32_t& gy) {
+    const int32_t wx = g_ptr_wx.load(std::memory_order_relaxed);
+    const int32_t wy = g_ptr_wy.load(std::memory_order_relaxed);
+    const int32_t ww = g_ptr_win_w.load(std::memory_order_relaxed);
+    const int32_t wh = g_ptr_win_h.load(std::memory_order_relaxed);
+    const snapdiag::PresentedView v = snapdiag::presentedView();
+    if ((wx < 0) || (wy < 0) || (ww <= 0) || (wh <= 0) || (v.width <= 0.0f) || (v.height <= 0.0f) ||
+        (v.fbWidth <= 0.0f) || (v.fbHeight <= 0.0f)) {
+        return false;
+    }
+    const float px = float(wx) * float(v.swapWidth) / float(ww);
+    const float py = float(wy) * float(v.swapHeight) / float(wh);
+    const float sx = ((px - (v.x + v.width * 0.5f)) / (v.width * 0.5f)) * v.aspect;
+    const float sy = (py - (v.y + v.height * 0.5f)) / (v.height * 0.5f);
+    const float fx = v.fbWidth * 0.5f + sx * v.fbWidth * 0.5f;
+    const float fy = v.fbHeight * 0.5f + sy * v.fbHeight * 0.5f;
+    if ((fx < 0.0f) || (fy < 0.0f) || (fx >= v.fbWidth) || (fy >= v.fbHeight)) {
+        return false;
+    }
+    gx = int32_t(fx);
+    gy = int32_t(fy);
+    return true;
+}
+
+// The pointer and its counts into the mailbox, once a reading.
+static void publish_pointer(uint8_t* rdram) {
+    if (rdram == nullptr) {
+        return;
+    }
+    int32_t gx = -1, gy = -1;
+    static const bool scripted = (getenv("SNAP_MOUSE_TEST") != nullptr);
+    if (scripted) {
+        gx = g_test_gx.load(std::memory_order_relaxed);
+        gy = g_test_gy.load(std::memory_order_relaxed);
+    } else if (!replaying_run() && !g_captured.load(std::memory_order_relaxed)) {
+        if (!pointer_in_game(gx, gy)) {
+            gx = gy = -1;
+        }
+    }
+    *word_at(rdram, ADDR_MailboxPointer) = ((gx < 0) || (gy < 0))
+        ? 0xFFFFFFFFu : ((uint32_t(gx & 0xFFFF) << 16) | uint32_t(gy & 0xFFFF));
+    *word_at(rdram, ADDR_MailboxPointerCounts) =
+        ((g_ptr_moved.load(std::memory_order_relaxed) & 0xFFu) << 24) |
+        ((g_ptr_click.load(std::memory_order_relaxed) & 0xFFu) << 16) |
+        ((g_ptr_back.load(std::memory_order_relaxed) & 0xFFu) << 8) |
+        (g_ptr_wheel_up.load(std::memory_order_relaxed) & 0xFFu);
+    write_u8(rdram, ADDR_MailboxWheelDown, uint8_t(g_ptr_wheel_down.load(std::memory_order_relaxed)));
+    const bool held = scripted ? g_test_held.load(std::memory_order_relaxed)
+                    : (!replaying_run() && !g_captured.load(std::memory_order_relaxed) &&
+                       ((g_mouse_held.load(std::memory_order_relaxed) >> SDL_BUTTON_LEFT) & 1u));
+    write_u8(rdram, ADDR_MailboxMouseHeld, held ? 1 : 0);
+}
+
 void input_handle_sdl_event(const SDL_Event& event) {
+    note_press_device(event);
     // The Button Setup page is listening: a key, button or wheel tick is the
     // capture's, and reaches neither the latches below nor the game.
     if (g_capture_active.load(std::memory_order_relaxed) && capture_event(event)) {
+        return;
+    }
+    // A mod's text option is being typed: the keyboard is the editor's.
+    if (g_text_active.load(std::memory_order_relaxed) && text_event(event)) {
         return;
     }
     const bool captured = g_captured.load(std::memory_order_relaxed);
     const bool buttons_live = g_focused.load(std::memory_order_relaxed) &&
                               (now_us() >= g_buttons_from.load(std::memory_order_relaxed));
     switch (event.type) {
+        case SDL_KEYDOWN: {
+            // The Button Setup page's clear keys, counted for the game's
+            // thread (input_take_clear_key); the keys themselves reach the
+            // game through the keyboard's state as every key does.
+            const int sc = event.key.keysym.scancode;
+            if (!event.key.repeat && ((sc == SDL_SCANCODE_DELETE) || (sc == SDL_SCANCODE_BACKSPACE)) &&
+                !key_in_table(sc)) {
+                g_clear_key_presses.fetch_add(1, std::memory_order_relaxed);
+            }
+            break;
+        }
         case SDL_WINDOWEVENT:
             if (event.window.event == SDL_WINDOWEVENT_FOCUS_LOST) {
                 g_focused.store(false, std::memory_order_relaxed);
@@ -1371,6 +1738,9 @@ void input_handle_sdl_event(const SDL_Event& event) {
             } else if (event.window.event == SDL_WINDOWEVENT_FOCUS_GAINED) {
                 g_focused.store(true, std::memory_order_relaxed);
                 g_buttons_from.store(now_us() + FocusSettleUs, std::memory_order_relaxed);
+            } else if (event.window.event == SDL_WINDOWEVENT_LEAVE) {
+                g_ptr_wx.store(-1, std::memory_order_relaxed);
+                g_ptr_wy.store(-1, std::memory_order_relaxed);
             }
             break;
         // SDL turns a touch into mouse motion and a mouse button unless it is
@@ -1383,6 +1753,9 @@ void input_handle_sdl_event(const SDL_Event& event) {
                 g_motion_dx += float(event.motion.xrel);
                 g_motion_dy += float(event.motion.yrel);
             }
+            if (!captured) {
+                pointer_seen(event.motion.windowID, event.motion.x, event.motion.y, event.motion.which, true);
+            }
             break;
         case SDL_MOUSEBUTTONDOWN:
             if (event.button.which == SDL_TOUCH_MOUSEID) {
@@ -1391,6 +1764,14 @@ void input_handle_sdl_event(const SDL_Event& event) {
             if (buttons_live && event.button.button < 8) {
                 g_mouse_held.fetch_or(1u << event.button.button, std::memory_order_relaxed);
                 g_mouse_press_until[event.button.button].store(now_us() + PressHoldUs, std::memory_order_relaxed);
+            }
+            if (buttons_live && !captured && !replaying_run()) {
+                pointer_seen(event.button.windowID, event.button.x, event.button.y, event.button.which, false);
+                if (event.button.button == SDL_BUTTON_LEFT) {
+                    g_ptr_click.fetch_add(1, std::memory_order_relaxed);
+                } else if (event.button.button == SDL_BUTTON_RIGHT) {
+                    g_ptr_back.fetch_add(1, std::memory_order_relaxed);
+                }
             }
             break;
         case SDL_MOUSEBUTTONUP:
@@ -1406,6 +1787,10 @@ void input_handle_sdl_event(const SDL_Event& event) {
                 const int y = (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) ? -event.wheel.y : event.wheel.y;
                 if (y > 0) g_wheel_up_until.store(now_us() + PressHoldUs, std::memory_order_relaxed);
                 if (y < 0) g_wheel_down_until.store(now_us() + PressHoldUs, std::memory_order_relaxed);
+                if (!captured && !replaying_run()) {
+                    if (y > 0) g_ptr_wheel_up.fetch_add(1, std::memory_order_relaxed);
+                    if (y < 0) g_ptr_wheel_down.fetch_add(1, std::memory_order_relaxed);
+                }
             }
             break;
         case SDL_CONTROLLERSENSORUPDATE:
@@ -1544,10 +1929,12 @@ void input_update_mouse_capture() {
     // I am elsewhere on the same desktop, and a captured cursor locked me
     // out of it.
     static const bool replaying = (getenv("SNAP_REPLAY") != nullptr);
+    const bool claimed = g_menu_claimed.load(std::memory_order_relaxed);
     const bool wanted = !replaying &&
                         settings().mouse_aim &&
                         g_focused.load(std::memory_order_relaxed) &&
-                        g_app_level_resident.load(std::memory_order_relaxed);
+                        g_app_level_resident.load(std::memory_order_relaxed) &&
+                        !claimed;
     // The pointer has no business on screen in fullscreen: there is nothing
     // beside the game to point at, and on a Steam Deck, which boots
     // fullscreen, it sat over the picture for the whole session. Windowed it
@@ -1556,7 +1943,11 @@ void input_update_mouse_capture() {
     // capture state does not.
     {
         static int cursorState = -1;
-        const int want = (settings().fullscreen && !wanted) ? SDL_DISABLE : SDL_ENABLE;
+        // In fullscreen, a menu that takes the mouse shows the pointer while
+        // it is being moved, and hides it three seconds after it stops.
+        const bool pointing = claimed &&
+                              ((now_us() - g_ptr_moved_at.load(std::memory_order_relaxed)) < 3000000);
+        const int want = (settings().fullscreen && !wanted && !pointing) ? SDL_DISABLE : SDL_ENABLE;
         if (cursorState != want) {
             SDL_ShowCursor(want);
             cursorState = want;
@@ -1572,6 +1963,7 @@ void input_update_mouse_capture() {
         return;
     }
     g_captured.store(wanted, std::memory_order_relaxed);
+    g_ptr_quiet_until.store(now_us() + 150000, std::memory_order_relaxed);
     if (!wanted) {
         clear_mouse();
     }
@@ -2310,6 +2702,110 @@ static void snap_input_tap(uint16_t* buttons, float* x, float* y) {
         }
     }
 
+    // SNAP_MOUSE_TEST=reading:x,y[:click|back|up|down|press|release];... puts the pointer
+    // at x,y of the game's 320 by 240 at that reading -- a move -- and, when
+    // named, clicks, right-clicks or turns the wheel there, so a replay can
+    // prove the menus' mouse without a hand on it.
+    {
+        struct MouseStep { uint32_t at; int32_t x; int32_t y; char what; };
+        static std::vector<MouseStep> steps = [] {
+            std::vector<MouseStep> v;
+            if (const char* e = getenv("SNAP_MOUSE_TEST")) {
+                std::string all(e);
+                size_t start = 0;
+                while (start < all.size()) {
+                    size_t end = all.find(';', start);
+                    if (end == std::string::npos) end = all.size();
+                    const std::string one = all.substr(start, end - start);
+                    MouseStep m{0, -1, -1, 0};
+                    char what[16] = {};
+                    const int n = sscanf(one.c_str(), "%u:%d,%d:%15s", &m.at, &m.x, &m.y, what);
+                    if (n >= 3) {
+                        m.what = what[0];
+                        v.push_back(m);
+                    }
+                    start = end + 1;
+                }
+            }
+            return v;
+        }();
+        for (const MouseStep& m : steps) {
+            if (m.at == readingIndex) {
+                g_test_gx.store(m.x, std::memory_order_relaxed);
+                g_test_gy.store(m.y, std::memory_order_relaxed);
+                g_ptr_moved.fetch_add(1, std::memory_order_relaxed);
+                if ((m.what == 'c') || (m.what == 'p')) g_ptr_click.fetch_add(1, std::memory_order_relaxed);
+                if (m.what == 'p') g_test_held.store(true, std::memory_order_relaxed);
+                if (m.what == 'r') g_test_held.store(false, std::memory_order_relaxed);
+                if (m.what == 'b') g_ptr_back.fetch_add(1, std::memory_order_relaxed);
+                if (m.what == 'u') g_ptr_wheel_up.fetch_add(1, std::memory_order_relaxed);
+                if (m.what == 'd') g_ptr_wheel_down.fetch_add(1, std::memory_order_relaxed);
+                if (m.what != 0) g_last_device.store(kBindMouse, std::memory_order_relaxed);
+                printf("[SNAP-MOUSE] test at reading %u: the pointer at %d,%d%s%s\n", readingIndex, m.x, m.y,
+                       m.what ? ", " : "", (m.what == 'c') ? "click" : (m.what == 'b') ? "right-click"
+                                           : (m.what == 'u') ? "wheel up" : (m.what == 'd') ? "wheel down"
+                                           : (m.what == 'p') ? "press" : (m.what == 'r') ? "release" : "");
+                fflush(stdout);
+            }
+        }
+    }
+
+    // SNAP_DEVICE_TEST=reading:name;... pushes SDL's own press and release of
+    // a key or a pad button, named as the binding table names them ("X",
+    // "Pad A"), at that reading: the window's thread takes it as a press of
+    // that device (input_last_device) the way it takes a hand's. The game does
+    // not see it -- SDL's key and pad state are not changed -- so a replay
+    // keeps its own buttons.
+    {
+        struct DeviceStep { uint32_t at; std::string name; };
+        static std::vector<DeviceStep> steps = [] {
+            std::vector<DeviceStep> v;
+            if (const char* e = getenv("SNAP_DEVICE_TEST")) {
+                std::string all(e);
+                size_t start = 0;
+                while (start < all.size()) {
+                    size_t end = all.find(';', start);
+                    if (end == std::string::npos) end = all.size();
+                    const std::string one = all.substr(start, end - start);
+                    const size_t colon = one.find(':');
+                    if (colon != std::string::npos) {
+                        v.push_back({uint32_t(strtoul(one.c_str(), nullptr, 10)), one.substr(colon + 1)});
+                    }
+                    start = end + 1;
+                }
+            }
+            return v;
+        }();
+        for (const DeviceStep& d : steps) {
+            if (d.at != readingIndex) {
+                continue;
+            }
+            Source src{};
+            if (!resolve_source(d.name, src) ||
+                ((src.kind != SourceKind::Key) && (src.kind != SourceKind::PadButton))) {
+                printf("[SNAP-Input] device test at reading %u: \"%s\" is no key or pad button\n",
+                       readingIndex, d.name.c_str());
+                fflush(stdout);
+                continue;
+            }
+            SDL_Event down{};
+            SDL_Event up{};
+            if (src.kind == SourceKind::Key) {
+                down.type = SDL_KEYDOWN;
+                up.type = SDL_KEYUP;
+                down.key.keysym.scancode = up.key.keysym.scancode = SDL_Scancode(src.code);
+            } else {
+                down.type = SDL_CONTROLLERBUTTONDOWN;
+                up.type = SDL_CONTROLLERBUTTONUP;
+                down.cbutton.button = up.cbutton.button = uint8_t(src.code);
+            }
+            SDL_PushEvent(&down);
+            SDL_PushEvent(&up);
+            printf("[SNAP-Input] device test at reading %u: a press of \"%s\"\n", readingIndex, d.name.c_str());
+            fflush(stdout);
+        }
+    }
+
     if (replay != nullptr) {
         struct { uint16_t btn; float rx; float ry; } r;
         if (fread(&r, sizeof(r), 1, replay) == 1) {
@@ -2407,6 +2903,22 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
     // Keyboard and mouse buttons, through the binding table
     // -----------------------------------------------------------------------
     const uint8_t* keys = SDL_GetKeyboardState(nullptr);
+    // No key reaches the game while a text is typed, nor after it until every
+    // key is up (the Enter that kept it would otherwise be a fresh Start).
+    static const uint8_t kNoKeys[SDL_NUM_SCANCODES] = {};
+    if (g_text_active.load(std::memory_order_relaxed)) {
+        keys = kNoKeys;
+    } else if (g_text_hold_keys.load(std::memory_order_relaxed)) {
+        bool anyDown = false;
+        for (int k = 0; (k < SDL_NUM_SCANCODES) && !anyDown; k++) {
+            anyDown = keys[k] != 0;
+        }
+        if (anyDown) {
+            keys = kNoKeys;
+        } else {
+            g_text_hold_keys.store(false, std::memory_order_relaxed);
+        }
+    }
     // The pad as the pad thread last saw it; the only view of it this thread
     // ever takes.
     const PadSnapshot pad = pad_snapshot();
@@ -2421,10 +2933,33 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
         if (t < g_esc_start_until.load(std::memory_order_relaxed)) {
             btn |= N64_BTN_START;
         }
+        bool claimed = false;
+        if (g_rdram != nullptr) {
+            const uint8_t claim = read_u8(g_rdram, ADDR_MailboxMouseClaim);
+            if (claim != 0) {
+                claimed = true;
+                write_u8(g_rdram, ADDR_MailboxMouseClaim, uint8_t(claim - 1));
+            }
+        }
+        g_menu_claimed.store(claimed, std::memory_order_relaxed);
+        // Outside a course the right button, while it is Z (the zoom it is
+        // in a ride), is B: back, as it is on the menus that take the mouse,
+        // on the screens that do not -- a Yes or No of Oak's photo check, a
+        // text's question. A right button bound to anything else is that.
+        const bool course = g_app_level_resident.load(std::memory_order_relaxed);
+        bool rightAsB = false;
         for (int i = 0; i < IN_COUNT; i++) {
             bool down = false;
             for (const Source& src : table->sources[i]) {
-                if (source_down(src, keys, held, t, pad)) { down = true; break; }
+                if (!course && (i == IN_Z) && (src.kind == SourceKind::MouseButton) &&
+                    (src.code == SDL_BUTTON_RIGHT)) {
+                    rightAsB = rightAsB || source_down(src, keys, held, t, pad, !claimed);
+                    continue;
+                }
+                if (source_down(src, keys, held, t, pad, !claimed)) { down = true; break; }
+            }
+            if (rightAsB && (i == IN_Z)) {
+                btn |= N64_BTN_B;
             }
             if (!down) continue;
             if (i <= IN_CR) {
@@ -2444,12 +2979,12 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
         // src/fast_forward.cpp applies them on the main thread.
         bool fast = false;
         for (const Source& src : table->fast_forward) {
-            if (source_down(src, keys, held, t, pad)) { fast = true; break; }
+            if (source_down(src, keys, held, t, pad, !claimed)) { fast = true; break; }
         }
         g_fast_forward_held.store(fast, std::memory_order_relaxed);
         bool slow = false;
         for (const Source& src : table->slow_motion) {
-            if (source_down(src, keys, held, t, pad)) { slow = true; break; }
+            if (source_down(src, keys, held, t, pad, !claimed)) { slow = true; break; }
         }
         g_slow_motion_held.store(slow, std::memory_order_relaxed);
     }
@@ -2599,6 +3134,8 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
     // The session tap: everything the game is about to be handed, recorded or
     // replaced. See snap_input_tap below.
     snap_input_tap(buttons, x, y);
+    *buttons |= uint16_t(g_inject_buttons.exchange(0, std::memory_order_relaxed));
+    publish_pointer(g_rdram);
 
     return true;
 }

@@ -289,6 +289,10 @@ if (WIN32)
     set(SDL2_INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3/include")
     set(SDL2_LIBRARIES "SDL2" "SDL2main")
     link_directories("${PROJECT_SOURCE_DIR}/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3/lib/x64")
+elseif (TARGET SDL2-static)
+    # Snap64 Recomp: on macOS the port builds SDL2 from its own vendored tree
+    # as a static library, and set SDL2_INCLUDE_DIRS and SDL2_LIBRARIES to it
+    # before adding this directory; there is no installed package to find.
 else()
     find_package(SDL2 REQUIRED)
 endif()

@@ -1,0 +1,112 @@
+#!/usr/bin/env python3
+"""A wrapper around macOS's linker for the Snap64 Recomp executable.
+
+A mod patches game functions inside the executable's own code (librecomp's
+mod support writes a jump over the start of a function), and macOS allows a
+program to make its code writable only when the code segment's *maximum*
+protection includes writing. ld64 will not write that into the file, so this
+script runs the real linker, then sets the `maxprot` of the `__TEXT` segment
+(and of any segment named by a `-segprot SEG MAX INIT` option) to what was
+asked, rwx by default, in every Mach-O image of the output. The bundle is
+signed afterwards (tools/macos_bundle.py), with the entitlements in
+entitlements.plist beside this file; the build tree's copy is re-signed ad
+hoc by a post-build step in CMakeLists.txt, since this edit breaks the
+linker's own signature.
+
+The approach is Zelda64Recomp's (.github/macos/ld64, by David Chavez,
+GPL-3.0 as this port is), which reads the headers with macholib; this one
+reads them itself, so the build needs nothing beyond Python 3.
+
+CMakeLists.txt passes it to clang as -fuse-ld=<this file>. Clang links a
+universal build once per architecture and joins the results with lipo, so
+the output here is normally one image; a universal (fat) file is handled too.
+"""
+import struct
+import subprocess
+import sys
+
+LC_SEGMENT = 0x1
+LC_SEGMENT_64 = 0x19
+MH_MAGIC = 0xFEEDFACE
+MH_MAGIC_64 = 0xFEEDFACF
+FAT_MAGIC = 0xCAFEBABE
+FAT_MAGIC_64 = 0xCAFEBABF
+
+
+def parse_rwx(text):
+    return (1 if 'r' in text else 0) | (2 if 'w' in text else 0) | (4 if 'x' in text else 0)
+
+
+def patch_image(data, base, maxprots, changed):
+    """One thin Mach-O image at `base` in `data` (a bytearray)."""
+    magic = struct.unpack_from('<I', data, base)[0]
+    if magic == MH_MAGIC_64:
+        header_size = 32
+    elif magic == MH_MAGIC:
+        header_size = 28
+    else:
+        raise SystemExit('ld64 wrapper: not a little-endian Mach-O image at offset %d (magic 0x%08X)' % (base, magic))
+    ncmds = struct.unpack_from('<I', data, base + 16)[0]
+    at = base + header_size
+    for _ in range(ncmds):
+        cmd, cmdsize = struct.unpack_from('<II', data, at)
+        if cmd in (LC_SEGMENT_64, LC_SEGMENT):
+            name = bytes(data[at + 8:at + 24]).split(b'\0', 1)[0].decode('ascii', 'replace')
+            # segment_command_64: maxprot after cmd, cmdsize, segname[16] and
+            # four 64-bit fields; segment_command: after four 32-bit ones.
+            maxprot_at = at + (56 if cmd == LC_SEGMENT_64 else 40)
+            if name in maxprots:
+                old = struct.unpack_from('<i', data, maxprot_at)[0]
+                if old != maxprots[name]:
+                    struct.pack_into('<i', data, maxprot_at, maxprots[name])
+                    changed.append('%s %d->%d' % (name, old, maxprots[name]))
+        at += cmdsize
+
+
+def apply_maxprots(path, maxprots):
+    with open(path, 'rb') as f:
+        data = bytearray(f.read())
+    changed = []
+    magic_be = struct.unpack_from('>I', data, 0)[0]
+    if magic_be in (FAT_MAGIC, FAT_MAGIC_64):
+        count = struct.unpack_from('>I', data, 4)[0]
+        for i in range(count):
+            if magic_be == FAT_MAGIC:
+                offset = struct.unpack_from('>I', data, 8 + i * 20 + 8)[0]
+            else:
+                offset = struct.unpack_from('>Q', data, 8 + i * 32 + 8)[0]
+            patch_image(data, offset, maxprots, changed)
+    else:
+        patch_image(data, 0, maxprots, changed)
+    if changed:
+        with open(path, 'r+b') as f:
+            f.write(data)
+    return changed
+
+
+def main():
+    try:
+        subprocess.check_call(['/usr/bin/ld'] + sys.argv[1:])
+    except subprocess.CalledProcessError as ex:
+        sys.exit(ex.returncode)
+
+    output = 'a.out'
+    maxprots = {'__TEXT': parse_rwx('rwx')}
+    args = sys.argv[1:]
+    i = 0
+    while i < len(args):
+        if args[i] == '-o' and i + 1 < len(args):
+            output = args[i + 1]
+            i += 2
+        elif args[i] == '-segprot' and i + 3 < len(args):
+            maxprots[args[i + 1]] = parse_rwx(args[i + 2])
+            i += 4
+        else:
+            i += 1
+
+    changed = apply_maxprots(output, maxprots)
+    print('ld64 wrapper: %s: %s' % (output, ', '.join(changed) if changed else 'max protections already as asked'))
+
+
+if __name__ == '__main__':
+    main()

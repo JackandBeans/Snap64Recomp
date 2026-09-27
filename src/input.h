@@ -91,6 +91,21 @@ void input_tap_start();
 // taken on the game thread (menu_anywhere_tick), which decides whether it
 // goes to a course's pause code or opens the pages over the screen itself.
 void input_request_menu();
+// Presses N64 buttons for one reading: a menu's mouse click (src/menu_mouse.cpp).
+void input_inject_press(uint16_t n64_buttons);
+
+// A text typed for a mod's text option (the options page's editor,
+// src/menu_assets.cpp). While it is on, the keyboard reaches neither the game
+// nor the hotkeys, and after it the keyboard stays away from the game until
+// every key is up, so the Enter that ended it is not also a Start.
+void input_text_begin(const std::string& value, size_t maxBytes);
+bool input_text_active();
+// 0 while typing (`text` is the text so far), 1 kept (Enter), 2 left (Esc).
+int input_text_poll(std::string& text);
+void input_text_end();
+// Main thread: SDL's text input on while the editor is, off after it on Linux
+// (where the port keeps it off).
+void input_update_text();
 bool input_take_menu_request();
 
 // True while the Steam Deck's own controller is attached: the keyboard's
@@ -149,6 +164,25 @@ constexpr int kBindPad = 2;
 
 // True while a game controller is attached (the pad thread's last snapshot).
 bool input_pad_attached();
+
+// The device of the player's last press, as the window's thread saw it: a
+// key (kBindKeyboard), a mouse button or the wheel (kBindMouse), or a
+// controller's button, trigger or stick (kBindPad); kBindPad until the first.
+// A help line that names buttons names that device's (menu_assets.cpp,
+// hand_words).
+int input_last_device();
+
+// True while the attached pad is shaped like the N64's: its shoulders read as
+// Z and ZR, not as bumpers (input_bind_display names them so).
+bool input_pad_n64_layout();
+
+// The Button Setup page's clear keys, beside Z: Delete, and Backspace (the
+// key a Mac's keyboard calls delete), each while the table binds it to no
+// input. The window's thread counts their presses; take hands the game's
+// thread whether any came since it last asked. name is the one a help line
+// gives ("Delete"), or "" when both are bound.
+bool input_take_clear_key();
+std::string input_clear_key_name();
 
 // What presses an input on one device, as the page's row shows it: "X",
 // "Left Shift, Space", "L Bumper", or "None". The pad's names follow the

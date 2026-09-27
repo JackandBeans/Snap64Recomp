@@ -204,20 +204,74 @@ extern "C" void check_sp_dmem(uint8_t* rdram, recomp_context* ctx) {
 }
 
 
-// Publishes SDL's real audio backlog to the scratch word that auThreadMain's
-// patched AI_LEN read (vram 0x800219D8, RecompiledFuncs/funcs_48.c) consumes.
-// The word lives in the port's mailbox page at 0x80C00040 (byte map in
-// patches/src/graphics_menu_patch.c). It used to sit at 0x80700004, inside
-// the Expansion Pak range 0x80400000-0x807FFFF0 that the game's Snap Station
-// boot sweeps with a read-back memory test (func_8009B2BC): a word rewritten
-// every frame in that range fails the test, and the kiosk's photo display
-// never starts. Nothing of the port's may live in that range. Lives here
-// because the MEM_W macro requires a variable literally named rdram.
-extern "C" void snap_publish_ai_len(uint8_t* rdram) {
-    if (rdram == nullptr) return;
-    // ultramodern already models AI_LEN: queued bytes minus a lookahead margin.
-    MEM_W(0, (gpr)(int32_t)0x80C00040) = ultramodern::get_remaining_audio_bytes();
+// The AI_LEN register as auThreadMain reads it: the audio queue's length in
+// bytes, asked at the moment of the read. The game inlined osAiGetLength and
+// reads the register's address directly, twice (a tick's read, and the one
+// after it rebuilds its players); tools/hook_funcs.py rewrites both loads into
+// this call. ultramodern models the register: queued bytes minus a lookahead
+// margin. This replaced a word the render loop published once a frame, which
+// went stale whenever the main thread waited -- behind a dialog, say -- while
+// the audio thread kept reading it; and the second read had been left raw, so
+// it would have faulted the first time the players were rebuilt. DramaticShape's
+// VR fork (prismaticShape/Snap64RecompVR) found both and fixed them this way.
+extern "C" uint32_t snap_audio_remaining_bytes(void) {
+    return ultramodern::get_remaining_audio_bytes();
 }
 
+// The music held with a frozen screen (patches/src/anywhere_patch.inc):
+// while the byte at 0x80C0004C is set, the two BGM sequence players'
+// handler -- libaudio's __CSPVoiceHandler, which the game's symbols do not
+// name -- is not run. The player answers the synthesizer with a short delay
+// instead, so none of its events is processed and its clock, curTime at
+// +0x1C, stands. The sound player has a handler of its own and is untouched.
+// One line per player when the hold ends, with its clock at the hold and at
+// the release: equal is the proof that the music comes back where it was.
+// Runs on the game's audio thread only.
+namespace {
+struct HeldPlayer {
+    uint32_t node;
+    uint32_t clock;
+    uint32_t turns;
+};
+HeldPlayer g_held[2];
+int g_held_count = 0;
+}  // namespace
 
-
+extern "C" void __real_manualfunc_8002E2F8(uint8_t* rdram, recomp_context* ctx);
+extern "C" void manualfunc_8002E2F8(uint8_t* rdram, recomp_context* ctx) {
+    const uint32_t node = static_cast<uint32_t>(ctx->r4);
+    if (MEM_B(0, (gpr)(int32_t)0x80C0004C) != 0) {
+        int i = 0;
+        while ((i < g_held_count) && (g_held[i].node != node)) {
+            i++;
+        }
+        if (i == g_held_count) {
+            if (g_held_count < 2) {
+                g_held[g_held_count++] = HeldPlayer{node, static_cast<uint32_t>(MEM_W(0X1C, ctx->r4)), 0};
+            } else {
+                i = -1;   // a third player: the driver makes two
+            }
+        }
+        if (i >= 0) {
+            g_held[i].turns++;
+        }
+        ctx->r2 = (gpr)(int32_t)4000;   // microseconds until the synthesizer asks again
+        return;
+    }
+    for (int i = 0; i < g_held_count; i++) {
+        if (g_held[i].node == node) {
+            const uint32_t now = static_cast<uint32_t>(MEM_W(0X1C, ctx->r4));
+            if (now == g_held[i].clock) {
+                printf("[SNAP-BGM] player %08X held with the screen for %u turns: its clock stood at %u us\n",
+                       node, g_held[i].turns, now);
+            } else {
+                printf("[SNAP-BGM] player %08X held with the screen for %u turns: its clock MOVED from %u to %u us\n",
+                       node, g_held[i].turns, g_held[i].clock, now);
+            }
+            fflush(stdout);
+            g_held[i] = g_held[--g_held_count];
+            break;
+        }
+    }
+    __real_manualfunc_8002E2F8(rdram, ctx);
+}

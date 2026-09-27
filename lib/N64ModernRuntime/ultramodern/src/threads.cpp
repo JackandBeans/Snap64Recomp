@@ -7,6 +7,7 @@
 #include <functional>
 #include <mutex>
 #include <vector>
+#include <algorithm>
 
 #include "ultramodern/ultra64.h"
 #include "ultramodern/ultramodern.hpp"
@@ -28,7 +29,81 @@ extern "C" {
 // Native APIs only used to set thread names for easier debugging
 #ifdef _WIN32
 #include <Windows.h>
+#else
+#include <csetjmp>
 #endif
+
+// Pokemon Snap port: a thread that ends while code made at run time is on
+// its stack. A thread ends by throwing thread_terminated on its own stack
+// (osDestroyThread on itself, which wait_for_resumed calls when another
+// thread destroyed this one while it waited), and the throw unwinds to
+// _thread_func. Code the live recompiler made -- a mod's own functions, or a
+// game or patch function recompiled for a mod's hook -- has no unwind
+// information, so the unwind cannot pass it and the process dies (0xE06D7363
+// on Windows). The game parks every process in ohWait and ends it from
+// outside, so a hook or patch on any function that waits met this as soon
+// as its process ended. Such a thread goes back to _thread_func by
+// restoring the context saved there instead: nothing on the way has a
+// destructor to run (recompiled C, generated code, the wait, which holds no
+// lock by then). A thread with no generated code on its stack still throws,
+// so without code mods every thread ends exactly as before.
+namespace {
+    struct GeneratedCode {
+        uintptr_t begin;
+        uintptr_t end;
+    };
+    std::mutex generated_code_mutex;
+    std::vector<GeneratedCode> generated_code;
+    std::atomic<size_t> generated_code_count{0};
+
+    struct ThreadExit {
+#ifdef _WIN32
+        CONTEXT context;
+#else
+        sigjmp_buf jump;
+#endif
+        uintptr_t stack_top;
+    };
+    thread_local ThreadExit* thread_exit = nullptr;
+    thread_local volatile bool thread_exit_taken = false;
+}
+
+void ultramodern::register_generated_code(const void* begin, size_t size) {
+    std::lock_guard lock{generated_code_mutex};
+    const uintptr_t at = reinterpret_cast<uintptr_t>(begin);
+    generated_code.push_back(GeneratedCode{at, at + size});
+    generated_code_count.store(generated_code.size());
+}
+
+void ultramodern::unregister_generated_code(const void* begin) {
+    std::lock_guard lock{generated_code_mutex};
+    const uintptr_t at = reinterpret_cast<uintptr_t>(begin);
+    generated_code.erase(std::remove_if(generated_code.begin(), generated_code.end(),
+        [at](const GeneratedCode& c) { return c.begin == at; }), generated_code.end());
+    generated_code_count.store(generated_code.size());
+}
+
+// Whether any word between here and the thread's entry points into
+// generated code, as a return address into it does. A stale word in a live
+// frame can say yes wrongly, which only sends the thread home the other way.
+static bool generated_code_on_stack() {
+    if (thread_exit == nullptr || generated_code_count.load(std::memory_order_relaxed) == 0) {
+        return false;
+    }
+    volatile uintptr_t marker = 0;
+    uintptr_t at = reinterpret_cast<uintptr_t>(&marker) & ~uintptr_t(sizeof(uintptr_t) - 1);
+    const uintptr_t top = thread_exit->stack_top;
+    std::lock_guard lock{generated_code_mutex};
+    for (; at + sizeof(uintptr_t) <= top; at += sizeof(uintptr_t)) {
+        const uintptr_t word = *reinterpret_cast<const uintptr_t*>(at);
+        for (const GeneratedCode& c : generated_code) {
+            if (word >= c.begin && word < c.end) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
 
 static ultramodern::threads::callbacks_t threads_callbacks;
 
@@ -54,7 +129,7 @@ thread_local PTR(OSThread) thread_self = NULLPTR;
 // (src/main.cpp, update_gfx): which thread is running, which are queued,
 // which wait on a message queue and on which. The structs live in RDRAM
 // for the life of the game; a thread that ended reads as stopped.
-static std::mutex snap_thread_registry_mutex;
+static std::mutex& snap_thread_registry_mutex = *new std::mutex();   // never destroyed: game threads may still run at exit
 static std::vector<PTR(OSThread)> snap_thread_registry;
 
 void ultramodern::set_entrypoint_thread() {
@@ -161,6 +236,10 @@ void ultramodern::set_native_thread_priority(ThreadPriority pri) {
     // }
 }
 #elif defined(__APPLE__)
+#include <mach/mach.h>
+#include <mach/mach_time.h>
+#include <mach/thread_policy.h>
+
 void ultramodern::set_native_thread_name(const std::string& name) {
     if (name.length() > 15) {
         // Macs seem to only accept up to 16 characters including the null terminator for a thread name.
@@ -170,7 +249,37 @@ void ultramodern::set_native_thread_name(const std::string& name) {
     pthread_setname_np(name.c_str());
 }
 
-void ultramodern::set_native_thread_priority(ThreadPriority pri) {}
+void ultramodern::set_native_thread_priority(ThreadPriority pri) {
+    // Snap64 Recomp: the two threads that pace the game by time -- the VI
+    // retrace (Critical) and the timers (VeryHigh) -- get macOS's
+    // time-constraint scheduling policy, the one audio and game engines use
+    // for their deadlines. Measured on GitHub's virtual Mac (2026-09-26): a
+    // plain 16.7 ms sleep woke 61 ms late there on average, so the game ran
+    // at 13 retraces a second; with this policy and mach_wait_until
+    // (timer.cpp) the same wait woke within 0.04 ms. A real Mac sleeps
+    // precisely either way. Every other thread keeps the default policy: a
+    // real-time policy is for a few threads, and the game's own threads hand
+    // off through semaphores, whose wakeups the same measurement found
+    // prompt.
+    if ((pri != ThreadPriority::Critical) && (pri != ThreadPriority::VeryHigh)) {
+        return;
+    }
+    mach_timebase_info_data_t timebase{};
+    mach_timebase_info(&timebase);
+    const auto to_abs = [&](uint64_t ns) { return uint32_t(ns * timebase.denom / timebase.numer); };
+    thread_time_constraint_policy_data_t policy{};
+    policy.period = to_abs(16666667);      // one retrace
+    policy.computation = to_abs(1000000);  // a millisecond of work in it
+    policy.constraint = to_abs(5000000);   // done within five
+    policy.preemptible = 1;
+    const thread_port_t self = mach_thread_self();
+    const kern_return_t result = thread_policy_set(self, THREAD_TIME_CONSTRAINT_POLICY,
+        reinterpret_cast<thread_policy_t>(&policy), THREAD_TIME_CONSTRAINT_POLICY_COUNT);
+    mach_port_deallocate(mach_task_self(), self);
+    if (result != KERN_SUCCESS) {
+        fprintf(stderr, "[Thread] macOS refused the time-constraint policy for a pacing thread (%d); the game's pace may drift\n", int(result));
+    }
+}
 #endif
 
 // Pokemon Snap port: how long THIS thread spent handed off to another guest
@@ -349,11 +458,26 @@ static void _thread_func(RDRAM_ARG PTR(OSThread) self_, PTR(thread_func_t) entry
     // Make sure the thread wasn't replaced or destroyed before it was started.
     if (self->context == thread_context) {
         debug_printf("[Thread] Thread started: %d\n", self->id);
-        try {
-            // Run the thread's function with the provided argument.
-            run_thread_function(PASS_RDRAM entrypoint, self->sp, arg);
-        } catch (ultramodern::thread_terminated& terminated) {
+        // Where a thread ending with generated code on its stack comes back
+        // to (osDestroyThread): it resumes after the capture with the flag set.
+        ThreadExit exit_point;
+        exit_point.stack_top = reinterpret_cast<uintptr_t>(&exit_point);
+        thread_exit_taken = false;
+#ifdef _WIN32
+        RtlCaptureContext(&exit_point.context);
+#else
+        sigsetjmp(exit_point.jump, 0);
+#endif
+        if (!thread_exit_taken) {
+            thread_exit = &exit_point;
+            try {
+                // Run the thread's function with the provided argument.
+                run_thread_function(PASS_RDRAM entrypoint, self->sp, arg);
+            } catch (ultramodern::thread_terminated& terminated) {
+            }
         }
+        thread_exit = nullptr;
+        thread_exit_taken = false;
     }
     else {
         debug_printf("[Thread] Thread destroyed before being started: %d\n", self->id);
@@ -387,8 +511,15 @@ struct PooledHostThread {
     std::function<void()> task;
     std::thread thread;
 };
-static std::mutex pool_mutex;
-static std::vector<PooledHostThread*> pool_parked;
+// Snap64 Recomp: the pool's objects are never destroyed. Its workers and the
+// replenisher are detached threads that live for the process, and at exit
+// they are still running when the process's globals are destroyed; on macOS
+// a lock on a destroyed mutex fails with EINVAL and libc++ throws, which
+// ended every quit with "mutex lock failed" on the replenisher and a crash
+// report (found on GitHub's Mac, 2026-09-26). Windows and Linux happen to
+// tolerate the same. Leaked on purpose: the process is ending.
+static std::mutex& pool_mutex = *new std::mutex();
+static std::vector<PooledHostThread*>& pool_parked = *new std::vector<PooledHostThread*>();
 // Course coroutines hold their workers for as long as the object lives, and
 // a block crossing spawns the new block's objects before the old block's
 // despawns return theirs -- so the parked supply can run dry mid-course (a
@@ -398,7 +529,7 @@ static std::vector<PooledHostThread*> pool_parked;
 // thread. The synchronous path below remains only as a fallback for a burst
 // deeper than the float.
 static constexpr size_t pool_float_target = 32;
-static moodycamel::LightweightSemaphore pool_replenish_wake;
+static moodycamel::LightweightSemaphore& pool_replenish_wake = *new moodycamel::LightweightSemaphore();
 
 static void _pooled_thread_main(PooledHostThread* self) {
     while (true) {
@@ -411,8 +542,9 @@ static void _pooled_thread_main(PooledHostThread* self) {
 
 static PooledHostThread* pool_make_worker() {
     PooledHostThread* worker = new PooledHostThread();
-    worker->thread = std::thread{_pooled_thread_main, worker};
-    worker->thread.detach();
+    // The worker runs the game's own threads, so it gets their stack
+    // (ultramodern::threads::start_detached_game_host_thread).
+    ultramodern::threads::start_detached_game_host_thread([worker]() { _pooled_thread_main(worker); });
     return worker;
 }
 
@@ -589,6 +721,21 @@ extern "C" void osDestroyThread(RDRAM_ARG PTR(OSThread) t_) {
     OSThread* t = TO_PTR(OSThread, t_);
     // Check if the thread is destroying itself (arg is null or thread_self)
     if (t_ == thread_self) {
+        // Generated code on the stack cannot be unwound through: go back to
+        // _thread_func without unwinding (see register_generated_code).
+        if (generated_code_on_stack()) {
+            static std::atomic<bool> said{false};
+            if (!said.exchange(true)) {
+                printf("[SNAP-MODS] a process ended with a mod's code on its stack; its thread returned without unwinding (said once)\n");
+                fflush(stdout);
+            }
+            thread_exit_taken = true;
+#ifdef _WIN32
+            RtlRestoreContext(&thread_exit->context, nullptr);
+#else
+            siglongjmp(thread_exit->jump, 1);
+#endif
+        }
         throw ultramodern::thread_terminated{};
     }
     // Otherwise if the thread isn't stopped, remove it from its currrent queue., 
@@ -675,3 +822,65 @@ void ultramodern::cleanup_thread(UltraThreadContext *cur_context) {
 void ultramodern::join_thread_cleaner_thread() {
     thread_cleaner_thread.join();
 }
+
+#if defined(__APPLE__)
+#include <pthread.h>
+
+// A pthread with the game's stack running a heap-held function, which it
+// deletes when done. False when the thread could not be created.
+static bool start_big_stack_pthread(std::function<void()>* heapFunc, bool detached, pthread_t* out) {
+    pthread_attr_t attr;
+    if (pthread_attr_init(&attr) != 0) {
+        return false;
+    }
+    pthread_attr_setstacksize(&attr, ultramodern::threads::game_host_stack_bytes);
+    pthread_attr_setdetachstate(&attr, detached ? PTHREAD_CREATE_DETACHED : PTHREAD_CREATE_JOINABLE);
+    pthread_t thread;
+    const int err = pthread_create(&thread, &attr, [](void* arg) -> void* {
+        std::function<void()>* f = static_cast<std::function<void()>*>(arg);
+        (*f)();
+        delete f;
+        return nullptr;
+    }, heapFunc);
+    pthread_attr_destroy(&attr);
+    if (err != 0) {
+        fprintf(stderr, "[Thread] a game thread with an %zu-byte stack could not be created (error %d); "
+                "it runs on a default thread instead\n", ultramodern::threads::game_host_stack_bytes, err);
+        return false;
+    }
+    if (out != nullptr) {
+        *out = thread;
+    }
+    return true;
+}
+
+std::thread ultramodern::threads::make_game_host_thread(std::function<void()> func) {
+    return std::thread{[func = std::move(func)]() mutable {
+        std::function<void()>* heapFunc = new std::function<void()>(std::move(func));
+        pthread_t inner;
+        if (start_big_stack_pthread(heapFunc, false, &inner)) {
+            pthread_join(inner, nullptr);
+        } else {
+            (*heapFunc)();
+            delete heapFunc;
+        }
+    }};
+}
+
+void ultramodern::threads::start_detached_game_host_thread(std::function<void()> func) {
+    std::function<void()>* heapFunc = new std::function<void()>(std::move(func));
+    if (!start_big_stack_pthread(heapFunc, true, nullptr)) {
+        std::function<void()> fallback = std::move(*heapFunc);
+        delete heapFunc;
+        std::thread{std::move(fallback)}.detach();
+    }
+}
+#else
+std::thread ultramodern::threads::make_game_host_thread(std::function<void()> func) {
+    return std::thread{std::move(func)};
+}
+
+void ultramodern::threads::start_detached_game_host_thread(std::function<void()> func) {
+    std::thread{std::move(func)}.detach();
+}
+#endif

@@ -38,7 +38,31 @@ $(TARGET): $(OBJECTS) patch.ld game_syms.ld
 	@mkdir -p $(dir $@)
 	$(LD) $(LDFLAGS) -o $@ $(OBJECTS)
 
-$(BINARY): $(TARGET)
+# The bytes come from a second link of the same objects with every game
+# function defined at its address. In the first link a call into the game,
+# or the address of a game function, is left as zero for the recompiler to
+# match; the runtime reads these bytes when a mod hooks a function the
+# patches replace, and recompiles it live from them, so there they must be
+# the real addresses (tools/gen_patch_funcs_ld.py). The two links must lay
+# out the same: the check compares every section's size and every patch
+# symbol's address.
+FUNCS_LD := build/game_funcs.ld
+RESOLVED := build/patches_resolved.elf
+
+$(FUNCS_LD): pokemonsnap.syms.toml ../tools/gen_patch_funcs_ld.py
+	@mkdir -p $(dir $@)
+	python3 ../tools/gen_patch_funcs_ld.py pokemonsnap.syms.toml $@
+
+$(RESOLVED): $(OBJECTS) patch.ld game_syms.ld $(FUNCS_LD) $(TARGET)
+	$(LD) -T game_syms.ld -T $(FUNCS_LD) -T patch.ld --no-check-sections -nostdlib --noinhibit-exec -o $@ $(OBJECTS)
+	$(CROSS)size -A $(TARGET) | tail -n +3 > build/layout_a.txt
+	$(CROSS)size -A $@ | tail -n +3 > build/layout_b.txt
+	$(CROSS)nm $(TARGET) | grep -v " [AUw] " | sort > build/syms_a.txt
+	$(CROSS)nm $@ | grep -v " [AUw] " | sort > build/syms_b.txt
+	cmp build/layout_a.txt build/layout_b.txt
+	cmp build/syms_a.txt build/syms_b.txt
+
+$(BINARY): $(RESOLVED)
 	$(CROSS)objcopy -O binary $< $@
 
 # The .inc files are included by the page sources (pause_menu_patch.inc and

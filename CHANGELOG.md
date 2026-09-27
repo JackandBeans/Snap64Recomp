@@ -1,5 +1,717 @@
 # Changelog
 
+## 1.1.0 -- 2026-09-27
+
+* The mod kit is public. The template and the symbol files went up on
+  2026-09-20 as Snap64RecompModTemplate and Snap64RecompSyms, after a review
+  against the released 1.0.9 that started from a clean clone and found four
+  faults. The example's manifest asked for 1.0.8, which has neither
+  `recomp_printf` nor the collections, so the mod would have failed there on
+  a missing import; it asks for 1.0.9. The mod tool calls `zip` on Linux and
+  says only that it failed to run it; the template's README lists it, with
+  the tool's build from N64Recomp's source at the port's own commit. And the
+  port's manual, twice, and the note it ships in `mods/` still said there is
+  no in-game mod manager, while the manual put `mods.json` in `mod_config/`;
+  the released executable writes it beside itself, and the documents say so
+  now, on `main` too. Checked against the released executable: the example
+  from a clean clone, turned on at first sight; a second mod using the game's
+  headers from the unbuilt decompilation, a game variable by name, a hook
+  reading a return value and a replaced function; the replacement of a
+  function the port itself replaces, which the runtime refuses by name and
+  `RECOMP_FORCE_PATCH` forces; and a manifest asking for 1.1.0, refused with
+  a message. Both symbol files regenerate byte for byte from the
+  decompilation at `3a236dc`, and the template builds and packs itself on
+  every push, its workflow building RecompModTool from N64Recomp `ffb39cd`.
+  Not checked: the Windows and macOS tool lines, the published RecompModTool
+  binary, native libraries, and dependencies between mods.
+
+* The README argued where it should have stated. A reader on Reddit said the
+  page read as defensive and confrontational, and quoted "I am one person,
+  with no team behind it" from it; they were right, and I said so there. The
+  section on how the port was made listed everything I do, told the reader
+  what to judge the port by, and ended on "None of this asks to be taken on
+  trust": answers to objections nobody on the page had raised, which is why
+  a reader who had raised none felt accused. It is three sentences under a
+  heading of their own now -- I made the port with Claude Code; Claude wrote
+  the code, the tools and the documentation in sessions I directed, and
+  every such commit names the model in its trailer; my part is deciding,
+  playing and releasing -- so every fact of the disclosure stands and only
+  the argument is gone. The same pass restated the sentence on the
+  executable being compiled from the game's translated code without its
+  emphasis, took the vow out of the mods bullet and the hedge out of What's
+  next, and replaced "the ground rules" in the README, the manual and
+  CONTRIBUTING.md with a Contributing section and an opening that say
+  reports, pull requests and mods are welcome. CONTRIBUTING.md no longer
+  tells a contributor who used an AI tool to read what it wrote; every pull
+  request is asked for the same thing, what the suite reported. A second
+  pass made the page plain to read, for a reader of any age. Sentences of
+  forty to sixty words were split, lists took the place of sentences that
+  carried lists, the pad's buttons became a table, and the words a newcomer
+  meets first (static recompilation, ROM, frame interpolation) are explained
+  where they first appear. Measured before and after with a Flesch-Kincaid
+  script: the sections ran from grade 9 to 18 and now run from 4 to 8, and
+  of thirty-five sentences over thirty-five words one is left, the contents
+  line. Three claims were brought back to what has been seen: the key was
+  said to open the pages over the Report, which has not been photographed;
+  it was said to work on any screen, where the manual names the few on which
+  it does nothing; and I was said to have played every build on a Steam
+  Deck, which 1.0.9 has not been. The paragraph on how the port was made now
+  sets my part and Claude's side by side, one sentence each. On `main` too.
+
+* The front page follows the layout players know from the other
+  recompilations, and speaks of the port, not of "my port". Measured on
+  2026-09-21 against the seven most starred N64 recompilation repositories,
+  this README was two to four times their length, and the only one with no
+  download link in its first screen, no System Requirements section and no
+  FAQ. It now opens with what the port is, the download, and the line that
+  no game assets are included, and names the Releases page as the only
+  official download. It has System requirements (the processor's SSE4.1 and
+  the renderer's Shader Model 6.0 stated; the oldest graphics cards quoted
+  from Zelda 64: Recompiled, which uses the same renderer, because none has
+  been measured here), Features, an FAQ of nine questions, and Known issues.
+  The long explanations moved, unchanged in substance, to
+  `docs/KNOWN-ISSUES.md` and to a new section of the manual, Faithful by
+  default; the old section names still work as links. The project is the
+  subject of its own front page now. The first person is kept where a person
+  is speaking: the disclosure under How it was made, the thanks, and the
+  sentence on whose cartridge the code was translated from. On `main` too.
+
+* The small icon, the film canister the window's title bar and the Linux
+  window show, did not match the logo's canister: a smear of the burst's
+  yellow beside its cap, and a flat dark bar down its left where the right
+  has a black outline and a label that shades in from it. The icon generator
+  cuts the canister out of the logo, where the burst's shaded,
+  half-transparent edge hugs the cap and the filmstrip's dark end covers the
+  canister's left edge. Two fixes earlier the same day mirrored the right
+  side onto the left, the second one paint and all, which took the 64 off
+  the label. Now the cut treats the burst's soft edge as ground, so the
+  smear is gone on both sides; the outline's left takes the right side's
+  shape; and the right side's colours come across up to the 64 and fade into
+  the drawn pixels over the next columns, with the ink, the 64's strokes and
+  the Poke Ball, keeping its own colour (`tools/icon_gen.py`). The .ico, the
+  window icon and the macOS icon are regenerated; the canister's size in
+  each is unchanged.
+
+* With the Options pages opened over a screen from anywhere, the music
+  played on. The pages freeze the screen's objects and processes, and the
+  game's audio thread is none of them, so the music ran under the pages and
+  a screen that moves to its music, the title's opening or the lab, came
+  back out of step (seen in my own play on 2026-09-21). The two BGM players are
+  muted first, by a volume event their sequence player takes on its next
+  turn, and then held: while the pages are up the host skips the sequence
+  players' handler (`manualfunc_8002E2F8`, libaudio's `__CSPVoiceHandler`,
+  which the driver does not name), so no event of theirs is processed and
+  their position stands; the sound player is untouched, so the pages' own
+  sounds go on. When the pages close the hold is lifted in the tick the
+  screen thaws, and the volume the driver believes in is posted, which the
+  handler takes on its first turn back. Events posted while held wait in the
+  queue, and a full queue drops one rather than failing, as the library is
+  written. In a course the pages use the game's own pause, which leaves the
+  music playing, as the cartridge does. The release suite's `pages` check
+  reads the host's line for each player, its clock at the hold and at the
+  release, and passes only when they are equal (`pages-music`; the suite is
+  29 checks).
+
+* A mod's hook on a game function that calls the game's `memcpy` stopped
+  the game with "Failed to find function at 0x80037660" (found while
+  writing Unlimited Film, which had to be built around it). The runtime
+  finds a function by its address through the port's own function table,
+  `src/recomp_overlays.inl`, and a hooked function is recompiled with every
+  call looked up that way. `tools/gen_overlays.py` left 83 functions out of
+  that table: everything whose name ends in `_recomp`, on the belief that
+  all of them were the runtime's reimplementations. Some are the game's own
+  code, renamed by the recompiler away from a C library name (`memcpy`,
+  `sprintf`, `strlen`, `sqrtf`); the rest are libultra calls the runtime
+  does reimplement (`osRecvMesg`, `osSendMesg`, `osCreateThread`). The game
+  calls both kinds at those addresses, so all of them belong in the table.
+  The tool keeps them now, and gains `--arrays-only`, which rewrites the
+  function lists from the recompiler's output without the ELF (the one on
+  this machine is stale, BUILDING.md step 2); the 83 rows are the only
+  change, checked line by line. A test mod hooking `makePhoto` stopped the
+  game at its first photo before, and after it ran the evaluation replay
+  through Oak's evaluation with the hook called 16 times.
+* Three faults found by DramaticShape while building a VR fork of the port
+  (prismaticShape/Snap64RecompVR), fixed here his way, with thanks.
+  * The game reads the audio queue's length straight from the hardware
+    register, twice: once a tick, and once when it rebuilds its audio
+    players. A fresh build from source read the first from a word nothing
+    wrote, because the recompiler's config still pointed it at an old
+    address and the released builds worked only through a hand edit of the
+    generated code. The second read was never redirected at all, so the
+    first rebuild would have crashed the game. Both reads now ask the audio
+    queue at that moment (`tools/hook_funcs.py`), and no hand edit is left.
+    This also ends a small fault of the old way: the port wrote the length
+    once per drawn frame from the main thread, which stops while a dialog is
+    open, so the game read a stale length meanwhile. Checked with a test mod
+    that changes the reverb, which makes the game rebuild its players: the
+    old build crashed at once (an access violation), the new one rebuilt
+    them and played on.
+  * A game thread that started while the game was quitting read the game's
+    registration as `quit()` cleared it, and could throw on the way out. It
+    reads it under the same lock now, and starts nothing once the game is
+    gone.
+  * Resizing the window, or switching to fullscreen, resized RT64's swap
+    chain while its framebuffers still held the old images. Direct3D 12
+    refuses that, so the first attempt failed and cost a frame. The
+    framebuffers are released first now. Upstream RT64 has the same order.
+* The Mods page answers what a player would run into. I tried the page and
+  asked for everything a player could complain about; these are the fixes.
+  * A held Left or Right turned a mod on and off again with the stick's
+    repeat. Only a fresh press turns it now.
+  * Restart Game was one A away, and the pages open over a course,
+    which a restart loses. It asks first now, as Exit Game does: "Press A
+    again to restart, B to stay".
+  * A mod turned on or off said nothing about when that happens. Its help
+    line now says "Turns on after a restart" (or off).
+  * A mod installed during play was not listed until the next start. It is
+    listed at once now, after the others, with the value New, and a mod's
+    update says which version waits for the restart. A drop while the page
+    is open refreshes it.
+  * A mod file the game would not load was left out of the list without a
+    word. It is listed now with the value Error and the reason (a mod for
+    another game, or one that needs a newer release).
+  * A mod's options had no way back to their defaults. Its options page
+    ends with Restore Defaults now, which B undoes like any change there.
+  * A mod that stopped the game at start could not be turned off from
+    inside it. When the last session did not close normally and mods are
+    on, the next start now asks whether to start with them off.
+  * The help box's lines could run past its right side: 236 pixels were
+    allowed where the box leaves 229. The limit is 226 now, measured on a
+    capture.
+  * The page with no mods says how to install one.
+
+  Checked with replays in a scratch folder: a held Right turned a mod off
+  once; the question came on the first A, B withdrew it, and nothing
+  restarted; a mod dropped during play was listed as New and an update
+  named its version; a mod for another game was listed as Error with its
+  reason; Restore Defaults put an option back; the start-up question,
+  answered through `SNAP_SAFE_START_ANSWER`, turned the mods off in
+  `mods.json` before any loaded; every help line ended by x 268. The
+  suite's page checks passed.
+* A mod downloaded from Thunderstore installs. Thunderstore packages a mod
+  as a zip (a manifest, an icon and a README beside the `.nrm`), and the
+  other recompilations take that zip dropped on the window. Here a dropped
+  zip was copied into `mods/` as it was, and the runtime loads only `.nrm`
+  files, so the mod never loaded and nothing said why. Now a mod, a texture
+  pack (`.rtz`), or a zip holding them, dropped on the window, is installed
+  (`src/mod_installer.cpp`): every `.nrm`, `.rtz` and native library in a
+  zip is taken, wherever in the zip it sits; each mod's manifest is read
+  first, and a mod for another game or one that needs a newer release is
+  refused with the reason. A box says what was installed and what was not.
+  A mod loads when the game starts, and the runtime holds loaded mods open,
+  so one installed during play waits for a restart (the Mods page's last
+  row says so), and a file already in place is written beside it and
+  swapped in at that start. A zip left in `mods/` is unpacked at the next
+  start and renamed `.zip.installed`. Checked with six packages (the mod at
+  the zip's root, in a folder inside it, no mod, a mod for another game,
+  one asking for 9.9.9, a texture pack), at start and dropped during play
+  (`SNAP_DROP_TEST`), and with the next start swapping in what the drop
+  staged.
+* Two more kinds of mod hook failed, found by testing hooks one at a time
+  for the modding release. A hook on a function the port's own patches
+  replace (`auPlaySound`, which carries the sound-effect volume, is one of
+  29) did not load: "Code mod loading internal error". And a hook or a
+  patch on any function that waits a frame stopped the game when its
+  process ended, which in this game is most of them. Four causes:
+  * The runtime recompiles a patched function live from the patch table,
+    and the recompiler writes that table's section numbers in the symbol
+    file's order (`.main` is 0). The port's own table numbers them its own
+    way (`.main` is 2 for a call, 3 for an address), because the port
+    builds the game from the ELF where the other recompilations use the
+    symbol file for both. `tools/hook_funcs.py` renumbers them now.
+  * The patches' unnamed static functions (99 of them) were not in the
+    table, so the live copy could not find them. They are listed now.
+  * The bytes the live copy is made from came from a link that leaves
+    every call into the game as zero on purpose, for the recompiler to
+    match. A game function handed over as a pointer (`omCreateProcess`)
+    became address 0. The bytes now come from a second link with every
+    game function defined (`tools/gen_patch_funcs_ld.py`); the Makefile
+    checks that the two links lay out the same, and the 380 words that
+    differ are exactly the 316 calls and 32 address pairs.
+  * A thread ends by throwing an exception that unwinds its stack, and
+    code made at run time has no unwind information, so the exception
+    could not pass it and the game closed. The game parks every process in
+    `ohWait` and ends it from outside, so this met every hook on a function
+    that waits. Such a thread now returns to its start without unwinding
+    (`ultramodern/src/threads.cpp`); nothing on the way needs cleaning up.
+    Without code mods every thread ends as before.
+
+  Checked with test mods and the scoring replay: hooks on `auPlaySound`,
+  on the Beach intro's patched camera glide, on two patched main-menu
+  functions, and on `ohWait` itself (75,000 calls, so every process that
+  ended did so with the hook on its stack) all loaded and fired, and the
+  replay scored its 45 photos. A hook on `dmaCopy` in the boot code, which
+  had failed alongside them, loads too: it had only failed because another
+  hook in the same test mod did. The log now names a live recompilation's
+  failure instead of only "internal error".
+* The Mods page worked unlike every other Options page, and its text did
+  not fit. I reported it with two screenshots. The header had lost the
+  A OK and B Cancel every other page shows; in their place stood "L R
+  Order", which did not say what it did. The help box's lines ran past its
+  frame. The causes: the page took the header's legend down to put its
+  own hint there; the help lines were never measured against the box; and
+  the fonts lacked letters a mod's text uses, so a description lost its
+  semicolon and its "60", and the row font's g, taken from a taller font
+  and cut to fit, read as an a. Now the header's legend says what A and B
+  do on the page (A Details, B Back, in the legend's own icons; see the
+  details page below), Left and Right turn a mod on or off, and a mod's
+  options page keeps A OK and B Cancel, B putting its options back. The
+  help box shows the mod's short description, and under it what A and L, R
+  (move it up or down the load order) do on that row. Every line is
+  measured and ends in "..." when it is too long, so no mod's text can run
+  past the frame; on an options page the option's description has both
+  lines. The last row reads "Restart Game to Apply" while a change
+  waits for the next start. The help font gains the capitals, digits and
+  punctuation it lacked; the row font gains ! ? ( ) " & and a g and y
+  drawn a row higher. Checked with a replay in a scratch folder holding
+  Unlimited Film and Unlock Everything: it turned Film off, moved Unlock
+  up, changed Film's counter, and cancelled each. The log said "1 change
+  undone" and "2 changes undone", `mods.json` and Film's settings file
+  were as before, and the captures showed each screen.
+* The Options pages opened with Esc over another screen were hard to
+  read. I reported it with a screenshot of the course select: its course
+  names and scores read through the list. The screen behind was dimmed
+  only as far as the pause menu dims a course (153 of 255). Now it is put
+  down to a twenty-fifth of its brightness (245 of 255); at 230, tried
+  first, the lab's "Go to Course" and "Save" could still be made out. A
+  capture of the title with the pages open measured the brightest pixel
+  behind them at 10 of 255, where it had been 255. Over a course the
+  pages sat on the pause menu's own dim, the same 153; while they are up
+  that dim is 245 too, and the pause menu gets its 153 back when they
+  close. In the Beach replay with the pages open, the brightest pixel of
+  the course went from 95 to 9. The title's own Option screen and the
+  pause menu are unchanged.
+* With the Options pages opened over the game's opening, the music and
+  the picture stopped but the running water went on. I heard it and
+  reported it. The pages hold the music, and left the sound effects
+  alone so their own sounds could play; the opening's water is a looping
+  sound effect. Now every effect playing when the pages open is turned
+  down to nothing, and put back at its own volume when they close. The
+  pages' own sounds still play. A new line in the log says how many
+  effects were held and how loud the game was while they were: opened
+  over the opening, it read 1 effect (the water), and the game's own
+  sound fell to 15 of 32767 as the music's tail died away.
+* A mouse click chose whatever a menu had highlighted, wherever the
+  pointer was: Continue on the title, the Beach on the course list. I
+  reported it. The left button was simply A. Now the menus take the
+  mouse: the title's list, the lab's panel and the course list, the pause
+  menu, every Options page, the album, the PKMN Report and its table,
+  Oak's photo check, the Gallery and a new game's name card. Moving the
+  pointer over an item or a photo selects
+  it, a click chooses the item under it, and a click anywhere else does
+  nothing. The right button is B and the wheel steps up and down. On an
+  Options page a click on a setting's value steps it, the left half back
+  and the right half forward, and the header's A OK and B Cancel and the
+  scroll arrows can be clicked. The pointer's place comes from where the
+  renderer drew the picture, so the window's size, widescreen and the
+  overscan crop all count. While a menu has the mouse, its buttons stop
+  reaching the game as A, B and the rest; everywhere else they are what
+  they were, so a click still advances Oak's text, and outside a course
+  the right button is B while it is bound to Z, so it answers a question's
+  "No" too. The photo screens are caught in the game's own navigation
+  functions (src/menu_mouse.cpp), which keeps their code as it is. The
+  pause menu frees
+  the cursor a course captures, and in fullscreen the pointer shows while
+  it moves on a menu. Checked with a scripted mouse (`SNAP_MOUSE_TEST`)
+  in a scratch folder: the title's Options chosen over the highlighted
+  Continue, a click on empty space ignored, the lab's Go to Course chosen
+  over the highlighted PKMN Album, Super Sampling stepped from 2x to 3x
+  by a click on its value, Button Setup opened from its row, Quit Course
+  pointed at without quitting, the pause menu's Options pill clicked, an
+  album photo enlarged from a click, the Report's bar walked to Pidgey
+  and its page opened, a photo of Oak's check chosen from a click, a
+  Gallery button pointed at, and a name entered and End clicked. Not
+  checked: the pick between two photos, the Gallery's print places, and
+  the right button as B on a screen that does not take the mouse (a
+  replay hands the game its own buttons, so it needs a hand on the
+  mouse). I tried it and found the title's rows lit up with the pointer
+  beside their words: a label's sprite is wider than its words (Snap
+  Station's by 25 pixels on the left). Each row now answers to its words'
+  own box, measured from the letters that change as the selected row
+  pulses.
+* A mod that another mod needs showed Off on the Mods page while the game
+  loaded it. The runtime turns on every mod an enabled mod cannot do
+  without, whatever that mod's own switch says, and the page only read the
+  switch. Now such a mod shows On, its help line names the mod that needs
+  it ("On: Test User needs it."), and Left or Right leaves it on, since its
+  switch would change nothing. Checked with two test mods, one needing the
+  other, and the needed one switched off in `mods.json`: the page showed
+  it On with that line, and a click on its value left it On.
+* The Mods page has a details page for every mod, a row to install mods,
+  and the mouse. A on a mod, or a click on its name, opens the details (Z
+  as well): the mod's name and version, who made it, its whole description
+  a paragraph at a time, what it needs and what needs it, with the rest a
+  scroll away (the next entry). A there opens the mod's options when it
+  has any. Before, the page showed one line of a description and nothing
+  of who made a mod. Since A opens them, B goes back keeping every
+  change, each being written to `mods.json` as it is made, as in the
+  other recompilations' mod menus; it used to put the visit's changes
+  back, which with A no longer leaving the page would have undone a
+  change on the way out. The header's legend says so: "A Details  B
+  Back" on the list, "A Options  B Back" on the details of a mod with
+  options, each in the game's own A and B icons beside words in the help
+  box's face. A new first row under the mods, **Install Mods...**,
+  opens a file picker for mods, texture packs and their zips, several at
+  once, and installs them as a drop on the window does (the picker is
+  shown by the window's thread, since a dialog on the game's thread would
+  stop its clock long enough to be reported as a hang). With the mouse, a
+  mod dragged up or down the list moves in the load order, as L and R move
+  it. Checked with a scripted mouse: Unlimited Film's details opened and
+  scrolled, its options opened from them, Test Base's details showed what
+  needs it, Unlimited Film dragged down two places, and the Install row
+  installed a test mod that the list then showed as New.
+* The Mods page, a mod's details and its options were hard to read, and
+  the Mods page did not look like the other Options pages. I asked for
+  them to read at least as well as the other recompilations' mod menus,
+  then held the Mods page against the Graphics page. It had a dark box
+  behind its rows and help box, its values sat further right, its last
+  rows were in lower case, and a mod's details said only "On" under its
+  author. Now the Mods page and a mod's options page are laid out as
+  Graphics is: no box, the values in the same column and all in orange
+  but Error in red, and the rows under the mods named as the other pages
+  name theirs (Install Mods..., Open Mods Folder, Restart Game). The list
+  shows each mod's name alone; the version is on the details. The details
+  page is read, not set, so it keeps a dark panel under its text. It
+  starts with the facts: the name and version, "By" and who made it, and
+  a sentence on its state ("This mod is on.", "On: Test User needs it."),
+  one word of each in colour, with the mod's picture beside them (the next
+  entry). Under a rule comes the description, four lines at a time, with
+  a scroll bar when there is more; a click on the bar turns a page. The
+  help box says what A leads to ("A: this mod's option.", or "This mod
+  has no options to set.") and how to see the rest. A mod's options page
+  shows whose options they are: the mod's name, above a rule. The header
+  font's l, cut from a taller letter, had a thin top; it is one even
+  stroke now. Checked with a scripted mouse in a scratch folder, on the
+  title and over a paused Beach: captures of the list, of three mods'
+  details, of Unlimited Film's details before and after a click on the
+  bar, and of its options. Then, asked to critique the pages again and
+  again until nothing was left, I went round six more times. The help
+  boxes spoke in button codes ("A: details. L, R: move it up or down."),
+  where the Graphics page's help box speaks in sentences; they say "L and
+  R move it up or down the load order." and "A opens this mod's option."
+  now. The header said "A Details" on Install Mods..., Open Mods Folder
+  and Restart Game too, where A carries the row out: it says "A OK  B
+  Back" there. The By line had its label orange and its value white, the
+  other way round from Graphics: "By" is white and the author orange. A
+  mod that another mod keeps on showed "< On >" with arrows that did
+  nothing: its On has no arrows now, like New and Error, and all three
+  stand where the word stands between arrows. The same wait was worded
+  "when the game restarts" in one line and "after a restart" in the next:
+  it is "after a restart" everywhere. What needs a mod was said twice, in
+  its status and again under its description; once now. A mod installed
+  during play showed no author, only its one-line description, no picture
+  and "This mod has no options to set." even when it had options: the
+  installer keeps its authors, whole description, picture and option
+  count from its file, and the line says "Its option can be set after a
+  restart." A file that will not load said it had no options; it says
+  "Remove it from the mods folder." Its name, the file's, lost its
+  underscores, which the fonts lacked; both faces have one. And a mod
+  with no author left a blank line under its name; its status takes that
+  place. Unlimited Film's option is "Film Counter", in the Title Case of
+  the Graphics page's rows. Each round was checked with a scripted mouse
+  in a scratch folder, one run a round: the list on a mod and on Install
+  Mods..., a mod turned on, a mod installed from the Install row, a mod
+  file made for another game. Then I found a mod's details crowded: the
+  name, the author and the picture sat low in the panel, 15 rows under its
+  top and 2 over the rule, with the text 3 rows under that. The panel is
+  spaced evenly now, measured on a capture: 5 rows above the picture, 5
+  under it to the rule, 6 from the rule to the text, 6 under the last
+  line; the three lines beside the picture stand 13 rows apart, centred
+  on it, and a mod with no author has its two lines centred instead.
+* A mod's details page shows the mod's picture, as the other
+  recompilations' mod menus do. I asked for it in the space beside the
+  name. It is `thumb.png` at the root of the mod's `.nrm`, which the
+  runtime already read and nothing drew. The picture is fitted into 256
+  texels square and drawn 40 pixels square, so it stays sharp at a high
+  render scale, and dithered, since five bits a channel would band its
+  shading. A `thumb.dds`, which the runtime reads first, is shown too
+  (the next entry but one). Unlimited Film and Unlock Everything carry their
+  Thunderstore icon as `thumb.png` from their 1.0.1 packages on. Checked
+  with both in a scratch folder: each details page showed its picture
+  whole, with no seam between the eight bands it is drawn in, and the log
+  said "with its picture"; Test Base, which has none, kept its version at
+  the text's right edge. The line the log prints when the Mods page closes
+  now gives the strip pool too: how many strips it refused, and the most
+  it found in use at a sweep (it sweeps only when all 64 slots have been
+  handed out). Over a paused Beach with a picture up it had refused none,
+  and its fullest sweep found 50 in use.
+* A mod's options page handles every kind of option the runtime has, and
+  the rules between them. I asked for a test mod with more than five
+  options, since no mod had ever scrolled the page; the test mod has ten:
+  enums, yes-or-no, numbers, a percent, a text, a name too long for its
+  column, a value too long for its own, one option another disables and
+  one another hides. Its run found six faults. The manifest's
+  `hidden_from` and `disabled_from` never took effect: the runtime parsed
+  each rule, checked it, and added it to a copy of the mod's schema that
+  it then threw away (upstream's runtime has the same code; the port's
+  copy adds them to the mod's own config, VENDORING.md). The page now
+  applies them as values change: an option another one hides leaves the
+  list and comes back when that option changes, and one it disables is
+  grey, has no arrows, keeps its value under Left and Right, and says why
+  in the help box ("Unavailable while Extra Film is Off."). The page read
+  its row count once, when it opened; it follows the count now, and keeps
+  the selection on the option that was changed. A name too long for its
+  column was cut with no mark and never shown whole: it ends in "..." and
+  the help box says it whole, first. A value too long for its column lost
+  its closing arrow; it is cut inside the arrows now. A percent showed as
+  a bare number; it has its sign, which the row and help fonts lacked. A
+  text option, which the page cannot change, showed arrows; it has none.
+  Checked with a scripted mouse in a scratch folder: nine of the ten
+  shown with Ghost Mode Off, Film Rolls grey with its reason, Film Rolls
+  back when Extra Film was turned on, Ghost Opacity in the list when Ghost
+  Mode went to Faint, "< Sunset Orange... >" and "< 80% >" on screen, the
+  page scrolled to its last rows, and B undoing both changes. Then I asked
+  for the options page itself to be critiqued until nothing was left, and
+  found it bland and tight beside the details page: the mod's name in the
+  rows' own face read as the first option, the rows were packed under it
+  at the top, and the rest was empty. A small caption, tried first, fixed
+  the first and not the rest. Now the options page opens with the details
+  page's own block on the details page's panel -- the picture, the name
+  and version, By and the status, which says whether the options do
+  anything yet -- and its rows sit under the rule where the details page
+  has its text, three on screen, with the details page's scroll bar at
+  the right in place of the list's chevrons (which sat on the panel's
+  edge). A click on the bar steps the rows. A value cut to fit its column
+  is said whole on the help box's second line ("Now set to Sunset Orange
+  Glow."). Restore Defaults' help was a fragment, "Every option back to
+  its default."; it is a sentence like the Graphics page's, and when
+  every option is at its default already it says so, and A there answers
+  as a press that does nothing does rather than as a change. Checked with
+  a scripted mouse on the title and over a paused Beach: both mods'
+  options, the test mod scrolled and stepped by a click on its bar, the
+  Mods list's chevrons back after, Photo Frame's help, and the log's
+  "defaults restored; 0 changes" then "1 change"; over the Beach the
+  pages left 7300 of their 8192 bytes of stack and the strip pool
+  refused none.
+* The Mods page with no mods showed its three rows and nothing else: a
+  new player saw no word that there were no mods, nor what to do. A note
+  added first ("No mods yet.", in the help face over the rows) I found
+  bland and tight, and a list of one or two mods tight too, and "New" did
+  not stand out: it was the orange of On and Off. Now the page is two
+  groups, the mods at the top and the three actions at the foot of the
+  list under a rule, like a footer: while the list fits the window the
+  actions stand at its last three places with room above them, and a
+  longer list scrolls as one, the rule still over the first action,
+  midway between the rows. With no mod at all the room above the actions
+  says "No mods yet" in the rows' face and "Mods change or add to the
+  game." under it, both centred: a headline with no full stop, and what a
+  mod is, since the help box under the Install row already says how to
+  add one (a first line, "Install one below, then restart the game.",
+  said it twice). A mod installed during play says NEW, in capitals as a
+  badge rather than one more value like On and Off, in the rainbow of the
+  title's bottom line gliding through the word until its details are
+  opened; then it is a plain orange NEW, since it still loads only after
+  a restart. Checked with a scripted mouse: the empty page; Unlimited
+  Film installed from it, its NEW in different
+  colours in two captures 40 frames apart and orange once its details had
+  been opened; the rule in a longer list's first window and in the window
+  scrolled to its end, measured with three clear rows above it and three
+  below. And I found a mod's web address cut on its details page
+  ("Source: https://github.com/Jack..."): lines broke only at spaces, and
+  an address has none. A word longer than a line is broken now where it
+  fills the line, after a '/', '.' or '-' where it can be, and goes on on
+  the next; Unlimited Film's source line reads whole over two lines.
+* macOS, built and run on GitHub's virtual Mac, not yet on a physical
+  one. The Apple Silicon code from pull request #2 (appleforever11) had
+  been in the tree since 2026-09-16 with no build since; going through it
+  against what Zelda64Recomp's macOS build carries, and against what the
+  port added since, found three faults a Mac would have hit and one thing
+  it lacked, and the runner's runs found three more:
+  - SDL's Metal view resized its layer itself whenever the window changed,
+    and plume's swap chain updates the size of the pictures it draws only
+    when it finds the layer at another size than the window, so every
+    resize and every switch to or from fullscreen would have drawn at the
+    old size into pictures of the new one. `src/macos_support.mm` turns
+    SDL's update into nothing, as Zelda64Recomp does.
+  - plume's Metal backend could not copy a texture into a buffer, which the
+    presented-frame capture and the Snap Station's sheet capture do: the copy
+    fell through to the image-to-image path and dereferenced a null
+    texture, the fault its Vulkan backend had on Linux. `plume_metal.cpp`
+    gains the same branch, and is the port's fifth force-tracked plume file.
+  - macOS gives every thread but the main one a 512 KB stack, where Windows
+    gives the game's threads 8 MB (the executable's `/STACK`) and Linux 8 MB.
+    The host threads that run game code get 8 MB on a Mac now
+    (`ultramodern::threads::make_game_host_thread`; elsewhere they are the
+    plain threads they were).
+  - Mods could not load: macOS lets a program patch its own code only when
+    the code segment's maximum protection allows writing, which ld64 will
+    not link. `tools/macos/ld64` runs the linker and sets it (Zelda64Recomp's
+    approach, rewritten without macholib), a post-build step signs the build
+    tree's executable again, and the bundle is signed with the hardened
+    runtime and Zelda64Recomp's entitlements (JIT and self-patching).
+  - Found by the first run on the Mac: Apple's paravirtual GPU driver, the
+    GPU of a virtual Mac, answers yes to `supportsCounterSampling` at the
+    blit boundary and then fails an assertion inside `sampleCountersInBuffer`
+    ("Not implemented"), which aborted the game at its first frame. plume's
+    Metal backend takes no timestamp counter set from a device named
+    Paravirtual, or under `RT64_NO_GPU_TIMESTAMPS`; the timestamps feed only
+    the renderer's profiler, which reads zero there.
+  - Found by the second: every quit ended in a crash report, "mutex lock
+    failed" on the runtime's pool replenisher, and once that thread's
+    objects were made immortal, a segmentation fault on its timer thread.
+    Both are detached threads that still run while the process's globals
+    are destroyed; on macOS a lock on a destroyed mutex throws where Windows
+    and Linux tolerate it. The pool's and the timer's objects are never
+    destroyed now.
+  - Found by the third: the game ran at 13 to 18 frames a second even at
+    the title, though its GPU drew a frame in 10 ms and its logic took one.
+    A probe (`tools/macos_timer_probe.py`) measured the virtual machine
+    waking a plain 16.7 ms sleep 61 ms late, and the same wait on a thread
+    with macOS's time-constraint scheduling policy, the one audio code
+    uses, waking in 0.04 ms. The runtime's VI and timer threads take that
+    policy on Apple and wait with `mach_wait_until`; the title runs at 57
+    frames a second there now. A physical Mac sleeps precisely either way.
+  The build is universal now, Apple Silicon and Intel in one executable
+  (the zip is `-macos-universal`). The workflow builds it on GitHub's Mac,
+  checks both halves' code-segment protection and the signature, and runs
+  `tools/macos_smoke.py` on that virtual Mac, natively and through Rosetta 2
+  in parallel jobs: the title from a cold start with lit frames and the
+  game's frame rate, the same boot under Metal's API validation, the scoring
+  replay (its lines inside the healthy signature, and how many photos stayed
+  in step with the Windows scores), and a mod whose hooks run; crash
+  reports macOS writes are uploaded. `tools/macos_inputs.py` lays out the
+  private repository the workflow's inputs come from. What the last run
+  showed: the intro at 57 frames a second on both, no failed assertion
+  under validation, the Beach ride's photos scored inside the healthy
+  signature within a few units of Windows, the mod's hooks fired, no crash
+  report. One limit is the tape's, not the Mac's: a replay is presses per
+  pad reading, and it holds only while the machine keeps the console's
+  pace at every press, which a shared virtual Mac does not always (a new
+  `SNAP_TICK_DELAY_MS=<n>` makes every tick n ms longer on a PC and stops
+  the same tape in the lab at 25); a gate of two retraces per frame in the
+  VI thread was tried against it, did not hold the tape and broke the 3x
+  speed check, and was taken out. Checked here too: the linker wrapper on
+  the macOS `dxc` binaries in RT64's tree, the thread code on Linux under a
+  512 KB default stack, the smoke script's stages against the Windows build,
+  and the Windows and Linux builds with every runtime change (the scoring
+  replay's 45 scores unchanged, identical at 3x). Not yet: a physical Mac.
+* A mouse could not clear a Button Setup row: on that page its buttons are
+  the pointer's, and the row was cleared only by Z, the keyboard's Left
+  Shift. Delete clears the selected row now, as it does in most PC games'
+  lists of bindings, and so does Backspace, the key a Mac's keyboard calls
+  delete; with a mouse, the row under the pointer. Each clears only while
+  no binding uses it, and the help lines name Delete on a keyboard and
+  with a mouse ("X changes it, Delete clears it.", "A click changes it,
+  Delete clears it."). The window's thread counts the presses and the
+  page takes them through a new mailbox byte, +0x9C. Checked: a scripted
+  Delete press on the A Button row cleared it ("keys.a: the controller
+  cleared on the Button Setup page"), and both lines in a capture.
+* The port's help lines named the N64's buttons whatever was in the
+  player's hand. I found it at the Exit Game question with a mouse, where
+  it should say to click; on a keyboard it was worse, because the A key
+  steers left and the Z key is B -- the Button Setup page's "Z clears it"
+  sent a keyboard player back out of the page -- and an Xbox-style pad has
+  no Z at all. The port kept no record of which device was used last. Now
+  the window's thread notes the device of every press (a key, a mouse
+  button or the wheel, a controller's button or a stick past half its
+  travel; the Deck's own Enter and Esc do not count), and every line of
+  the port's that names a button is worded for it: the Exit Game and
+  Restart questions, the Controls page's Zoom and Button Setup rows, the
+  Button Setup page's Device row, Restore Defaults and all eighteen input
+  rows, the Mods list's load-order line, a mod's details and its options
+  page (its Restore Defaults, a text being typed, an option with no
+  description of its own). On a controller they say A and B and the pad's
+  own name for the rest ("L Bumper clears it", "L Trigger and R Trigger
+  change its load order"; Z on an N64-shaped pad); on a keyboard, the keys
+  the bindings name ("X changes it, Delete clears it", "Q and E move it up
+  or down the load order"); with a mouse, clicks ("Click again to close
+  the game. Right click to stay.", "Drag it to move it in the load
+  order.", "Click A Options above for this mod's option."). Each line tries shorter wordings until one fits the box, and falls
+  back to the controller's words, with a log line, when none does or the
+  help face cannot spell a key's name. The staged lines keep one size and
+  are repainted in place, so they change the moment another device is
+  pressed, even while on screen; in a course that waits for the pages to
+  open, where the keyboard and mouse take turns many times a second. The R
+  Button row's text is shorter ("Dashes while held, once you own the dash
+  engine.") so the mouse's words fit it. A new switch,
+  `SNAP_DEVICE_TEST=<reading>:<key or pad button>`, pushes SDL's own press
+  of a key or pad button at a reading, so a replay can prove it. The first
+  version of this made the Exit Game question two lines tall and the
+  staged strings ran 2,688 bytes past their space, into the Button Setup
+  page's first row value; that space starts 256 KB later now, and the port
+  refuses to publish strings that would pass it, with an error in the log.
+  Checked with the scripted mouse and device presses: every line above in
+  the three wordings on the title's Option list, the Controls, Button
+  Setup, Mods, details and options pages and the pause menu's list, no
+  line falling back; "Press Left Ctrl again to close the game." / "Press Z
+  to stay." with A bound to Left Ctrl; and the release suite's pages
+  checks, 3 of 3. A text being typed was not captured.
+* The header's A and B did not answer the mouse as the rows do. I found it:
+  moving onto a row plays the move sound and selects it, while moving
+  onto A OK or B Cancel did nothing to see or hear, and on the title's
+  Option list a click on them did nothing at all -- that list read clicks
+  on its rows only. Their click boxes were also fixed rectangles, so on
+  the Mods page the end of "A Details" fell inside B's. Now the header's
+  buttons are read off the legend's own pixels (the A icon blue, the B
+  icon green, the words after each), for every legend a page shows;
+  moving onto one plays the move sound and underlines it in the
+  selection's orange; and a click presses it on every page, the Option
+  list's included. Checked with a scripted mouse: the underline under
+  "B Cancel" then "A OK" on the Option list and under "B Back" then "A
+  Details" on the Mods page, a click on "B Back" closing the Mods page
+  and one on "B Cancel" leaving the Option list for the title. The
+  sounds were not heard: the runs are muted.
+* In the Mods page's NEW the N stood a row lower than the E and W, and the
+  rule over the actions was too dark a grey to see over the island. I
+  found both. The cartridge's own capitals are not one height: its C, H,
+  M and N stand at rows 2 to 9 of the face and its A, B, D, P, R, S and Z
+  at rows 1 to 9, as does every capital the port draws but its round G,
+  O and Q, which it had drawn at 2 to 9 as well. All seven stand at 1 to
+  9 now -- the cartridge's C, H, M and N drawn again, for the port's own
+  text only, in the style of the port's other capitals; the game's menus
+  keep their pictures -- and a new switch, `SNAP_FONT_DUMP=1`, prints
+  every capital's and digit's rows when the font is read, so no later
+  glyph can drift. The rules, here and on a mod's details and options,
+  were 96 of 255 over an island dimmed to between 22 and 65; they are
+  176, one step under the header's own lines (217). Checked: the dump
+  with every capital at rows 1 to 9, NEW's three letters each at rows 74
+  to 82 in a capture, and the rule measured at 176.
+* A mod can be turned on or off from its details page, and a mod's text
+  option can be typed, as in the other recompilations' mod menus. I asked
+  whether the menu was the best it could be; checked against Zelda's own
+  menu code, these were the two things it did that ours did not. On the
+  details page, Left and Right, or a click on the status line, turn the mod
+  on or off as its row in the list does, and the status says what that
+  does ("Off after a restart."); the help box says so ("Left and Right
+  turn it on or off."). A mod another one keeps on, or one not loaded yet,
+  answers with the back sound. On a mod's options page a text option was
+  shown and left to its file: now the header says "A Type" on it, and A,
+  or a click on it, opens it for typing -- the text white over a line,
+  with a blinking cursor and its start cut with "..." when it is long --
+  and Enter or the pad's A keeps it, Esc or the pad's B leaves it as it
+  was. While a text is typed the keyboard reaches neither the game nor the
+  hotkeys, and after it the keyboard stays away from the game until every
+  key is up, so the Enter that kept it is not also a Start. A text too
+  long for its column is said whole on the help box's second line.
+  Checked with a scripted mouse and SDL's own text and key events
+  (`SNAP_TEXT_TEST`): Unlimited Film turned off and on from its details,
+  the list following; a text typed, a stray letter taken back with
+  Backspace, and kept with Enter; another left with Esc; and B undoing the
+  kept one. Not checked: a real keyboard's keys held away from the game
+  while typing, which pushed events cannot show.
+* A mod's picture may be `thumb.dds`, which the runtime reads before
+  `thumb.png`, as the other recompilations' mods may ship it. It showed
+  nothing: the port read PNG only. `src/dds_image.cpp` decodes
+  uncompressed RGBA and BGRA and the block formats BC1, BC2, BC3 and BC7.
+  BC7's partition and anchor tables were read off Pillow's decoder, with
+  blocks built to show them, and the decoder was compared with Pillow's on
+  random files of every format, two sizes each, and on 64 blocks of each
+  of BC7's eight modes: every value matched but those of one block in a
+  reserved mode, which the format decodes to transparent black and Pillow
+  to opaque black. The test mod's BC3 picture showed on its details page.
+* The pages run on a stack of their own. A game process has the scene's
+  stack: 1024 bytes on the title, 1088 in the Tunnel, 768 in the Rainbow
+  Cloud. Opening a mod's options from its new details page froze the game
+  in a course, and the cause was that stack: the pause menu's process, the
+  list, the Mods page and the options page came to more than it holds,
+  and past its far end lies the canary the game checks, then other
+  threads' memory. On the title, the options' sprite calls had 124 bytes
+  left. Now the pages from a course, the pages from anywhere and the
+  title's Option screen each run on a process with 8192 bytes of stack,
+  taken from the port's own arena. The same test in all three places left
+  at least 7308 of them, and 7284 in a course once the details page had
+  its scroll bar; the log says how many when the Mods page closes.
+
 ## 1.0.9 -- 2026-09-20
 
 * The runtime is upstream's current one, and the port's changes to it are a

@@ -291,6 +291,135 @@ index 4827452..ec65aa9 100644
          void release();
          bool isValid() const;
          bool beginCapture() override;
+diff --git a/plume_metal.cpp b/plume_metal.cpp
+index 373c87e..1aa84ad 100644
+--- a/plume_metal.cpp
++++ b/plume_metal.cpp
+@@ -2200,25 +2200,37 @@ namespace plume {
+         MetalAutoreleasePool releasePool;
+         this->device = device;
+ 
+-        MTL::CounterSampleBufferDescriptor *sampleBufferDesc = MTL::CounterSampleBufferDescriptor::alloc()->init();
+-        sampleBufferDesc->setCounterSet(device->timestampCounterSet);
+-        sampleBufferDesc->setStorageMode(MTL::StorageModeShared);
+-        sampleBufferDesc->setSampleCount(queryCount);
+-        sampleBuffer = device->mtl->newCounterSampleBuffer(sampleBufferDesc, nullptr);
+-        sampleBufferDesc->release();
++        // Snap64 Recomp: a device without a timestamp counter set (see the
++        // device's constructor) gets a pool with no sample buffer, whose
++        // results stay zero and whose timestamps are never written.
++        if (device->timestampCounterSet != nullptr) {
++            MTL::CounterSampleBufferDescriptor *sampleBufferDesc = MTL::CounterSampleBufferDescriptor::alloc()->init();
++            sampleBufferDesc->setCounterSet(device->timestampCounterSet);
++            sampleBufferDesc->setStorageMode(MTL::StorageModeShared);
++            sampleBufferDesc->setSampleCount(queryCount);
++            sampleBuffer = device->mtl->newCounterSampleBuffer(sampleBufferDesc, nullptr);
++            sampleBufferDesc->release();
++        }
+ 
+         results.resize(queryCount, 0);
+     }
+ 
+     MetalQueryPool::~MetalQueryPool() {
+         MetalAutoreleasePool releasePool;
+-        sampleBuffer->release();
++        if (sampleBuffer != nullptr) {
++            sampleBuffer->release();
++        }
+     }
+ 
+     void MetalQueryPool::queryResults() {
+         MetalAutoreleasePool releasePool;
++        if (sampleBuffer == nullptr) {
++            return;
++        }
+         const NS::Data* data = sampleBuffer->resolveCounterRange(NS::Range(0, results.size()));
+-        std::memcpy(results.data(), data->mutableBytes(), results.size() * sizeof(uint64_t));
++        if (data != nullptr) {
++            std::memcpy(results.data(), data->mutableBytes(), results.size() * sizeof(uint64_t));
++        }
+     }
+ 
+     const uint64_t *MetalQueryPool::getResults() const {
+@@ -3022,6 +3034,47 @@ namespace plume {
+                 dstOrigin
+             );
+             activeBlitEncoder->popDebugGroup();
++        } else if (dstLocation.type == RenderTextureCopyType::PLACED_FOOTPRINT && srcLocation.type == RenderTextureCopyType::SUBRESOURCE) {
++            // Snap64 Recomp: a texture-to-buffer copy, the mirror of the
++            // branch above, as the port added to the Vulkan backend. The
++            // port's presented-frame capture and the Snap Station's sheet
++            // capture (rt64_present_queue.cpp) rely on it; without it the
++            // copy fell through to the image-to-image path below and
++            // dereferenced the null destination texture. dstX/Y/Z are
++            // offsets into the footprint and the port passes zero; the box,
++            // when given, selects the source region.
++            assert(dstBuffer != nullptr);
++            assert(srcTexture != nullptr);
++
++            const uint32_t blockWidth = RenderFormatBlockWidth(srcTexture->desc.format);
++            const uint32_t horizontalBlocks = (dstLocation.placedFootprint.rowWidth + blockWidth - 1) / blockWidth;
++            const uint32_t verticalBlocks = (dstLocation.placedFootprint.height + blockWidth - 1) / blockWidth;
++            const uint32_t bytesPerRow = horizontalBlocks * RenderFormatSize(srcTexture->desc.format);
++            const uint32_t bytesPerImage = bytesPerRow * verticalBlocks;
++
++            MTL::Origin srcOrigin;
++            MTL::Size size;
++            if (srcBox != nullptr) {
++                srcOrigin = { NS::UInteger(srcBox->left), NS::UInteger(srcBox->top), NS::UInteger(srcBox->front) };
++                size = { NS::UInteger(srcBox->right - srcBox->left), NS::UInteger(srcBox->bottom - srcBox->top), NS::UInteger(srcBox->back - srcBox->front) };
++            } else {
++                srcOrigin = { 0, 0, 0 };
++                size = { dstLocation.placedFootprint.width, dstLocation.placedFootprint.height, dstLocation.placedFootprint.depth };
++            }
++
++            activeBlitEncoder->pushDebugGroup(MTLSTR("CopyTextureRegion"));
++            activeBlitEncoder->copyFromTexture(
++                srcTexture->mtl,
++                srcLocation.subresource.arrayIndex,
++                srcLocation.subresource.mipLevel,
++                srcOrigin,
++                size,
++                dstBuffer->mtl,
++                dstLocation.placedFootprint.offset,
++                bytesPerRow,
++                bytesPerImage
++            );
++            activeBlitEncoder->popDebugGroup();
+         } else {
+             assert(dstTexture != nullptr);
+             assert(srcTexture != nullptr);
+@@ -3203,6 +3256,9 @@ namespace plume {
+ 
+         MetalAutoreleasePool releasePool;
+         const MetalQueryPool *interfaceQueryPool = static_cast<const MetalQueryPool *>(queryPool);
++        if (interfaceQueryPool->sampleBuffer == nullptr) {
++            return;   // Snap64 Recomp: no timestamps on this device (the device's constructor says why)
++        }
+ 
+         MTL::ComputeCommandEncoder *computeEncoder = activeComputeEncoder != nullptr ? activeComputeEncoder : activeResolveComputeEncoder;
+         if (computeEncoder != nullptr && device->mtl->supportsCounterSampling(MTL::CounterSamplingPointAtDispatchBoundary)) {
+@@ -3802,6 +3858,20 @@ namespace plume {
+         description.dedicatedVideoMemory = mtl->recommendedMaxWorkingSetSize();
+ 
+         timestampCounterSet = findTimestampCounterSet();
++        // Snap64 Recomp: no GPU timestamps on Apple's paravirtual device, the
++        // GPU of a virtual Mac (GitHub's runners among them). It answers yes
++        // to supportsCounterSampling at the blit boundary and its driver then
++        // fails an assertion in sampleCountersInBuffer ("Not implemented",
++        // PGSerializerBlitCommandEncoder.mm), which aborts the program at
++        // the first frame. The timestamps feed only the renderer's profiler,
++        // which reads zero without them. RT64_NO_GPU_TIMESTAMPS in the
++        // environment does the same on any device.
++        if ((timestampCounterSet != nullptr) &&
++            ((deviceName.find("Paravirtual") != std::string::npos) || (getenv("RT64_NO_GPU_TIMESTAMPS") != nullptr))) {
++            fprintf(stderr, "Metal: GPU timestamps are off on %s (%s); the renderer's GPU profiler reads zero.\n",
++                    deviceName.c_str(), (getenv("RT64_NO_GPU_TIMESTAMPS") != nullptr) ? "RT64_NO_GPU_TIMESTAMPS" : "a paravirtual device");
++            timestampCounterSet = nullptr;
++        }
+         if (timestampCounterSet != nullptr) {
+             timestampCounterSet->retain();
+         }
 diff --git a/plume_render_interface.h b/plume_render_interface.h
 index 2048557..9b90449 100644
 --- a/plume_render_interface.h

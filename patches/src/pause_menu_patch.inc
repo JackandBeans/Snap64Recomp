@@ -127,6 +127,21 @@ static s32 snap_pause_show_mode = 0;       /* 1: the next Pause_ShowUI runs the 
 static s32 snap_pause_hid_icons = 0;       /* the HUD icons were shown, and this pause hid them */
 static s32 snap_pause_direct = 0;          /* this pause went straight to the pages: no menu, no PAUSE label */
 
+/* The mouse on the pause menu (graphics_menu_patch.c, snap_mouse_take):
+ * the pill under the pointer is selected as it moves there, a click on a
+ * pill is A on it, the right button is B (resume). Pause_UpdateSelection
+ * reads the mouse every frame the menu is up and leaves A and B as flags
+ * for updatePauseMenu, which handles the buttons. */
+static SnapMouse snap_pause_mouse;
+static s32 snap_pause_mouse_a = 0;
+static s32 snap_pause_mouse_b = 0;
+
+static void snap_pause_mouse_begin(void) {
+    snap_mouse_begin(&snap_pause_mouse);
+    snap_pause_mouse_a = 0;
+    snap_pause_mouse_b = 0;
+}
+
 static void snap_sprite_colour(Sprite* sp, u8 red, u8 green, u8 blue, u8 alpha) {
     sp->red = red;
     sp->green = green;
@@ -243,9 +258,19 @@ static void snap_pause_pages(GObj* obj) {
         counterFlags = counter->flags;
         counter->flags |= GOBJ_FLAG_HIDDEN;
     }
+    /* The pause menu's dim, 153 of 255, leaves the course bright enough to
+     * read through the pages; while they are up it is 245, as the pages'
+     * own backdrop is on every other screen (anywhere_patch.inc), and the
+     * pause menu gets its own 153 back the moment they close. */
+    if (obj->data.sobj != NULL) {
+        obj->data.sobj->sprite.alpha = 245;
+    }
 
     snap_port_pages(1);
 
+    if (obj->data.sobj != NULL) {
+        obj->data.sobj->sprite.alpha = (u8) D_80382D28_523138;
+    }
     if (counter != NULL) {
         counter->flags = counterFlags;
     }
@@ -264,9 +289,60 @@ static void snap_pause_pages(GObj* obj) {
     }
     snap_sprite_shown(Pause_LabelPause2, 1);
     snap_pause_item_state();
+    snap_pause_mouse_begin();
+}
+
+/* The pill under the pointer, or -1: each item's plain or selected pill,
+ * whichever is shown. */
+static s32 snap_pause_hit(void) {
+    if (snap_mouse_on_sprite(Pause_Continue, 0) || snap_mouse_on_sprite(Pause_ContinueSelected, 0)) {
+        return 0;
+    }
+    if (snap_mouse_on_sprite(Pause_QuitCourse, 0) || snap_mouse_on_sprite(Pause_QuitCourseSelected, 0)) {
+        return 1;
+    }
+    if (snap_mouse_on_sprite(Pause_Retry, 0) || snap_mouse_on_sprite(Pause_RetrySelected, 0)) {
+        return 2;
+    }
+    if ((snap_pause_item != NULL) &&
+        (snap_mouse_on_sprite(snap_pause_item->data.sobj, 0) ||
+         ((snap_pause_item_sel != NULL) && snap_mouse_on_sprite(snap_pause_item_sel->data.sobj, 0)))) {
+        return PAUSE_OPTION_OPTIONS;
+    }
+    return -1;
 }
 
 void Pause_UpdateSelection(GObj* obj) {
+    {
+        const s32 ev = snap_mouse_take(&snap_pause_mouse);
+        const s32 hit = snap_pause_hit();
+        if (PauseButtonPressTimeout > 0) {
+            snap_pause_mouse_a = 0;
+            snap_pause_mouse_b = 0;
+        } else {
+            if ((ev & (SNAP_MOUSE_MOVED | SNAP_MOUSE_CLICK)) && (hit >= 0) && (hit != PauseCurrentSelection)) {
+                PauseCurrentSelection = hit;
+                auPlaySound(SOUND_PAUSE_MOVE);
+                snap_pause_item_state();
+            }
+            if ((ev & SNAP_MOUSE_UP) && (PauseCurrentSelection > 0)) {
+                PauseCurrentSelection--;
+                auPlaySound(SOUND_PAUSE_MOVE);
+                snap_pause_item_state();
+            }
+            if ((ev & SNAP_MOUSE_DOWN) && (PauseCurrentSelection < snap_pause_items() - 1)) {
+                PauseCurrentSelection++;
+                auPlaySound(SOUND_PAUSE_MOVE);
+                snap_pause_item_state();
+            }
+            if ((ev & SNAP_MOUSE_CLICK) && (hit >= 0)) {
+                snap_pause_mouse_a = 1;
+            }
+            if (ev & SNAP_MOUSE_BACK) {
+                snap_pause_mouse_b = 1;
+            }
+        }
+    }
     if (PauseButtonPressTimeout > 0) {
         Pause_StickReleased = 0;
     } else if ((ABS(gContInputStickY) > 20) && Pause_StickReleased) {
@@ -319,6 +395,7 @@ void Pause_ShowUI(GObj* obj) {
             Pause_LabelPause2->sprite.attr &= ~SP_HIDDEN;
             Pause_LabelPause->sprite.attr |= SP_HIDDEN;
             snap_pause_item_state();
+            snap_pause_mouse_begin();
             omCreateProcess(obj, GAME_Pause_UpdateSelection, 1, 9);
             omEndProcess(NULL);
         } else {
@@ -394,9 +471,21 @@ void updatePauseMenu(GObj* arg0) {
                 MBOX_MENU_REQ = 0;
                 auPlaySound(SOUND_PAUSE_CHOOSE);
                 snap_pause_show_mode = 1;
-                omCreateProcess(arg0, GAME_Pause_ShowUI, 0, 9);
+                snap_big_stack_process(arg0, GAME_Pause_ShowUI, 9);
                 gContInputPressedButtons = 0;
                 return;
+            }
+            {
+                /* The mouse's A and B, left by Pause_UpdateSelection. */
+                const s32 mouseA = snap_pause_mouse_a;
+                const s32 mouseB = snap_pause_mouse_b;
+                snap_pause_mouse_a = 0;
+                snap_pause_mouse_b = 0;
+                if (mouseB) {
+                    gContInputPressedButtons |= B_BUTTON;
+                } else if (mouseA) {
+                    gContInputPressedButtons |= A_BUTTON;
+                }
             }
             if (gContInputPressedButtons & B_BUTTON) {
                 snap_pause_resume(arg0);
@@ -420,7 +509,7 @@ void updatePauseMenu(GObj* arg0) {
                     if (MBOX_DL_SPARE >= SNAP_PAGES_DL_NEED) {
                         auPlaySound(SOUND_PAUSE_CHOOSE);
                         snap_pause_show_mode = 1;
-                        omCreateProcess(arg0, GAME_Pause_ShowUI, 0, 9);
+                        snap_big_stack_process(arg0, GAME_Pause_ShowUI, 9);
                     }
                 } else {
                     auPlaySound(SOUND_PAUSE_CHOOSE);
@@ -482,7 +571,13 @@ void updatePauseMenu(GObj* arg0) {
                 Icons_Hide();
                 snap_pause_hid_icons = 1;
             }
-            omCreateProcess(arg0, GAME_Pause_ShowUI, 0, 9);
+            /* Straight to the pages: this instance runs them, on their own
+             * stack; the slide-in alone keeps the scene's. */
+            if (direct) {
+                snap_big_stack_process(arg0, GAME_Pause_ShowUI, 9);
+            } else {
+                omCreateProcess(arg0, GAME_Pause_ShowUI, 0, 9);
+            }
             auPlaySound(SOUND_PAUSE_OPEN);
             PauseButtonPressTimeout = 30;
             D_80382D3C_52314C = 0.5f;

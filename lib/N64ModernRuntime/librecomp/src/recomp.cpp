@@ -552,9 +552,25 @@ std::optional<std::u8string> current_game = std::nullopt;
 std::atomic<GameStatus> game_status = GameStatus::None;
 
 void run_thread_function(uint8_t* rdram, uint64_t addr, uint64_t sp, uint64_t arg) {
-    auto find_it = game_roms.find(current_game.value());
-    const recomp::GameEntry& game_entry = find_it->second;
-    
+    // Pokemon Snap port: a pooled game thread can start after quit() has
+    // cleared current_game, and current_game.value() then threw on the way
+    // out. The game's entry is read under the lock quit() takes, and a game
+    // that is gone starts no thread. Found by DramaticShape's VR fork
+    // (prismaticShape/Snap64RecompVR), fixed the same way there.
+    const recomp::GameEntry* registered_game = nullptr;
+    {
+        std::lock_guard<std::mutex> lock(current_game_mutex);
+        if (!current_game) {
+            return;
+        }
+        auto found = game_roms.find(*current_game);
+        if (found == game_roms.end()) {
+            return;
+        }
+        registered_game = &found->second;
+    }
+    const recomp::GameEntry& game_entry = *registered_game;
+
     recomp_context ctx{};
     ctx.r29 = sp;
     ctx.r4 = arg;
@@ -1049,7 +1065,9 @@ void recomp::start(const recomp::Configuration& cfg) {
     recomp::mods::register_config_exports();
     recomp::mods::register_hook_exports();
 
-    std::thread game_thread{[](ultramodern::renderer::WindowHandle window_handle, uint8_t* rdram) {
+    // The game's first thread runs its boot, so it gets the game's stack
+    // (ultramodern::threads::make_game_host_thread).
+    std::thread game_thread = ultramodern::threads::make_game_host_thread([window_handle, rdram]() {
         debug_printf("[Recomp] Starting\n");
 
         ultramodern::set_native_thread_name("Game Start Thread");
@@ -1060,7 +1078,7 @@ void recomp::start(const recomp::Configuration& cfg) {
 
         // Loop until the game starts.
         while (!wait_for_game_started(rdram, &context)) {}
-    }, window_handle, rdram};
+    });
 
     parse_cli(cfg.argc, cfg.argv);
 

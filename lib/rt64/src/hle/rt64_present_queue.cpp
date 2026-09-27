@@ -1343,8 +1343,15 @@ namespace {
                     ext.presentGraphicsWorker->commandList->end();
                     ext.presentGraphicsWorker->execute();
                     ext.presentGraphicsWorker->wait();
-                    swapChainValid = ext.swapChain->resize();
+                    // Pokemon Snap port: the framebuffers go before the resize.
+                    // They hold the old swap chain's images, and Direct3D 12's
+                    // ResizeBuffers fails while any reference to a back buffer
+                    // is alive (Vulkan destroys images still in use), so a
+                    // resize or a fullscreen switch cost a failed attempt and
+                    // a frame. Upstream has the old order. Found by
+                    // DramaticShape's VR fork (prismaticShape/Snap64RecompVR).
                     swapChainFramebuffers.clear();
+                    swapChainValid = ext.swapChain->resize();
 
                     if (swapChainValid) {
                         ext.sharedResources->setSwapChainSize(ext.swapChain->getWidth(), ext.swapChain->getHeight());

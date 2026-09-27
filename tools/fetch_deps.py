@@ -2,7 +2,7 @@
 """Fetch the vendored trees a clean checkout of Snap64 Recomp does not carry.
 
 A `git clone` of this repository has no `lib/SDL`, no `lib/DirectX-Headers`
-and, under `lib/rt64/src/contrib`, only the port's four plume files. This script
+and, under `lib/rt64/src/contrib`, only the port's five plume files. This script
 puts everything else there at the exact upstream commits the port was built
 against (VENDORING.md, "Recovered pins"), verifies it, and leaves the port's
 own changes to plume in place. It is idempotent: a tree already at its pin is
@@ -35,9 +35,9 @@ Two entries are not plain checkouts:
   file is not dxc-bin's: `bin/x64/dxil.dll` is replaced by the file of
   Microsoft's release v1.7.2308, downloaded from the release asset and
   checked by SHA-256 (`DXIL_OVERLAY` below says why).
-* `plume` carries four files of the port's own, `plume_d3d12.cpp`,
-  `plume_d3d12.h`, `plume_render_interface.h` and `plume_vulkan.cpp`, all
-  tracked by this repository. The clone writes upstream's versions over them, so they are put
+* `plume` carries five files of the port's own, `plume_d3d12.cpp`,
+  `plume_d3d12.h`, `plume_render_interface.h`, `plume_vulkan.cpp` and
+  `plume_metal.cpp`, all tracked by this repository. The clone writes upstream's versions over them, so they are put
   back with `git checkout --` afterwards; an uncommitted local edit to one of
   them is kept instead, and said so.
 
@@ -123,10 +123,10 @@ GIT_PINS = [
          sha='d890ac899e505fb30040e037a4037cdeca68f033',
          describe='2026-07-22 "manually reset nullbuffer (#105)", the commit rt64 4337374 pins',
          confidence='exact',
-         why=('the gitlink of the RT64 commit the tree is rebased on; the four port files '
-              '(plume_d3d12.cpp, plume_d3d12.h, plume_render_interface.h, plume_vulkan.cpp) are put back below, '
+         why=('the gitlink of the RT64 commit the tree is rebased on; the five port files '
+              '(plume_d3d12.cpp, plume_d3d12.h, plume_render_interface.h, plume_vulkan.cpp, plume_metal.cpp) are put back below, '
               'and lib/rt64/SNAP64-PLUME-CHANGES.patch is their difference from this commit.'),
-         port_files=['plume_d3d12.cpp', 'plume_d3d12.h', 'plume_render_interface.h', 'plume_vulkan.cpp']),
+         port_files=['plume_d3d12.cpp', 'plume_d3d12.h', 'plume_render_interface.h', 'plume_vulkan.cpp', 'plume_metal.cpp']),
     # plume's own submodules, at the gitlinks recorded by the plume commit above.
     dict(name='plume/D3D12MemoryAllocator', path=CONTRIB + '/plume/contrib/D3D12MemoryAllocator',
          url='https://github.com/GPUOpen-LibrariesAndSDKs/D3D12MemoryAllocator',

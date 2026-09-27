@@ -14,6 +14,7 @@
 #include <algorithm>
 
 #include "ultramodern/renderer_context.hpp"
+#include "ultramodern/ultramodern.hpp"
 #include "ultramodern/config.hpp"
 
 #include "paths.h"
@@ -66,6 +67,8 @@ extern "C" std::atomic<uint32_t> snap_thread_create_count;
 // (ultramodern threads.cpp). Take resets the table.
 extern "C" uint32_t snap_run_table_take(uint32_t* entries, int64_t* nanos, uint32_t* wakes, uint32_t cap);
 #include <chrono>
+#include <cstdlib>
+#include <thread>
 #include <cmath>
 
 #if defined(_WIN32)
@@ -727,6 +730,19 @@ public:
             app_->workloadQueue->waitForWorkloadId(app_->state->workloadId);
             const auto waitEnd = std::chrono::steady_clock::now();
             const uint32_t gameFrame = snapdiag::gameFrameCounter().fetch_add(1, std::memory_order_relaxed);
+            // SNAP_TICK_DELAY_MS=<n> makes every tick n ms longer, a slow
+            // machine on a fast one: with it, the scoring replay falls out
+            // of step after its ride, exactly as on GitHub's virtual Mac
+            // (2026-09-27), so a tape's limits can be studied here.
+            {
+                static const int tickDelayMs = [] {
+                    const char* e = std::getenv("SNAP_TICK_DELAY_MS");
+                    return (e != nullptr) ? std::atoi(e) : 0;
+                }();
+                if (tickDelayMs > 0) {
+                    std::this_thread::sleep_for(std::chrono::milliseconds(tickDelayMs));
+                }
+            }
 
             if (snapdiag::statsEnabled() && (lastTickStart.time_since_epoch().count() != 0)) {
                 const double tickMs = std::chrono::duration<double, std::milli>(waitEnd - lastTickStart).count();

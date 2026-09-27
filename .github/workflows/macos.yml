@@ -4,33 +4,50 @@
 # private repository of mine, cloned with a token kept in this repository's
 # secrets (SNAP64_INPUTS_TOKEN), so the job builds only where that secret
 # exists -- a manual run of mine -- and a fork's pull request builds
-# nothing here. What it leaves: the application bundle as a zip with
-# its checksum, and the log and captured frames of a first run of that
-# bundle on the runner, which is the closest thing to a Mac I can look at.
+# nothing here.
+#
+# What it makes: one application bundle for both kinds of Mac (a universal
+# executable, Apple Silicon and Intel), signed ad hoc with the hardened
+# runtime and the entitlements mods need, zipped with its checksum. What it
+# proves, on the runner's virtual Mac and its paravirtual Metal GPU
+# (tools/macos_smoke.py): the title screen from a cold start, the same boot
+# under Metal's API validation, the release suite's scoring replay (45
+# photos, compared with the Windows build's scores) and a mod whose hooks
+# run -- natively, and again for the Intel half through Rosetta 2, the two
+# in parallel jobs after the one build. The logs, the captured frames and
+# any crash report macOS wrote are uploaded whether the checks pass or not.
 name: macos
 
-# On request only, until the private inputs repository and its token
-# exist: a push would stop at the inputs step with a failure. The push
-# trigger (snap-port and main, the source paths) comes back with them.
+# On request only: every run builds a release candidate, and the inputs are
+# the ones the private repository holds for the tree being built.
 on:
   workflow_dispatch:
+    inputs:
+      stages:
+        description: "The check stages to run (boot, validated, score, mod), or all"
+        default: all
+        required: false
 
 concurrency:
   group: macos-${{ github.ref }}
   cancel-in-progress: true
 
+env:
+  SNAP_INPUTS_REPO: JackandBeans/Snap64RecompInputs
+
 jobs:
   build:
-    name: Apple Silicon bundle
+    name: Universal bundle
     runs-on: macos-15
-    timeout-minutes: 150
+    timeout-minutes: 120
     env:
-      SNAP_INPUTS_REPO: JackandBeans/Snap64RecompInputs
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
       - uses: actions/checkout@v4
 
       - name: The toolchain
         run: |
+          sw_vers
           xcodebuild -version
           cmake --version | head -1
           ninja --version
@@ -39,6 +56,17 @@ jobs:
           # runner's default Xcode ships it; Xcode 26 keeps it as a separate
           # download, fetched only when it is missing.
           xcrun -sdk macosx metal --version || xcodebuild -downloadComponent MetalToolchain
+          brew install ccache
+
+      # Restored here and saved after the build whatever the build's result:
+      # actions/cache saves only when the whole job succeeds, so every failed
+      # build would compile everything again next time.
+      - name: The compiler cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: macos-universal-ccache-${{ github.run_id }}
+          restore-keys: macos-universal-ccache-
 
       - name: The vendored trees
         run: python3 tools/fetch_deps.py
@@ -46,62 +74,136 @@ jobs:
       - name: The inputs the ROM produces
         env:
           TOKEN: ${{ secrets.SNAP64_INPUTS_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
         run: |
           if [ -z "$TOKEN" ]; then
             echo "::error::SNAP64_INPUTS_TOKEN is not set; the build needs the private inputs repository (BUILDING.md, step 15)"
             exit 1
           fi
-          git clone --depth 1 "https://x-access-token:${TOKEN}@github.com/${SNAP_INPUTS_REPO}.git" inputs
-          cp -R inputs/RecompiledFuncs inputs/RecompiledPatches .
+          # What the token can see, said before git's own message, which
+          # reads "write access not granted" for any repository the token
+          # was not given at all.
+          who=$(curl -s -H "Authorization: Bearer $TOKEN" https://api.github.com/user | python3 -c 'import json,sys; print(json.load(sys.stdin).get("login", "nobody"))' 2>/dev/null || echo nobody)
+          code=$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer $TOKEN" "https://api.github.com/repos/${SNAP_INPUTS_REPO}")
+          echo "the token is ${who}'s; the API answers ${code} for ${SNAP_INPUTS_REPO}"
+          if [ "$code" != "200" ]; then
+            echo "::error::the token cannot read ${SNAP_INPUTS_REPO} (HTTP ${code}). On the token's page, Repository access must be 'Only select repositories' with that repository chosen, and Repository permissions must have Contents: Read-only."
+            exit 1
+          fi
+          git clone --depth 1 "https://${OWNER}:${TOKEN}@github.com/${SNAP_INPUTS_REPO}.git" "$RUNNER_TEMP/inputs"
+          cp -R "$RUNNER_TEMP/inputs/RecompiledFuncs" "$RUNNER_TEMP/inputs/RecompiledPatches" .
           mkdir -p patches/build
-          cp inputs/patches/build/patches.bin patches/build/
-          cp inputs/pokemonsnap.z64 .
-          rm -rf inputs
+          cp "$RUNNER_TEMP/inputs/patches/build/patches.bin" patches/build/
+          cp "$RUNNER_TEMP/inputs/pokemonsnap.z64" .
+          # The hooked functions' names follow this tree's list, whatever
+          # state the inputs were copied in (the script is idempotent).
+          python3 tools/hook_funcs.py
           echo "$(ls RecompiledFuncs | wc -l | tr -d ' ') recompiled function files"
 
       - name: Configure
         run: >
           cmake -S . -B build-macos -G Ninja
           -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_OSX_ARCHITECTURES=arm64
+          "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
           -DSNAP_ROM="$PWD/pokemonsnap.z64"
+          -DCMAKE_C_COMPILER_LAUNCHER=ccache
+          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+          -DCMAKE_OBJC_COMPILER_LAUNCHER=ccache
+          -DCMAKE_OBJCXX_COMPILER_LAUNCHER=ccache
 
       - name: Build
-        run: cmake --build build-macos --target Snap64Recomp
+        run: |
+          cmake --build build-macos --target Snap64Recomp -j "$(sysctl -n hw.ncpu)"
+
+      - name: The compiler cache, kept
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: macos-universal-ccache-${{ github.run_id }}
+
+      - name: What the compiler cache did
+        if: always()
+        run: ccache --show-stats | head -20 || true
+
+      - name: What the linker made
+        # Both halves present, and each one's code segment writable at most
+        # (tools/macos/ld64): without that, no mod that patches a function
+        # can load.
+        run: |
+          exe=build-macos/Snap64Recomp
+          echo "architectures: $(lipo -archs "$exe")"
+          for a in arm64 x86_64; do
+            lipo -archs "$exe" | grep -qw "$a" || { echo "::error::no $a half"; exit 1; }
+            max=$(otool -l -arch "$a" "$exe" | awk '/segname __TEXT$/ {t=1} t && /maxprot/ {print $2; exit}')
+            echo "$a: __TEXT maxprot $max"
+            [ "$((max))" -eq 7 ] || { echo "::error::$a __TEXT maxprot is $max, not rwx"; exit 1; }
+          done
 
       - name: Bundle
-        run: python3 tools/macos_bundle.py build-macos
-
-      - name: A first run of the bundle
-        # Best effort: the runner has a display and a Metal device, so the
-        # port should reach its title screen; the log and the frames say what
-        # it did, and a failure here does not lose the bundle above.
-        continue-on-error: true
         run: |
-          mkdir -p smoke
-          cp pokemonsnap.z64 smoke/
-          SNAP_DATA_DIR="$PWD/smoke" SNAP_MUTE=1 SNAP_WINDOW=640x480 SNAP_ROM_PICK=cancel \
-          SNAP_PCAP_ATFRAME=300,900,1500 SNAP_PCAP_AT=9999999 \
-          perl -e 'alarm shift; exec @ARGV' 90 build-macos/Snap64Recomp.app/Contents/MacOS/Snap64Recomp || true
-          echo "--- frames ---"
-          ls -la snap_frame_dumps 2>/dev/null || echo "none captured"
-          echo "--- the log's last lines ---"
-          tail -n 60 smoke/snap64.log || true
+          python3 tools/macos_bundle.py build-macos
+          codesign --display --verbose=2 build-macos/Snap64Recomp.app 2>&1 | grep -E "Identifier|Format|flags|Signature" || true
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Snap64Recomp-macos-arm64
+          name: Snap64Recomp-macos-universal
           path: |
             build-macos/*.zip
             build-macos/*.zip.sha256
           if-no-files-found: error
 
+  checks:
+    name: The checks, ${{ matrix.arch }}
+    needs: build
+    runs-on: macos-15
+    timeout-minutes: 150
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - arch: arm64
+            stages: boot,validated,score,mod
+          - arch: x86_64
+            stages: boot,score,mod
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: Snap64Recomp-macos-universal
+          path: bundle
+
+      - name: The bundle, as a player unpacks it
+        run: |
+          ditto -x -k bundle/*.zip unpacked
+          app=$(find unpacked -maxdepth 3 -name Snap64Recomp.app | head -1)
+          [ -n "$app" ] || { echo "::error::no Snap64Recomp.app in the zip"; exit 1; }
+          echo "APP=$app" >> "$GITHUB_ENV"
+          codesign --verify --deep --strict --verbose=2 "$app"
+
+      - name: Rosetta 2
+        if: matrix.arch == 'x86_64'
+        run: arch -x86_64 /usr/bin/true 2>/dev/null || sudo softwareupdate --install-rosetta --agree-to-license
+
+      - name: The inputs
+        env:
+          TOKEN: ${{ secrets.SNAP64_INPUTS_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+        run: git clone --depth 1 "https://${OWNER}:${TOKEN}@github.com/${SNAP_INPUTS_REPO}.git" "$RUNNER_TEMP/inputs"
+
+      - name: The runner's timer
+        run: python3 tools/macos_timer_probe.py
+
+      - name: The checks
+        run: >
+          python3 tools/macos_smoke.py "$APP"
+          --inputs "$RUNNER_TEMP/inputs" --out smoke --arch ${{ matrix.arch }}
+          --stages ${{ (inputs.stages == '' || inputs.stages == 'all') && matrix.stages || inputs.stages }}
+
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: first-run
-          path: |
-            smoke/snap64.log
-            smoke/snap64.prev.log
-            snap_frame_dumps/
+          name: macos-checks-${{ matrix.arch }}
+          path: smoke/
           if-no-files-found: ignore

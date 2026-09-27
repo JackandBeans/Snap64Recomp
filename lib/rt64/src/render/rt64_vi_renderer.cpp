@@ -9,6 +9,8 @@
 #include "shared/rt64_hlsl.h"
 #include "shared/rt64_video_interface.h"
 
+#include "hle/rt64_snap_diag.h"
+
 namespace RT64 {
     // VIRenderer
 
@@ -72,6 +74,23 @@ namespace RT64 {
         RenderViewport viewport;
         RenderRect scissor;
         getViewportAndScissor(p.swapChain, *p.vi, p.resolutionScale, p.downsamplingScale, p.removeBlackBorders, p.crop, viewport, scissor);
+
+        // Pokemon Snap port: the picture's place in the window, for the
+        // mouse (snapdiag::PresentedView).
+        {
+            snapdiag::PresentedView view;
+            view.x = viewport.x;
+            view.y = viewport.y;
+            view.width = viewport.width;
+            view.height = viewport.height;
+            const hlslpp::float2 fb = hlslpp::float2(p.vi->fbSize());
+            view.fbWidth = float(fb.x);
+            view.fbHeight = float(fb.y);
+            view.aspect = float(p.resolutionScale.x) / float(p.resolutionScale.y);
+            view.swapWidth = p.swapChain->getWidth();
+            view.swapHeight = p.swapChain->getHeight();
+            snapdiag::publishPresentedView(view);
+        }
         p.commandList->setViewports(viewport);
         p.commandList->setScissors(scissor);
 

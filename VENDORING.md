@@ -23,10 +23,10 @@ carried as patches on top of the upstream commit. N64ModernRuntime's are, since
 
 | Path | In git? | State |
 | --- | --- | --- |
-| `lib/N64ModernRuntime` | yes, plain files | upstream `cdf5abb` (2026-08-30) plus the port's changes, fifteen files, carried as `lib/N64ModernRuntime/SNAP64-CHANGES.patch`; no git directory |
+| `lib/N64ModernRuntime` | yes, plain files | upstream `cdf5abb` (2026-08-30) plus the port's changes, eighteen files, carried as `lib/N64ModernRuntime/SNAP64-CHANGES.patch`; no git directory |
 | `lib/N64ModernRuntime/N64Recomp` | yes (part of the above) | the runtime's bundled copy of N64Recomp's headers and sources; its `RSPRecomp` target is built by the port's CMake to recompile the audio microcode at build time (BUILDING.md step 9); upstream commit unrecorded |
 | `lib/rt64` (outside `src/contrib`) | yes, 300 files | forked from rt64/rt64 `a012a23` (established by content, below); `lib/rt64/.git` is an orphaned gitfile pointing at a deleted `.git/modules/lib/rt64` |
-| `lib/rt64/src/contrib/` | **no** (ignored), except the port's four plume files (below) | RT64's third-party trees, 396 MB; fetched by `tools/fetch_deps.py` at the pins below |
+| `lib/rt64/src/contrib/` | **no** (ignored), except the port's five plume files (below) | RT64's third-party trees, 396 MB; fetched by `tools/fetch_deps.py` at the pins below |
 | `lib/SDL` | no (ignored) | fetched by `tools/fetch_deps.py` at the pin below (my copy is a full clone with a live `.git`) |
 | `lib/DirectX-Headers` | no (ignored) | fetched by `tools/fetch_deps.py` at the pin below (same) |
 
@@ -160,7 +160,7 @@ marks most changed sites (grep for it), but not all of them.
 
 The tree is upstream commit `cdf5abb` (2026-08-30) with the port's changes on
 top, and those changes are one file, `lib/N64ModernRuntime/SNAP64-CHANGES.patch`
-(`git diff` from that commit to this tree, fifteen files). Every changed
+(`git diff` from that commit to this tree, eighteen files). Every changed
 file carries a `Pokemon Snap port` marker. To take a newer upstream: clone
 N64ModernRuntime, check out `cdf5abb`, branch, `git apply` the patch, commit,
 rebase onto the new upstream head, resolve, then copy `librecomp`,
@@ -170,7 +170,21 @@ had never been recorded (it matched the tree of `03c3bd8`, 2026-05-17; three
 files conflicted).
 
 * `ultramodern/src/threads.cpp` -- pooled host threads, the replenisher, the
-  per-guest-thread run clock, and the thread registry the stall report reads.
+  per-guest-thread run clock, and the thread registry the stall report reads;
+  and a thread that ends with code made at run time on its stack (a mod's
+  code, or a function recompiled live for a mod's hook) returns to its entry
+  without unwinding, since that code has no unwind information and the
+  exception that ends a thread cannot pass it. The game parks every process
+  in `ohWait` and ends it from outside, so a hook on any function that waits
+  stopped the game when its process ended. Without code mods every thread
+  ends by the exception as before. And the host threads that run game code
+  (the pool's workers, and the game's first thread in
+  `librecomp/src/recomp.cpp`) get an 8 MB stack on macOS
+  (`make_game_host_thread`, `start_detached_game_host_thread`, declared in
+  `ultramodern/include/ultramodern/threads.hpp`): Windows gives every thread
+  the executable's `/STACK` (8 MB) and Linux 8 MB, but macOS gives all but
+  the main thread 512 KB. Elsewhere they are the plain `std::thread`s they
+  were.
 * `ultramodern/src/mesgqueue.cpp` -- run-clock pauses.
 * `ultramodern/src/timer.cpp` -- the speed ratio behind fast forward and slow
   motion.
@@ -190,6 +204,9 @@ files conflicted).
 * `librecomp/src/recomp.cpp` -- the ROM check names the exact fault (missing,
   unreadable, not a ROM, the wrong dump with both hashes) and never rewrites
   or removes the player's file; byte-swapped dumps are corrected in memory.
+  And a game thread that starts after `quit()` has cleared the current game
+  starts nothing, where `current_game.value()` threw on the way out (found
+  by DramaticShape's VR fork).
 * `librecomp/src/files.cpp`, `librecomp/include/librecomp/files.hpp` -- the
   data directory and file handling the port's paths need.
 * `librecomp/CMakeLists.txt`, `ultramodern/CMakeLists.txt` -- build options.
@@ -197,7 +214,18 @@ files conflicted).
   is loaded (a code mod, loaded before the game runs) takes an enable or
   disable for the next start instead of refusing it: the port's Mods page
   is inside the game, where upstream's launcher toggles mods before the
-  game starts.
+  game starts. It also registers each block of live-recompiled code with
+  ultramodern (above), and says in the log which function a failed live
+  recompilation stopped at, where upstream reports only "Code mod loading
+  internal error". `librecomp/include/librecomp/mods.hpp` declares the
+  code handle's destructor for the first.
+* `librecomp/src/mod_manifest.cpp` -- a mod option's `hidden_from` and
+  `disabled_from` rules reach the mod's config. Upstream parses and checks
+  them, then adds them to a copy of the config's schema that is thrown
+  away, so no rule a manifest declared ever took effect; the port adds them
+  through the config's own `add_option_hidden_dependency` and
+  `add_option_disable_dependency`. Upstream's `main` has the same code
+  (checked 2026-09-26, the file last changed there in `589bbf0`).
 
 Two things upstream changed after the old base are answered on the port's
 side rather than in the runtime: the runtime no longer switches present-early
@@ -251,7 +279,11 @@ per-call parameters the pixel stage reads (`shaders/RasterPS.hlsl`,
 (`hle/rt64_snap_overlay.h`), the port's diagnostics header
 (`hle/rt64_snap_diag.h`), and configuration fields
 (`common/rt64_user_configuration.h`, `rt64_enhancement_configuration.h`). The macOS build adds one line to `common/rt64_hlslpp.h`, the C standard
-library included before hlsl++.
+library included before hlsl++. One fix is upstream's bug rather than the
+port's need: `hle/rt64_present_queue.cpp` releases the swap chain's
+framebuffers before it resizes the swap chain, where upstream resizes first
+and Direct3D 12 refuses while the old images are still referenced (found by
+DramaticShape's VR fork, 2026-09-25).
 
 **Twenty-three more files differ without the marker**; a grep for the marker
 does not find them. Twenty-two are modified upstream files: `CMakeLists.txt`
@@ -273,9 +305,9 @@ above (#259, #262).
 
 ### plume (inside the ignored contrib tree)
 
-Four files differ from plume `d890ac8` (the commit rt64 `4337374` pins;
+Five files differ from plume `d890ac8` (the commit rt64 `4337374` pins;
 until 2026-09-16 the base was `51b1ad4`, on a side branch), none of their
-contents exists anywhere in plume's history, and all four are
+contents exists anywhere in plume's history, and all five are
 **force-tracked** in this repository (`git add -f`; the directory around
 them stays ignored). Their difference from that commit is
 `lib/rt64/SNAP64-PLUME-CHANGES.patch`:
@@ -304,6 +336,10 @@ them stays ignored). Their difference from that commit is
   destination fell through to the image-to-image path and dereferenced a
   null texture, which took the port's presented-frame capture and the Snap
   Station's sheet capture down on Linux.
+* `plume_metal.cpp` (tracked since 2026-09-26): the same branch in
+  `MetalCommandList::copyTextureRegion` (the blit encoder's texture-to-buffer
+  `copyFromTexture`), for the same two captures on a Mac, where the image-to-
+  image path would have dereferenced the same null.
 
 The `.cpp` does not compile against pristine plume headers, which is why the
 headers are tracked too (until 2026-09-02 they were not, and the only copy of

@@ -13,6 +13,8 @@
 #include <chrono>
 #include <cstdint>
 #include <mutex>
+#include <string>
+#include <vector>
 
 namespace snap {
 
@@ -379,9 +381,52 @@ void menu_arena_reset(uint8_t* rdram);
 // True while a port page, or the game's Option screen, is up: the menu key
 // is Start then, which closes the pages.
 bool menu_pages_open();
-// A file dropped on the window: a mod (.nrm) is copied into the mods folder
-// for the next start.
+// Installing mods (mod_installer.cpp). A file dropped on the window -- a mod
+// (.nrm), a texture pack (.rtz), or a zip holding them, as Thunderstore
+// packages them -- is checked and installed for the next start;
+// mods_drop_summary then gives the box's text once, after the last file of
+// a drop. mods_install_at_start swaps in what a drop staged and unpacks any
+// zip left in mods/, before the runtime scans the folder.
 void mods_drop_file(const char* path);
+bool mods_drop_summary(std::string& text, bool& anyInstalled);
+// The Mods page's Install row: the page asks (menu_assets.cpp, on the game's
+// thread) and the window's thread answers (main.cpp), showing the file
+// picker and installing what is chosen as a drop is installed. True when
+// files were chosen; mods_drop_summary then has the box's text.
+void mods_request_pick();
+bool mods_pick_and_install();
+bool mods_installed_during_play();
+void mods_install_at_start();
+// For the Mods page: the mods installed during play, which load at the next
+// start (its New rows, and the line on a mod whose update waits), and the
+// mod files found at start that this release will not load (its Error rows,
+// or the line on a mod the runtime lists but will refuse). The generation
+// turns whenever the first list grows, so an open page can refresh.
+struct InstalledMod {
+    std::string id;
+    std::string name;       // display name, or the id
+    std::string version;    // "1.0.1"
+    std::string desc;       // short description
+    std::string fullDesc;   // the whole description, for the details page
+    std::vector<std::string> authors;
+    std::vector<char> thumb;   // thumb.dds or else thumb.png, as the runtime reads it
+    int optCount = 0;          // the options its manifest's config_schema declares
+};
+struct BrokenMod {
+    std::string file;       // the file's name in mods/
+    std::string id;         // empty when its manifest could not be read
+    std::string reason;     // "a mod for another game (mm)"
+};
+std::vector<InstalledMod> mods_installed_this_session();
+std::vector<BrokenMod> mods_broken_at_start();
+uint32_t mods_install_generation();
+// Before the runtime reads mods.json: when the last session did not end
+// normally and mods are on, asks whether to start with them off (a mod that
+// stops the game at start could otherwise never be turned off from inside
+// it), then marks this session as running. session_mark_clean clears the
+// mark at a normal end and before a relaunch.
+void mods_safe_start();
+void session_mark_clean();
 
 // The window's icon from Snap64Recomp-window.png beside the executable
 // (Linux; on Windows the executable's own resource serves). False without

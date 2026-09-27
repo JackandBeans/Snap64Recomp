@@ -87,6 +87,13 @@ void resume_thread_and_wait(RDRAM_ARG OSThread* t);
 void schedule_running_thread(RDRAM_ARG PTR(OSThread) t);
 void cleanup_thread(UltraThreadContext* thread_context);
 struct thread_terminated : std::exception {};
+// Pokemon Snap port: code made at run time -- a mod's own functions, or a
+// game or patch function recompiled live for a mod's hook -- has no unwind
+// information, so thread_terminated cannot unwind through it. librecomp
+// registers each block of it here, and a thread that ends with one on its
+// stack returns to its entry without unwinding (threads.cpp).
+void register_generated_code(const void* begin, size_t size);
+void unregister_generated_code(const void* begin);
 
 enum class ThreadPriority {
     Low,

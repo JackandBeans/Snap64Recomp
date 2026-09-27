@@ -15,9 +15,16 @@ is wider and narrower at once:
   * a PROGBITS row's rom_addr is what N64Recomp computes (the LOAD segment's
     physical address plus the section's offset inside it, less the lowest
     load address);
-  * the function arrays are the recompiler's, minus librecomp's `*_recomp`
-    reimplementations and the renamed entrypoint, with the toml's
-    manual_funcs first (in reverse toml order) and the rest by offset;
+  * the function arrays are the recompiler's, minus the renamed entrypoint,
+    with the toml's manual_funcs first (in reverse toml order) and the rest
+    by offset. The `*_recomp` names stay: some are game code the recompiler
+    renamed away from a C library name (memcpy, sprintf, sqrtf), the rest
+    are libultra calls librecomp reimplements (osRecvMesg, osCreateThread).
+    Either way the game calls them at those addresses, and librecomp finds a
+    function by its address through this table: a mod's hook recompiles the
+    hooked function with every call looked up that way, and until 1.1.0 a
+    hook on any function that called one of them stopped the game with
+    "Failed to find function at 0x80037660" (memcpy);
   * relocations are not carried: the recompiled code is linked flat and the
     port resolves overlay addresses itself.
 
@@ -31,6 +38,11 @@ Inputs (defaults are the port root's conventions, see BUILDING.md):
 
 Usage, from the port root, after N64Recomp has written RecompiledFuncs:
     python3 tools/gen_overlays.py [pokemonsnap.relocs.elf] [-o OUT]
+
+Or, to rewrite only the function arrays of the existing table from
+RecompiledFuncs, keeping its section rows as they are (no ELF needed; the
+rows come from the ELF, the arrays only from the recompiler's output):
+    python3 tools/gen_overlays.py --arrays-only
 """
 import argparse
 import pathlib
@@ -123,7 +135,24 @@ def syms_sections(path):
 
 
 def keep(func_name):
-    return not func_name.endswith('_recomp') and func_name != 'recomp_entrypoint'
+    return func_name != 'recomp_entrypoint'
+
+
+def ordered_funcs(funcs, manual_rank):
+    """One array's rows as the table lists them: kept functions, the toml's
+    manual_funcs first, the rest by offset."""
+    kept = [f for f in funcs if keep(f[0])]
+    first = sorted((f for f in kept if f[0] in manual_rank), key=lambda f: manual_rank[f[0]])
+    rest = sorted((f for f in kept if f[0] not in manual_rank), key=lambda f: f[1])
+    return first + rest
+
+
+def array_text(array_name, rows):
+    lines = [f'static FuncEntry {array_name}[] = {{']
+    for func_name, off, rom_size in rows:
+        lines.append(f'    {{ .func = {func_name}, .offset = 0x{off:X}, .rom_size = 0x{rom_size:X} }},')
+    lines.append('};')
+    return '\n'.join(lines)
 
 
 def generate(elf_path, funcs_path, toml_path, syms_path):
@@ -171,14 +200,8 @@ def generate(elf_path, funcs_path, toml_path, syms_path):
         if index not in arrays:
             continue
         array_name, funcs = arrays[index]
-        kept = [f for f in funcs if keep(f[0])]
-        first = sorted((f for f in kept if f[0] in manual_rank), key=lambda f: manual_rank[f[0]])
-        rest = sorted((f for f in kept if f[0] not in manual_rank), key=lambda f: f[1])
         array_of[index] = array_name
-        out.append(f'static FuncEntry {array_name}[] = {{')
-        for func_name, off, rom_size in first + rest:
-            out.append(f'    {{ .func = {func_name}, .offset = 0x{off:X}, .rom_size = 0x{rom_size:X} }},')
-        out.append('};')
+        out.append(array_text(array_name, ordered_funcs(funcs, manual_rank)))
         out.append('')
 
     out.append('static SectionTableEntry code_sections[] = {')
@@ -197,14 +220,46 @@ def generate(elf_path, funcs_path, toml_path, syms_path):
     return '\n'.join(out) + '\n', len(rows), len(array_of), warnings
 
 
+def rewrite_arrays(table_path, funcs_path, toml_path):
+    """The existing table with each function array rebuilt from the
+    recompiler's output; everything else, the section rows included, as it
+    was. Returns the text and (array name, rows before, rows after) per array."""
+    text = table_path.read_text(encoding='utf-8')
+    arrays = recompiler_funcs(funcs_path)
+    by_name = {name: funcs for name, funcs in arrays.values()}
+    manual_rank = {name: i for i, name in enumerate(reversed(manual_func_names(toml_path)))}
+    counts = []
+
+    def replace(m):
+        name = m.group(1)
+        if name not in by_name:
+            raise SystemExit(f'{table_path}: {name} is not in {funcs_path}')
+        rows = ordered_funcs(by_name[name], manual_rank)
+        counts.append((name, m.group(0).count('.func = '), len(rows)))
+        return array_text(name, rows)
+
+    new_text = re.sub(r'static FuncEntry (section_\d+_\w+_funcs)\[\] = \{.*?\n\};', replace, text, flags=re.S)
+    return new_text, counts
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    parser.add_argument('--arrays-only', action='store_true',
+                        help='rewrite only the function arrays of the existing output from --funcs')
     parser.add_argument('elf', nargs='?', default=ROOT / 'pokemonsnap.relocs.elf', type=pathlib.Path)
     parser.add_argument('--funcs', default=ROOT / 'RecompiledFuncs' / 'recomp_overlays.inl', type=pathlib.Path)
     parser.add_argument('--toml', default=ROOT / 'pokemonsnap.us.toml', type=pathlib.Path)
     parser.add_argument('--syms', default=ROOT / 'patches' / 'pokemonsnap.syms.toml', type=pathlib.Path)
     parser.add_argument('-o', '--output', default=ROOT / 'src' / 'recomp_overlays.inl', type=pathlib.Path)
     args = parser.parse_args()
+
+    if args.arrays_only:
+        text, counts = rewrite_arrays(args.output, args.funcs, args.toml)
+        args.output.write_text(text, encoding='utf-8', newline='\n')
+        before = sum(c[1] for c in counts)
+        after = sum(c[2] for c in counts)
+        print(f'{args.output}: {len(counts)} function arrays rewritten, {before} entries before, {after} after')
+        return 0
 
     text, num_rows, num_code, warnings = generate(args.elf, args.funcs, args.toml, args.syms)
     for w in warnings:

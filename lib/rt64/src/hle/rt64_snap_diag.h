@@ -793,4 +793,41 @@ inline bool writeBMP24(const char *path, uint32_t width, uint32_t height, const 
     return ok;
 }
 
+// Where the last presented picture sits in the window, so the port can turn
+// the mouse's window position into the game's own 320 by 240 coordinates
+// (src/input.cpp). Written by the VI renderer with the viewport it drew with
+// -- aspect, widescreen, overscan crop and all -- and the same mapping as
+// the debugger's own right-click pick (rt64_state.cpp).
+struct PresentedView {
+    float x = 0.0f;         // the viewport, in the swap chain's pixels
+    float y = 0.0f;
+    float width = 0.0f;
+    float height = 0.0f;
+    float fbWidth = 0.0f;   // the game's framebuffer
+    float fbHeight = 0.0f;
+    float aspect = 1.0f;    // the resolution scale's x over its y: 1 unless widened
+    uint32_t swapWidth = 0; // the swap chain, to scale window points to its pixels
+    uint32_t swapHeight = 0;
+};
+
+inline std::mutex &presentedViewMutex() {
+    static std::mutex m;
+    return m;
+}
+
+inline PresentedView &presentedViewStore() {
+    static PresentedView v;
+    return v;
+}
+
+inline void publishPresentedView(const PresentedView &v) {
+    std::lock_guard<std::mutex> lock(presentedViewMutex());
+    presentedViewStore() = v;
+}
+
+inline PresentedView presentedView() {
+    std::lock_guard<std::mutex> lock(presentedViewMutex());
+    return presentedViewStore();
+}
+
 } // namespace snapdiag

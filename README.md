@@ -32,7 +32,7 @@ of this repository is the only official download.
 [Screenshots](#screenshots) ·
 [System requirements](#system-requirements) · [Features](#features) ·
 [Faithful by default](#faithful-by-default) · [Controls](#controls) ·
-[Linux and Steam Deck](#linux-and-steam-deck) ·
+[Linux and Steam Deck](#linux-and-steam-deck) · [macOS](#macos) ·
 [FAQ](#faq) · [Known issues](#known-issues) ·
 [What's next](#whats-next) · [Reporting a bug](#reporting-a-bug) ·
 [Contributing](#contributing) ·
@@ -56,10 +56,10 @@ The rest of the documentation is listed [near the end](#documentation).
 These steps are for Windows. Linux and the Steam Deck are [further
 down](#linux-and-steam-deck).
 
-1. Download `Snap64Recomp-1.0.9-win64.zip` from the
+1. Download `Snap64Recomp-1.1.0-win64.zip` from the
    [Releases](https://github.com/JackandBeans/Snap64Recomp/releases/latest)
    page and unpack it anywhere. It holds one folder,
-   `Snap64Recomp-1.0.9-win64`, with `Snap64Recomp.exe` inside. Nothing has
+   `Snap64Recomp-1.1.0-win64`, with `Snap64Recomp.exe` inside. Nothing has
    to be installed.
 2. Have your ROM of the US cartridge ready. (A ROM is the cartridge's
    contents, read out into one file.) Put it next to `Snap64Recomp.exe`
@@ -98,7 +98,7 @@ bug report.
 ## Screenshots
 
 <table><tr>
-<td><a href="docs/screenshots/01j-title-109.png"><img src="docs/screenshots/01j-title-109.png" width="400" alt="The title screen"></a></td>
+<td><a href="docs/screenshots/01k-title-110.png"><img src="docs/screenshots/01k-title-110.png" width="400" alt="The title screen"></a></td>
 <td><a href="docs/screenshots/03-course-select.png"><img src="docs/screenshots/03-course-select.png" width="400" alt="Course select"></a></td>
 </tr><tr>
 <td><a href="docs/screenshots/04-beach.png"><img src="docs/screenshots/04-beach.png" width="400" alt="The Beach: Surfing Pikachu"></a></td>
@@ -123,6 +123,9 @@ picture. The full set, with a caption for each, is in
   Direct3D 12 with Shader Model 6.0.
 * **Linux and Steam Deck:** an x86_64 system with a Vulkan 1.2 driver, SDL2
   and GTK 3. The Linux build is experimental.
+* **macOS:** macOS 14 (Sonoma) or newer, on Apple Silicon or Intel; one app
+  runs on both. The Mac build has run on GitHub's virtual Mac and not yet on
+  a physical one (see [macOS](#macos)).
 * **CPU:** a 64-bit x86 processor with SSE4.1. That is Intel from 2008
   (Penryn), AMD from 2011 (Bulldozer), or anything newer.
 * **Your own ROM of the US cartridge.** Its SHA-1 checksum is
@@ -260,6 +263,24 @@ system's SDL2, GTK 3 and a Vulkan 1.2 driver, and renders through Vulkan
 only. [STEAM-DECK.md](docs/STEAM-DECK.md) has the steps for each route, the
 Deck's controls and gyro, its screen, quitting from a pad, and the icon.
 
+## macOS
+
+The release page has a Mac build, `Snap64Recomp-<version>-macos-universal.zip`:
+one app for Apple Silicon and Intel Macs, macOS 14 or newer. Unzip it and
+move `Snap64Recomp.app` anywhere. It is signed by nobody, so the first start
+is a right-click and Open, or on macOS 15 a double-click, then System
+Settings > Privacy & Security > Open Anyway; once is enough. The port asks
+for your ROM on the first start and keeps everything it writes in
+`~/Library/Application Support/Snap64 Recomp/` (the ROM, saves, photos,
+settings, the log and the mods folder); nothing goes inside the app.
+Rendering is Metal. Mods load as on the other platforms.
+
+What has been seen: GitHub's own Mac builds the app and runs it on every
+release candidate, and on it the game boots to the intro, plays the Beach
+with photos scored, loads a mod, and quits cleanly, natively and through
+Rosetta 2. No physical Mac has run it yet; the first report from one would
+be welcome, with `snap64.log` from the folder above.
+
 ## FAQ
 
 ### What is static recompilation?
@@ -347,8 +368,8 @@ Planned, roughly in this order.
    to send one, with `snap64.log` attached.
 2. **A Linux desktop.** The native build has run under WSL and on a Deck,
    and on no Linux desktop yet. The first report from one would be welcome.
-3. **macOS.** The code is in the tree and has never run on a Mac. It
-   needs someone with one to try it.
+3. **macOS.** The Mac build runs on GitHub's virtual Mac; it needs someone
+   with a physical one to try it.
 
 The same list, with a place to reply, is pinned under
 [Discussions](https://github.com/JackandBeans/Snap64Recomp/discussions/1).
@@ -384,10 +405,12 @@ are the way in. Questions and requests have a place under
 The whole game has been played through on a Windows PC. That is every
 course, every course again with Widescreen on, Oak's evaluations, the
 Report, the album, the Gallery and a Snap Station print. On a Steam Deck,
-the Beach, the menus, the settings and the station have been played.
+the Beach, the menus, the settings and the station have been played. On
+GitHub's virtual Mac, the intro, a Beach ride with its photos scored and a
+mod's hooks have run, natively and under Rosetta 2.
 
 Every release also passes an automated suite before it ships
-(`tools/release_check.py`). On the 1.0.9 executable it passed 28 of 28
+(`tools/release_check.py`). On the 1.1.0 executable it passed 29 of 29
 checks, and the station's 5 of 5. [VERIFICATION.md](docs/VERIFICATION.md) says what
 each check does, what every release reported, and what has only been read
 from the code and not seen.
@@ -399,7 +422,7 @@ under WSL, N64Recomp for the game and the patches, CMake and MSVC on
 Windows, and a list of things git does not carry
 ([What a clean checkout is missing](BUILDING.md#what-a-clean-checkout-is-missing)).
 `cpack -C Release` in the build directory then writes
-`Snap64Recomp-1.0.9-win64.zip` ([step 13](BUILDING.md#13-package)).
+`Snap64Recomp-1.1.0-win64.zip` ([step 13](BUILDING.md#13-package)).
 
 <a id="how-i-made-it"></a>
 ## How it was made
@@ -469,7 +492,7 @@ None of this would exist without:
 * Jack and Beans, the team at HAL Laboratory who made the game. Their name,
   shown in the game's opening and at the head of its credits, gave me the
   name I use here. It is on the title screen's credits line,
-  `JackandBeans (Snap64 Recomp) · v1.0.9`, with the port's name and version
+  `JackandBeans (Snap64 Recomp) · v1.1.0`, with the port's name and version
   ([the game's history](docs/HISTORY.md)).
 * [Video Game Esoterica](https://www.youtube.com/@VideoGameEsoterica), whose video on the port,
   ["Pokemon Snap Recomp Out NOW! More Pokemon PC Ports"](https://youtu.be/1ds9leciGU4?si=iLBwSeI-OqSO8NsI), asked

@@ -427,6 +427,14 @@ def check_pages(c, exe_dir):
     c.add('pages-closed', fit is not None and fit[0] < fit[1],
           ('closed by the key; the display list reached %d of %d bytes with them up' % fit) if fit
           else 'the pages never closed (no display-list line)')
+    # The music is held with the screen: the host skips the BGM sequence
+    # players' handler while the pages are up and reports each player's
+    # own clock at the hold and at the release; equal means the music
+    # comes back where it was.
+    held = [l for l in lines if l.startswith('[SNAP-BGM] ')]
+    c.add('pages-music', bool(held) and all(' stood ' in l for l in held),
+          (held[0].split('] ', 1)[1] if held else 'the music was never held with the screen')
+          + ('' if all(' stood ' in l for l in held) else '; a player MOVED while held'))
 
 
 def check_settings(c, exe_dir):

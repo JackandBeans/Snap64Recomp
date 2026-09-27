@@ -581,7 +581,11 @@ recomp::mods::ModOpenError parse_config_option_dependencies(const nlohmann::json
     size_t option_index = schema.options_by_id[option_id];
     recomp::config::ConfigOption &option = schema.options[option_index];
 
-    auto conditional_add_dependency = [config_schema_json, schema, option, option_index](recomp::config::ConfigOptionDependency &dependency, const std::string_view &dep_key) -> bool {
+    // Pokemon Snap port: each rule goes into the config's own schema, through
+    // its add_option_*_dependency. `schema` above is a copy, and a rule added
+    // to it (as upstream does) was dropped with it: no mod's hidden_from or
+    // disabled_from ever took effect.
+    auto conditional_add_dependency = [&config, config_schema_json, schema, option](bool hidden, const std::string_view &dep_key) -> bool {
         auto find_it = config_schema_json.find(dep_key);
         if (find_it == config_schema_json.end()) {
             return true;
@@ -623,13 +627,17 @@ recomp::mods::ModOpenError parse_config_option_dependencies(const nlohmann::json
             return false;
         }
 
-        dependency.add_option_dependency(option_index, source_dependency_index, matches);
+        if (hidden) {
+            config.add_option_hidden_dependency(option.id, source_dependency_id, matches);
+        } else {
+            config.add_option_disable_dependency(option.id, source_dependency_id, matches);
+        }
         return true;
     };
 
-    bool disable_success = conditional_add_dependency(schema.disable_dependencies, config_schema_disabled_from_key);
+    bool disable_success = conditional_add_dependency(false, config_schema_disabled_from_key);
     if (!disable_success) return recomp::mods::ModOpenError::InvalidDisableOptionDependency;
-    bool hidden_success = conditional_add_dependency(schema.hidden_dependencies, config_schema_hidden_from_key);
+    bool hidden_success = conditional_add_dependency(true, config_schema_hidden_from_key);
     if (!hidden_success) return recomp::mods::ModOpenError::InvalidHiddenOptionDependency;
 
     return recomp::mods::ModOpenError::Good;

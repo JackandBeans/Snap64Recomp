@@ -153,12 +153,20 @@ static s32 snap_start_closes(void) {
     return 0;
 }
 
-/* The list's dress over a course or any other screen (the course block
- * below): its legend, which the Mods page takes down for its own hint. */
-static void snap_course_legend_show(s32 show);
+/* Shows or hides one of the course block's strips (below); the Mods page
+ * uses it for its own. */
 static void snap_course_gobj_show(u32 word, s32 show);
 
+/* Set for one move sound that must not play: the mouse walking the
+ * selection to the row under the pointer steps through the rows between,
+ * and only the last step is heard (snap_page_mouse). */
+static s32 snap_quiet_move = 0;
+
 static void snap_ui_sound(s32 kind) {
+    if ((kind == SND_MOVE) && snap_quiet_move) {
+        snap_quiet_move = 0;
+        return;
+    }
     if (snap_page_ctx == 1) {
         auPlaySound((kind == SND_OK) ? 66 : 65);
         return;
@@ -189,7 +197,10 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *   +0x28  u8   SOUND fields 0..5, through +0x2D (sfx_volume_patch.c reads
  *               them too)
  *   +0x30  u32  MBOX_DBG, retired
- *   +0x40  u32  the audio backlog word the patched AI_LEN read consumes
+ *   +0x40  u8   MBOX_SFX_HELD: the sound effects the pages from anywhere
+ *               turned down at their press (anywhere_patch.inc), which the
+ *               host reports when they close (src/audio.cpp); once the
+ *               audio backlog word, before the AI_LEN reads asked the queue live
  *               (src/overlay_hook.cpp); moved here from 0x80700004 because
  *               the Snap Station boot's memory test sweeps 0x80400000-0x807FFFF0
  *   +0x44  u32  SNAP_VIEW_WIDE_Q8, host-owned: the renderer's horizontal
@@ -214,6 +225,17 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *   +0x74  u32  SCRATCH_HELP_EXIT, the patch's own: its help line
  *   +0x78  u32  SCRATCH_HELP_EXIT2, the patch's own: its question line
  *   +0x84  u32  SCRATCH_HELP_MODS, the patch's own: the MODS item's help line
+ *   +0x88  u32  MOUSE_POS, host-owned: the pointer in the game's 320 by 240,
+ *               x << 16 | y, all ones off the picture (src/input.cpp)
+ *   +0x8C  u8   MOUSE_MOVED, MOUSE_CLICK, MOUSE_BACK, MOUSE_WUP through +0x8F,
+ *               host-owned counts; +0x90 MOUSE_WDN; +0x91 MOUSE_CLAIM, raised
+ *               by a menu that takes the mouse, lowered by the host each reading;
+ *               +0x92 MOUSE_HELD, host-owned: 1 while the left button is down
+ *   +0x94  u32  MBOX_STACK_LEFT, the least room the pages left on their stack,
+ *               +0x98 MBOX_STACK_SIZE, that stack's size (snap_stack_mark)
+ *   +0x9C  u8   BIND_CLEAR, host-owned, taken by the BUTTON SETUP page: 1
+ *               when Delete or Backspace was pressed there (it clears the
+ *               row, as Z does); the page sets it back to 0
  *   +0x60  u32  CONTROLS sequence word
  *   +0x64  u8   CONTROLS fields 0..9, through +0x6D: mouse aim, the mouse
  *               speed's step, the zoom speed's step, the tilt, the gyro
@@ -249,6 +271,9 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *   +0xBF  u8   MODS_TOP, the page's: the first row of the window it shows
  *   +0xC0  u8   MODS_STATE, host-owned, one byte per bank: bit i is the
  *               window's row i, 1 when its mod is on
+ *   +0xDE  u8   MODS_NEEDED, host-owned, one byte per bank: the rows a mod
+ *               that is on keeps on (+0xC2 options, +0xDA new, +0xDC error)
+ *   +0xC6  u8   DET_NO_BY, host-owned: the details page's mod names no author
  *   +0x100      SCRATCH_ARRAYS, the page's pointer and snapshot arrays
  *               (the BUTTON SETUP page's own twenty-row arrays sit at +0x300
  *               and +0x350 inside it)
@@ -425,14 +450,46 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_DRESS_LEGEND     267
 /* A mod's options page (snap_mod_options_page): two banks of six names, six
  * values and six help lines the host composes for the window shown; the
- * Mods page's hint at the header's right, in its three forms; the options
- * page's heading and its line for a mod without options. */
+ * options page's heading and its line for a mod without options. */
 #define STR_OPT_DYN          268  /* ..303: bank b, name i at b*18+i, value at b*18+6+i, help at b*18+12+i */
-#define STR_MODS_HINT_BOTH   304
-#define STR_MODS_HINT_OPT    305
-#define STR_MODS_HINT_ORDER  306
+/* The Mods page's values for a mod installed during play and for a mod file
+ * that will not load, and the Restart row's question after one A (these ids
+ * were once the page's hint at the header's right). */
+#define STR_MODS_VAL_NEW     304
+#define STR_MODS_VAL_BAD     305
+#define STR_MODS_RESTART_ASK 306
 #define STR_OPT_HDR          307
 #define STR_OPT_NONE         308
+/* A mod's details page (snap_mod_details_page): its heading, its title (the
+ * mod's name and version), up to DET_LINES lines of text and its help box,
+ * composed by the host when the page opens (src/menu_assets.cpp,
+ * details_compose). */
+#define STR_DET_HDR          309
+#define STR_DET_TITLE        310
+#define STR_DET_LINE         311  /* ..334 */
+#define STR_DET_HELP         335
+#define DET_LINES            24
+/* The header's legend in other words (src/menu_assets.cpp compose_legend),
+ * 32-bit as the stock one, drawn at x 150 so they end where it ends. */
+#define STR_LEGEND_MODS      336  /* A Details  B Back */
+#define STR_LEGEND_DET_OPT   337  /* A Options  B Back */
+#define STR_LEGEND_BACK      338  /* B Back */
+#define STR_WHITE_TILE       339  /* a white tile, 16 square, for the scroll bar */
+#define STR_DET_VERSION      340  /* right-aligned in a 256-texel strip */
+#define STR_DET_BY_LABEL     341
+#define STR_DET_BY_VALUE     342
+#define STR_DET_ST_LABEL     343
+#define STR_DET_ST_VALUE     344
+#define STR_DET_THUMB        345  /* ..352: the mod's picture, eight bands of 256x32 RGBA16 */
+#define STR_LEGEND_OK_BACK   353  /* A OK  B Back, on the rows under the mods */
+#define STR_MODS_VAL_ON_FIXED 354 /* On without chevrons: a mod that a mod that is on needs */
+#define STR_MODS_VAL_NEW_GLOW 356 /* New in the title's rainbow, RGBA16, recoloured live by the host */
+#define STR_MODS_EMPTY_SUB   357  /* the empty page's second line, centred in 256 texels */
+#define DET_THUMB_BANDS      8
+#define DET_RIGHT            270    /* where a page's version and rules end, 10 in from the panel as the text starts */
+#define RULE_GRAY            0xB0   /* a page's rules: clear over the island, one step under the header's (217) */
+#define LEGEND_X             150
+#define LEGEND_Y             41
 
 /* The SOUND bank of the mailbox: its own sequence word and value bytes
  * (percent volumes; stereo and background-mute booleans). The patched
@@ -460,6 +517,164 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 /* The runner's word on what it did with a press, for the host's log:
  * 1 no staged strings, 2 a page was already up, 3 the pages ran. */
 #define MBOX_RUNNER_NOTE (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x3F))
+/* Set while the pages from anywhere hold the music with the screen
+ * (anywhere_patch.inc): the host skips the two BGM sequence players'
+ * handler while it is set (src/overlay_hook.cpp), and the Sound page's
+ * live music scale waits for the release. */
+#define MBOX_BGM_HOLD (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x4C))
+
+/* The mouse, for the menus (src/input.cpp, publish_pointer). The host puts
+ * the pointer at +0x88 in the game's own 320 by 240, as x << 16 | y (all
+ * ones off the picture), and a byte apiece of its counts -- moved, clicked,
+ * right-clicked, wheel up at +0x8C, wheel down at +0x90. A menu that takes
+ * the mouse raises the claim at +0x91 every frame (snap_mouse_take): while
+ * it is up the host keeps the mouse's buttons out of the controller, so a
+ * click is no longer A for whatever the menu has highlighted, and the menu
+ * turns it into the item under the pointer instead. The pointer moving
+ * over an item selects it; a click there chooses it; a click elsewhere
+ * does nothing; the right button is B; the wheel steps up and down. */
+#define MOUSE_POS    (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x88))
+#define MOUSE_MOVED  (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x8C))
+#define MOUSE_CLICK  (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x8D))
+#define MOUSE_BACK   (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x8E))
+#define MOUSE_WUP    (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x8F))
+#define MOUSE_WDN    (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x90))
+#define MOUSE_CLAIM  (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x91))
+#define MOUSE_HELD   (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x92))   /* 1 while the left button is down */
+
+#define SNAP_MOUSE_MOVED 1
+#define SNAP_MOUSE_CLICK 2
+#define SNAP_MOUSE_BACK  4
+#define SNAP_MOUSE_UP    8
+#define SNAP_MOUSE_DOWN  16
+
+/* The pages' stack, measured: the least room left between the page code's
+ * frames and the far end of the coroutine's stack, where the canary ohWait
+ * checks sits (sys/oh.c), and that stack's size. The host prints them when
+ * the Mods page closes (src/menu_assets.cpp) and sets the first back to all
+ * ones when it opens. Marked every frame a page reads the mouse. The pages
+ * run on a stack of their own (snap_big_stack_process, below), SNAP_PAGES_
+ * STACK bytes: the course's own, 768 bytes in the Rainbow Cloud's, left a
+ * mod's options too little, and the canary under them was trampled. */
+#define MBOX_STACK_LEFT (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x94))
+#define MBOX_STACK_SIZE (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x98))
+#define BIND_CLEAR      (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x9C))
+extern GObjProcess* omCurrentProcess;
+
+static void snap_stack_mark(void) {
+    s32 here;
+    GObjProcess* proc = omCurrentProcess;
+    u32 left;
+
+    if ((proc == NULL) || (proc->kind != 0) || (proc->unk_1C.thread == NULL)) {
+        return;
+    }
+    left = (u32) &here - (u32) proc->unk_1C.thread->osStack;
+    if (left < MBOX_STACK_LEFT) {
+        MBOX_STACK_LEFT = left;
+        MBOX_STACK_SIZE = proc->unk_1C.thread->stackSize;
+    }
+}
+
+/* The counts a menu has seen: taken at its start, so a click made before
+ * it opened is not one of its own. */
+typedef struct SnapMouse {
+    u8 moved;
+    u8 click;
+    u8 back;
+    u8 wup;
+    u8 wdn;
+    s8 target;     /* a page's row the pointer asked for, -1 for none */
+    s8 pendRow;    /* a row clicked, acted on when the selection is there */
+    s8 pendSide;   /* where on it: -1, 1 the value's left or right half, 0 the label */
+    u8 clickOnSel; /* the clicked row was already the selected one */
+    u8 noWalk;     /* the page is dragging: the pointer does not walk the selection */
+} SnapMouse;
+
+/* The header's A and B as buttons (defined after the strip builders). */
+static SObj* snap_stock_legend(void);
+static void snap_tint(GObj* gobj, u8 r, u8 g, u8 b);
+static void snap_header_track(s32 ev);
+static s32 snap_header_hit(void);
+static void snap_header_done(void);
+
+static void snap_mouse_begin(SnapMouse* m) {
+    snap_header_done();
+    m->moved = MOUSE_MOVED;
+    m->click = MOUSE_CLICK;
+    m->back = MOUSE_BACK;
+    m->wup = MOUSE_WUP;
+    m->wdn = MOUSE_WDN;
+    m->target = -1;
+    m->pendRow = -1;
+    m->pendSide = 0;
+    m->clickOnSel = 0;
+    m->noWalk = 0;
+    MOUSE_CLAIM = 4;
+}
+
+/* What the mouse did since the last look, as SNAP_MOUSE_* bits, and the
+ * claim raised for this frame. */
+static s32 snap_mouse_take(SnapMouse* m) {
+    s32 ev = 0;
+    u8 v;
+
+    snap_stack_mark();
+    MOUSE_CLAIM = 4;
+    if ((v = MOUSE_MOVED) != m->moved) {
+        m->moved = v;
+        ev |= SNAP_MOUSE_MOVED;
+    }
+    if ((v = MOUSE_CLICK) != m->click) {
+        m->click = v;
+        ev |= SNAP_MOUSE_CLICK;
+    }
+    if ((v = MOUSE_BACK) != m->back) {
+        m->back = v;
+        ev |= SNAP_MOUSE_BACK;
+    }
+    if ((v = MOUSE_WUP) != m->wup) {
+        m->wup = v;
+        ev |= SNAP_MOUSE_UP;
+    }
+    if ((v = MOUSE_WDN) != m->wdn) {
+        m->wdn = v;
+        ev |= SNAP_MOUSE_DOWN;
+    }
+    return ev;
+}
+
+/* Whether the pointer is inside a rectangle of the game's screen. */
+static s32 snap_mouse_in(s32 x, s32 y, s32 w, s32 h) {
+    u32 pos = MOUSE_POS;
+    s32 px, py;
+
+    if (pos == 0xFFFFFFFF) {
+        return 0;
+    }
+    px = (s16) (pos >> 16);
+    py = (s16) (pos & 0xFFFF);
+    return (px >= x) && (px < x + w) && (py >= y) && (py < y + h);
+}
+
+/* Whether the pointer is on a sprite, with a margin around it. */
+static s32 snap_mouse_on_sprite(SObj* sobj, s32 margin) {
+    Sprite* sp;
+    s32 w, h;
+
+    if ((sobj == NULL) || (sobj->sprite.attr & SP_HIDDEN)) {
+        return 0;
+    }
+    sp = &sobj->sprite;
+    w = sp->width;
+    h = sp->height;
+    if (sp->attr & SP_SCALE) {
+        w = (s32) (w * sp->scalex);
+        h = (s32) (h * sp->scaley);
+    }
+    return snap_mouse_in(sp->x - margin, sp->y - margin, w + 2 * margin, h + 2 * margin);
+}
+
 #define SND_SEQ      (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x20))
 #define SND_FIELD(i) (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x28 + (i)))
 
@@ -499,6 +714,145 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define ARROW_X        34
 #define ARROW_UP_Y     72
 #define ARROW_DN_Y     151
+/* The first row's y and the up chevron's, as the page on screen has them:
+ * a mod's options start a row lower, under the mod's name. */
+static s32 snap_rows_top_y = PAGE_TOP_Y;
+/* A page of rows with a footer: from row snap_gap_row on, the rows stand
+ * snap_gap_slots rows lower (the Mods page's actions, at the bottom of the
+ * list under the mods); -1 for a page without one. */
+static s32 snap_gap_row = -1;
+static s32 snap_gap_slots;
+static s32 snap_row_y(s32 top, s32 k) {
+    return snap_rows_top_y +
+           (k + (((snap_gap_row >= 0) && (top + k >= snap_gap_row)) ? snap_gap_slots : 0)) * PAGE_PITCH;
+}
+static s32 snap_arrow_up_y = ARROW_UP_Y;
+static s32 snap_arrow_dn_y = ARROW_DN_Y;
+/* A page that shows its place with a scroll bar at the right, as a mod's
+ * details and options do, instead of the chevrons: the chevrons stay hidden
+ * while snap_arrows_off is set, and a click on the bar above its thumb steps
+ * up, below it down. */
+#define PAGE_BAR_X     275
+static s32 snap_arrows_off;
+static s32 snap_bar_shown;
+static s32 snap_bar_h;
+static GObj* snap_bar_thumb;
+
+/* The row of a page of rows the pointer is on, or -1. */
+static s32 snap_mouse_row(s32 top, s32 visible, s32 count) {
+    s32 k;
+    for (k = 0; (k < visible) && (top + k < count); k++) {
+        if (snap_mouse_in(36, snap_row_y(top, k) - 2, 250, PAGE_PITCH)) {
+            return top + k;
+        }
+    }
+    return -1;
+}
+
+/* The mouse on a page of rows (Graphics, Sound, Controls, Button Setup,
+ * Mods, a mod's options): the rows stand PAGE_PITCH apart from PAGE_TOP_Y
+ * between the rules. The pointer moving onto a row walks the selection
+ * there through the page's own up and down -- one row a frame, heard only
+ * on the last -- so every page keeps its own rules for a move (the help
+ * line, a question withdrawn, the Mods window's bank). A click on a row
+ * selects it and, once the selection is there, is handed back as the row
+ * with the side of its value it landed on (-1 left half, 1 right half, 0
+ * the label), for the page to turn into a change of value or into A. The
+ * header's A OK and B Cancel are A and B, the right button is B, the wheel
+ * and the scroll chevrons step. valueBase is the page's array of value
+ * objects, indexed by row, or by window slot from valueSlot0 when that is
+ * not negative. Returns the clicked row, or -1; m->clickOnSel then says
+ * whether that row was already the selected one when it was clicked. */
+static s32 snap_page_mouse(SnapMouse* m, s32 sel, s32 top, s32 visible, s32 count,
+                           u32 valueBase, s32 valueSlot0,
+                           s32* navUp, s32* navDown, s32* side, s32* a, s32* b) {
+    s32 ev = snap_mouse_take(m);
+    s32 hit = -1;
+    s32 k;
+
+    *side = 0;
+    snap_header_track(ev);
+    /* The scroll bar first: the rows' own box reaches under it. */
+    if ((ev & SNAP_MOUSE_CLICK) && !m->noWalk && snap_bar_shown && (snap_bar_thumb != NULL) &&
+        (snap_bar_thumb->data.sobj != NULL) && snap_mouse_in(PAGE_BAR_X - 6, snap_rows_top_y, 14, snap_bar_h)) {
+        if (snap_mouse_in(PAGE_BAR_X - 6, snap_rows_top_y, 14, snap_bar_thumb->data.sobj->sprite.y - snap_rows_top_y)) {
+            *navUp = 1;
+        } else {
+            *navDown = 1;
+        }
+        return -1;
+    }
+    for (k = 0; (k < visible) && (top + k < count); k++) {
+        if (snap_mouse_in(36, snap_row_y(top, k) - 2, 250, PAGE_PITCH)) {
+            hit = top + k;
+        }
+    }
+    if ((ev & SNAP_MOUSE_MOVED) && (hit >= 0) && !m->noWalk) {
+        m->target = (s8) hit;
+        if (hit != m->pendRow) {
+            m->pendRow = -1;
+        }
+    }
+    if ((ev & SNAP_MOUSE_CLICK) && !m->noWalk) {
+        if (hit >= 0) {
+            GObj* value;
+            s32 slot = (valueSlot0 < 0) ? hit : (hit - top + valueSlot0);
+            m->target = (s8) hit;
+            m->pendRow = (s8) hit;
+            m->pendSide = 0;
+            m->clickOnSel = (hit == sel);
+            value = (GObj*) *(volatile u32*) (valueBase + slot * 4);
+            if ((value != NULL) && (value->data.sobj != NULL) && !(value->data.sobj->sprite.attr & SP_HIDDEN)) {
+                Sprite* sp = &value->data.sobj->sprite;
+                if (snap_mouse_in(sp->x - 6, snap_row_y(top, hit - top) - 2, sp->width + 12, PAGE_PITCH)) {
+                    m->pendSide = snap_mouse_in(sp->x - 6, 0, 6 + sp->width / 2, 240) ? -1 : 1;
+                }
+            }
+        } else if (snap_header_hit() == 1) {
+            *a = 1;
+        } else if (snap_header_hit() == 2) {
+            *b = 1;
+        } else if (snap_mouse_in(ARROW_X - 6, snap_arrow_up_y - 4, 20, 16)) {
+            *navUp = 1;
+        } else if (snap_mouse_in(ARROW_X - 6, snap_arrow_dn_y - 4, 20, 16)) {
+            *navDown = 1;
+        }
+    }
+    if (ev & SNAP_MOUSE_BACK) {
+        *b = 1;
+    }
+    if (ev & SNAP_MOUSE_UP) {
+        *navUp = 1;
+        m->target = -1;
+        m->pendRow = -1;
+    }
+    if (ev & SNAP_MOUSE_DOWN) {
+        *navDown = 1;
+        m->target = -1;
+        m->pendRow = -1;
+    }
+    if ((m->target >= count) || (m->target < -1)) {
+        m->target = -1;
+    }
+    if ((m->target >= 0) && !*navUp && !*navDown) {
+        if (m->target < sel) {
+            *navUp = 1;
+            snap_quiet_move = (m->target != sel - 1);
+        } else if (m->target > sel) {
+            *navDown = 1;
+            snap_quiet_move = (m->target != sel + 1);
+        } else {
+            m->target = -1;
+        }
+    }
+    if ((m->pendRow >= 0) && (m->pendRow == sel) && !*navUp && !*navDown) {
+        k = m->pendRow;
+        *side = m->pendSide;
+        m->pendRow = -1;
+        return k;
+    }
+    return -1;
+}
 
 #define SEL_R 0xFF
 #define SEL_G 0x82
@@ -512,6 +866,24 @@ static GObj* snap_make_strip_siz(s32 id, s32 x, s32 y, u8 fmt, u8 siz);
 
 static GObj* snap_make_strip(s32 id, s32 x, s32 y) {
     return snap_make_strip_fmt(id, x, y, G_IM_FMT_IA);
+}
+
+/* A tile (string 0 black, STR_WHITE_TILE white, each sixteen texels square)
+ * stretched over a rectangle of the screen. */
+static GObj* snap_tile_make(s32 id, s32 x, s32 y, s32 w, s32 h, u8 alpha) {
+    GObj* gobj = snap_make_strip(id, x, y);
+
+    if ((gobj != NULL) && (gobj->data.sobj != NULL)) {
+        Sprite* sp = &gobj->data.sobj->sprite;
+        sp->nbitmaps = 1;
+        sp->bitmap[0].width = 16;
+        sp->bitmap[0].width_img = 16;
+        sp->attr |= SP_SCALE;
+        sp->scalex = (f32) w / 16.0f;
+        sp->scaley = (f32) h / 16.0f;
+        sp->alpha = alpha;
+    }
+    return gobj;
 }
 
 /* Builds the Sprite + Bitmap chain for a staged strip without creating a
@@ -545,6 +917,181 @@ static GObj* snap_make_strip_siz(s32 id, s32 x, s32 y, u8 fmt, u8 siz) {
 
 static GObj* snap_make_strip_32(s32 id, s32 x, s32 y) {
     return snap_make_strip_siz(id, x, y, G_IM_FMT_RGBA, G_IM_SIZ_32b);
+}
+
+/* -------------------------------------------------------------------------
+ * The header's A and B under the mouse, as the rows are: moving onto one
+ * plays the move sound and underlines it in the selection's orange, and a
+ * click on it is that button. The legend on screen is the first visible of
+ * the pages' own (made through snap_make_legend) or else the stock one, and
+ * its buttons are read off its own pixels -- the A icon blue, the B icon
+ * green, the words after each -- so every legend ("A OK  B Cancel", "A
+ * Details  B Back", "B Back", "A Type  B Cancel") has its own buttons.
+ * ---------------------------------------------------------------------- */
+#define SNAP_LEGENDS 4
+static GObj* snap_legend_obj[SNAP_LEGENDS];
+static s32 snap_legend_id[SNAP_LEGENDS];
+static GObj* snap_header_line;
+static s32 snap_header_hover;          /* 0 none, 1 A, 2 B */
+static s32 snap_header_scan_id = -1;
+static s32 snap_hdr_ax0, snap_hdr_ax1, snap_hdr_bx0, snap_hdr_bx1;   /* columns of the strip; -1 none */
+static s32 snap_hdr_x, snap_hdr_y, snap_hdr_h, snap_hdr_on;
+static u8 snap_hdr_ink[384];
+
+static GObj* snap_make_legend(s32 id) {
+    GObj* g = snap_make_strip_32(id, LEGEND_X, LEGEND_Y);
+    s32 i;
+    for (i = 0; i < SNAP_LEGENDS; i++) {
+        if (snap_legend_obj[i] == NULL) {
+            snap_legend_obj[i] = g;
+            snap_legend_id[i] = id;
+            break;
+        }
+    }
+    return g;
+}
+
+static void snap_free_legend(GObj* g) {
+    s32 i;
+    if (g == NULL) {
+        return;
+    }
+    for (i = 0; i < SNAP_LEGENDS; i++) {
+        if (snap_legend_obj[i] == g) {
+            snap_legend_obj[i] = NULL;
+        }
+    }
+    omDeleteGObj(g);
+}
+
+/* A 32-bit legend strip's two buttons: from the A icon's first column to the
+ * last ink before the B icon, and from the B icon's to the last ink. */
+static void snap_legend_scan(s32 id) {
+    const u32 base = DIR_ADDR(id);
+    const s32 w = (DIR_W(id) < 384) ? DIR_W(id) : 384;
+    const s32 h = DIR_H(id);
+    s32 c, y;
+    snap_hdr_ax0 = snap_hdr_ax1 = snap_hdr_bx0 = snap_hdr_bx1 = -1;
+    snap_hdr_h = h;
+    for (c = 0; c < w; c++) {
+        volatile u32* blk = (volatile u32*) (base + (u32) ((c / 64) * 64 * h * 4));
+        snap_hdr_ink[c] = 0;
+        for (y = 0; y < h; y++) {
+            const u32 px = blk[y * 64 + (c % 64)];
+            const s32 r = (s32) (px >> 24);
+            const s32 g = (s32) ((px >> 16) & 0xFF);
+            const s32 b = (s32) ((px >> 8) & 0xFF);
+            if ((px & 0xFF) < 128) {
+                continue;
+            }
+            snap_hdr_ink[c] = 1;
+            snap_hdr_bx1 = c;
+            if ((snap_hdr_ax0 < 0) && (snap_hdr_bx0 < 0) && (b > r + 60) && (b > g + 30)) {
+                snap_hdr_ax0 = c;
+            }
+            if ((snap_hdr_bx0 < 0) && (g > r + 60) && (g > b + 60)) {
+                snap_hdr_bx0 = c;
+            }
+        }
+    }
+    if ((snap_hdr_ax0 >= 0) && (snap_hdr_bx0 > snap_hdr_ax0)) {
+        for (c = snap_hdr_bx0 - 1; c > snap_hdr_ax0; c--) {
+            if (snap_hdr_ink[c] && !snap_hdr_ink[c + 1] && (c + 1 < snap_hdr_bx0)) {
+                break;
+            }
+        }
+        snap_hdr_ax1 = c;
+    } else {
+        snap_hdr_ax0 = -1;
+    }
+    if (snap_hdr_bx0 < 0) {
+        snap_hdr_bx1 = -1;
+    }
+}
+
+/* Which button the pointer is on now: 0, 1 (A) or 2 (B). */
+static s32 snap_header_hit(void) {
+    if (!snap_hdr_on) {
+        return 0;
+    }
+    if ((snap_hdr_ax0 >= 0) &&
+        snap_mouse_in(snap_hdr_x + snap_hdr_ax0 - 3, snap_hdr_y - 4, snap_hdr_ax1 - snap_hdr_ax0 + 7, snap_hdr_h + 8)) {
+        return 1;
+    }
+    if ((snap_hdr_bx0 >= 0) &&
+        snap_mouse_in(snap_hdr_x + snap_hdr_bx0 - 3, snap_hdr_y - 4, snap_hdr_bx1 - snap_hdr_bx0 + 7, snap_hdr_h + 8)) {
+        return 2;
+    }
+    return 0;
+}
+
+/* Each frame a page takes the mouse: the legend on screen, and the button
+ * the pointer moved onto (only a move changes it, so a pointer resting on
+ * the header plays no sound when a page opens under it). */
+static void snap_header_track(s32 ev) {
+    s32 i, id, part, p0, p1;
+    SObj* so = NULL;
+    id = -1;
+    for (i = 0; i < SNAP_LEGENDS; i++) {
+        GObj* g = snap_legend_obj[i];
+        if ((g != NULL) && (g->data.sobj != NULL) && !(g->data.sobj->sprite.attr & SP_HIDDEN)) {
+            id = snap_legend_id[i];
+            so = g->data.sobj;
+            break;
+        }
+    }
+    if (id < 0) {
+        SObj* st = snap_stock_legend();
+        /* The stock legend's art is staged too, as the dress's copy. */
+        if ((st != NULL) && !(st->sprite.attr & SP_HIDDEN) && ((u32) STR_DRESS_LEGEND < DIR_COUNT) &&
+            (DIR_W(STR_DRESS_LEGEND) > 0)) {
+            id = STR_DRESS_LEGEND;
+            so = st;
+        }
+    }
+    snap_hdr_on = (id >= 0);
+    part = 0;
+    if (snap_hdr_on) {
+        if (id != snap_header_scan_id) {
+            snap_legend_scan(id);
+            snap_header_scan_id = id;
+        }
+        snap_hdr_x = so->sprite.x;
+        snap_hdr_y = so->sprite.y;
+        part = (ev & SNAP_MOUSE_MOVED) ? snap_header_hit() : snap_header_hover;
+    }
+    if (part != snap_header_hover) {
+        if (part != 0) {
+            snap_ui_sound(SND_MOVE);
+        }
+        snap_header_hover = part;
+    }
+    if (part != 0) {
+        p0 = (part == 1) ? snap_hdr_ax0 : snap_hdr_bx0;
+        p1 = (part == 1) ? snap_hdr_ax1 : snap_hdr_bx1;
+        if (snap_header_line == NULL) {
+            snap_header_line = snap_tile_make(STR_WHITE_TILE, 0, 0, 16, 1, 0xFF);
+            snap_tint(snap_header_line, SEL_R, SEL_G, SEL_B);
+        }
+        if ((snap_header_line != NULL) && (snap_header_line->data.sobj != NULL)) {
+            Sprite* sp = &snap_header_line->data.sobj->sprite;
+            sp->x = snap_hdr_x + p0;
+            sp->y = snap_hdr_y + snap_hdr_h + 1;
+            sp->scalex = (f32) (p1 - p0 + 1) / 16.0f;
+        }
+        snap_course_gobj_show((u32) snap_header_line, 1);
+    } else if (snap_header_line != NULL) {
+        snap_course_gobj_show((u32) snap_header_line, 0);
+    }
+}
+
+/* A list closing (or a page starting): the underline goes with it. */
+static void snap_header_done(void) {
+    if (snap_header_line != NULL) {
+        omDeleteGObj(snap_header_line);
+        snap_header_line = NULL;
+    }
+    snap_header_hover = 0;
 }
 
 /* -------------------------------------------------------------------------
@@ -1186,6 +1733,8 @@ static void snap_graphics_page(void) {
     s32 navDown;
     s32 navLeft;
     s32 navRight;
+    SnapMouse mouse;
+    s32 mouseA, mouseB, clickA, clickB;
     GObj* hdrStrip;
     GObj* descStrip;
     s32 sel, i, moved, hiddenCount;
@@ -1334,11 +1883,16 @@ static void snap_graphics_page(void) {
 
     ohWait(2);
 
+    snap_mouse_begin(&mouse);
+    mouseA = mouseB = 0;
     while (1) {
+        clickA = mouseA;
+        clickB = mouseB;
+        mouseA = mouseB = 0;
         input = func_800AA38C(0);
         moved = 0;
 
-        if (gContInputPressedButtons & B_BUTTON) {
+        if ((gContInputPressedButtons & B_BUTTON) || clickB) {
             /* Cancel. Every stick edit was published live (the host
              * applied it on the next tick and marked the file dirty), so B
              * restores each field byte from the entry snapshot and bumps
@@ -1360,7 +1914,7 @@ static void snap_graphics_page(void) {
             break;
         }
 
-        if ((gContInputPressedButtons & A_BUTTON) || snap_start_closes()) {
+        if (((gContInputPressedButtons & A_BUTTON) || clickA) || snap_start_closes()) {
             /* A accepts what is on screen and leaves, matching the SOUND
              * page. A used to cycle the selected row's value instead --
              * which silently edited AND saved a setting on the button
@@ -1425,6 +1979,18 @@ static void snap_graphics_page(void) {
             }
         }
 
+        {
+            s32 cr, side;
+            cr = snap_page_mouse(&mouse, sel, top, PAGE_VISIBLE, PAGE_ITEMS, SCRATCH_ARRAYS + 0x40, -1,
+                                 &navUp, &navDown, &side, &mouseA, &mouseB);
+            if (cr >= 0) {
+                if (side < 0) {
+                    navLeft = 1;
+                } else if (side > 0) {
+                    navRight = 1;
+                }
+            }
+        }
         if (navUp) {
             snap_tint((GObj*) PAGE_LABEL(sel), 0xFF, 0xFF, 0xFF);
             sel = (sel == 0) ? (PAGE_ITEMS - 1) : (sel - 1);
@@ -1604,6 +2170,8 @@ s8 func_800E7700_A0EC90(void) {
     s8 shownHelp;
     u8 pulseState;
     u8 pulseCounter;
+    SnapMouse mouse;
+    s32 ev, hit, mouseA;
 
     nItems = snap_option_labels();
     armed = 0;
@@ -1640,11 +2208,44 @@ s8 func_800E7700_A0EC90(void) {
     pulseState = 0;
     pulseCounter = 0;
     shownHelp = -1;
+    snap_mouse_begin(&mouse);
     ohWait(1);
 
     while (1) {
         temp_v0_2 = func_800AA38C(0);
-        if (gContInputPressedButtons & A_BUTTON) {
+        /* The mouse: the row under the pointer is selected as it moves
+         * there, a click on a row is A on it -- taken here as a flag, not
+         * laid into gContInputPressedButtons, which the page the choice
+         * opens would read again -- and the right button is B. */
+        ev = snap_mouse_take(&mouse);
+        hit = -1;
+        for (i = 0; i < nItems; i++) {
+            if (snap_mouse_on_sprite((SObj*) LIST_LABEL(i), 3)) {
+                hit = i;
+            }
+        }
+        /* The header's A OK and B Cancel are buttons too: a click on A
+         * chooses the selected item, on B leaves, as the keys do (they had
+         * done nothing, without a sound). */
+        snap_header_track(ev);
+        mouseA = (ev & SNAP_MOUSE_CLICK) && ((hit >= 0) || (snap_header_hit() == 1));
+        if ((ev & SNAP_MOUSE_CLICK) && (hit < 0) && (snap_header_hit() == 2)) {
+            ev |= SNAP_MOUSE_BACK;
+        }
+        if (((ev & SNAP_MOUSE_MOVED) || mouseA) && (hit >= 0) && (hit != MBOX_SEL)) {
+            snap_ui_sound(SND_MOVE);
+            snap_sprite_gray((SObj*) LIST_LABEL(MBOX_SEL), 0xFF);
+            MBOX_SEL = hit;
+            pulseState = 0;
+            armed = 0;
+        }
+        if (ev & SNAP_MOUSE_UP) {
+            temp_v0_2->pressedButtons |= STICK_SLOW_UP;
+        }
+        if (ev & SNAP_MOUSE_DOWN) {
+            temp_v0_2->pressedButtons |= STICK_SLOW_DOWN;
+        }
+        if ((gContInputPressedButtons & A_BUTTON) || mouseA) {
             snap_ui_sound(SND_OK);
             if ((MBOX_SEL == OPT_EXIT) && !armed) {
                 /* Exit Game asks first: the help line becomes the question
@@ -1657,7 +2258,7 @@ s8 func_800E7700_A0EC90(void) {
             }
             pressedB = 0;
             break;
-        } else if (gContInputPressedButtons & B_BUTTON) {
+        } else if ((gContInputPressedButtons & B_BUTTON) || (ev & SNAP_MOUSE_BACK)) {
             snap_ui_sound(SND_BACK);
             if (armed) {
                 armed = 0;
@@ -1777,6 +2378,7 @@ s8 func_800E7700_A0EC90(void) {
         }
     }
 
+    snap_header_done();
     /* The stock screen hides the help line the moment a choice is made. */
     for (i = 0; i < helpCount; i++) {
         ((SObj*) LIST_HELP(i))->sprite.attr |= SP_HIDDEN;
@@ -1968,6 +2570,9 @@ s32 auPlaySoundWithVolume(u32 soundID, s32 vol) {
  * heard without waiting for the game's next volume write. */
 static void snap_apply_music_volume(void) {
     s32 i;
+    if (MBOX_BGM_HOLD != 0) {
+        return;   /* muted and held; the release applies the scale */
+    }
     for (i = 0; i < 2; i++) {
         if (auBGMPlayers[i] != NULL) {
             alCSPSetVol(auBGMPlayers[i], (s16) auBGMVolume[i]);
@@ -2009,6 +2614,8 @@ static void snap_sound_page(void) {
     s32 navDown;
     s32 navLeft;
     s32 navRight;
+    SnapMouse mouse;
+    s32 mouseA, mouseB, clickA, clickB;
     GObj* hdrStrip;
     GObj* descStrip;
     s32 sel, i, moved, hiddenCount;
@@ -2132,11 +2739,16 @@ static void snap_sound_page(void) {
 
     ohWait(2);
 
+    snap_mouse_begin(&mouse);
+    mouseA = mouseB = 0;
     while (1) {
+        clickA = mouseA;
+        clickB = mouseB;
+        mouseA = mouseB = 0;
         input = func_800AA38C(0);
         moved = 0;
 
-        if (gContInputPressedButtons & B_BUTTON) {
+        if ((gContInputPressedButtons & B_BUTTON) || clickB) {
             snap_ui_sound(SND_BACK);
             for (i = 0; i < 6; i++) {
                 SND_FIELD(i) = entryFields[i];
@@ -2148,7 +2760,7 @@ static void snap_sound_page(void) {
             break;
         }
 
-        if ((gContInputPressedButtons & A_BUTTON) || snap_start_closes()) {
+        if (((gContInputPressedButtons & A_BUTTON) || clickA) || snap_start_closes()) {
             /* A accepts what is on screen and leaves, as the header says. */
             snap_ui_sound(SND_OK);
             break;
@@ -2208,6 +2820,18 @@ static void snap_sound_page(void) {
             }
         }
 
+        {
+            s32 cr, side;
+            cr = snap_page_mouse(&mouse, sel, 0, 6, 6, SCRATCH_ARRAYS + 0x40, -1,
+                                 &navUp, &navDown, &side, &mouseA, &mouseB);
+            if (cr >= 0) {
+                if (side < 0) {
+                    navLeft = 1;
+                } else if (side > 0) {
+                    navRight = 1;
+                }
+            }
+        }
         if (navUp) {
             snap_tint((GObj*) PAGE_LABEL(sel), 0xFF, 0xFF, 0xFF);
             sel = (sel == 0) ? 5 : (sel - 1);
@@ -2625,6 +3249,8 @@ static s32 snap_controls_page(void) {
     s32 navDown;
     s32 navLeft;
     s32 navRight;
+    SnapMouse mouse;
+    s32 mouseA, mouseB, clickA, clickB;
     GObj* hdrStrip;
     GObj* descStrip;
     s32 sel, i, moved, hiddenCount;
@@ -2696,11 +3322,16 @@ static s32 snap_controls_page(void) {
 
     ohWait(2);
 
+    snap_mouse_begin(&mouse);
+    mouseA = mouseB = 0;
     while (1) {
+        clickA = mouseA;
+        clickB = mouseB;
+        mouseA = mouseB = 0;
         input = func_800AA38C(0);
         moved = 0;
 
-        if (gContInputPressedButtons & B_BUTTON) {
+        if ((gContInputPressedButtons & B_BUTTON) || clickB) {
             /* Cancel: every row back to what it was at entry, the mouse
              * rows re-published so the host applies the old values. */
             snap_ui_sound(SND_BACK);
@@ -2718,7 +3349,7 @@ static s32 snap_controls_page(void) {
             break;
         }
 
-        if ((gContInputPressedButtons & A_BUTTON) || snap_start_closes()) {
+        if (((gContInputPressedButtons & A_BUTTON) || clickA) || snap_start_closes()) {
             snap_ui_sound(SND_OK);
             if ((sel == CTL_ROW_BUTTONS) && !snap_close_all) {
                 /* Opens the BUTTON SETUP page; the edits made here stand, as
@@ -2783,6 +3414,20 @@ static s32 snap_controls_page(void) {
             }
         }
 
+        {
+            s32 cr, side;
+            cr = snap_page_mouse(&mouse, sel, top, CTL_VISIBLE, CTL_ROWS, SCRATCH_ARRAYS + 0x40, -1,
+                                 &navUp, &navDown, &side, &mouseA, &mouseB);
+            if (cr == CTL_ROW_BUTTONS) {
+                mouseA = 1;   /* the Button Setup row opens its page, as A does */
+            } else if (cr >= 0) {
+                if (side < 0) {
+                    navLeft = 1;
+                } else if (side > 0) {
+                    navRight = 1;
+                }
+            }
+        }
         if (navUp) {
             snap_tint((GObj*) PAGE_LABEL(sel), 0xFF, 0xFF, 0xFF);
             sel = (sel == 0) ? (CTL_ROWS - 1) : (sel - 1);
@@ -3109,11 +3754,14 @@ static void snap_bind_page(void) {
     s32 navDown;
     s32 navLeft;
     s32 navRight;
+    SnapMouse mouse;
+    s32 mouseA, mouseB, clickA, clickB;
     GObj* hdrStrip;
     GObj* descStrip;
     s32 sel, i, hiddenCount;
     s32 top;
     s32 device;
+    s32 clearKey;
     s32 result;
     s32 flash;
     s32 armed;
@@ -3162,6 +3810,7 @@ static void snap_bind_page(void) {
     device = BIND_PAD ? 2 : 0;
     BIND_DEVICE = (u8) device;
     BIND_REQ = 0;
+    BIND_CLEAR = 0;
     gen = BIND_GEN;
     BIND_OPEN = 1;
     for (i = 0; (i < 10) && (BIND_GEN == gen); i++) {
@@ -3191,7 +3840,12 @@ static void snap_bind_page(void) {
 
     ohWait(2);
 
+    snap_mouse_begin(&mouse);
+    mouseA = mouseB = 0;
     while (1) {
+        clickA = mouseA;
+        clickB = mouseB;
+        mouseA = mouseB = 0;
         input = func_800AA38C(0);
 
         /* The host turned the bank: the row values are new. */
@@ -3202,7 +3856,7 @@ static void snap_bind_page(void) {
             }
         }
 
-        if (gContInputPressedButtons & B_BUTTON) {
+        if ((gContInputPressedButtons & B_BUTTON) || clickB) {
             snap_ui_sound(SND_BACK);
             if (armed) {
                 /* Restore Defaults withdrawn, the page stays. */
@@ -3214,7 +3868,7 @@ static void snap_bind_page(void) {
             break;
         }
 
-        if (gContInputPressedButtons & A_BUTTON) {
+        if ((gContInputPressedButtons & A_BUTTON) || clickA) {
             if (BIND_IS_INPUT(sel)) {
                 snap_ui_sound(SND_OK);
                 snap_swap_strip(descStrip, STR_BIND_DESC_LISTEN);
@@ -3255,7 +3909,12 @@ static void snap_bind_page(void) {
             }
         }
 
-        if ((gContInputPressedButtons & Z_TRIG) && BIND_IS_INPUT(sel)) {
+        /* Delete or Backspace from the keyboard clears the row as Z does
+         * (the host takes the key, src/input.cpp): with a mouse, the row
+         * under the pointer. */
+        clearKey = BIND_CLEAR;
+        BIND_CLEAR = 0;
+        if (((gContInputPressedButtons & Z_TRIG) || clearKey) && BIND_IS_INPUT(sel)) {
             result = snap_bind_request((2u << 16) | (((u32) device) << 8) | (u32) (BIND_INPUT(sel) + 1), NULL);
             flash = 0;
             if (result == BIND_KEEP) {
@@ -3323,6 +3982,21 @@ static void snap_bind_page(void) {
             }
         }
 
+        {
+            s32 cr, side;
+            cr = snap_page_mouse(&mouse, sel, top, BIND_VISIBLE, BIND_ROWS, SCRATCH_ARRAYS + 0x250, -1,
+                                 &navUp, &navDown, &side, &mouseA, &mouseB);
+            if (cr == 0) {
+                /* The Device row: its value steps, as Left and Right do. */
+                if (side < 0) {
+                    navLeft = 1;
+                } else if (side > 0) {
+                    navRight = 1;
+                }
+            } else if (cr > 0) {
+                mouseA = 1;   /* an input listens for its press, Restore Defaults asks */
+            }
+        }
         if (navUp) {
             snap_tint((GObj*) BIND_LABEL(sel), 0xFF, 0xFF, 0xFF);
             sel = (sel == 0) ? (BIND_ROWS - 1) : (sel - 1);
@@ -3471,16 +4145,20 @@ static void snap_bind_page(void) {
 /* =========================================================================
  * The MODS page (Options > Mods).
  *
- * One row per mod in the mods folder, six on screen, the value On or Off.
- * A turns the selected mod on or off: the host records it in mods.json at
- * once (MODS_REQ, operation 1) and the row's value and help line follow. A
- * mod's code is loaded when the game starts, so the help line says the
- * change takes effect at the next start. The names and help lines are the
- * host's: it composes the six of the window the page shows (MODS_TOP) into
- * the bank MODS_GEN does not name and turns the generation, and the page
- * swaps its strips to the bank named, never reading a strip the host is
- * writing -- the BUTTON SETUP page's arrangement, with a window in place
- * of a device. B leaves; nothing is undone, and there is nothing to cancel.
+ * One row per mod in the mods folder, six on screen, the value On or Off,
+ * and the page works as every other page does: Left and Right change the
+ * value, A keeps the changes and returns, B undoes them and returns, and
+ * the header says so with the game's own A OK and B Cancel. Left or Right
+ * turns the selected mod on or off: the host records it in mods.json at
+ * once (MODS_REQ, operation 1) and the row's value follows; B asks the host
+ * to put every mod's state and the order back as they were when the page
+ * opened (operation 7). A mod's code is loaded when the game starts, so the
+ * host names the Restart row "Restart the game to apply" while a change
+ * waits for it. The names and help lines are the host's: it composes the
+ * six of the window the page shows (MODS_TOP) into the bank MODS_GEN does
+ * not name and turns the generation, and the page swaps its strips to the
+ * bank named, never reading a strip the host is writing -- the BUTTON
+ * SETUP page's arrangement, with a window in place of a device.
  * ========================================================================= */
 #define MODS_REQ      (*(volatile u32*) (SNAP_GFX_MAILBOX + 0xB0))
 #define MODS_ACK      (*(volatile u32*) (SNAP_GFX_MAILBOX + 0xB4))
@@ -3491,12 +4169,16 @@ static void snap_bind_page(void) {
 #define MODS_STATE(b) (*(volatile u8*)  (SNAP_GFX_MAILBOX + 0xC0 + (b)))
 #define MODS_HASOPT(b) (*(volatile u8*) (SNAP_GFX_MAILBOX + 0xC2 + (b)))   /* the window's rows with options */
 #define MODS_MODCOUNT (*(volatile u16*) (SNAP_GFX_MAILBOX + 0xC4))          /* the mods; the rows after are actions */
+#define MODS_NEW(b)   (*(volatile u8*)  (SNAP_GFX_MAILBOX + 0xDA + (b)))   /* the window's rows installed during play */
+#define MODS_BAD(b)   (*(volatile u8*)  (SNAP_GFX_MAILBOX + 0xDC + (b)))   /* the window's rows that will not load */
+#define MODS_NEEDED(b) (*(volatile u8*) (SNAP_GFX_MAILBOX + 0xDE + (b)))   /* the window's rows another mod keeps on */
+#define MODS_UNSEEN(b) (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x35 + (b)))   /* the window's new rows not opened yet */
+#define DET_NO_BY     (*(volatile u8*)  (SNAP_GFX_MAILBOX + 0xC6))          /* the details' mod names no author */
 #define MODS_VISIBLE  6
 #define MODS_BANK     12   /* ids per bank: six names, then six help lines */
 /* The BUTTON SETUP page's arrays; the two pages are never open at once. */
 #define MODS_LABEL(i) BIND_LABEL(i)
 #define MODS_VALUE(i) BIND_VALUE(i)
-#define MODS_HINT(i)  BIND_HINT(i)
 /* The host's answers (MODS_ACK bits 24..31). */
 #define MODS_ON       1
 #define MODS_OFF      2
@@ -3516,9 +4198,15 @@ static s32 snap_mods_help_str(s32 slot, u32 gen) {
  * edge arrows say which way the rows off screen lie. `base` is the slot
  * bank: 0 for the Mods page, 6 for a mod's options page, which keeps the
  * Mods page's strips while it is up. */
-static void snap_window_layout(s32 base, s32 count, s32 valueCount, s32 top) {
+static s32 snap_mods_place_on;
+static void snap_mods_place(s32 count, s32 modCount, s32 top);
+
+static void snap_window_layout(s32 base, s32 count, s32 valueCount, s32 top, s32 visible) {
     s32 i;
-    for (i = 0; i < MODS_VISIBLE; i++) {
+    if ((base == 0) && snap_mods_place_on) {
+        snap_mods_place(count, valueCount, top);
+    }
+    for (i = 0; i < visible; i++) {
         GObj* label = (GObj*) BIND_LABEL(base + i);
         GObj* value = (GObj*) BIND_VALUE(base + i);
         const s32 shown = (top + i) < count;
@@ -3541,6 +4229,11 @@ static void snap_window_layout(s32 base, s32 count, s32 valueCount, s32 top) {
     {
         GObj* upArrow = (GObj*) PAGE_ARROW_UP;
         GObj* dnArrow = (GObj*) PAGE_ARROW_DN;
+        if (snap_arrows_off) {
+            snap_course_gobj_show((u32) upArrow, 0);
+            snap_course_gobj_show((u32) dnArrow, 0);
+            return;
+        }
         if ((upArrow != NULL) && (upArrow->data.sobj != NULL)) {
             if (top > 0) {
                 upArrow->data.sobj->sprite.attr &= ~SP_HIDDEN;
@@ -3549,7 +4242,7 @@ static void snap_window_layout(s32 base, s32 count, s32 valueCount, s32 top) {
             }
         }
         if ((dnArrow != NULL) && (dnArrow->data.sobj != NULL)) {
-            if (top + MODS_VISIBLE < count) {
+            if (top + visible < count) {
                 dnArrow->data.sobj->sprite.attr &= ~SP_HIDDEN;
             } else {
                 dnArrow->data.sobj->sprite.attr |= SP_HIDDEN;
@@ -3558,16 +4251,55 @@ static void snap_window_layout(s32 base, s32 count, s32 valueCount, s32 top) {
     }
 }
 
+/* A slot's value: New for a mod installed during play, Error for a file
+ * that will not load, else On or Off from the bank's state byte. */
+static s32 snap_mods_value_str(s32 slot, u32 gen) {
+    if ((MODS_BAD(gen & 1) >> slot) & 1) {
+        return STR_MODS_VAL_BAD;
+    }
+    if ((MODS_NEW(gen & 1) >> slot) & 1) {
+        /* Until its details are opened, the title's rainbow. */
+        return ((MODS_UNSEEN(gen & 1) >> slot) & 1) ? STR_MODS_VAL_NEW_GLOW : STR_MODS_VAL_NEW;
+    }
+    /* On, without the chevrons that say Left and Right change it: they
+     * leave it on while the mod that needs it is on. */
+    if ((MODS_NEEDED(gen & 1) >> slot) & 1) {
+        return STR_MODS_VAL_ON_FIXED;
+    }
+    return ((MODS_STATE(gen & 1) >> slot) & 1) ? STR_ON : STR_OFF;
+}
+
 /* The Mods page's window from the bank the generation names: the six
- * names, the six values from the bank's state byte, the selected row's
- * help line. */
+ * names, the six values, the selected row's help line. */
+/* The window's values in the values' orange, as on the Graphics page, but
+ * Error in red: a file that will not load is no setting. */
+static void snap_mods_tint_values(u32 gen) {
+    s32 i;
+    for (i = 0; i < MODS_VISIBLE; i++) {
+        GObj* value = (GObj*) MODS_VALUE(i);
+        const s32 glow = ((MODS_NEW(gen & 1) >> i) & 1) && ((MODS_UNSEEN(gen & 1) >> i) & 1);
+        /* The rainbow New is RGBA16 in its own colours: drawn as such, and
+         * untinted; every other value is IA16 text in a colour. */
+        if ((value != NULL) && (value->data.sobj != NULL)) {
+            value->data.sobj->sprite.bmfmt = glow ? G_IM_FMT_RGBA : G_IM_FMT_IA;
+        }
+        if (glow) {
+            snap_tint(value, 0xFF, 0xFF, 0xFF);
+        } else if ((MODS_BAD(gen & 1) >> i) & 1) {
+            snap_tint(value, 0xFF, 0x60, 0x60);
+        } else {
+            snap_tint(value, SEL_R, SEL_G, SEL_B);
+        }
+    }
+}
+
 static void snap_mods_swap(s32 sel, s32 top, u32 gen, GObj* descStrip) {
-    const u8 state = MODS_STATE(gen & 1);
     s32 i;
     for (i = 0; i < MODS_VISIBLE; i++) {
         snap_swap_strip((GObj*) MODS_LABEL(i), snap_mods_name_str(i, gen));
-        snap_swap_strip((GObj*) MODS_VALUE(i), ((state >> i) & 1) ? STR_ON : STR_OFF);
+        snap_swap_strip((GObj*) MODS_VALUE(i), snap_mods_value_str(i, gen));
     }
+    snap_mods_tint_values(gen);
     snap_swap_strip(descStrip, snap_mods_help_str(sel - top, gen));
 }
 
@@ -3593,41 +4325,6 @@ static s32 snap_bank_request(volatile u32* req, volatile u32* ack, u32 word) {
 
 static s32 snap_mods_request(u32 req) {
     return snap_bank_request(&MODS_REQ, &MODS_ACK, req);
-}
-
-/* The hint at the header's right, where the Option screen's A OK and B
- * Cancel stand: which of the page's other buttons apply to the row. */
-static s32 snap_mods_hint_str(s32 hasOpt, s32 canOrder) {
-    if (hasOpt && canOrder) {
-        return STR_MODS_HINT_BOTH;
-    }
-    if (hasOpt) {
-        return STR_MODS_HINT_OPT;
-    }
-    if (canOrder) {
-        return STR_MODS_HINT_ORDER;
-    }
-    return -1;
-}
-
-static void snap_mods_hint_show(GObj* hint, s32 sel, s32 top, u32 gen, s32 modCount) {
-    s32 hasOpt = 0;
-    s32 canOrder = 0;
-    s32 id;
-    if (sel < modCount) {
-        hasOpt = (MODS_HASOPT(gen & 1) >> (sel - top)) & 1;
-        canOrder = modCount > 1;
-    }
-    id = snap_mods_hint_str(hasOpt, canOrder);
-    if ((hint == NULL) || (hint->data.sobj == NULL)) {
-        return;
-    }
-    if (id < 0) {
-        hint->data.sobj->sprite.attr |= SP_HIDDEN;
-    } else {
-        snap_swap_strip(hint, id);
-        hint->data.sobj->sprite.attr &= ~SP_HIDDEN;
-    }
 }
 
 /* The stick, four ways, with the pages' dead band, edge and repeat. */
@@ -3738,10 +4435,10 @@ static void snap_arrows_bob(u8* bobTick, u8* nudgeUp, u8* nudgeDn) {
     offUp = (*nudgeUp > 0) ? hopUp : sway;
     offDn = (*nudgeDn > 0) ? hopDn : sway;
     if ((upArrow != NULL) && (upArrow->data.sobj != NULL)) {
-        upArrow->data.sobj->sprite.y = ARROW_UP_Y - offUp;
+        upArrow->data.sobj->sprite.y = snap_arrow_up_y - offUp;
     }
     if ((dnArrow != NULL) && (dnArrow->data.sobj != NULL)) {
-        dnArrow->data.sobj->sprite.y = ARROW_DN_Y + offDn;
+        dnArrow->data.sobj->sprite.y = snap_arrow_dn_y + offDn;
     }
 }
 
@@ -3763,7 +4460,54 @@ static void snap_arrows_bob(u8* bobTick, u8* nudgeUp, u8* nudgeDn) {
 #define OPT_OPEN     (*(volatile u8*)  (SNAP_GFX_MAILBOX + 0xD6))
 #define OPT_TOP      (*(volatile u8*)  (SNAP_GFX_MAILBOX + 0xD7))
 #define OPT_ROW      (*(volatile u8*)  (SNAP_GFX_MAILBOX + 0xD8))
-#define OPT_VISIBLE  6
+#define OPT_DISABLED(b) (*(volatile u8*) (SNAP_GFX_MAILBOX + 0xEC + (b)))   /* the window's rows another option disables */
+#define OPT_SEL_AFTER (*(volatile u8*)  (SNAP_GFX_MAILBOX + 0xEE))          /* the row to select after a change, or 0xFF */
+#define OPT_EDIT      (*(volatile u8*)  (SNAP_GFX_MAILBOX + 0xEF))          /* a text typed: 1, then 2 kept or 3 left */
+#define OPT_EDITING   5   /* the host's answer: typing has begun */
+/* The window's text rows, a byte a bank in the two free bytes (+0xC7, +0xD9). */
+#define OPT_TEXT_ROWS(b) (*(volatile u8*) (SNAP_GFX_MAILBOX + (((b) & 1) ? 0xD9 : 0xC7)))
+#define STR_LEGEND_TYPE      355  /* A Type  B Cancel, on a text option */
+#define DISABLED_GRAY 0x78
+#define OPT_VISIBLE  6    /* the slots of a bank the host composes */
+#define DET_VISIBLE 4
+/* The panel (57..164) spaced evenly: 5 rows, the facts beside the picture
+ * (40 rows from DET_BLOCK_Y), 5 rows, the rule, 6 rows to the text's ink,
+ * four lines, and the rest under them. The facts -- the name, By and the
+ * status -- stand DET_FACT_PITCH apart, their ink centred on the picture's
+ * height; with no author the two lines are centred instead. */
+#define DET_BLOCK_Y    62
+#define DET_FACT_PITCH 13
+#define DET_RULE_Y     107
+#define DET_TOP_Y      113   /* the text's first line */
+#define DET_PITCH      12
+#define OPT_SHOWN    3    /* the rows on screen, under the block's rule */
+#define OPT_TOP_Y    DET_TOP_Y   /* where the details page's text starts */
+#define OPT_BAR_H    (OPT_SHOWN * PAGE_PITCH - 1)
+static void snap_mod_block_make(void);
+static void snap_mod_block_free(void);
+static SObj* snap_stock_legend(void);
+static GObj* snap_opt_bar_track;
+
+/* The rows' place among them all, as the details page shows its text's:
+ * the thumb as long as the window's share and as far down as the window. */
+static void snap_opt_bar(s32 top, s32 count) {
+    s32 h;
+    s32 maxTop = count - OPT_SHOWN;
+    snap_bar_shown = (maxTop > 0) && (snap_bar_thumb != NULL);
+    snap_course_gobj_show((u32) snap_opt_bar_track, snap_bar_shown);
+    snap_course_gobj_show((u32) snap_bar_thumb, snap_bar_shown);
+    if (snap_bar_shown && (snap_bar_thumb->data.sobj != NULL)) {
+        h = (OPT_BAR_H * OPT_SHOWN) / count;
+        if (h < 6) {
+            h = 6;
+        }
+        if (top > maxTop) {
+            top = maxTop;
+        }
+        snap_bar_thumb->data.sobj->sprite.scaley = (f32) h / 16.0f;
+        snap_bar_thumb->data.sobj->sprite.y = OPT_TOP_Y + ((OPT_BAR_H - h) * top) / maxTop;
+    }
+}
 #define OPT_BANK     18   /* ids per bank: six names, six values, six help lines */
 #define OPT_SLOT     6    /* the strip slots after the Mods page's own six */
 #define OPT_LABEL(i) BIND_LABEL(OPT_SLOT + (i))
@@ -3781,13 +4525,63 @@ static s32 snap_opt_help_str(s32 slot, u32 gen) {
     return STR_OPT_DYN + ((s32) (gen & 1)) * OPT_BANK + 2 * OPT_VISIBLE + slot;
 }
 
+/* A slot's colours: a row another option disables is grey, label and value
+ * (its value has no arrows either: the host drew it without); any other
+ * row white with its value in orange, as on the Graphics page. */
+static void snap_opt_tint_slot(s32 slot, u32 gen) {
+    if ((OPT_DISABLED(gen & 1) >> slot) & 1) {
+        snap_tint((GObj*) OPT_LABEL(slot), DISABLED_GRAY, DISABLED_GRAY, DISABLED_GRAY);
+        snap_tint((GObj*) OPT_VALUE(slot), DISABLED_GRAY, DISABLED_GRAY, DISABLED_GRAY);
+    } else {
+        snap_tint((GObj*) OPT_LABEL(slot), 0xFF, 0xFF, 0xFF);
+        snap_tint((GObj*) OPT_VALUE(slot), SEL_R, SEL_G, SEL_B);
+    }
+}
+
 static void snap_opt_swap(s32 sel, s32 top, u32 gen, GObj* descStrip) {
     s32 i;
     for (i = 0; i < OPT_VISIBLE; i++) {
         snap_swap_strip((GObj*) OPT_LABEL(i), snap_opt_name_str(i, gen));
         snap_swap_strip((GObj*) OPT_VALUE(i), snap_opt_value_str(i, gen));
     }
+    for (i = 0; i < OPT_SHOWN; i++) {
+        snap_opt_tint_slot(i, gen);
+    }
     snap_swap_strip(descStrip, snap_opt_help_str(sel - top, gen));
+}
+
+/* After a change the host may have hidden or shown rows (one option's value
+ * hiding another): the count again, the selection where the option changed
+ * now stands (or Restore Defaults' row), and the window around it. */
+static void snap_opt_follow(s32* count, s32* sel, s32* top) {
+    s32 c = OPT_COUNT;
+    s32 after = OPT_SEL_AFTER;
+    s32 maxTop;
+    if (c > 250) {
+        c = 250;
+    }
+    *count = c;
+    if (after != 0xFF) {
+        *sel = after;
+    }
+    if (*sel >= c) {
+        *sel = (c > 0) ? (c - 1) : 0;
+    }
+    if (*sel < *top) {
+        *top = *sel;
+    } else if (*sel >= *top + OPT_SHOWN) {
+        *top = *sel - (OPT_SHOWN - 1);
+    }
+    maxTop = (c > OPT_SHOWN) ? (c - OPT_SHOWN) : 0;
+    if (*top > maxTop) {
+        *top = maxTop;
+    }
+    if (*top < 0) {
+        *top = 0;
+    }
+    OPT_TOP = (u8) *top;
+    snap_window_layout(OPT_SLOT, c, c, *top, OPT_SHOWN);
+    snap_opt_bar(*top, c);
 }
 
 static void snap_mod_options_page(s32 modRow) {
@@ -3796,9 +4590,14 @@ static void snap_mod_options_page(s32 modRow) {
     GObj* descStrip;
     s32 sel, top, count, i, result;
     s32 navUp, navDown, navLeft, navRight;
+    SnapMouse mouse;
+    s32 mouseA, mouseB, clickA, clickB;
     u32 gen;
     u8 pulseState, pulseCounter, bobTick;
     u8 nudgeUp, nudgeDn;
+    SObj* stockLegend;
+    GObj* legendType;
+    GObj* fieldLine;
 
     OPT_REQ = 0;
     OPT_ROW = (u8) modRow;
@@ -3814,17 +4613,50 @@ static void snap_mod_options_page(s32 modRow) {
         count = 250;
     }
 
+    /* Whose options: the details page's block -- its panel, the picture,
+     * the name and version, By and the status (which says whether the
+     * options do anything yet) -- then the rows under its rule, three on
+     * screen, where the details page has its text. */
+    snap_mod_block_make();
     hdrStrip = snap_make_strip(STR_OPT_HDR, 45, 41);
+    /* On a text option A types: the header says "A Type" there, the stock
+     * "A OK  B Cancel" everywhere else and while a text is typed (A keeps
+     * it, B leaves it). The line under the value while it is typed marks it
+     * as a field. */
+    stockLegend = snap_stock_legend();
+    legendType = snap_make_legend(STR_LEGEND_TYPE);
+    snap_course_gobj_show((u32) legendType, 0);
+    fieldLine = snap_tile_make(STR_WHITE_TILE, 163, OPT_TOP_Y, 106, 1, 0xFF);
+    snap_tint(fieldLine, 0xB0, 0xB0, 0xB0);
+    snap_course_gobj_show((u32) fieldLine, 0);
+    snap_rows_top_y = OPT_TOP_Y;
+    snap_arrow_up_y = OPT_TOP_Y - 1;
+    snap_arrow_dn_y = OPT_TOP_Y + (OPT_SHOWN - 1) * PAGE_PITCH - 2;
+    /* The place among the rows, as a bar at the right like the details
+     * page's, not the Mods page's chevrons, which would sit on the panel's
+     * edge. */
+    snap_arrows_off = 1;
+    snap_bar_h = OPT_BAR_H;
+    snap_opt_bar_track = snap_tile_make(STR_WHITE_TILE, PAGE_BAR_X, OPT_TOP_Y, 2, OPT_BAR_H, 0xFF);
+    snap_tint(snap_opt_bar_track, 0x48, 0x48, 0x48);
+    snap_bar_thumb = snap_tile_make(STR_WHITE_TILE, PAGE_BAR_X, OPT_TOP_Y, 2, OPT_BAR_H, 0xFF);
+    snap_tint(snap_bar_thumb, 0xD8, 0xD8, 0xD8);
     descStrip = snap_make_strip((count > 0) ? snap_opt_help_str(0, gen) : STR_OPT_NONE, 49, 171);
     for (i = 0; i < OPT_VISIBLE; i++) {
-        const s16 y = PAGE_TOP_Y + i * PAGE_PITCH;
-        OPT_LABEL(i) = (u32) snap_make_strip(snap_opt_name_str(i, gen), 50, y);
-        OPT_VALUE(i) = (u32) snap_make_strip(snap_opt_value_str(i, gen), 163, y);
-        snap_tint((GObj*) OPT_VALUE(i), SEL_R, SEL_G, SEL_B);
+        const s16 y = OPT_TOP_Y + i * PAGE_PITCH;
+        if (i < OPT_SHOWN) {
+            OPT_LABEL(i) = (u32) snap_make_strip(snap_opt_name_str(i, gen), 50, y);
+            OPT_VALUE(i) = (u32) snap_make_strip(snap_opt_value_str(i, gen), 163, y);
+            snap_opt_tint_slot(i, gen);
+        } else {
+            OPT_LABEL(i) = 0;
+            OPT_VALUE(i) = 0;
+        }
     }
     sel = 0;
     top = 0;
-    snap_window_layout(OPT_SLOT, count, count, top);
+    snap_window_layout(OPT_SLOT, count, count, top, OPT_SHOWN);
+    snap_opt_bar(top, count);
     pulseState = 0;
     pulseCounter = 0;
     bobTick = 0;
@@ -3834,31 +4666,131 @@ static void snap_mod_options_page(s32 modRow) {
     snap_nav_dir_h = 0;
     ohWait(2);
 
+    snap_mouse_begin(&mouse);
+    mouseA = mouseB = 0;
     while (1) {
+        clickA = mouseA;
+        clickB = mouseB;
+        mouseA = mouseB = 0;
         input = func_800AA38C(0);
 
         if (OPT_GEN != gen) {
             gen = OPT_GEN;
             snap_opt_swap(sel, top, gen, descStrip);
         }
+        /* The legend by the selected row, and the field while typed: its
+         * value white over a line. */
+        {
+            s32 slot = sel - top;
+            s32 onText = (OPT_EDIT != 1) && (slot >= 0) && (slot < OPT_SHOWN) && ((OPT_TEXT_ROWS(gen) >> slot) & 1);
+            if ((legendType != NULL) && (stockLegend != NULL)) {
+                snap_course_gobj_show((u32) legendType, onText);
+                snap_sprite_show(stockLegend, !onText);
+            }
+            if ((OPT_EDIT == 1) && (slot >= 0) && (slot < OPT_SHOWN)) {
+                snap_tint((GObj*) OPT_VALUE(slot), 0xFF, 0xFF, 0xFF);
+                if ((fieldLine != NULL) && (fieldLine->data.sobj != NULL)) {
+                    fieldLine->data.sobj->sprite.y = OPT_TOP_Y + slot * PAGE_PITCH + 11;
+                }
+                snap_course_gobj_show((u32) fieldLine, 1);
+            } else {
+                snap_course_gobj_show((u32) fieldLine, 0);
+            }
+        }
 
-        if ((gContInputPressedButtons & B_BUTTON) || snap_start_closes()) {
+        /* A text option being typed: the host's editor has the keyboard
+         * (Enter keeps, Esc leaves); the pad's A keeps and its B leaves, a
+         * click keeps and the right button leaves; nothing else moves. */
+        if (OPT_EDIT == 1) {
+            s32 ev = snap_mouse_take(&mouse);
+            if ((gContInputPressedButtons & A_BUTTON) || (ev & SNAP_MOUSE_CLICK)) {
+                snap_bank_request(&OPT_REQ, &OPT_ACK, 11u << 16);
+            } else if ((gContInputPressedButtons & B_BUTTON) || (ev & SNAP_MOUSE_BACK)) {
+                snap_bank_request(&OPT_REQ, &OPT_ACK, 12u << 16);
+            }
+            ohWait(1);
+            continue;
+        }
+        if (OPT_EDIT >= 2) {
+            /* Ended, from either side: the sound, and the page's own input
+             * from a clean start. */
+            snap_ui_sound((OPT_EDIT == 2) ? SND_OK : SND_BACK);
+            OPT_EDIT = 0;
+            snap_mouse_begin(&mouse);
+            mouseA = mouseB = 0;
+            snap_nav_dir_v = 0;
+            snap_nav_dir_h = 0;
+            ohWait(1);
+            continue;
+        }
+
+        /* B undoes what this visit changed, as on every other page: the
+         * host puts the mod's options back as they were when the page
+         * opened (operation 7). A, or Start closing every page, keeps them. */
+        if ((gContInputPressedButtons & B_BUTTON) || clickB) {
+            snap_bank_request(&OPT_REQ, &OPT_ACK, 7u << 16);
             snap_ui_sound(SND_BACK);
+            break;
+        }
+        /* A on the last row, Restore Defaults, puts every option back to
+         * its default and stays; A anywhere else keeps the changes. */
+        if (((gContInputPressedButtons & A_BUTTON) || clickA) && (count > 1) && (sel == count - 1)) {
+            result = snap_bank_request(&OPT_REQ, &OPT_ACK, 8u << 16);
+            snap_ui_sound((result == MODS_DONE) ? SND_OK : SND_BACK);
+            if (result == MODS_DONE) {
+                snap_opt_follow(&count, &sel, &top);
+            }
+            ohWait(1);
+            continue;
+        }
+        /* A on a text option types a new one (the host answers OPT_EDITING);
+         * on any other option A keeps the changes and returns. */
+        if ((gContInputPressedButtons & A_BUTTON) && (count > 1) && (sel < count - 1)) {
+            if (snap_bank_request(&OPT_REQ, &OPT_ACK, (10u << 16) | (u32) sel) == OPT_EDITING) {
+                snap_ui_sound(SND_OK);
+                ohWait(1);
+                continue;
+            }
+        }
+        if (((gContInputPressedButtons & A_BUTTON) || clickA) || snap_start_closes()) {
+            snap_ui_sound(SND_OK);
             break;
         }
 
         snap_nav_read(&navUp, &navDown, &navLeft, &navRight);
+        {
+            s32 cr, side;
+            cr = snap_page_mouse(&mouse, sel, top, OPT_SHOWN, count, SCRATCH_ARRAYS + 0x250, OPT_SLOT,
+                                 &navUp, &navDown, &side, &mouseA, &mouseB);
+            if ((cr >= 0) && (count > 1) && (cr == count - 1)) {
+                mouseA = 1;   /* Restore Defaults */
+            } else if ((cr >= 0) &&
+                       (snap_bank_request(&OPT_REQ, &OPT_ACK, (10u << 16) | (u32) cr) == OPT_EDITING)) {
+                snap_ui_sound(SND_OK);   /* a click on a text option: type it */
+            } else if (cr >= 0) {
+                if (side < 0) {
+                    navLeft = 1;
+                } else if (side > 0) {
+                    navRight = 1;
+                }
+            }
+        }
 
-        if ((navLeft || navRight) && (count > 0)) {
+        if ((navLeft || navRight) && (count > 0) && (sel < count - 1)) {
             result = snap_bank_request(&OPT_REQ, &OPT_ACK,
                                        (6u << 16) | ((u32) (navRight ? 1 : 0xFF) << 8) | (u32) sel);
             if (result == MODS_DONE) {
                 snap_ui_sound(SND_MOVE);
+                snap_opt_tint_slot(sel - top, gen);
+                snap_opt_follow(&count, &sel, &top);
+                pulseState = 0;
             }
         }
 
         if ((navUp || navDown) && (count > 0)) {
-            snap_tint((GObj*) OPT_LABEL(sel - top), 0xFF, 0xFF, 0xFF);
+            if (sel - top < OPT_SHOWN) {
+                snap_opt_tint_slot(sel - top, gen);
+            }
             if (navUp) {
                 sel = (sel == 0) ? (count - 1) : (sel - 1);
             } else {
@@ -3867,12 +4799,13 @@ static void snap_mod_options_page(s32 modRow) {
             pulseState = 0;
             if (sel < top) {
                 top = sel;
-            } else if (sel >= top + OPT_VISIBLE) {
-                top = sel - (OPT_VISIBLE - 1);
+            } else if (sel >= top + OPT_SHOWN) {
+                top = sel - (OPT_SHOWN - 1);
             }
             if (top != (s32) OPT_TOP) {
                 OPT_TOP = (u8) top;
-                snap_window_layout(OPT_SLOT, count, count, top);
+                snap_window_layout(OPT_SLOT, count, count, top, OPT_SHOWN);
+                snap_opt_bar(top, count);
                 if (navUp) {
                     nudgeUp = 12;
                 } else {
@@ -3908,23 +4841,95 @@ static void snap_mod_options_page(s32 modRow) {
     if (descStrip != NULL) {
         omDeleteGObj(descStrip);
     }
+    snap_mod_block_free();
+    if (legendType != NULL) {
+        snap_free_legend(legendType);
+    }
+    if (stockLegend != NULL) {
+        snap_sprite_show(stockLegend, 1);   /* as the Mods page left it */
+    }
+    if (fieldLine != NULL) {
+        omDeleteGObj(fieldLine);
+    }
+    if (snap_opt_bar_track != NULL) {
+        omDeleteGObj(snap_opt_bar_track);
+        snap_opt_bar_track = NULL;
+    }
+    if (snap_bar_thumb != NULL) {
+        omDeleteGObj(snap_bar_thumb);
+        snap_bar_thumb = NULL;
+    }
+    snap_bar_shown = 0;
+    snap_arrows_off = 0;
+    /* The rows and the chevrons where the Mods page has them. */
+    snap_rows_top_y = PAGE_TOP_Y;
+    snap_arrow_up_y = ARROW_UP_Y;
+    snap_arrow_dn_y = ARROW_DN_Y;
+    if ((PAGE_ARROW_UP != 0) && (((GObj*) PAGE_ARROW_UP)->data.sobj != NULL)) {
+        ((GObj*) PAGE_ARROW_UP)->data.sobj->sprite.y = ARROW_UP_Y;
+    }
+    if ((PAGE_ARROW_DN != 0) && (((GObj*) PAGE_ARROW_DN)->data.sobj != NULL)) {
+        ((GObj*) PAGE_ARROW_DN)->data.sobj->sprite.y = ARROW_DN_Y;
+    }
     ohWait(1);
+}
+
+/* The Mods page in two groups: the mods at the top, and the three rows
+ * that act on them -- Install Mods, Open Mods Folder, Restart Game -- at the
+ * foot of the list under a rule, like a footer. While the list fits the
+ * window the actions stand at its last three places, with room between the
+ * groups; a longer list scrolls as one, and the rule still stands over the
+ * first action. With no mod at all the room above the actions says so: "No
+ * mods yet." in the rows' face and a line under it, centred. */
+static GObj* snap_mods_head;
+static GObj* snap_mods_sub;
+static GObj* snap_mods_rule;
+static s32 snap_mods_shown = 1;
+
+static void snap_mods_place(s32 count, s32 modCount, s32 top) {
+    s32 i, firstSlot, ruleOn;
+    const s32 gap = (count < MODS_VISIBLE) ? (MODS_VISIBLE - count) : 0;
+    snap_rows_top_y = PAGE_TOP_Y;
+    snap_gap_row = (gap > 0) ? modCount : -1;
+    snap_gap_slots = gap;
+    for (i = 0; i < MODS_VISIBLE; i++) {
+        GObj* label = (GObj*) MODS_LABEL(i);
+        GObj* value = (GObj*) MODS_VALUE(i);
+        const s32 y = snap_row_y(top, i);
+        if ((label != NULL) && (label->data.sobj != NULL)) {
+            label->data.sobj->sprite.y = y;
+        }
+        if ((value != NULL) && (value->data.sobj != NULL)) {
+            value->data.sobj->sprite.y = y;
+        }
+    }
+    firstSlot = modCount - top;
+    ruleOn = snap_mods_shown && (modCount < count) && (firstSlot >= 0) && (firstSlot < MODS_VISIBLE) &&
+             ((modCount == 0) || (firstSlot > 0));
+    if ((snap_mods_rule != NULL) && (snap_mods_rule->data.sobj != NULL)) {
+        /* Midway in the seven clear rows between a row's letters (its rows
+         * 1..9) and the next row's. */
+        snap_mods_rule->data.sobj->sprite.y = snap_row_y(top, firstSlot) - 3;
+    }
+    snap_course_gobj_show((u32) snap_mods_rule, ruleOn);
+    snap_course_gobj_show((u32) snap_mods_head, snap_mods_shown && (modCount == 0));
+    snap_course_gobj_show((u32) snap_mods_sub, snap_mods_shown && (modCount == 0));
 }
 
 /* The Mods page's own strips off while a mod's options page is up, and on
  * again after it. */
-static void snap_mods_strips_show(s32 show, GObj* hdrStrip, GObj* descStrip, GObj* hintStrip,
-                                  s32 count, s32 modCount, s32 top, s32 sel, u32 gen) {
+static void snap_mods_strips_show(s32 show, GObj* hdrStrip, GObj* descStrip,
+                                  s32 count, s32 modCount, s32 top) {
     s32 i;
+    snap_mods_shown = show;
     if (show) {
-        snap_window_layout(0, count, modCount, top);
+        snap_window_layout(0, count, modCount, top, MODS_VISIBLE);
         if (hdrStrip != NULL) {
             snap_course_gobj_show((u32) hdrStrip, 1);
         }
         if (descStrip != NULL) {
             snap_course_gobj_show((u32) descStrip, 1);
         }
-        snap_mods_hint_show(hintStrip, sel, top, gen, modCount);
         return;
     }
     for (i = 0; i < MODS_VISIBLE; i++) {
@@ -3933,60 +4938,367 @@ static void snap_mods_strips_show(s32 show, GObj* hdrStrip, GObj* descStrip, GOb
     }
     snap_course_gobj_show((u32) hdrStrip, 0);
     snap_course_gobj_show((u32) descStrip, 0);
-    snap_course_gobj_show((u32) hintStrip, 0);
+    snap_course_gobj_show((u32) snap_mods_rule, 0);
+    snap_course_gobj_show((u32) snap_mods_head, 0);
+    snap_course_gobj_show((u32) snap_mods_sub, 0);
+}
+
+/* -------------------------------------------------------------------------
+ * A mod's details page: Z on the Mods page, or a click on the mod already
+ * selected. The heading "Mod Details", the mod's name and version where the
+ * first row stands, and under them its text in the help box's face: who
+ * made it, its whole description a paragraph at a time, what it needs and
+ * what needs it -- six lines on screen, the rest a scroll away (Up and
+ * Down, the wheel, or the chevrons). A opens its options when it has any
+ * and B, or A when it has none, goes back to the list. Everything shown is
+ * composed by the host for the row asked for (operation 9 of the Mods
+ * page's bank; its answer is the line count past 32).
+ * ---------------------------------------------------------------------- */
+#define DET_BAR_X   PAGE_BAR_X
+#define DET_BAR_H   (DET_VISIBLE * DET_PITCH - 1)
+
+/* The page's strips, kept out of the coroutine's stack: the pages run on a
+ * process of their own (snap_big_stack_process), and this page never opens
+ * the options page from its own frame either: it returns 1 and the Mods
+ * page opens them, then this page again. Heading, then (1..6, 10) unused
+ * since the block below holds the facts and the rule, help box, the scroll
+ * bar's track and thumb, then the text's lines. */
+#define DET_LINE0   11
+#define DET_STRIPS  (DET_LINE0 + DET_VISIBLE)
+static GObj* snap_det_strip[DET_STRIPS];
+/* A dark panel under the page's text and inside its help box: this page is
+ * read, not set, and on the title the island shows through the Option
+ * screen's own dim, fine for a label, not for a paragraph. The picture's
+ * bands after it, 40 pixels square at the right of the name, By and status. */
+#define DET_THUMB_X 230
+
+/* The block a mod's details and its options both open with, on the same dark
+ * panel: the picture, the name and version, By, the status, and the rule
+ * under them -- so the options read as the details page's lower half turned
+ * into settings, not a page of their own. The panels are made first, so
+ * everything of either page draws over them. The details page keeps what
+ * its answer said (a picture, no author, an error) for the options page,
+ * which the Mods page opens only from it. */
+#define BLOCK_STRIPS 7
+static GObj* snap_block_panel[2];
+static GObj* snap_block_strip[BLOCK_STRIPS];
+static GObj* snap_block_thumb[DET_THUMB_BANDS];
+static s32 snap_block_thumb_on;
+static s32 snap_block_no_by;
+static s32 snap_block_error;
+
+static void snap_mod_block_make(void) {
+    s32 i;
+    const s32 factY = DET_BLOCK_Y + 1 + (snap_block_no_by ? DET_FACT_PITCH / 2 : 0);
+
+    snap_block_panel[0] = snap_tile_make(0, 40, 57, 240, 108, 200);
+    snap_block_panel[1] = snap_tile_make(0, 42, 169, 236, 27, 200);
+    /* The name, and the version at the right end of its line in the values'
+     * orange (the host ends it before the picture); under them "By" and who
+     * made it, and the status as a sentence -- the values in orange, the
+     * labels white, as on the Graphics page, an error in red. With no author
+     * the status takes the By line's place: no hole under the name, and the
+     * two lines centred. */
+    snap_block_strip[0] = snap_make_strip(STR_DET_TITLE, 50, factY);
+    snap_block_strip[1] = snap_make_strip(STR_DET_VERSION, (snap_block_thumb_on ? DET_THUMB_X - 8 : DET_RIGHT) - 192, factY);
+    snap_tint(snap_block_strip[1], SEL_R, SEL_G, SEL_B);
+    snap_block_strip[2] = snap_make_strip(STR_DET_BY_LABEL, 50, factY + DET_FACT_PITCH);
+    snap_block_strip[3] = snap_make_strip(STR_DET_BY_VALUE, 50, factY + DET_FACT_PITCH);
+    snap_tint(snap_block_strip[3], SEL_R, SEL_G, SEL_B);
+    snap_block_strip[4] = snap_make_strip(STR_DET_ST_LABEL, 50, factY + (snap_block_no_by ? 1 : 2) * DET_FACT_PITCH);
+    if (snap_block_error) {
+        snap_tint(snap_block_strip[4], 0xFF, 0x60, 0x60);
+    } else {
+        snap_tint(snap_block_strip[4], SEL_R, SEL_G, SEL_B);
+    }
+    snap_block_strip[5] = snap_make_strip(STR_DET_ST_VALUE, 50, factY + (snap_block_no_by ? 1 : 2) * DET_FACT_PITCH);
+    /* A rule between the facts and what follows. */
+    snap_block_strip[6] = snap_tile_make(STR_WHITE_TILE, 50, DET_RULE_Y, DET_RIGHT - 50, 1, 0xFF);
+    snap_tint(snap_block_strip[6], RULE_GRAY, RULE_GRAY, RULE_GRAY);
+    /* The picture: 256 texels across drawn 40 pixels wide, each band of 32
+     * rows 5 pixels tall, so the bands meet on whole pixels. */
+    for (i = 0; i < DET_THUMB_BANDS; i++) {
+        snap_block_thumb[i] = NULL;
+        if (snap_block_thumb_on) {
+            snap_block_thumb[i] = snap_make_strip_fmt(STR_DET_THUMB + i, DET_THUMB_X, DET_BLOCK_Y + i * 5, G_IM_FMT_RGBA);
+            if ((snap_block_thumb[i] != NULL) && (snap_block_thumb[i]->data.sobj != NULL)) {
+                Sprite* sp = &snap_block_thumb[i]->data.sobj->sprite;
+                sp->attr |= SP_SCALE;
+                sp->scalex = 0.15625f;
+                sp->scaley = 0.15625f;
+            }
+        }
+    }
+}
+
+/* The status line's y: under By, or in its place when there is no author. */
+static s32 snap_block_status_y(void) {
+    return DET_BLOCK_Y + 1 + (snap_block_no_by ? DET_FACT_PITCH / 2 : 0) + (snap_block_no_by ? 1 : 2) * DET_FACT_PITCH;
+}
+
+static void snap_mod_block_free(void) {
+    s32 i;
+    for (i = 0; i < BLOCK_STRIPS; i++) {
+        if (snap_block_strip[i] != NULL) {
+            omDeleteGObj(snap_block_strip[i]);
+            snap_block_strip[i] = NULL;
+        }
+    }
+    for (i = 0; i < DET_THUMB_BANDS; i++) {
+        if (snap_block_thumb[i] != NULL) {
+            omDeleteGObj(snap_block_thumb[i]);
+            snap_block_thumb[i] = NULL;
+        }
+    }
+    for (i = 0; i < 2; i++) {
+        if (snap_block_panel[i] != NULL) {
+            omDeleteGObj(snap_block_panel[i]);
+            snap_block_panel[i] = NULL;
+        }
+    }
+}
+
+/* The text's window: its lines, and the scroll bar beside them when there
+ * is more than one window of text, its thumb as long as the window's share
+ * of the whole and as far down as the window is. */
+static void snap_det_show(s32 top, s32 lines, s32 maxTop) {
+    s32 i, h;
+    GObj* thumb = snap_det_strip[9];
+    for (i = 0; i < DET_VISIBLE; i++) {
+        snap_course_gobj_show((u32) snap_det_strip[DET_LINE0 + i], top + i < lines);
+    }
+    snap_course_gobj_show((u32) snap_det_strip[8], maxTop > 0);
+    snap_course_gobj_show((u32) thumb, maxTop > 0);
+    if ((maxTop > 0) && (thumb != NULL) && (thumb->data.sobj != NULL)) {
+        h = (DET_BAR_H * DET_VISIBLE) / lines;
+        if (h < 6) {
+            h = 6;
+        }
+        thumb->data.sobj->sprite.scaley = (f32) h / 16.0f;
+        thumb->data.sobj->sprite.y = DET_TOP_Y + ((DET_BAR_H - h) * top) / maxTop;
+    }
+}
+
+/* The legend on screen under the pages: the Option screen's own on the
+ * title (the second sprite of its heading), the dress's copy over a course
+ * or anywhere (snap_course_dress_make, COURSE_DRESS(6)). */
+static SObj* snap_stock_legend(void) {
+    if (snap_page_ctx != 0) {
+        GObj* dress = (GObj*) *(volatile u32*) (SCRATCH_ARRAYS + 0x2C4 + 6 * 4);
+        return (dress != NULL) ? dress->data.sobj : NULL;
+    }
+    if ((D_800E833C_A0F8CC != NULL) && (D_800E833C_A0F8CC->data.sobj != NULL)) {
+        return D_800E833C_A0F8CC->data.sobj->next;
+    }
+    return NULL;
+}
+
+static GObj* snap_det_legend;
+
+/* Returns 1 when A asked for the mod's options, 0 when the page is left. */
+static s32 snap_mod_details_page(s32 modRow, s32 hasOpt) {
+    SnapMouse mouse;
+    s32 lines, top, maxTop, i, ev, openOptions, step;
+    s32 navUp, navDown, navLeft, navRight;
+    s32 wantUp, wantDown, wantA, wantB, wantToggle;
+
+    i = snap_mods_request((9u << 16) | (u32) modRow);
+    lines = (i >= 32) ? ((i - 32) & 63) : 0;
+    snap_block_error = (i >= 32) ? (((i - 32) >> 6) & 1) : 0;
+    snap_block_thumb_on = (i >= 32) ? (((i - 32) >> 7) & 1) : 0;
+    snap_block_no_by = DET_NO_BY;
+    if (lines > DET_LINES) {
+        lines = DET_LINES;
+    }
+    maxTop = (lines > DET_VISIBLE) ? (lines - DET_VISIBLE) : 0;
+    top = 0;
+    openOptions = 0;
+
+    snap_mod_block_make();
+    snap_det_strip[0] = snap_make_strip(STR_DET_HDR, 45, 41);
+    /* Its legend says what A and B do here (the Mods page's is hidden). */
+    snap_det_legend = snap_make_legend(hasOpt ? STR_LEGEND_DET_OPT : STR_LEGEND_BACK);
+    snap_det_strip[7] = snap_make_strip(STR_DET_HELP, 49, 171);
+    snap_det_strip[8] = snap_tile_make(STR_WHITE_TILE, DET_BAR_X, DET_TOP_Y, 2, DET_BAR_H, 0xFF);
+    snap_tint(snap_det_strip[8], 0x48, 0x48, 0x48);
+    snap_det_strip[9] = snap_tile_make(STR_WHITE_TILE, DET_BAR_X, DET_TOP_Y, 2, DET_BAR_H, 0xFF);
+    snap_tint(snap_det_strip[9], 0xD8, 0xD8, 0xD8);
+    /* The list's chevrons stay hidden under this page: the bar says it. */
+    snap_course_gobj_show(PAGE_ARROW_UP, 0);
+    snap_course_gobj_show(PAGE_ARROW_DN, 0);
+    for (i = 0; i < DET_VISIBLE; i++) {
+        snap_det_strip[DET_LINE0 + i] = snap_make_strip(STR_DET_LINE + i, 50, DET_TOP_Y + i * DET_PITCH);
+    }
+    snap_det_show(top, lines, maxTop);
+    snap_nav_dir_v = 0;
+    snap_nav_dir_h = 0;
+    snap_mouse_begin(&mouse);
+    ohWait(2);
+
+    while (1) {
+        func_800AA38C(0);
+        ev = snap_mouse_take(&mouse);
+        snap_header_track(ev);
+        wantUp = wantDown = wantA = wantB = wantToggle = 0;
+        step = 1;
+        if (ev & SNAP_MOUSE_CLICK) {
+            if ((snap_header_hit() == 1) || snap_mouse_in(40, 166, 240, 32)) {
+                wantA = 1;   /* the header's A, or the help box that says what A does */
+            } else if (snap_header_hit() == 2) {
+                wantB = 1;
+            } else if (snap_mouse_in(46, snap_block_status_y() - 2, 180, DET_FACT_PITCH)) {
+                wantToggle = 1;   /* the status line: the mod on or off, as its value in the list */
+            } else if ((maxTop > 0) && snap_mouse_in(DET_BAR_X - 6, DET_TOP_Y, 14, DET_BAR_H)) {
+                /* The bar: a window of text up or down, toward the click. */
+                GObj* thumb = snap_det_strip[9];
+                s32 thumbY = ((thumb != NULL) && (thumb->data.sobj != NULL)) ? thumb->data.sobj->sprite.y : DET_TOP_Y;
+                step = DET_VISIBLE;
+                if (snap_mouse_in(DET_BAR_X - 6, DET_TOP_Y, 14, thumbY - DET_TOP_Y)) {
+                    wantUp = 1;
+                } else {
+                    wantDown = 1;
+                }
+            }
+        }
+        if (ev & SNAP_MOUSE_BACK) {
+            wantB = 1;
+        }
+        if (ev & SNAP_MOUSE_UP) {
+            wantUp = 1;
+        }
+        if (ev & SNAP_MOUSE_DOWN) {
+            wantDown = 1;
+        }
+
+        if (snap_start_closes()) {
+            snap_ui_sound(SND_OK);
+            break;
+        }
+        if ((gContInputPressedButtons & B_BUTTON) || wantB) {
+            snap_ui_sound(SND_BACK);
+            break;
+        }
+        if ((gContInputPressedButtons & A_BUTTON) || wantA) {
+            snap_ui_sound(SND_OK);
+            openOptions = hasOpt;
+            break;
+        }
+
+        snap_nav_read(&navUp, &navDown, &navLeft, &navRight);
+        /* Left or Right, or a click on the status line, turns the mod on or
+         * off as its row in the list does (a fresh press, not the stick's
+         * repeat); the host composes the status and help again. A mod that
+         * another needs, or one not loaded yet, answers with the back sound. */
+        if (((navLeft || navRight) && (snap_nav_repeat_h == 20)) || wantToggle) {
+            s32 r = snap_mods_request((1u << 16) | (u32) modRow);
+            if ((r == MODS_ON) || (r == MODS_OFF)) {
+                snap_ui_sound(SND_MOVE);
+                snap_mods_request((9u << 16) | (u32) modRow);
+                snap_swap_strip(snap_block_strip[4], STR_DET_ST_LABEL);
+                snap_swap_strip(snap_block_strip[5], STR_DET_ST_VALUE);
+                snap_swap_strip(snap_det_strip[7], STR_DET_HELP);
+            } else {
+                snap_ui_sound(SND_BACK);
+            }
+            ohWait(1);
+            continue;
+        }
+        i = top;
+        if (navUp || wantUp) {
+            top -= step;
+        } else if (navDown || wantDown) {
+            top += step;
+        }
+        if (top > maxTop) {
+            top = maxTop;
+        }
+        if (top < 0) {
+            top = 0;
+        }
+        if (top != i) {
+            for (i = 0; i < DET_VISIBLE; i++) {
+                snap_swap_strip(snap_det_strip[DET_LINE0 + i], STR_DET_LINE + top + i);
+            }
+            snap_det_show(top, lines, maxTop);
+            snap_ui_sound(SND_MOVE);
+        }
+        ohWait(1);
+    }
+
+    for (i = 0; i < DET_STRIPS; i++) {
+        if (snap_det_strip[i] != NULL) {
+            omDeleteGObj(snap_det_strip[i]);
+            snap_det_strip[i] = NULL;
+        }
+    }
+    snap_mod_block_free();
+    if (snap_det_legend != NULL) {
+        snap_free_legend(snap_det_legend);
+        snap_det_legend = NULL;
+    }
+    ohWait(1);
+    return openOptions;
 }
 
 /* -------------------------------------------------------------------------
  * The Mods page: one row per mod in the folder, six on screen, the value
- * On or Off; A, Left or Right turns the selected mod on or off (a code
- * mod's change takes effect at the next start, and the help line says so).
- * Under the mods, two rows the other recompilations' mod menus have as
- * buttons: Open the mods folder, and Restart the game. L and R move the
- * selected mod up or down the order the mods are loaded in, as their
- * menus let a mod be dragged; Z opens a mod's own options when its
- * manifest declares any. The hint at the header's right says which of
- * those apply to the row.
+ * On or Off. Left or Right turns the selected mod on or off (a code mod's
+ * change takes effect at the next start, and the Restart row says so); a
+ * mod another mod needs stays on, and its line says which. Every change is
+ * written as it is made; A on a mod opens its details and B goes back.
+ * Under the mods, three
+ * rows the other recompilations' mod menus have as buttons: Install a
+ * mod (the file picker, shown by the window's thread), Open the mods
+ * folder, and Restart the game, which A carries out (Restart asks first:
+ * the pages open over a course, and a restart loses it). L and R move the
+ * selected mod up or down the order the mods are loaded in, as does a
+ * drag with the mouse; A, Z or a click on a mod opens its details, and
+ * from there its options. After the mods the game opened come the mods
+ * installed during play (value New: they load at the next start) and the
+ * mod files that will not load (value Error); neither turns on or off. The
+ * help box's second line says what waits for a restart, or which buttons
+ * apply to the row (the host composes it).
  * ---------------------------------------------------------------------- */
 static void snap_mods_page(void) {
     UnkStruct800BEDF8* input;
     GObj* hdrStrip;
     GObj* descStrip;
-    GObj* hintStrip;
-    s32 sel, top, count, modCount, i, hiddenCount, hintCount, result;
+    s32 sel, top, count, modCount, i, hiddenCount, result;
     s32 navUp, navDown, navLeft, navRight;
+    SnapMouse mouse;
+    s32 mouseA, mouseB, clickA, clickB;
     u32 gen;
     u8 pulseState, pulseCounter, bobTick;
     u8 nudgeUp, nudgeDn;
+    u8 restartAsked;
+    /* The mouse's drag of a mod along the load order: the row pressed on,
+     * whether the press was on the mod already selected (a click there,
+     * let go without a move, opens its details), and whether it moved. */
+    s32 dragging, dragMoved, dragOpen, orderUp, orderDown, openDetails, row, dragTick;
+    SObj* stockLegend;
+    GObj* legendStrip;
+    GObj* legendOk;
+    s32 clickToggle;
 
     if (DIR_MAGIC != 0x53474130) {
         return;
     }
+    dragging = dragMoved = dragOpen = dragTick = 0;
 
     hiddenCount = snap_hide_option_list();
     hdrStrip = snap_make_strip(STR_MODS_HDR, 45, 41);
-
-    /* The header's A OK and B Cancel hints come down, as on the BUTTON
-     * SETUP page, and the page's own hint stands in their place. Put back
-     * at the exit. Over a course or any other screen the legend is the
-     * list's dress, taken down the same way. */
-    hintCount = 0;
-    for (i = 0; (i < 12) && (snap_page_ctx == 0); i++) {
-        GObj* chain = snap_chain(i);
-        SObj* sobj = (chain != NULL) ? chain->data.sobj : NULL;
-        while (sobj != NULL) {
-            if ((sobj->sprite.y == 41) && !(sobj->sprite.attr & SP_HIDDEN) && (hintCount < 4)) {
-                sobj->sprite.attr |= SP_HIDDEN;
-                MODS_HINT(hintCount) = (u32) sobj;
-                hintCount++;
-            }
-            sobj = sobj->next;
-        }
+    /* A opens a mod's details here and B goes back, so the header says so,
+     * in the legend's own icons; the stock legend is hidden until the page
+     * closes (and shown for a mod's options, where A and B are OK and
+     * Cancel again). */
+    stockLegend = snap_stock_legend();
+    legendStrip = snap_make_legend(STR_LEGEND_MODS);
+    if ((legendStrip != NULL) && (stockLegend != NULL)) {
+        snap_sprite_show(stockLegend, 0);
     }
-    if (snap_page_ctx != 0) {
-        snap_course_legend_show(0);
-    }
-    hintStrip = snap_make_strip(STR_MODS_HINT_BOTH, 161, 41);
-    snap_course_gobj_show((u32) hintStrip, 0);
+    /* On the rows under the mods A carries the row out: "A OK  B Back". */
+    legendOk = snap_make_legend(STR_LEGEND_OK_BACK);
+    snap_course_gobj_show((u32) legendOk, 0);
 
     /* The host lists the folder and composes the first window once it sees
      * the page open, and the strips are built from the bank it then names,
@@ -4012,85 +5324,240 @@ static void snap_mods_page(void) {
     for (i = 0; i < MODS_VISIBLE; i++) {
         const s16 y = PAGE_TOP_Y + i * PAGE_PITCH;
         MODS_LABEL(i) = (u32) snap_make_strip(snap_mods_name_str(i, gen), 50, y);
-        /* The values sit further right than the other pages' (163): On and
-         * Off are short, and a mod's name wants the room. The host cuts the
-         * names to end before this column (src/menu_assets.cpp, ModsNameInkWidth). */
-        MODS_VALUE(i) = (u32) snap_make_strip(((MODS_STATE(gen & 1) >> i) & 1) ? STR_ON : STR_OFF, 212, y);
-        snap_tint((GObj*) MODS_VALUE(i), SEL_R, SEL_G, SEL_B);
+        /* The values in the Graphics page's column. The host cuts the names
+         * to end before it (src/menu_assets.cpp, ModsNameInkWidth). */
+        MODS_VALUE(i) = (u32) snap_make_strip(snap_mods_value_str(i, gen), 163, y);
     }
+    snap_mods_tint_values(gen);
+    /* The rule over the actions, and the empty page's two centred lines
+     * (256-texel strips, the text centred in them). */
+    snap_mods_rule = snap_tile_make(STR_WHITE_TILE, 50, PAGE_TOP_Y, DET_RIGHT - 50, 1, 0xFF);
+    snap_tint(snap_mods_rule, RULE_GRAY, RULE_GRAY, RULE_GRAY);
+    snap_mods_head = snap_make_strip(STR_MODS_NONE, 160 - 128, PAGE_TOP_Y + 2);
+    snap_mods_sub = snap_make_strip(STR_MODS_EMPTY_SUB, 160 - 128, PAGE_TOP_Y + 18);
+    snap_mods_shown = 1;
+    snap_mods_place_on = 1;
+    snap_mods_place(count, modCount, 0);
     PAGE_ARROW_UP = (u32) snap_make_strip_fmt(STR_SCROLL_UP, ARROW_X, ARROW_UP_Y, G_IM_FMT_RGBA);
     PAGE_ARROW_DN = (u32) snap_make_strip_fmt(STR_SCROLL_DN, ARROW_X, ARROW_DN_Y, G_IM_FMT_RGBA);
 
     sel = 0;
     top = 0;
-    snap_window_layout(0, count, modCount, top);
-    snap_mods_hint_show(hintStrip, sel, top, gen, modCount);
+    snap_window_layout(0, count, modCount, top, MODS_VISIBLE);
     pulseState = 0;
     pulseCounter = 0;
     bobTick = 0;
     nudgeUp = 0;
     nudgeDn = 0;
+    restartAsked = 0;
     snap_nav_dir_v = 0;
     snap_nav_dir_h = 0;
 
     ohWait(2);
 
+    snap_mouse_begin(&mouse);
+    mouseA = mouseB = 0;
     while (1) {
+        clickA = mouseA;
+        clickB = mouseB;
+        mouseA = mouseB = 0;
         input = func_800AA38C(0);
-
-        /* The host turned the bank: the window's names and values are new. */
-        if (MODS_GEN != gen) {
-            gen = MODS_GEN;
-            snap_mods_swap(sel, top, gen, descStrip);
-            snap_mods_hint_show(hintStrip, sel, top, gen, modCount);
+        /* The legend says what A does on the selected row: a mod's details,
+         * or the row itself under the mods. */
+        if ((legendStrip != NULL) && (legendOk != NULL)) {
+            s32 onAction = (count > 0) && (sel >= modCount);
+            snap_course_gobj_show((u32) legendStrip, !onAction);
+            snap_course_gobj_show((u32) legendOk, onAction);
         }
 
-        if ((gContInputPressedButtons & B_BUTTON) || snap_start_closes()) {
+        /* The host turned the bank: the window's names and values are new,
+         * and the list may have grown (a mod dropped on the window while
+         * the page is up is listed at once). */
+        if (MODS_GEN != gen) {
+            gen = MODS_GEN;
+            if (((s32) MODS_COUNT != count) && (MODS_COUNT <= 250)) {
+                snap_tint((GObj*) MODS_LABEL(sel - top), 0xFF, 0xFF, 0xFF);
+                count = MODS_COUNT;
+                modCount = MODS_MODCOUNT;
+                if (modCount > count) {
+                    modCount = count;
+                }
+                if (sel >= count) {
+                    sel = count - 1;
+                }
+                snap_window_layout(0, count, modCount, top, MODS_VISIBLE);
+            }
+            restartAsked = 0;
+            snap_mods_swap(sel, top, gen, descStrip);
+        }
+
+        /* B after the Restart row's question withdraws it, as on the Exit
+         * Game row; otherwise B goes back. Every change here is written to
+         * mods.json as it is made, as in the other recompilations' mod
+         * menus, so going back keeps them. */
+        if (((gContInputPressedButtons & B_BUTTON) || clickB) && restartAsked) {
+            restartAsked = 0;
+            snap_swap_strip(descStrip, snap_mods_help_str(sel - top, gen));
+            snap_ui_sound(SND_BACK);
+            ohWait(1);
+            continue;
+        }
+        if ((gContInputPressedButtons & B_BUTTON) || clickB) {
             snap_ui_sound(SND_BACK);
             break;
         }
 
-        snap_nav_read(&navUp, &navDown, &navLeft, &navRight);
-
-        if ((count > 0) && ((gContInputPressedButtons & A_BUTTON) || navLeft || navRight)) {
-            if (sel < modCount) {
-                result = snap_mods_request((1u << 16) | (u32) sel);
-                if ((result == MODS_ON) || (result == MODS_OFF)) {
-                    snap_ui_sound(SND_OK);
-                } else {
-                    snap_ui_sound(SND_BACK);
+        /* A on a mod's row opens its details (below); A on an action row
+         * carries it out. The Restart row asks first: the pages open over a
+         * course, and a restart loses it; a second A restarts, and a move
+         * elsewhere lets it go. */
+        openDetails = 0;
+        if ((gContInputPressedButtons & A_BUTTON) || clickA) {
+            if ((count > 0) && (sel < modCount)) {
+                openDetails = 1;
+            } else if ((count > 0) && (sel >= modCount)) {
+                if ((sel - modCount == 2) && !restartAsked) {
+                    restartAsked = 1;
+                    snap_swap_strip(descStrip, STR_MODS_RESTART_ASK);
+                    snap_ui_sound(SND_MOVE);
+                    ohWait(1);
+                    continue;
                 }
-            } else if (gContInputPressedButtons & A_BUTTON) {
-                /* The action rows: the folder, or the restart. */
                 result = snap_mods_request(((u32) (4 + (sel - modCount)) << 16) | (u32) sel);
                 snap_ui_sound((result == MODS_DONE) ? SND_OK : SND_BACK);
+                ohWait(1);
+                continue;
+            } else {
+                snap_ui_sound(SND_BACK);   /* an empty list: A goes back */
+                break;
+            }
+        }
+        if (snap_start_closes()) {
+            snap_ui_sound(SND_OK);
+            break;
+        }
+
+        snap_nav_read(&navUp, &navDown, &navLeft, &navRight);
+        orderUp = orderDown = clickToggle = 0;
+        {
+            s32 cr, side;
+            mouse.noWalk = (u8) dragging;
+            cr = snap_page_mouse(&mouse, sel, top, MODS_VISIBLE, count, SCRATCH_ARRAYS + 0x250, 0,
+                                 &navUp, &navDown, &side, &mouseA, &mouseB);
+            if ((cr >= 0) && (cr < modCount)) {
+                if (side != 0) {
+                    clickToggle = 1;   /* a click on a mod's On or Off turns it, as Left and Right do */
+                } else if (MOUSE_HELD) {
+                    /* Pressed on a mod's name: a drag along the load order,
+                     * or, let go where it was, a click, which opens the
+                     * mod's details. */
+                    dragging = 1;
+                    dragMoved = 0;
+                    dragOpen = 1;
+                } else {
+                    openDetails = 1;
+                }
+            } else if (cr >= modCount) {
+                mouseA = 1;   /* Install, Open the mods folder, Restart: A */
+            }
+        }
+        if (dragging) {
+            if (!MOUSE_HELD) {
+                dragging = 0;
+                if (!dragMoved && dragOpen) {
+                    openDetails = 1;   /* a click on a mod: its details */
+                }
+            } else {
+                /* The mod follows the pointer a row at a time, as L and R
+                 * move it; it stays among the mods. */
+                row = snap_mouse_row(top, MODS_VISIBLE, count);
+                if ((row >= 0) && (row < modCount) && (row != sel) && (modCount > 1)) {
+                    if (row < sel) {
+                        orderUp = 1;
+                    } else {
+                        orderDown = 1;
+                    }
+                    dragMoved = 1;
+                } else if ((row < 0) && (modCount > 1) && (++dragTick >= 8)) {
+                    /* Held above or below the window: the list scrolls
+                     * with the mod, a row at a time. */
+                    dragTick = 0;
+                    if (snap_mouse_in(36, 0, 250, PAGE_TOP_Y - 2) && (sel > 0)) {
+                        orderUp = 1;
+                        dragMoved = 1;
+                    } else if (snap_mouse_in(36, PAGE_TOP_Y + MODS_VISIBLE * PAGE_PITCH - 2, 250, 240) &&
+                               (sel < modCount - 1)) {
+                        orderDown = 1;
+                        dragMoved = 1;
+                    }
+                }
+            }
+        }
+
+        /* Left or Right on a mod's row turns it on or off, the value's
+         * chevrons saying so as on every other page. Only a fresh press:
+         * the stick's repeat would flip a held mod back and forth. */
+        if ((count > 0) && (((navLeft || navRight) && (snap_nav_repeat_h == 20)) || clickToggle) && (sel < modCount)) {
+            result = snap_mods_request((1u << 16) | (u32) sel);
+            if ((result == MODS_ON) || (result == MODS_OFF)) {
+                snap_ui_sound(SND_MOVE);
+            } else {
+                snap_ui_sound(SND_BACK);
             }
             ohWait(1);
             continue;
         }
 
-        if ((gContInputPressedButtons & Z_TRIG) && (sel < modCount) &&
-            ((MODS_HASOPT(gen & 1) >> (sel - top)) & 1)) {
+        if (((gContInputPressedButtons & Z_TRIG) || openDetails) && (count > 0) && (sel < modCount)) {
+            /* Every mod's details, and from there its options. */
             snap_ui_sound(SND_OK);
             snap_tint((GObj*) MODS_LABEL(sel - top), 0xFF, 0xFF, 0xFF);
-            snap_mods_strips_show(0, hdrStrip, descStrip, hintStrip, count, modCount, top, sel, gen);
+            snap_mods_strips_show(0, hdrStrip, descStrip, count, modCount, top);
+            snap_course_gobj_show(PAGE_ARROW_UP, 0);
+            snap_course_gobj_show(PAGE_ARROW_DN, 0);
+            snap_course_gobj_show((u32) legendStrip, 0);
             ohWait(1);
-            snap_mod_options_page(sel);
+            /* The details, and the options they open, one page at a time on
+             * this page's frame (snap_mod_details_page says why); the options
+             * under the stock legend, their A and B being OK and Cancel. */
+            row = (MODS_HASOPT(gen & 1) >> (sel - top)) & 1;
+            while (snap_mod_details_page(sel, row) && !snap_close_all) {
+                if ((legendStrip != NULL) && (stockLegend != NULL)) {
+                    snap_sprite_show(stockLegend, 1);
+                }
+                snap_mod_options_page(sel);
+                if ((legendStrip != NULL) && (stockLegend != NULL)) {
+                    snap_sprite_show(stockLegend, 0);
+                }
+                if (snap_close_all) {
+                    break;
+                }
+                snap_course_gobj_show(PAGE_ARROW_UP, 0);
+                snap_course_gobj_show(PAGE_ARROW_DN, 0);
+            }
+            snap_course_gobj_show((u32) legendStrip, 1);
+            dragging = 0;
             if (snap_close_all) {
                 break;
             }
             gen = MODS_GEN;
             snap_mods_swap(sel, top, gen, descStrip);
-            snap_mods_strips_show(1, hdrStrip, descStrip, hintStrip, count, modCount, top, sel, gen);
+            snap_mods_strips_show(1, hdrStrip, descStrip, count, modCount, top);
             snap_nav_dir_v = 0;
             snap_nav_dir_h = 0;
             pulseState = 0;
+            /* The click or right-click that closed the details page was
+             * its own: this page starts counting again, or the right
+             * button that went back to the list would leave it as well. */
+            snap_mouse_begin(&mouse);
+            mouseA = mouseB = 0;
             ohWait(1);
             continue;
         }
 
-        if ((gContInputPressedButtons & (L_TRIG | R_TRIG)) && (sel < modCount) && (modCount > 1)) {
-            const s32 down = (gContInputPressedButtons & R_TRIG) != 0;
+        if (((gContInputPressedButtons & (L_TRIG | R_TRIG)) || orderUp || orderDown) && (sel < modCount) &&
+            (modCount > 1)) {
+            const s32 down = ((gContInputPressedButtons & R_TRIG) != 0) || orderDown;
             if ((down && (sel < modCount - 1)) || (!down && (sel > 0))) {
                 result = snap_mods_request(((u32) (down ? 3 : 2) << 16) | (u32) sel);
                 if (result == MODS_DONE) {
@@ -4104,7 +5571,7 @@ static void snap_mods_page(void) {
                     }
                     if (top != (s32) MODS_TOP) {
                         MODS_TOP = (u8) top;
-                        snap_window_layout(0, count, modCount, top);
+                        snap_window_layout(0, count, modCount, top, MODS_VISIBLE);
                     }
                     pulseState = 0;
                     snap_ui_sound(SND_OK);
@@ -4118,6 +5585,7 @@ static void snap_mods_page(void) {
 
         if ((navUp || navDown) && (count > 0)) {
             snap_tint((GObj*) MODS_LABEL(sel - top), 0xFF, 0xFF, 0xFF);
+            restartAsked = 0;
             if (navUp) {
                 sel = (sel == 0) ? (count - 1) : (sel - 1);
             } else {
@@ -4133,7 +5601,7 @@ static void snap_mods_page(void) {
                 /* A new window: the host recomposes it and turns the bank,
                  * which the swap at the top of the loop follows. */
                 MODS_TOP = (u8) top;
-                snap_window_layout(0, count, modCount, top);
+                snap_window_layout(0, count, modCount, top, MODS_VISIBLE);
                 if (navUp) {
                     nudgeUp = 12;
                 } else {
@@ -4141,7 +5609,6 @@ static void snap_mods_page(void) {
                 }
             }
             snap_swap_strip(descStrip, snap_mods_help_str(sel - top, gen));
-            snap_mods_hint_show(hintStrip, sel, top, gen, modCount);
             snap_ui_sound(SND_MOVE);
         }
 
@@ -4154,6 +5621,30 @@ static void snap_mods_page(void) {
 
     MODS_OPEN = 0;
     MODS_REQ = 0;
+    snap_mods_place_on = 0;
+    if (snap_mods_rule != NULL) {
+        omDeleteGObj(snap_mods_rule);
+        snap_mods_rule = NULL;
+    }
+    if (snap_mods_head != NULL) {
+        omDeleteGObj(snap_mods_head);
+        snap_mods_head = NULL;
+    }
+    if (snap_mods_sub != NULL) {
+        omDeleteGObj(snap_mods_sub);
+        snap_mods_sub = NULL;
+    }
+    snap_rows_top_y = PAGE_TOP_Y;
+    snap_gap_row = -1;
+    if (legendOk != NULL) {
+        snap_free_legend(legendOk);
+    }
+    if (legendStrip != NULL) {
+        snap_free_legend(legendStrip);
+        if (stockLegend != NULL) {
+            snap_sprite_show(stockLegend, 1);
+        }
+    }
     for (i = 0; i < MODS_VISIBLE; i++) {
         if (MODS_LABEL(i) != 0) {
             omDeleteGObj((GObj*) MODS_LABEL(i));
@@ -4177,16 +5668,6 @@ static void snap_mods_page(void) {
     }
     if (descStrip != NULL) {
         omDeleteGObj(descStrip);
-    }
-    if (hintStrip != NULL) {
-        omDeleteGObj(hintStrip);
-    }
-    for (i = 0; i < hintCount; i++) {
-        SObj* sobj = (SObj*) MODS_HINT(i);
-        sobj->sprite.attr &= ~SP_HIDDEN;
-    }
-    if (snap_page_ctx != 0) {
-        snap_course_legend_show(1);
     }
     /* Put the Option list back exactly as it was; the next selection loop
      * re-shows the right item help line. */
@@ -4253,10 +5734,6 @@ static void snap_course_show(s32 show) {
     }
 }
 
-static void snap_course_legend_show(s32 show) {
-    snap_course_gobj_show(COURSE_DRESS(6), show);
-}
-
 /* The Option screen's dress at its own coordinates: a rule over and under
  * the heading, the help box's rules with a side at each end, the legend. */
 static void snap_course_dress_make(void) {
@@ -4302,6 +5779,8 @@ static void snap_port_pages(s32 ctx) {
     GObj* helpStrip;
     s32 sel, i, navUp, navDown, open, armed;
     u8 pulseState, pulseCounter;
+    SnapMouse mouse;
+    s32 ev, hit, mouseA, mouseB;
 
     if (DIR_MAGIC != 0x53474130) {
         return;
@@ -4321,15 +5800,39 @@ static void snap_port_pages(s32 ctx) {
     pulseState = 0;
     pulseCounter = 0;
     snap_nav_dir_v = 0;
+    snap_mouse_begin(&mouse);
     ohWait(1);
 
     while (1) {
         input = func_800AA38C(0);
 
+        /* The mouse, as on the Option screen's list: the row under the
+         * pointer is selected, a click on it is A, the header's A OK and B
+         * Cancel are A and B, the right button is B, the wheel steps. */
+        ev = snap_mouse_take(&mouse);
+        hit = -1;
+        for (i = 0; i < COURSE_ITEMS; i++) {
+            if (snap_mouse_on_sprite(((GObj*) COURSE_LABEL(i))->data.sobj, 3)) {
+                hit = i;
+            }
+        }
+        snap_header_track(ev);
+        mouseA = (ev & SNAP_MOUSE_CLICK) && ((hit >= 0) || (snap_header_hit() == 1));
+        mouseB = ((ev & SNAP_MOUSE_CLICK) && (hit < 0) && (snap_header_hit() == 2))
+              || (ev & SNAP_MOUSE_BACK);
+        if (((ev & SNAP_MOUSE_MOVED) || mouseA) && (hit >= 0) && (hit != sel)) {
+            snap_sprite_gray(((GObj*) COURSE_LABEL(sel))->data.sobj, 0xFF);
+            sel = hit;
+            armed = 0;
+            pulseState = 0;
+            snap_swap_strip(helpStrip, snap_course_help_str(sel));
+            snap_ui_sound(SND_MOVE);
+        }
+
         if (snap_start_closes()) {
             break;
         }
-        if (gContInputPressedButtons & B_BUTTON) {
+        if ((gContInputPressedButtons & B_BUTTON) || mouseB) {
             snap_ui_sound(SND_BACK);
             if (armed) {
                 /* The Exit Game question withdrawn, the list stays. */
@@ -4342,7 +5845,7 @@ static void snap_port_pages(s32 ctx) {
         }
 
         open = 0;
-        if (gContInputPressedButtons & A_BUTTON) {
+        if ((gContInputPressedButtons & A_BUTTON) || mouseA) {
             if ((sel == COURSE_OPT_EXIT) && !armed) {
                 /* Exit Game asks first, as it does on the Option screen:
                  * the help line becomes the question, the next A answers
@@ -4384,6 +5887,12 @@ static void snap_port_pages(s32 ctx) {
                 else {
                     navDown = 1;
                 }
+            }
+            if (ev & SNAP_MOUSE_UP) {
+                navUp = 1;
+            }
+            if (ev & SNAP_MOUSE_DOWN) {
+                navDown = 1;
             }
         }
 
@@ -4429,6 +5938,7 @@ static void snap_port_pages(s32 ctx) {
             snap_course_gobj_show((u32) helpStrip, 1);
             snap_nav_dir_v = 0;
             pulseState = 0;
+            snap_mouse_begin(&mouse);
             ohWait(1);
             continue;
         }
@@ -4479,6 +5989,7 @@ static void snap_port_pages(s32 ctx) {
         ohWait(1);
     }
 
+    snap_header_done();
     snap_course_delete();
     if (hdrStrip != NULL) {
         omDeleteGObj(hdrStrip);
@@ -5130,7 +6641,43 @@ s32 func_800E37E8_A0AD78(s32 arg0, s8 arg1) {
     return 0;
 }
 
-/* Stock, with a five-slot buffer for the list. */
+/* The title's list under the pointer: the row whose words it is on; -1
+ * for none. A label's sprite is wider and taller than its words (Snap
+ * Station's by 25 pixels on the left), and a pointer beside the words lit
+ * the row up, so each label has its words' own box, measured from where
+ * the letters change as the selected row pulses, placed from its sprite,
+ * with a pixel to spare. */
+static s32 snap_title_hit(GObj** gobjs, s32 count) {
+    s32 i;
+    for (i = 0; i < count; i++) {
+        GObj* gobj = gobjs[i];
+        SObj* sobj = gobj->data.sobj;
+        s32 dx, w, dy, h;
+        if ((sobj == NULL) || (sobj->sprite.attr & SP_HIDDEN)) {
+            continue;
+        }
+        if (gobj == D_800E82CC_A0F85C) {            /* New Game */
+            dx = 4;  w = 55; dy = 3; h = 10;
+        } else if (gobj == D_800E82D0_A0F860) {     /* Continue */
+            dx = 8;  w = 47; dy = 2; h = 10;
+        } else if (gobj == D_800E82D4_A0F864) {     /* Gallery */
+            dx = 23; w = 41; dy = 2; h = 12;
+        } else if (gobj == D_800E82D8_A0F868) {     /* Options */
+            dx = 12; w = 41; dy = 2; h = 12;
+        } else {                                    /* Snap Station */
+            dx = 25; w = 78; dy = 1; h = 12;
+        }
+        if (snap_mouse_in(sobj->sprite.x + dx - 1, sobj->sprite.y + dy - 1, w + 2, h + 2)) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+/* Stock, with a five-slot buffer for the list, and the mouse: the row
+ * under the pointer is selected as it moves there, a click on a row is A
+ * on it, a click anywhere else is nothing, the right button is B and the
+ * wheel steps through the rows. */
 s32 func_800E3974_A0AF04(s8 arg0) {
     UnkStruct800BEDF8* temp_v0;
     GObj* sp54[5];
@@ -5138,6 +6685,8 @@ s32 func_800E3974_A0AF04(s8 arg0) {
     s8 temp_s3;
     s8 var_s0;
     u8 i;
+    SnapMouse mouse;
+    s32 ev, hit;
 
     if (D_800E82E4_A0F874 == 4) {
         var_s0 = 0;
@@ -5149,10 +6698,38 @@ s32 func_800E3974_A0AF04(s8 arg0) {
 
     temp_s3 = func_800E33C8_A0A958(sp54);
     omCreateProcess(sp54[var_s0], func_800E3240_A0A7D0, 0, 1);
+    snap_mouse_begin(&mouse);
     ohWait(1);
 
     while (1) {
         temp_v0 = func_800AA38C(0);
+        ev = snap_mouse_take(&mouse);
+        hit = snap_title_hit(sp54, temp_s3);
+        if (((ev & SNAP_MOUSE_MOVED) || (ev & SNAP_MOUSE_CLICK)) && (hit >= 0) && (hit != var_s0)) {
+            snap_ui_sound(SND_MOVE);
+            ohEndAllObjectProcesses(sp54[var_s0]);
+            snap_sprite_rgb(sp54[var_s0]->data.sobj, 0xC0, 0xC0, 0);
+            var_s0 = hit;
+            omCreateProcess(sp54[var_s0], func_800E3240_A0A7D0, 0, 1);
+        }
+        if (ev != 0) {
+            /* The pointer at work is the player at work: the title's idle
+             * count, which starts the demo, begins again. */
+            func_800E1AEC_A0907C();
+            func_800E1AD4_A09064();
+        }
+        if ((ev & SNAP_MOUSE_CLICK) && (hit >= 0)) {
+            temp_v0->pressedButtons |= A_BUTTON;
+        }
+        if (ev & SNAP_MOUSE_BACK) {
+            temp_v0->pressedButtons |= B_BUTTON;
+        }
+        if (ev & SNAP_MOUSE_UP) {
+            temp_v0->pressedButtons |= STICK_SLOW_UP;
+        }
+        if (ev & SNAP_MOUSE_DOWN) {
+            temp_v0->pressedButtons |= STICK_SLOW_DOWN;
+        }
         if (temp_v0->pressedButtons != 0) {
             func_800E1AEC_A0907C();
             func_800E1AD4_A09064();
@@ -5237,5 +6814,95 @@ void func_800E1B78_A09108(u8 arg0) {
 
 /* The pause menu's OPTIONS item and the pages from a course: one translation
  * unit with the pages, for the reason the file says. */
+/* ---- The pages' own stack --------------------------------------------
+ * The pages run on a game process, whose stack is the scene's size: 1024
+ * bytes on the title, 1088 in the Tunnel, 768 in the Rainbow Cloud. The
+ * chain down to a mod's options -- the pause menu's process, the list, the
+ * Mods page, the options page and the sprite calls under them -- came to
+ * more than that in a course, and past the canary at the stack's far end
+ * the game froze as a mod's options opened (measured: 124 bytes left at the
+ * options' sprite calls on the title's 1024). So every way into the pages
+ * runs them on a process of their own with SNAP_PAGES_STACK bytes: the
+ * pause menu's pages instance (pause_menu_patch.inc), the pages from
+ * anywhere (anywhere_patch.inc) and the title's Option screen (below). The
+ * stack comes from the port's arena, as the pages' objects do, since some
+ * screens have spent their heap; the scene keeps it in its free list for
+ * the next opening, and the arena is started again with every scene. */
+#include "sys/ml.h"
+extern DynamicBuffer sGeneralHeap;
+GObjProcess* omCreateProcessThreaded(GObj* obj, void (*entry)(GObj*), u32 pri, s32 threadId, u32 stackSize);
+#define SNAP_ARENA_START 0x80E00000
+#define SNAP_ARENA_END   0x80E40000
+#define MBOX_ARENA_PTR (*(volatile u32*) (SNAP_GFX_MAILBOX + 0xF0))   /* the arena's cursor */
+#define SNAP_PAGES_STACK 0x2000
+
+/* A process on a stack of the pages' size, the heap pointed at the arena
+ * for the allocation; the scene's own size if the arena has no room. */
+static GObjProcess* snap_big_stack_process(GObj* obj, GObjFunc entry, u32 pri) {
+    void* savedStart = sGeneralHeap.start;
+    void* savedEnd = sGeneralHeap.end;
+    void* savedPtr = sGeneralHeap.ptr;
+    u32 arenaPtr = MBOX_ARENA_PTR;
+    GObjProcess* proc;
+
+    if ((arenaPtr < SNAP_ARENA_START) || (arenaPtr > SNAP_ARENA_END)) {
+        arenaPtr = SNAP_ARENA_START;
+    }
+    if ((SNAP_ARENA_END - arenaPtr) < (SNAP_PAGES_STACK + 0x400)) {
+        return omCreateProcessThreaded(obj, entry, pri, -1, 0);
+    }
+    sGeneralHeap.start = (void*) SNAP_ARENA_START;
+    sGeneralHeap.end = (void*) SNAP_ARENA_END;
+    sGeneralHeap.ptr = (void*) arenaPtr;
+    proc = omCreateProcessThreaded(obj, entry, pri, -1, SNAP_PAGES_STACK);
+    MBOX_ARENA_PTR = (u32) sGeneralHeap.ptr;
+    sGeneralHeap.start = savedStart;
+    sGeneralHeap.end = savedEnd;
+    sGeneralHeap.ptr = savedPtr;
+    return proc;
+}
+
+/* The runner (func_800BF444_5C2E4, anywhere_patch.inc) is the process
+ * every big-stack job starts with, a function of the resident code the
+ * runtime can dispatch: 0 as the host creates it for the pages from
+ * anywhere (it hands the work to a copy of itself on the big stack), 1 to
+ * run the title's Option screen, 2 the pages from anywhere themselves. The
+ * process that started the job waits while it is busy. */
+#define GAME_SNAP_RUNNER ((GObjFunc) 0x800BF444)
+static s32 snap_runner_mode = 0;
+static GObj* snap_runner_obj = NULL;   /* the object the job was started on */
+static volatile s32 snap_runner_busy = 0;
+
+static void snap_run_on_big_stack(GObj* obj, s32 mode) {
+    snap_runner_obj = (obj != NULL) ? obj : omCurrentObject;
+    snap_runner_mode = mode;
+    snap_runner_busy = 1;
+    snap_big_stack_process(snap_runner_obj, GAME_SNAP_RUNNER, omCurrentProcess->priority);
+    while (snap_runner_busy) {
+        ohWait(1);
+    }
+}
+
+/* Stock, with the Option screen's loop run on the pages' stack. */
+void func_800E6ADC_A0E06C(void);
+s32 func_800E6B2C_A0E0BC(void) {
+    func_800E6ADC_A0E06C();
+    snap_run_on_big_stack(NULL, 1);
+    omDeleteGObj(D_800E8334_A0F8C4);
+    omDeleteGObj(D_800E8338_A0F8C8);
+    omDeleteGObj(D_800E833C_A0F8CC);
+    omDeleteGObj(D_800E8340_A0F8D0);
+    omDeleteGObj(D_800E8344_A0F8D4);
+    omDeleteGObj(D_800E8348_A0F8D8);
+    omDeleteGObj(D_800E834C_A0F8DC);
+    omDeleteGObj(D_800E8350_A0F8E0);
+    omDeleteGObj(D_800E8354_A0F8E4);
+    omDeleteGObj(D_800E8358_A0F8E8);
+    omDeleteGObj(D_800E835C_A0F8EC);
+    omDeleteGObj(D_800E8360_A0F8F0);
+    return 12;
+}
+
 #include "pause_menu_patch.inc"
 #include "anywhere_patch.inc"
+#include "mouse_patch.inc"

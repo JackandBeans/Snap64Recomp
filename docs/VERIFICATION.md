@@ -14,8 +14,12 @@ here should be assumed untried.
   has been played on a Steam Deck in both of its modes
   ([STEAM-DECK.md](STEAM-DECK.md)). Players have run it on an NVIDIA
   GeForce RTX 4070 Ti Super (issue #13), an Intel UHD 630 (issue #15) and
-  a Deck through Proton; no Linux desktop has reported yet. A report from
-  any machine not on that list is welcome, good or bad.
+  a Deck through Proton; no Linux desktop has reported yet. Since 1.1.0 a
+  macOS build is made and run on GitHub's virtual Mac on every release
+  candidate (`BUILDING.md`, step 15): there it boots to the intro, plays the
+  Beach with its photos scored and loads a mod, natively and under Rosetta
+  2; no physical Mac has run it. A report from any machine not on that list
+  is welcome, good or bad.
 * **Buildable from a clean checkout, in two steps beyond `git clone`.**
   `python tools/fetch_deps.py` fetches the vendored trees (SDL,
   DirectX-Headers, RT64's third-party trees) at the recorded upstream commits
@@ -23,10 +27,13 @@ here should be assumed untried.
   (`RecompiledFuncs/`, `RecompiledPatches/`, the ROM) are generated under WSL
   from your own cartridge dump. A second checkout built this way, on this
   machine, on 2026-09-02 (`BUILDING.md`, "What a clean checkout is missing").
-* No CI and no installer. The release archive is the ZIP that `cpack`
-  writes (`BUILDING.md`, step 13), after the headless suite in
-  `tools/release_check.py` has passed on it ("What has been verified").
-* Version `1.0.9`, typed once in `CMakeLists.txt` and shown in the title
+* No installer. The Windows and Linux archives are the ZIP and tarball that
+  `cpack` writes here (`BUILDING.md`, steps 13 and 14), after the headless
+  suite in `tools/release_check.py` has passed on them ("What has been
+  verified"); the macOS bundle is built and checked by the one workflow
+  that runs on GitHub's machines, on request (`.github/workflows/macos.yml`),
+  beside a check of the documentation's links on every push.
+* Version `1.1.0`, typed once in `CMakeLists.txt` and shown in the title
   bar, the log banner, the credits line, the executable's file properties and
   the ZIP's name. `CHANGELOG.md` says what each release changed.
 * Licensed under the GPLv3 (`LICENSE`); `NOTICE.md` lists every third-party
@@ -65,16 +72,23 @@ here should be assumed untried.
   Since 1.0.9 the key that opens the pages from anywhere is pressed in the
   title tape: the list opens over the title and closes again, the runner's
   own log line and the display list's say so, and nothing hangs or overruns.
-  On the 1.0.9 executable (SHA-256 beginning `e7fc4627`), run without
-  diagnostics in the environment, the suite passed 28 of 28 checks in 1154
-  seconds, and the station's 5 of 5 in 488; the 1.0.8 executable had passed
+  Since the fix that followed 1.0.9 the same run proves the music held with
+  the screen: the host's line for each BGM player gives its own clock at
+  the hold and at the release, and the check passes only when they are
+  equal.
+  On the 1.1.0 executable (SHA-256 beginning `3006d9b4`), run without
+  diagnostics in the environment, the suite passed 29 of 29 checks in 1149
+  seconds, and the station's 5 of 5 in 487; the 1.0.9 executable had passed
+  28 of 28 in 1154 and the station's 5 in 488, the 1.0.8 executable had passed
   the 26 checks of its day in 1103 and the station's 5 in 488, 1.0.7 the earlier 25 of 25 in 825
   and 487, 1.0.6 the 22 of 22 before that in 781 and 487, 1.0.5 the same in 781 and 489, 1.0.4
   in 781 and 487, 1.0.3, 1.0.2 and 1.0.1 in 781 and 491 each, and 1.0.0 in
   781 and 489 on a cold shader cache. The suite opens the game window for
-  each run and takes about nineteen minutes, plus eight for the station. There is no CI run, and no
-  build on any other machine is recorded in this repository. Anything not
-  listed here should be assumed untried.
+  each run and takes about nineteen minutes, plus eight for the station. The
+  one CI run is the macOS workflow's, on GitHub's virtual Mac (BUILDING.md,
+  step 15): on the 1.1.0 candidate its checks passed 15 of 15 natively and 10 of 10
+  through Rosetta 2. No build on any other machine is recorded in this
+  repository. Anything not listed here should be assumed untried.
 * The photo export (P, the controller's Back button, `photos/`) is checked
   by `SNAP_PHOTO_AUTOEXPORT` on an input replay that reaches Oak's check,
   not by hand: saving from the keyboard and from the controller has not been

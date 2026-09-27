@@ -27,7 +27,11 @@ constexpr uint32_t counter_per_ms = 46'875;
 // or slower console and nothing else. The counter is piecewise linear: a
 // change rebases it on the instant of the change, so it never jumps and
 // never runs backwards.
-static std::mutex clock_mutex;
+// Pokemon Snap port: never destroyed, as the pool's objects in threads.cpp:
+// the timer thread is detached and still runs while the process's globals
+// are destroyed (macOS threw on the lock, and the thread's queue below was
+// freed under it: a crash report at every quit, found 2026-09-26).
+static std::mutex& clock_mutex = *new std::mutex();
 static uint32_t speed_num = 1;
 static uint32_t speed_den = 1;
 static uint64_t clock_base_ticks = 0;                                               // the counter at the last change
@@ -52,10 +56,12 @@ struct RemoveTimerAction {
 
 using Action = std::variant<AddTimerAction, RemoveTimerAction>;
 
-struct {
+struct TimerContext {
     std::thread thread;
     moodycamel::BlockingConcurrentQueue<Action> action_queue{};
-} timer_context;
+};
+// Pokemon Snap port: never destroyed (see clock_mutex above).
+static TimerContext& timer_context = *new TimerContext();
 
 // Counts at num/den times the console's rate over a wall-clock span.
 uint64_t duration_to_ticks(std::chrono::high_resolution_clock::duration duration, uint32_t num, uint32_t den) {
@@ -273,6 +279,33 @@ void ultramodern::sleep_until(const std::chrono::high_resolution_clock::time_poi
         // printf("Sleeping %lld %d ms\n", delta_ms, (uint32_t)delta_ms);
         Sleep(delta_ms);
     }
+}
+
+#elif defined(__APPLE__)
+
+#include <mach/mach_time.h>
+
+void ultramodern::sleep_milliseconds(uint32_t millis) {
+    std::this_thread::sleep_for(std::chrono::milliseconds{millis});
+}
+
+// Snap64 Recomp: the kernel's own deadline wait, on the clock that
+// high_resolution_clock reads on macOS (mach_absolute_time). With the
+// time-constraint policy the VI and timer threads take (threads.cpp,
+// set_native_thread_priority) it wakes within microseconds even on a
+// virtual Mac, where std::this_thread::sleep_until woke 61 ms late.
+void ultramodern::sleep_until(const std::chrono::high_resolution_clock::time_point& time_point) {
+    const auto now = std::chrono::high_resolution_clock::now();
+    if (time_point <= now) {
+        return;
+    }
+    static const mach_timebase_info_data_t timebase = [] {
+        mach_timebase_info_data_t t{};
+        mach_timebase_info(&t);
+        return t;
+    }();
+    const uint64_t ns = uint64_t(std::chrono::duration_cast<std::chrono::nanoseconds>(time_point - now).count());
+    mach_wait_until(mach_absolute_time() + ns * timebase.denom / timebase.numer);
 }
 
 #else

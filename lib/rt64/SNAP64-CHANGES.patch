@@ -1,8 +1,19 @@
 diff --git a/CMakeLists.txt b/CMakeLists.txt
-index 79dfc38..62e6a03 100644
+index 79dfc38..842fb31 100644
 --- a/CMakeLists.txt
 +++ b/CMakeLists.txt
-@@ -377,6 +377,7 @@ set (SOURCES
+@@ -289,6 +289,10 @@ if (WIN32)
+     set(SDL2_INCLUDE_DIRS "${PROJECT_SOURCE_DIR}/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3/include")
+     set(SDL2_LIBRARIES "SDL2" "SDL2main")
+     link_directories("${PROJECT_SOURCE_DIR}/src/contrib/mupen64plus-win32-deps/SDL2-2.26.3/lib/x64")
++elseif (TARGET SDL2-static)
++    # Snap64 Recomp: on macOS the port builds SDL2 from its own vendored tree
++    # as a static library, and set SDL2_INCLUDE_DIRS and SDL2_LIBRARIES to it
++    # before adding this directory; there is no installed package to find.
+ else()
+     find_package(SDL2 REQUIRED)
+ endif()
+@@ -377,6 +381,7 @@ set (SOURCES
      "${PROJECT_SOURCE_DIR}/src/render/rt64_projection_processor.cpp"
      "${PROJECT_SOURCE_DIR}/src/render/rt64_raster_shader.cpp"
      "${PROJECT_SOURCE_DIR}/src/render/rt64_raster_shader_cache.cpp"
@@ -648,7 +659,7 @@ index 6c83fe0..fbacd6d 100644
          std::unique_ptr<ShaderLibrary> shaderLibrary;
          std::unique_ptr<WorkloadQueue> workloadQueue;
 diff --git a/src/hle/rt64_application_window.cpp b/src/hle/rt64_application_window.cpp
-index 08f83e5..771188b 100755
+index 08f83e5..771188b 100644
 --- a/src/hle/rt64_application_window.cpp
 +++ b/src/hle/rt64_application_window.cpp
 @@ -90,7 +90,12 @@ namespace RT64 {
@@ -2529,7 +2540,7 @@ index 00a72f6..b1c72b1 100644
          void buildTransformIdMap(const Workload &workload, std::multimap<uint32_t, uint32_t> &idMap, std::vector<uint32_t> &ignoredIdVector) const;
          uint64_t hashFromCall(const GameCall &call, uint32_t matrixIdHash) const;
 diff --git a/src/hle/rt64_present_queue.cpp b/src/hle/rt64_present_queue.cpp
-index 7de5b69..b502f9a 100644
+index 7de5b69..9fbc635 100644
 --- a/src/hle/rt64_present_queue.cpp
 +++ b/src/hle/rt64_present_queue.cpp
 @@ -8,8 +8,344 @@
@@ -3536,6 +3547,23 @@ index 7de5b69..b502f9a 100644
              }
          }
      }
+@@ -472,8 +1343,15 @@ namespace RT64 {
+                     ext.presentGraphicsWorker->commandList->end();
+                     ext.presentGraphicsWorker->execute();
+                     ext.presentGraphicsWorker->wait();
+-                    swapChainValid = ext.swapChain->resize();
++                    // Pokemon Snap port: the framebuffers go before the resize.
++                    // They hold the old swap chain's images, and Direct3D 12's
++                    // ResizeBuffers fails while any reference to a back buffer
++                    // is alive (Vulkan destroys images still in use), so a
++                    // resize or a fullscreen switch cost a failed attempt and
++                    // a frame. Upstream has the old order. Found by
++                    // DramaticShape's VR fork (prismaticShape/Snap64RecompVR).
+                     swapChainFramebuffers.clear();
++                    swapChainValid = ext.swapChain->resize();
+ 
+                     if (swapChainValid) {
+                         ext.sharedResources->setSwapChainSize(ext.swapChain->getWidth(), ext.swapChain->getHeight());
 diff --git a/src/hle/rt64_present_queue.h b/src/hle/rt64_present_queue.h
 index e08b02c..34bf666 100644
 --- a/src/hle/rt64_present_queue.h
@@ -4221,10 +4249,10 @@ index 8858dac..d555d2e 100644
      struct SharedQueueResources {
 diff --git a/src/hle/rt64_snap_diag.h b/src/hle/rt64_snap_diag.h
 new file mode 100644
-index 0000000..3aae954
+index 0000000..77de190
 --- /dev/null
 +++ b/src/hle/rt64_snap_diag.h
-@@ -0,0 +1,796 @@
+@@ -0,0 +1,833 @@
 +/**
 + * @file rt64_snap_diag.h
 + * @brief Shared pieces of the Pokemon Snap port's diagnostics.
@@ -5018,6 +5046,43 @@ index 0000000..3aae954
 +
 +    fclose(f);
 +    return ok;
++}
++
++// Where the last presented picture sits in the window, so the port can turn
++// the mouse's window position into the game's own 320 by 240 coordinates
++// (src/input.cpp). Written by the VI renderer with the viewport it drew with
++// -- aspect, widescreen, overscan crop and all -- and the same mapping as
++// the debugger's own right-click pick (rt64_state.cpp).
++struct PresentedView {
++    float x = 0.0f;         // the viewport, in the swap chain's pixels
++    float y = 0.0f;
++    float width = 0.0f;
++    float height = 0.0f;
++    float fbWidth = 0.0f;   // the game's framebuffer
++    float fbHeight = 0.0f;
++    float aspect = 1.0f;    // the resolution scale's x over its y: 1 unless widened
++    uint32_t swapWidth = 0; // the swap chain, to scale window points to its pixels
++    uint32_t swapHeight = 0;
++};
++
++inline std::mutex &presentedViewMutex() {
++    static std::mutex m;
++    return m;
++}
++
++inline PresentedView &presentedViewStore() {
++    static PresentedView v;
++    return v;
++}
++
++inline void publishPresentedView(const PresentedView &v) {
++    std::lock_guard<std::mutex> lock(presentedViewMutex());
++    presentedViewStore() = v;
++}
++
++inline PresentedView presentedView() {
++    std::lock_guard<std::mutex> lock(presentedViewMutex());
++    return presentedViewStore();
 +}
 +
 +} // namespace snapdiag
@@ -9804,10 +9869,10 @@ index cd8004d..5156d40 100644
              const interop::float4x4 *worldMatrices = prevFrameValid ? drawData.lerpWorldTransforms.data() : drawData.worldTransforms.data();
              const interop::float4x4 *prevWorldMatrices = prevFrameValid ? drawData.prevWorldTransforms.data() : drawData.worldTransforms.data();
 diff --git a/src/render/rt64_vi_renderer.cpp b/src/render/rt64_vi_renderer.cpp
-index b4ff4e9..872ad75 100644
+index b4ff4e9..a6d9db8 100644
 --- a/src/render/rt64_vi_renderer.cpp
 +++ b/src/render/rt64_vi_renderer.cpp
-@@ -4,6 +4,8 @@
+@@ -4,9 +4,13 @@
  
  #include "rt64_vi_renderer.h"
  
@@ -9816,16 +9881,38 @@ index b4ff4e9..872ad75 100644
  #include "shared/rt64_hlsl.h"
  #include "shared/rt64_video_interface.h"
  
-@@ -69,7 +71,7 @@ namespace RT64 {
++#include "hle/rt64_snap_diag.h"
++
+ namespace RT64 {
+     // VIRenderer
+ 
+@@ -69,7 +73,24 @@ namespace RT64 {
  
          RenderViewport viewport;
          RenderRect scissor;
 -        getViewportAndScissor(p.swapChain, *p.vi, p.resolutionScale, p.downsamplingScale, p.removeBlackBorders, viewport, scissor);
 +        getViewportAndScissor(p.swapChain, *p.vi, p.resolutionScale, p.downsamplingScale, p.removeBlackBorders, p.crop, viewport, scissor);
++
++        // Pokemon Snap port: the picture's place in the window, for the
++        // mouse (snapdiag::PresentedView).
++        {
++            snapdiag::PresentedView view;
++            view.x = viewport.x;
++            view.y = viewport.y;
++            view.width = viewport.width;
++            view.height = viewport.height;
++            const hlslpp::float2 fb = hlslpp::float2(p.vi->fbSize());
++            view.fbWidth = float(fb.x);
++            view.fbHeight = float(fb.y);
++            view.aspect = float(p.resolutionScale.x) / float(p.resolutionScale.y);
++            view.swapWidth = p.swapChain->getWidth();
++            view.swapHeight = p.swapChain->getHeight();
++            snapdiag::publishPresentedView(view);
++        }
          p.commandList->setViewports(viewport);
          p.commandList->setScissors(scissor);
  
-@@ -86,7 +88,7 @@ namespace RT64 {
+@@ -86,7 +107,7 @@ namespace RT64 {
          p.commandList->drawInstanced(3, 1, 0, 0);
      }
  
@@ -9834,7 +9921,7 @@ index b4ff4e9..872ad75 100644
          // We define three different coordinate spaces to work with to translate the VI parameters into the Window.
          //
          // VideoSD: This corresponds to the SD TV Scanline space, which is what the VI natively works on.
-@@ -121,5 +123,68 @@ namespace RT64 {
+@@ -121,5 +142,68 @@ namespace RT64 {
  
          viewport = RenderViewport(topLeftViewport.x, topLeftViewport.y, bottomRightViewport.x - topLeftViewport.x, bottomRightViewport.y - topLeftViewport.y);
          scissor = RenderRect(lround(topLeftScissor.x), lround(topLeftScissor.y), lround(bottomRightScissor.x), lround(bottomRightScissor.y));

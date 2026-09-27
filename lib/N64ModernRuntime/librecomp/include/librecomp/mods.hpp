@@ -579,8 +579,10 @@ namespace recomp {
             LiveRecompilerCodeHandle(const N64Recomp::Context& context, const ModCodeHandleInputs& inputs,
                 std::unordered_map<size_t, size_t>&& entry_func_hooks, std::unordered_map<size_t, size_t>&& return_func_hooks, std::vector<size_t>&& original_section_indices, bool regenerated);
 
-            ~LiveRecompilerCodeHandle() = default;
-            
+            // Pokemon Snap port: takes the code out of ultramodern's list of
+            // generated code before the code is freed (mods.cpp).
+            ~LiveRecompilerCodeHandle();
+
             // Disable copying.
             LiveRecompilerCodeHandle(const LiveRecompilerCodeHandle& rhs) = delete;
             LiveRecompilerCodeHandle& operator=(const LiveRecompilerCodeHandle& rhs) = delete;
@@ -597,6 +599,9 @@ namespace recomp {
             }
             GenericFunction get_function_handle(size_t func_index) final;
         private:
+            // Pokemon Snap port: the second block registered with ultramodern
+            // when the functions do not run where the code was written.
+            const void* generated_elsewhere = nullptr;
             uint32_t base_event_index;
             std::unique_ptr<N64Recomp::LiveGeneratorOutput> recompiler_output;
             void set_bad();

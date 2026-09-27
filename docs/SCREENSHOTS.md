@@ -10,13 +10,13 @@ them.
 
 ## The title
 
-<a href="screenshots/01j-title-109.png"><img src="screenshots/01j-title-109.png" width="640" alt="The title screen"></a>
+<a href="screenshots/01k-title-110.png"><img src="screenshots/01k-title-110.png" width="640" alt="The title screen"></a>
 
 **The title screen.** The game's own title with the port's "Recomp" wordmark
 under it, the copyright block, and the port's credits line
-(`JackandBeans (Snap64 Recomp) · v1.0.9`) set in the game's own lettering.
+(`JackandBeans (Snap64 Recomp) · v1.1.0`) set in the game's own lettering.
 The same picture from each earlier release, `01-title.png` for 1.0.0 and
-`01b` to `01i` for 1.0.1 to 1.0.8, stays in the folder for that release's
+`01b` to `01j` for 1.0.1 to 1.0.9, stays in the folder for that release's
 page.
 
 <a href="screenshots/02-title-menu.png"><img src="screenshots/02-title-menu.png" width="640" alt="The title menu with the Snap Station entry"></a>
@@ -151,6 +151,15 @@ shipped, 2x or 4x slower while Space, or the left stick pressed in, is held.
 the one colour of the set the menu did not use. It is composed from the
 game's own pill artwork and lettering, and it opens the port's pages over
 the paused ride; Esc, or Select on a pad, opens them from any screen.
+
+<a href="screenshots/21-mods-page-110.png"><img src="screenshots/21-mods-page-110.png" width="640" alt="The Mods page, 1.1.0"></a>
+
+**The Mods page, 1.1.0.** Options > Mods over the title, with the two mods
+of the [mods repository](https://github.com/JackandBeans/Snap64RecompMods)
+installed and on: one row per mod with its switch, and under the rule the
+three rows that install mods, open the folder and restart the game. The
+help box carries the selected mod's own description and what moves it in
+the load order, worded for the device in hand (here a mouse had clicked).
 
 ## The Snap Station
 

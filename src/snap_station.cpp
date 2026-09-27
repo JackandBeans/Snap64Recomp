@@ -367,6 +367,9 @@ void remove_marker() {
 // this one to quit. The new process reads the marker and waits for this
 // process to be gone before it touches the save or the shader cache.
 bool relaunch_self(const char* why) {
+    // A relaunch is a normal end: the new start must not take this session
+    // for one that crashed (mod_installer.cpp, mods_safe_start).
+    session_mark_clean();
 #if defined(_WIN32)
     wchar_t exe[MAX_PATH];
     const DWORD len = GetModuleFileNameW(nullptr, exe, MAX_PATH);

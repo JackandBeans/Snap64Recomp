@@ -2,8 +2,10 @@
 
 MSVC has no linker --wrap, so interception works by renaming the generated
 definition to __real_<name> and letting the port define <name> itself (see
-src/overlay_hook.cpp, src/matrix_tags.cpp). Re-run this after regenerating
-RecompiledFuncs with N64Recomp; it is idempotent.
+src/overlay_hook.cpp, src/matrix_tags.cpp). It also finishes the patch
+table in RecompiledPatches for mods' hooks (finish_patch_table). Re-run this after
+regenerating RecompiledFuncs or RecompiledPatches with N64Recomp; it is
+idempotent.
 
 Usage: python tools/hook_funcs.py [RecompiledFuncs directory]
 """
@@ -74,6 +76,21 @@ HOOKED = [
     # rectangles carry no matrix and no vertices, so this is the only thing
     # that can tell one from another. spX2Draw is the sprite; renDrawSprite
     # is the object that owns them, and closes the group afterwards.
+    # The mouse on the photo screens (src/menu_mouse.cpp): each screen's
+    # navigation function, run after the pointer has moved its selection.
+    'album_UpdateButtonSelection',
+    'album_UpdatePhotoSelection',
+    'album_DragPhoto',
+    'func_801E28D8_9D9248',
+    'func_801E2AC0_9D9430',
+    'func_801E2CF8_9D9668',
+    'func_camera_check_801DFA80',
+    'func_camera_check_801DFCD4',
+    'func_801E41FC_993C6C',
+    'func_801DF8A4_9FD564',
+    'func_801DFA94_9FD754',
+    'func_801DFE74_9FDB34',
+    'func_801E006C_9FDD2C',
     'spX2Draw',
     'renDrawSprite',
     # Measured only, to attribute the rectangles nothing has named yet to the
@@ -117,6 +134,10 @@ HOOKED = [
     # most recently freed address, so an address alone names two different
     # sprites within a frame of each other.
     'omGObjAddSprite',
+    # The BGM sequence players' handler, libaudio's __CSPVoiceHandler, which
+    # the game's symbols do not name: skipped while the pages from anywhere
+    # hold the music with the screen (src/overlay_hook.cpp).
+    'manualfunc_8002E2F8',
 ]
 
 # Calls inserted INSIDE a recompiled function, at a named guest address.
@@ -175,6 +196,17 @@ INNER_HOOKS = [
 # alone -- and loud: if neither form follows the anchor, a regeneration has
 # changed the code and the rewrite would otherwise go silently missing.
 INSTRUCTION_PATCHES = [
+    # auThreadMain's two inlined AI_LEN reads (the register at 0xA4500004,
+    # outside mapped RDRAM): the tick's, and the one after its players are
+    # rebuilt. Each asks the audio queue at that moment, as the register
+    # answers (snap_audio_remaining_bytes, src/overlay_hook.cpp). The lui
+    # before each keeps the ROM's value; nothing reads through it any more.
+    ('auThreadMain', 0x800219DC,
+     'ctx->r25 = MEM_W(ctx->r24, 0X4);',
+     'ctx->r25 = S32(snap_audio_remaining_bytes());'),
+    ('auThreadMain', 0x80022278,
+     'ctx->r14 = MEM_W(ctx->r24, 0X4);',
+     'ctx->r14 = S32(snap_audio_remaining_bytes());'),
     # fx_draw's on-screen test: a particle whose projected x lies outside the
     # console's picture, -1..1 in the projection's own units, is not drawn (the
     # test at 0x800A4C8C rejects x below -1, the one at 0x800A4C9C above 1;
@@ -204,9 +236,120 @@ INSTRUCTION_PATCHES = [
 
 # What the rewritten statements call; declared in funcs.h like the callbacks.
 PATCH_DECLS = [
+    'uint32_t snap_audio_remaining_bytes(void);',
     'float snap_fx_x_bound(void);',
     'uint32_t snap_fx_x_translate(uint32_t bits);',
 ]
+
+
+# Written at the top of RecompiledPatches/recomp_overlays.inl once
+# finish_patch_table has run; src/main.cpp refuses to build without it.
+PATCH_TABLE_MARKER = '#define SNAP_PATCH_TABLE_FINISHED 1'
+
+
+def finish_patch_table(port_root: pathlib.Path) -> str:
+    """Make the patch table fit for a mod's hook on a function the port's
+    patches replace (auPlaySound, for one: the sound effects' volume).
+
+    The runtime reads this table only for such a hook. It recompiles the
+    patched function live, with every call it makes looked up by address or
+    through the table's relocations, and two things in the table as the
+    recompiler writes it did not fit the port, so the mod failed to load
+    ("Code mod loading internal error") or stopped the game at the first
+    call ("Failed to find function at 0x808040D4").
+
+    The relocations. The recompiler writes each call into the game with the
+    target's section as its place in patches/pokemonsnap.syms.toml (.main is
+    0, .app_level 11). The runtime resolves a call by the section's position
+    in the port's code_sections (src/recomp_overlays.inl) after it sorts that
+    array by ROM address (overlays.cpp, init_overlays): .main is 2 there. An
+    address (HI16, LO16) it resolves through section_addresses, which is
+    indexed by the section's ELF header index (.main is 3). The peers build
+    the game from the same symbol file as their patches, so their numbers
+    all agree; the port builds the game from the ELF, and they do not.
+    Sections are matched by ROM and RAM address, and a name that disagrees
+    stops the build.
+
+    The static functions. IDO leaves a static function without a symbol, so
+    the recompiler names it by its address (static_1_808040D4) and the
+    static code calls it directly, but the table does not list it, and the
+    live code's lookup found nothing. Each is listed now with a size of
+    zero, which the runtime reads as "cannot be hooked": a mod cannot name
+    one anyway.
+    """
+    table = port_root / 'RecompiledPatches' / 'recomp_overlays.inl'
+    if not table.is_file():
+        return 'no patch table'
+    text = table.read_text(encoding='utf-8')
+    if PATCH_TABLE_MARKER in text:
+        return 'patch table already finished'
+
+    syms = (port_root / 'patches' / 'pokemonsnap.syms.toml').read_text(encoding='utf-8')
+    order = re.findall(r'^\[\[section\]\]\s*\nname = "([^"]+)"\s*\nrom = (0x[0-9A-Fa-f]+)\s*\nvram = (0x[0-9A-Fa-f]+)',
+                       syms, flags=re.MULTILINE)
+    assert order, 'no sections found in patches/pokemonsnap.syms.toml'
+
+    game = (port_root / 'src' / 'recomp_overlays.inl').read_text(encoding='utf-8')
+    start = game.index('static SectionTableEntry code_sections[] = {')
+    entries = [(int(rom, 16), int(ram, 16), int(index), name) for index, name, rom, ram in re.findall(
+        r'// \[(\d+)\] (\S+)\s*\n\s*\{ \.rom_addr = (0x[0-9A-Fa-f]+), \.ram_addr = (0x[0-9A-Fa-f]+)',
+        game[start:])]
+    roms = [e[0] for e in entries]
+    assert len(set(roms)) == len(roms), 'two code sections share a ROM address; the runtime sort would not be fixed'
+    by_address = {}
+    for position, (rom, ram, index, name) in enumerate(sorted(entries)):
+        by_address[(rom, ram)] = (position, index, name)
+
+    target = {}
+    for place, (name, rom, vram) in enumerate(order):
+        found = by_address.get((int(rom, 16), int(vram, 16)))
+        assert found is not None and found[2] == name, (
+            f'section {name} (rom {rom}, vram {vram}) of the symbol file is not in '
+            f'src/recomp_overlays.inl under that name; regenerate one or the other')
+        target[place] = found[:2]
+
+    used = {}
+
+    def renumber(match):
+        place, kind = int(match.group(1)), match.group(2)
+        # Past the symbol file's sections are the recompiler's own markers
+        # (events, absolute symbols), which keep their values.
+        if place >= len(order):
+            return match.group(0)
+        if kind == 'R_MIPS_26':
+            number, how = target[place][0], 'call'
+        elif kind in ('R_MIPS_HI16', 'R_MIPS_LO16'):
+            number, how = target[place][1], 'address'
+        else:
+            raise AssertionError(f'a patch relocation of type {kind} into {order[place][0]}: '
+                                 f'the runtime has no numbering for it here')
+        key = (order[place][0], how, place, number)
+        used[key] = used.get(key, 0) + 1
+        return '.target_section = %d, .type = %s' % (number, kind)
+
+    text = re.sub(r'\.target_section = (\d+), \.type = (R_MIPS_\w+)', renumber, text)
+
+    # The static functions, into their section's list.
+    decls = (port_root / 'RecompiledPatches' / 'funcs.h').read_text(encoding='utf-8')
+    statics = re.findall(r'^void (static_(\d+)_([0-9A-F]{8}))\(', decls, flags=re.MULTILINE)
+    sections = {int(index): (int(ram, 16), funcs) for ram, funcs, index in re.findall(
+        r'\.ram_addr = (0x[0-9A-Fa-f]+),.*?\.funcs = (\w+),.*?\.index = (\d+) \}', text)}
+    listed = 0
+    for name, index, address in statics:
+        ram, funcs = sections[int(index)]
+        head = 'static FuncEntry %s[] = {\n' % funcs
+        at = text.index(head) + len(head)
+        end = text.index('};', at)
+        if ('.func = %s,' % name) in text[at:end]:
+            continue
+        line = '    { .func = %s, .offset = 0x%08X, .rom_size = 0x00000000 },\n' % (name, int(address, 16) - ram)
+        text = text[:end] + line + text[end:]
+        listed += 1
+
+    table.write_text(PATCH_TABLE_MARKER + '\n' + text, encoding='utf-8', newline='')
+    return 'patch table finished: relocations ' + ', '.join(
+        f'{name} {how} {place}->{number} x{n}' for (name, how, place, number), n in sorted(used.items())) + \
+        f'; {listed} static functions listed'
 
 
 def main() -> int:
@@ -337,6 +480,7 @@ def main() -> int:
     print(f'hooked {len(HOOKED)} functions across {renamed} file(s), '
           f'{len(INNER_HOOKS)} inner hook(s), {inner} inserted, '
           f'{len(INSTRUCTION_PATCHES)} instruction patch(es), {patched} rewritten')
+    print(finish_patch_table(root.resolve().parent))
     return 0
 
 

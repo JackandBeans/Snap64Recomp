@@ -4,7 +4,7 @@
 # Silicon build was proved on; -DCMAKE_OSX_DEPLOYMENT_TARGET on the command
 # line wins over this.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "The oldest macOS the build runs on")
-project(Snap64Recomp VERSION 1.0.9 LANGUAGES C CXX)
+project(Snap64Recomp VERSION 1.1.0 LANGUAGES C CXX)
 if (APPLE)
     # Objective-C for RT64's Apple sources and SDL's Cocoa back end; the
     # port's own sources stay C++ (main.cpp takes the Metal layer through SDL).
@@ -274,6 +274,9 @@ set(SNAP_SOURCES
     src/steam_deck.cpp
     src/mod_api.cpp
     src/mod_data_api.cpp
+    src/mod_installer.cpp
+    src/menu_mouse.cpp
+    src/dds_image.cpp
     src/rt64_render_context.cpp
     src/rsp_microcode.cpp
     src/audio.cpp
@@ -300,16 +303,29 @@ set(SNAP_SOURCES
 )
 
 # The machine the build is for: the one CMake runs on, unless a macOS build
-# names another (-DCMAKE_OSX_ARCHITECTURES=arm64). Also the package name's.
+# names others (-DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" is one executable for
+# both kinds of Mac, which the package calls universal). Also the package
+# name's.
 if (APPLE AND CMAKE_OSX_ARCHITECTURES)
-    set(SNAP_TARGET_ARCH "${CMAKE_OSX_ARCHITECTURES}")
+    list(LENGTH CMAKE_OSX_ARCHITECTURES _snap_arch_count)
+    if (_snap_arch_count GREATER 1)
+        set(SNAP_TARGET_ARCH "universal")
+    else()
+        set(SNAP_TARGET_ARCH "${CMAKE_OSX_ARCHITECTURES}")
+    endif()
 else()
     set(SNAP_TARGET_ARCH "${CMAKE_SYSTEM_PROCESSOR}")
 endif()
 # librecomp's RSP vector-unit implementation uses SSSE3 intrinsics on x86; on
 # ARM (an Apple Silicon Mac) the same header goes through sse2neon, which the
-# runtime's include path provides, and the flag would be refused.
-if (NOT MSVC AND SNAP_TARGET_ARCH MATCHES "x86_64|AMD64|amd64")
+# runtime's include path provides, and the flag would be refused. A universal
+# Mac build compiles the file once for each; the flag goes to the Intel pass
+# only (a list of two options: the SHELL: prefix that keeps a pair together
+# in target options is not honoured by a source file's property, and clang
+# took it for a file name).
+if (APPLE AND CMAKE_OSX_ARCHITECTURES MATCHES "x86_64" AND CMAKE_OSX_ARCHITECTURES MATCHES "arm64")
+    set_source_files_properties("${SNAP_ASPMAIN_CPP}" PROPERTIES COMPILE_OPTIONS "-Xarch_x86_64;-msse4.1")
+elseif (NOT MSVC AND SNAP_TARGET_ARCH MATCHES "x86_64|AMD64|amd64")
     set_source_files_properties("${SNAP_ASPMAIN_CPP}" PROPERTIES COMPILE_OPTIONS "-msse4.1")
 endif()
 
@@ -323,6 +339,11 @@ if (MSVC)
     configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/snap64.rc.in"
                    "${CMAKE_CURRENT_BINARY_DIR}/generated/snap64.rc" @ONLY)
     list(APPEND SNAP_SOURCES "${CMAKE_CURRENT_BINARY_DIR}/generated/snap64.rc")
+endif()
+
+if (APPLE)
+    # The Metal layer's size left to the renderer (src/macos_support.mm).
+    list(APPEND SNAP_SOURCES src/macos_support.mm)
 endif()
 
 add_executable(Snap64Recomp ${SNAP_SOURCES})
@@ -399,6 +420,23 @@ elseif (NOT APPLE)
     # macOS's ld64 has neither switch and needs neither: under Clang the
     # recompiler declares every game function weak (N64Recomp's recomp.h,
     # RECOMP_FUNC), so a patch's own definition simply wins.
+endif()
+if (APPLE)
+    # A mod patches game functions inside the executable's own code, which
+    # macOS allows only when the code segment's maximum protection includes
+    # writing; ld64 will not link that, so a wrapper around it rewrites the
+    # one byte afterwards (tools/macos/ld64, Zelda64Recomp's; it needs
+    # Python 3 with macholib). The bundle's entitlements (tools/macos/
+    # entitlements.plist) let the signed program use it.
+    target_link_options(Snap64Recomp PRIVATE "-fuse-ld=${CMAKE_CURRENT_SOURCE_DIR}/tools/macos/ld64")
+    # That edit breaks the signature ld64 puts on every Apple Silicon image,
+    # and macOS runs no arm64 code without one: the build tree's executable
+    # is signed again, ad hoc, so it runs from the Terminal too. The bundle
+    # gets its own signature (tools/macos_bundle.py).
+    add_custom_command(TARGET Snap64Recomp POST_BUILD
+        COMMAND codesign --force --sign - "$<TARGET_FILE:Snap64Recomp>"
+        COMMENT "Signing Snap64Recomp ad hoc after tools/macos/ld64"
+        VERBATIM)
 endif()
 
 if (BUILD_RT64)

@@ -20,7 +20,7 @@ and so do [Linux and the Steam Deck](STEAM-DECK.md).
 Start `Snap64Recomp.exe`; a shortcut works from anywhere, because the port
 reads and writes the folder the executable is in, whatever the working
 directory (`src/paths.cpp`). It opens a 1280x960 window titled
-`Snap64 Recomp 1.0.9`; `SNAP_WINDOW=WxH` in the environment opens it at
+`Snap64 Recomp 1.1.0`; `SNAP_WINDOW=WxH` in the environment opens it at
 an exact size instead (at least 320x240). The window's maximize button is the
 fullscreen switch; the in-game Graphics page and F11 do the same, and F11
 is the way out of fullscreen from anywhere. **A tap of Esc opens the port's
@@ -45,6 +45,14 @@ instead and the file is not touched.
 A second copy started while the first is running, from any folder, waits up
 to 25 seconds for it to exit (the Snap Station relaunches itself that way)
 and otherwise tells you the port is already running.
+
+On a Mac the program is `Snap64Recomp.app`, one app for Apple Silicon and
+Intel, macOS 14 or newer. It is signed by nobody: the first start is a
+right-click and Open, or on macOS 15 a double-click, then System Settings >
+Privacy & Security > Open Anyway. Everything it writes goes to
+`~/Library/Application Support/Snap64 Recomp/`, and `snap64.log` is there
+(a Terminal gets a copy of every line, as on Linux). Metal draws; the
+settings file's `graphics_api` is ignored.
 
 ### If Windows or your antivirus objects
 
@@ -77,11 +85,13 @@ these; [CONTRIBUTING.md](../CONTRIBUTING.md) says what a pull request needs.
 
 
 Everything is in the folder with the executable. `SNAP_DATA_DIR=<absolute
-path>` in the environment moves that folder, on Windows and Linux alike,
-for a launcher that keeps profiles apart: the ROM is looked for there and
-the files below are written there, while the files the port ships beside
-the executable stay beside it. The log's first line names the folder in
-use.
+path>` in the environment moves that folder, on every platform, for a
+launcher that keeps profiles apart: the ROM is looked for there and the
+files below are written there, while the files the port ships beside the
+executable stay beside it. The log's first line names the folder in use.
+On a Mac the folder is always `~/Library/Application Support/Snap64
+Recomp/`, since an app's contents are sealed by its signature, and the
+shipped files are read from inside the app.
 
 | File or folder | What it is |
 | --- | --- |
@@ -160,14 +170,38 @@ Keyboard and mouse (`src/input.cpp`), as the port ships them:
 | Start | Enter | | pause |
 | D-pad | Arrow keys | | |
 
-The mouse's buttons work whenever the window has focus: a click is A, so
-it advances Oak's text and confirms a menu, and the rest are the buttons
-above. The click that gives the window focus does not count. Its motion
-aims only while a course runs: then the cursor is captured and hidden and
-moving the mouse turns the view, the way a mouse does in any first-person
-game, each pixel an angle added to the game's own view; everywhere else
-(the title, the lab, Oak's check, the menus) the cursor is free and moving
-it does nothing. Zoomed in, the same motion turns half as far, since the
+The mouse points on the menus: the title's list, the lab's panel and the
+course list, the pause menu, every Options page, the album, the PKMN
+Report, Oak's photo check, the Gallery and the name card. Moving the
+pointer over an item or a photo selects it. A click chooses the item under the pointer, and
+a click anywhere else does nothing. The right button goes back, as B
+does, and the wheel steps up and down. On an Options page, a click on a
+setting's value steps it: the left half back, the right half forward. The
+header's A and B are buttons too: moving onto one sounds as a row does and
+underlines it in orange, and a click presses it. So are the arrows that
+scroll a long page. In fullscreen the pointer shows while you move it on
+a menu and hides again after three seconds.
+
+The port's help lines that name a button name the one in your hand:
+whatever was pressed last, a controller, the keyboard or the mouse. On a
+controller they say A and B, and the pad's own name for the rest ("L
+Bumper clears it" on an Xbox-style pad, Z on an N64-shaped one); on a
+keyboard, the keys the bindings name ("Press X again to close the game, Z
+to stay", "Q and E move it up or down the load order", as shipped); with a
+mouse, clicks ("Click again to close the game. Right click to stay.",
+"Drag it to move it in the load order."). A line changes as soon as
+another device is pressed, even while it is on screen. The game's own
+screens keep the cartridge's words and its A and B icons.
+
+Everywhere else the mouse's buttons are the buttons above: a click is A,
+so it advances Oak's text. Outside a course the right button is B, so it
+answers "No" to a question, unless you have bound it to something other
+than Z. The click that gives the window focus does not
+count. The mouse's motion aims only while a course runs: then the cursor
+is captured and hidden and moving the mouse turns the view, the way a
+mouse does in any first-person game, each pixel an angle added to the
+game's own view. The pause menu frees the cursor again, so you can point
+at it. Zoomed in, the same motion turns half as far, since the
 view is narrower. The view moves no faster than you move the mouse and
 stops when your hand does; the stick's own turning speed does not apply. The Controls page on the
 game's Options screen holds the mouse dials: Mouse Aim, Mouse Speed, Zoom Speed
@@ -217,8 +251,10 @@ wheel tick or pad button pressed on that device becomes the row's
 binding, in place of what the device had there (the other devices' stay).
 Esc leaves the row as it was, and so does waiting eight seconds; a key the
 port answers to itself (the function keys, P, the brackets, Home, End,
-Esc) and the pad's Back and Guide are refused. Z clears the row on that
-device, unless nothing else would press the input. Restore Defaults, the
+Esc) and the pad's Back and Guide are refused. Delete clears the row on
+that device, as Backspace (a Mac's delete key) and Z do, unless nothing
+else would press the input; with a mouse, point at the row and press
+Delete. Delete and Backspace clear only while no binding uses them. Restore Defaults, the
 last row (Up from the top row wraps to it), asks for a second A and then
 puts the shipped bindings of the device shown back. What no table changes
 is named on the rows too:
@@ -371,38 +407,103 @@ first two seconds, and does not open the pages at all where they would
 break something: the attract demo and the credits, which are scripted to
 their music, and the photo check after a ride, whose screen fills its
 display list on its own and has no room for them (`snap64.log` says so
-when it happens). In a course the key follows the game's own rule for
-Start. Holding Esc for a second still asks whether to quit.
+when it happens). The music is held with the screen: the pages open in
+silence, and when they close the music comes back where it was, so a
+screen that moves to its music, the title's opening or the lab, is still
+in step. In a course the key follows the game's own rule for Start, and
+the game's own pause leaves the music playing, as the cartridge does.
+Holding Esc for a second still asks whether to quit.
 
 Options > **Mods**: the list's fifth row, where the stock Return row was
 (B returns from the screen, as Return's own help line said, and the list
 has no seventh slot above the help box). One row per mod in the `mods/`
-folder, its name and version, six on screen, the page scrolling for the
-rest; each row's value is On or Off. A, Left or Right turns the selected
-mod on or off: the change is written to `mods.json` at once and takes
-effect the next time the game starts, and the help line says so under the
-mod's own short description, with its author. **L and R move the selected
-mod up or down the load order**, which is the order the runtime runs mods'
-hooks in. **Z opens a mod's options** when its manifest declares any: one
-row per option, Left and Right changing it (an enum to its next choice, a
-yes-or-no on or off, a number a step at a time within its range; a text
-option is shown and left to its file), each written to the mod's own
-settings file at once. The hint at the header's right says which of those
-apply to the row. Under the mods, two rows the other recompilations' mod
-menus have as buttons: **Open the mods folder**, which shows it in the file
-browser, and **Restart the game**, which closes the game and starts it again
-with the mods as set. A mod file (`.nrm`) dropped onto the window is copied
-into the folder and loads at the next start. With an empty folder the page
-says that instead. B leaves; nothing is undone, and there is nothing to
-cancel ([Mods](MODS.md)).
+folder, its name, six on screen, the page scrolling for the rest; each
+row's value is On or Off (New for a mod installed during play, Error in
+red for a file that will not load), laid out as on the Graphics page. The
+page works as the other pages
+do, and its header says what A and B do on the selected row: A Details
+and B Back on a mod, A OK and B Back on the rows under the mods.
+Left or Right turns
+the selected mod on or off (a press, not a hold, so a held stick does not
+flip it back): the change is written to `mods.json` at once and takes
+effect the next time the game starts; until then the mod's help line says
+"Turns on after a restart" (or off), and the last row reads
+"Restart Game to Apply". B goes back to the list of Options, keeping
+every change, since each is written as it is made. **L and R move the selected mod up or down the load
+order**, which is the order the runtime runs mods' hooks in. A mod that
+another mod needs is on while that mod is on, whatever its own switch
+says: its value shows On without its arrows, its help line names the mod
+that needs it, and Left or Right leaves it on.
+
+**A on a mod opens its details** (so does Z). The facts come first: its
+name and version, who made it, and a sentence on whether it is on ("This
+mod is on.", or "On: Test User needs it."), with the mod's picture beside
+them when its file carries one (`thumb.png` or `thumb.dds`, as in the other
+recompilations). A dark panel under the page keeps its text readable over
+any screen. Under a rule come its whole description,
+what it needs and what needs it, four lines at a time, with a scroll bar
+beside them when there is more (Up and Down, the wheel, or a click on the
+bar show the rest). The help box says what A does there. Left and Right,
+or a click on the status line, turn the mod on or off, as its row in the
+list does, and the status says what that does ("Off after a restart.").
+A mod installed
+during play has the same page, read from its file: its options wait for
+the restart that loads it. When the mod has
+options, A there opens them on the same panel, under the same picture,
+name, author and status: one row per option, three on screen with a
+scroll bar for the rest, Left and Right changing it (an enum to
+its next choice, a yes-or-no on or off, a number a step at a time within
+its range; on a text option the header says "A Type": A, or a click on
+it, lets you type a new text with the keyboard, Enter or A keeping it and
+Esc or B leaving it as it was), each written to
+the mod's own settings file at once, and a last row, **Restore
+Defaults**, that puts every option back to its default; A keeps them, B
+puts them back. B goes back from the details to the list.
+
+The help box shows the mod's short description and, when there are two
+mods or more, what moves it in the load order (L and R, or a drag with the
+mouse); a line too long for the box ends in "...". With the
+mouse, a click on a mod's name opens its details, a click on its On or
+Off switches it, and a mod dragged up or down the list moves in the load
+order.
+
+Under the mods, three rows the other recompilations' mod menus have as
+buttons: **Install Mods...**, which opens a file picker for mods, texture
+packs and the zips they come in (several at once), installed as a drop on
+the window is; **Open Mods Folder**, which shows it in the file
+browser; and **Restart Game**, which closes the game and starts it
+again with the mods as set. A carries each out. These three stand at the
+foot of the list under a rule, the mods above them; with no mod in the
+folder the room above them says "No mods yet" and, under it, "Mods change
+or add to the game."
+Restart asks first, as Exit Game does ("Press A again to restart, B to
+stay" on a controller): the pages open over a course, and a restart loses it and anything
+not saved at the lab. A mod dropped onto the window, the `.nrm` or the zip
+it came in (as Thunderstore packages one), is checked and installed, a box
+says so, and it loads at the next start; a zip left in `mods/` is unpacked
+at the next start. A mod installed during play is listed at once, after
+the others, with the value NEW, in the title's rainbow until its details
+are opened; an update to a listed mod says on its help
+line which version waits for the restart. A mod file this release will not
+load (one made for another game, or one that needs a newer release) is
+listed with the value Error and the reason. With an empty folder the page
+says that instead ([Mods](MODS.md)).
+
+When the last session did not close normally (a crash, or the game ended
+from outside) and mods are on, the next start asks whether to start with
+the mods off, so a mod that stops the game can be turned off without
+editing `mods.json`; Options > Mods turns them back on.
 
 Options > **Exit Game**: the list's sixth row, under Mods, in the
 screen's own font and rhythm, and the fifth row of the list the pause menu
 opens in a course. Its help line says what it does; A turns the help line
-into "Press A again to close the game, B to stay", and the second A closes
-the program the way the window's close button does. B, or moving off the
-row, withdraws the question. It is the way to quit from a pad, on a Steam
-Deck in particular.
+into a question, and the second A closes the program the way the window's
+close button does. B, or moving off the row, withdraws the question,
+which names the buttons in your hand: "Press A again to close the game, B
+to stay" on a controller, "Click again to close the game. Right click to
+stay." with a mouse, "Press X again to close the game, Z to stay" on a
+keyboard as shipped. It is the way to quit from a pad, on a Steam Deck in
+particular.
 
 ## Hotkeys
 

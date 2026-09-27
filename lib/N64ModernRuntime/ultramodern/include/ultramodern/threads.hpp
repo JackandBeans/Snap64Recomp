@@ -1,7 +1,9 @@
 #ifndef __THREADS_HPP__
 #define __THREADS_HPP__
 
+#include <functional>
 #include <string>
+#include <thread>
 
 #include "ultra64.h"
 
@@ -23,6 +25,18 @@ namespace ultramodern {
         void set_callbacks(const callbacks_t& callbacks);
 
         std::string get_game_thread_name(const OSThread* t);
+
+        // Snap64 Recomp: the host threads that run the game's recompiled
+        // code get the stack that code is known to need, 8 MB. Windows gives
+        // every thread the image's /STACK (the port links 8 MB) and Linux
+        // 8 MB, but macOS gives every thread but the main one 512 KB, a
+        // sixteenth of what the game has ever run on. On macOS the function
+        // runs on a pthread with the full stack (the joinable form's
+        // std::thread only waits for it); elsewhere it is a plain
+        // std::thread, as before.
+        constexpr size_t game_host_stack_bytes = 8u * 1024u * 1024u;
+        std::thread make_game_host_thread(std::function<void()> func);
+        void start_detached_game_host_thread(std::function<void()> func);
     }
 }
 
