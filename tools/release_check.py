@@ -37,8 +37,13 @@ that a release build can be put through all of them in one go:
               by SNAP_ROM_PICK, copies the dump in byte-identical, copies a
               byte-swapped dump in big-endian order, and a Cancel starts
               nothing and exits
-  package     (with --zip) the release archive carries the executable, the
-              three DLLs, the licences and the documents
+  package     (with --zip, once per archive) a release archive, Windows zip,
+              Linux tarball or Mac zip: it carries the program, the
+              licences and the documents, its .sha256 sidecar matches it,
+              no file in it names a build machine's folders (this one's or
+              a GitHub runner's), the C++ runtime is linked in, and on
+              Windows dxil.dll is the redistributable v1.7.2308 file. With
+              --only package no executable folder is needed.
     station     (only with --only station: it takes eight minutes and rewrites the
               save) the Snap Station print: the station replay plays a
               course, marks an album photo, saves, opens the Gallery's Print
@@ -52,6 +57,7 @@ limit, which is how the recipe has always worked (the replays never reach a
 quit). Run it from anywhere:
 
     python tools/release_check.py build-win/Release [--zip build-win/Snap64Recomp-<v>-win64.zip] [--only NAME ...]
+    python tools/release_check.py --only package --zip <archive> [--zip <archive> ...]
 
 The replays it drives the executable with live in tools/replays (beach.inputs,
 eval.inputs, station.inputs; BUILDING.md, "Replays and the headless suite") and
@@ -70,6 +76,7 @@ import shutil
 import struct
 import subprocess
 import sys
+import tarfile
 import threading
 import time
 import zipfile
@@ -632,53 +639,106 @@ def check_rompick(c, exe_dir):
     shutil.rmtree(work, ignore_errors=True)
 
 
+# Where a build machine's own folders begin: this one's (Windows, and WSL for
+# the Linux build) and GitHub's runners' (D:\a\ on Windows, /home/runner on
+# Linux, /Users/runner on macOS). A release names none of them: the compilers
+# map the source and build folders away (CMakeLists.txt, /d1trimfile and
+# -ffile-prefix-map), and a document that quotes a path uses ~ or <...>.
+BUILD_PATHS = re.compile(rb'[A-Za-z]:[\\/](?:Users|a)[\\/]|/home/[A-Za-z0-9_.-]+/|/mnt/[a-z]/|/Users/[A-Za-z0-9_.-]+/')
+
+# What each kind of archive must carry, relative to its top folder.
+PACKAGE_NEEDS = {
+    'windows': [EXE, 'SDL2.dll', 'dxcompiler.dll', 'dxil.dll', 'LICENSE', 'NOTICE.md', 'README.md', 'CHANGELOG.md',
+                'licenses/DirectXShaderCompiler.txt', 'licenses/DirectXShaderCompiler-dxil.txt',
+                'licenses/nlohmann-json.txt', 'licenses/roboto.txt', 'licenses/SDL_GameControllerDB.txt',
+                'gamecontrollerdb.txt',
+                'menu_text/recomp_logo.png', 'mods/README.md', 'texture_packs/README.txt', 'Snap64Recomp.map'],
+    'linux': ['Snap64Recomp', 'START HERE.txt', 'LICENSE', 'NOTICE.md', 'README.md', 'CHANGELOG.md',
+              'licenses/nlohmann-json.txt', 'licenses/roboto.txt', 'licenses/SDL_GameControllerDB.txt',
+              'gamecontrollerdb.txt', 'menu_text/recomp_logo.png', 'mods/README.md', 'texture_packs/README.txt'],
+    'macos': ['START HERE.txt', 'Snap64Recomp.app/Contents/Info.plist', 'Snap64Recomp.app/Contents/MacOS/Snap64Recomp',
+              'Snap64Recomp.app/Contents/Resources/LICENSE', 'Snap64Recomp.app/Contents/Resources/NOTICE.md',
+              'Snap64Recomp.app/Contents/Resources/README.md', 'Snap64Recomp.app/Contents/Resources/gamecontrollerdb.txt',
+              'Snap64Recomp.app/Contents/Resources/licenses/roboto.txt',
+              'Snap64Recomp.app/Contents/Resources/mods/README.md'],
+}
+PROGRAM = {'windows': EXE, 'linux': 'Snap64Recomp', 'macos': 'Snap64Recomp.app/Contents/MacOS/Snap64Recomp'}
+
+
+def read_archive(path):
+    """(kind, {member name: bytes}) for a release archive; directories are left out."""
+    if path.name.endswith('.tar.gz'):
+        with tarfile.open(path) as t:
+            return 'linux', {m.name: t.extractfile(m).read() for m in t.getmembers() if m.isfile()}
+    with zipfile.ZipFile(path) as z:
+        files = {n: z.read(n) for n in z.namelist() if not n.endswith('/')}
+    return ('macos' if '-macos-' in path.name else 'windows'), files
+
+
 def check_package(c, zip_path):
-    z = zipfile.ZipFile(zip_path)
-    names = z.namelist()
-    top = names[0].split('/')[0]
-    need = [EXE, 'SDL2.dll', 'dxcompiler.dll', 'dxil.dll', 'LICENSE', 'NOTICE.md', 'README.md', 'CHANGELOG.md',
-            'licenses/DirectXShaderCompiler.txt', 'licenses/DirectXShaderCompiler-dxil.txt',
-            'licenses/nlohmann-json.txt', 'licenses/roboto.txt', 'licenses/SDL_GameControllerDB.txt',
-            'gamecontrollerdb.txt',
-            'menu_text/recomp_logo.png', 'mods/README.md', 'texture_packs/README.txt', 'Snap64Recomp.map']
-    missing = [n for n in need if (top + '/' + n) not in names]
-    c.add('package', not missing, '%s: %d entries%s' % (zip_path.name, len(names), (', missing ' + ', '.join(missing)) if missing else ''))
-    # The checksum CPack writes beside the archive must match the archive.
+    kind, files = read_archive(zip_path)
+    top = sorted(files)[0].split('/')[0]
+    names = set(files)
+    missing = [n for n in PACKAGE_NEEDS[kind] if (top + '/' + n) not in names]
+    c.add('package', not missing, '%s (%s): %d files%s' % (zip_path.name, kind, len(names),
+                                                          (', missing ' + ', '.join(missing)) if missing else ''))
+    # The checksum CPack (or the bundle script) writes beside the archive must match it.
     sidecar = zip_path.with_name(zip_path.name + '.sha256')
     if sidecar.is_file():
         stated = sidecar.read_text(encoding='utf-8', errors='replace').split()[0].lower()
         actual = hashlib.sha256(zip_path.read_bytes()).hexdigest()
         c.add('package', stated == actual, '.sha256 sidecar %s' % ('matches the archive' if stated == actual else 'does NOT match the archive'))
+        raw = sidecar.read_bytes()
+        c.add('package', b'\r' not in raw, '.sha256 sidecar ends its line with %s' % ('LF' if b'\r' not in raw else 'CRLF (a release ships LF)'))
     else:
         c.add('package', False, 'no .sha256 sidecar beside the archive')
-    # Nothing from the build machine's file system may be in the archive.
-    leaked = []
-    for n in names:
-        if n.endswith('/'):
-            continue
-        blob = z.read(n)
-        for needle in (b'C:\\Users\\', b'C:/Users/', b'/home/', b'/mnt/c/'):
-            if needle in blob:
-                leaked.append(n)
-                break
-    c.add('package', not leaked, 'no user paths in the archive' if not leaked else 'user paths in: ' + ', '.join(sorted(set(leaked))))
-    # The executable must not need the Visual C++ Redistributable.
-    exe = z.read(top + '/' + EXE)
-    needs_crt = any(dll in exe for dll in (b'VCRUNTIME140', b'MSVCP140', b'vcruntime140', b'msvcp140'))
-    c.add('package', not needs_crt, 'C++ runtime %s' % ('linked in' if not needs_crt else 'IMPORTED from VCRUNTIME/MSVCP DLLs'))
-    digest = hashlib.sha256(z.read(top + '/dxil.dll')).hexdigest() if (top + '/dxil.dll') in names else ''
-    c.add('package', digest == DXIL_SHA256, 'dxil.dll is %s' % ('the v1.7.2308 file' if digest == DXIL_SHA256 else 'NOT the v1.7.2308 file (%s)' % digest[:16]))
+    # Nothing from a build machine's file system may be in the archive.
+    leaked = {}
+    for n, blob in files.items():
+        hits = [m.start() for m in BUILD_PATHS.finditer(blob)]
+        if hits:
+            # Each path whole (to the next NUL or line end), so a failure says what
+            # left it there: a source name, an object file, a shader library...
+            paths = sorted({blob[h:h + 200].split(b'\x00')[0].split(b'\n')[0].decode('latin-1') for h in hits})
+            kinds = sorted({p.rsplit('/', 1)[-1].split('.', 1)[-1] if '.' in p.rsplit('/', 1)[-1] else '(no extension)' for p in paths})
+            leaked[n] = (len(hits), len(paths), kinds, paths[:6])
+    c.add('package', not leaked, 'no build machine paths in the archive' if not leaked else
+          'build machine paths in: ' + '; '.join('%s (%d, %d distinct, ending %s)' % (n, k, d, ', '.join(kinds))
+                                                 for n, (k, d, kinds, ex) in sorted(leaked.items())))
+    for n, (k, d, kinds, ex) in sorted(leaked.items()):
+        for e in ex:
+            print('      %s' % e)
+    program = files.get(top + '/' + PROGRAM[kind], b'')
+    if kind == 'windows':
+        # The executable must not need the Visual C++ Redistributable.
+        needs_crt = any(dll in program for dll in (b'VCRUNTIME140', b'MSVCP140', b'vcruntime140', b'msvcp140'))
+        c.add('package', not needs_crt, 'C++ runtime %s' % ('linked in' if not needs_crt else 'IMPORTED from VCRUNTIME/MSVCP DLLs'))
+        digest = hashlib.sha256(files.get(top + '/dxil.dll', b'')).hexdigest()
+        c.add('package', digest == DXIL_SHA256, 'dxil.dll is %s' % ('the v1.7.2308 file' if digest == DXIL_SHA256 else 'NOT the v1.7.2308 file (%s)' % digest[:16]))
+    elif kind == 'linux':
+        # Linked with -static-libstdc++ -static-libgcc, as the other recompilations are.
+        needs = [lib for lib in (b'libstdc++.so', b'libgcc_s.so') if lib in program]
+        c.add('package', program[:4] == b'\x7fELF' and not needs,
+              'C++ runtime %s' % ('linked in' if not needs else 'loaded from ' + ', '.join(n.decode() for n in needs)))
+    else:
+        # One executable for both kinds of Mac: a universal (fat) Mach-O with two halves.
+        fat = program[:4] == b'\xca\xfe\xba\xbe' and struct.unpack('>I', program[4:8])[0] == 2
+        c.add('package', fat, 'the executable is %s' % ('universal (two halves)' if fat else 'NOT a two-half universal binary'))
 
 
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
-    ap.add_argument('exe_dir', help='directory holding %s, the ROM and the replays' % EXE)
-    ap.add_argument('--zip', help='release archive to check')
+    ap.add_argument('exe_dir', nargs='?', help='directory holding %s, the ROM and the replays (not needed for --only package)' % EXE)
+    ap.add_argument('--zip', '--archive', action='append', default=[], help='release archive to check (repeatable)')
     ap.add_argument('--only', action='append', default=[], help='run only these checks (repeatable)')
     args = ap.parse_args()
-    exe_dir = pathlib.Path(args.exe_dir).resolve()
-    if not (exe_dir / EXE).is_file():
+    package_only = args.only == ['package'] or (args.only and set(args.only) == {'package'})
+    exe_dir = pathlib.Path(args.exe_dir).resolve() if args.exe_dir else None
+    if not package_only and (exe_dir is None or not (exe_dir / EXE).is_file()):
         print('no %s in %s' % (EXE, exe_dir), file=sys.stderr)
+        return 2
+    if package_only and not args.zip:
+        print('--only package needs --zip <archive>', file=sys.stderr)
         return 2
     checks = [('subsystem', check_subsystem), ('stdio', check_stdio), ('attract', check_attract),
               ('stats', check_stats), ('score', check_score), ('settings', check_settings),
@@ -699,7 +759,8 @@ def main():
             continue
         fn(c, exe_dir)
     if args.zip and (not args.only or 'package' in args.only):
-        check_package(c, pathlib.Path(args.zip).resolve())
+        for archive in args.zip:
+            check_package(c, pathlib.Path(archive).resolve())
     failed = [r for r in c.results if not r[1]]
     print('\n%d checks, %d failed, %.0f s' % (len(c.results), len(failed), time.time() - t0))
     return 1 if failed else 0

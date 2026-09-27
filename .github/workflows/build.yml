@@ -11,9 +11,13 @@
 # tarball for Linux with their .sha256 sidecars, kept as artifacts and, on a
 # pull request, linked from a comment. What it proves: that the tree
 # configures, compiles and packages on a machine that is not mine, with
-# Visual Studio 2022 on Windows and Clang on Ubuntu 24.04. It runs no game:
-# the release suite stays a run on the machine that cuts the release
-# (docs/VERIFICATION.md), and the Mac has its own workflow (macos.yml).
+# Visual Studio 2022 on Windows and Clang on Ubuntu 24.04, and that each
+# archive passes the release suite's package checks (no build machine's
+# folders in it among them). It runs no game: the release suite runs on the
+# release's own archives before they are published (docs/VERIFICATION.md),
+# and the Mac has its own workflow (macos.yml). release.yml calls this one
+# with attest set: the archives are then signed with GitHub's build
+# provenance, which `gh attestation verify` checks.
 name: build
 
 on:
@@ -23,9 +27,21 @@ on:
   pull_request:
     paths-ignore: ['**.md', 'docs/**', '.github/ISSUE_TEMPLATE/**']
   workflow_dispatch:
+  workflow_call:
+    inputs:
+      attest:
+        description: "Sign each archive with GitHub's build provenance"
+        type: boolean
+        default: false
+      prerelease:
+        description: "A prerelease label for the version (rc1); empty for a release"
+        type: string
+        default: ''
 
+# Called by release.yml, github.workflow is the caller's name, so a release
+# never cancels a push's build or the other way round.
 concurrency:
-  group: build-${{ github.ref }}
+  group: build-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -37,6 +53,10 @@ jobs:
     runs-on: windows-2022
     timeout-minutes: 120
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     defaults:
       run:
         shell: bash
@@ -62,6 +82,9 @@ jobs:
             exit 1
           fi
           git clone --depth 1 "https://${OWNER}:${TOKEN}@github.com/${SNAP_INPUTS_REPO}.git" "$RUNNER_TEMP/inputs"
+          # The inputs must have been made from this tree (tools/ci_inputs.py):
+          # otherwise the build would carry another tree's patches.
+          python tools/ci_inputs.py --check "$RUNNER_TEMP/inputs"
           cp -R "$RUNNER_TEMP/inputs/RecompiledFuncs" "$RUNNER_TEMP/inputs/RecompiledPatches" .
           mkdir -p patches/build
           cp "$RUNNER_TEMP/inputs/patches/build/patches.bin" patches/build/
@@ -72,7 +95,11 @@ jobs:
           echo "$(ls RecompiledFuncs | wc -l | tr -d ' ') recompiled function files"
 
       - name: Configure
-        run: cmake -S . -B build-win -G "Visual Studio 17 2022" -A x64
+        env:
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          case "$PRERELEASE" in *[!a-z0-9.]*) echo "::error::a prerelease label is lower-case letters, digits and dots"; exit 1;; esac
+          cmake -S . -B build-win -G "Visual Studio 17 2022" -A x64 "-DSNAP_VERSION_PRERELEASE=$PRERELEASE"
 
       - name: Build
         run: cmake --build build-win --config Release --target Snap64Recomp --parallel
@@ -89,7 +116,13 @@ jobs:
         # The release suite's package checks alone (the archive's entries,
         # the sidecar, no user paths, the C++ runtime, the dxil.dll version);
         # the checks that run the game stay on the release machine.
-        run: python tools/release_check.py build-win/Release --only package --zip build-win/Snap64Recomp-*-win64.zip
+        run: python tools/release_check.py --only package --zip build-win/Snap64Recomp-*-win64.zip
+
+      - name: Build provenance
+        if: inputs.attest
+        uses: actions/attest@v4
+        with:
+          subject-path: build-win/Snap64Recomp-*-win64.zip
 
       - uses: actions/upload-artifact@v4
         with:
@@ -104,6 +137,10 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 120
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
@@ -140,6 +177,9 @@ jobs:
             exit 1
           fi
           git clone --depth 1 "https://${OWNER}:${TOKEN}@github.com/${SNAP_INPUTS_REPO}.git" "$RUNNER_TEMP/inputs"
+          # The inputs must have been made from this tree (tools/ci_inputs.py):
+          # otherwise the build would carry another tree's patches.
+          python3 tools/ci_inputs.py --check "$RUNNER_TEMP/inputs"
           cp -R "$RUNNER_TEMP/inputs/RecompiledFuncs" "$RUNNER_TEMP/inputs/RecompiledPatches" .
           mkdir -p patches/build
           cp "$RUNNER_TEMP/inputs/patches/build/patches.bin" patches/build/
@@ -148,11 +188,14 @@ jobs:
           echo "$(ls RecompiledFuncs | wc -l | tr -d ' ') recompiled function files"
 
       - name: Configure
-        run: >
-          cmake -S . -B build-linux -G Ninja
-          -DCMAKE_BUILD_TYPE=Release
-          -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
-          -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
+        env:
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          case "$PRERELEASE" in *[!a-z0-9.]*) echo "::error::a prerelease label is lower-case letters, digits and dots"; exit 1;; esac
+          cmake -S . -B build-linux -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++ \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            "-DSNAP_VERSION_PRERELEASE=$PRERELEASE"
 
       - name: Build
         run: cmake --build build-linux --target Snap64Recomp -j "$(nproc)"
@@ -173,6 +216,15 @@ jobs:
           cd build-linux && cpack -G TGZ
           ls -l Snap64Recomp-*-linux-x86_64.tar.gz Snap64Recomp-*-linux-x86_64.tar.gz.sha256
           tar -tzf Snap64Recomp-*-linux-x86_64.tar.gz | head -20
+
+      - name: What cpack made
+        run: python3 tools/release_check.py --only package --zip build-linux/Snap64Recomp-*-linux-x86_64.tar.gz
+
+      - name: Build provenance
+        if: inputs.attest
+        uses: actions/attest@v4
+        with:
+          subject-path: build-linux/Snap64Recomp-*-linux-x86_64.tar.gz
 
       - uses: actions/upload-artifact@v4
         with:

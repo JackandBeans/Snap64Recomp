@@ -22,9 +22,11 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # variable. SNAP_VERSION_FULL is what every surface shows: the title bar,
 # the log banner, the credits line, the exe's version resource and the
 # package name (all through the generated version.h / snap64.rc, below).
-# An empty SNAP_VERSION_PRERELEASE is a final release.
+# An empty SNAP_VERSION_PRERELEASE is a final release; the release workflow
+# passes one (-DSNAP_VERSION_PRERELEASE=rc1) for a build that must not pass
+# for the release itself.
 set(SNAP_PRODUCT_NAME "Snap64 Recomp")
-set(SNAP_VERSION_PRERELEASE "")
+set(SNAP_VERSION_PRERELEASE "" CACHE STRING "Prerelease label (rc1, ...); empty for a release")
 if (SNAP_VERSION_PRERELEASE)
     set(SNAP_VERSION_SUFFIX "-${SNAP_VERSION_PRERELEASE}")
     set(SNAP_RC_FILEFLAGS "VS_FF_PRERELEASE")
@@ -46,6 +48,13 @@ if (MSVC)
     # path inside the repository.
     file(TO_NATIVE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/" SNAP_SOURCE_PREFIX_NATIVE)
     add_compile_options("/d1trimfile:${SNAP_SOURCE_PREFIX_NATIVE}")
+else()
+    # The same for Clang and GCC: the source and build folders are mapped
+    # away, in __FILE__ and in debug information alike. Without this the
+    # Linux binary carried the builder's home folder and the Mac one the
+    # runner's (1.0.x to 1.1.0).
+    add_compile_options("-ffile-prefix-map=${CMAKE_CURRENT_SOURCE_DIR}/="
+                        "-ffile-prefix-map=${CMAKE_CURRENT_BINARY_DIR}/=")
 endif()
 
 # =============================================================================
@@ -429,6 +438,11 @@ if (APPLE)
     # Python 3 with macholib). The bundle's entitlements (tools/macos/
     # entitlements.plist) let the signed program use it.
     target_link_options(Snap64Recomp PRIVATE "-fuse-ld=${CMAKE_CURRENT_SOURCE_DIR}/tools/macos/ld64")
+    # The recompiled game carries debug information (-g, above), and for it
+    # the linker writes a debug map naming every object file by its full path
+    # (build-macos/librecomp_funcs.a(funcs_0.c.o)); the build folder is taken
+    # off those names as -ffile-prefix-map takes it off the compilers'.
+    target_link_options(Snap64Recomp PRIVATE "LINKER:-oso_prefix,${CMAKE_CURRENT_BINARY_DIR}/")
     # That edit breaks the signature ld64 puts on every Apple Silicon image,
     # and macOS runs no arm64 code without one: the build tree's executable
     # is signed again, ad hoc, so it runs from the Terminal too. The bundle

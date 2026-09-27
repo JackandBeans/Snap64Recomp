@@ -1,0 +1,112 @@
+# The release's archives, made on GitHub's machines: the Windows zip, the
+# Linux tarball and the Mac zip of one commit, each signed with GitHub's build
+# provenance, a statement of the commit and workflow that made it that anyone
+# can check:
+#
+#     gh attestation verify Snap64Recomp-<version>-win64.zip --repo JackandBeans/Snap64Recomp
+#
+# It calls build.yml and macos.yml with attest set, so the release is built
+# exactly as every push is, and the Mac's checks run as they always do. Then
+# one job gathers the three archives, runs the release suite's package checks
+# over all of them together, verifies each attestation as a downloader would,
+# and keeps them as one artifact with their checksums in the run's summary.
+# Nothing here publishes: the release suite runs on these files on the
+# release machine, and they are published unchanged (BUILDING.md, "To cut a
+# release"). Run it on the candidate commit, not on main:
+#
+#     gh workflow run release.yml --ref macos-build [-f prerelease=rc1]
+name: release
+
+on:
+  workflow_dispatch:
+    inputs:
+      prerelease:
+        description: "Empty for the release itself; a label (rc1, dryrun1) for a build that must not pass for it"
+        required: false
+        default: ''
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  windows-linux:
+    name: Windows and Linux
+    uses: ./.github/workflows/build.yml
+    with:
+      attest: true
+      prerelease: ${{ inputs.prerelease }}
+    secrets: inherit
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+      pull-requests: write
+
+  macos:
+    name: macOS
+    uses: ./.github/workflows/macos.yml
+    with:
+      attest: true
+      prerelease: ${{ inputs.prerelease }}
+      stages: all
+    secrets: inherit
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+
+  release:
+    name: The three archives, checked together
+    needs: [windows-linux, macos]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      attestations: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: Snap64Recomp-*
+          path: dist
+          merge-multiple: true
+
+      - name: The package checks, all three
+        run: |
+          ls -l dist
+          set -- $(for f in dist/*.zip dist/*.tar.gz; do printf -- '--zip %s ' "$f"; done)
+          python3 tools/release_check.py --only package "$@"
+
+      - name: The attestations, as a downloader checks them
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for f in dist/*.zip dist/*.tar.gz; do
+            gh attestation verify "$f" --repo "$GITHUB_REPOSITORY" --deny-self-hosted-runners > /dev/null
+            echo "verified: $(basename "$f")"
+          done
+
+      - name: The summary
+        run: |
+          {
+            echo "### The release's archives"
+            echo
+            echo "Built from \`${GITHUB_SHA}\` on \`${GITHUB_REF_NAME}\`; each one's build provenance verified."
+            echo
+            echo "| File | Bytes | SHA-256 |"
+            echo "| --- | ---: | --- |"
+            for f in dist/*.zip dist/*.tar.gz; do
+              echo "| \`$(basename "$f")\` | $(stat -c %s "$f") | \`$(sha256sum "$f" | cut -c1-64)\` |"
+            done
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: release-archives
+          path: dist/
+          if-no-files-found: error

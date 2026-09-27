@@ -16,6 +16,8 @@
 # run -- natively, and again for the Intel half through Rosetta 2, the two
 # in parallel jobs after the one build. The logs, the captured frames and
 # any crash report macOS wrote are uploaded whether the checks pass or not.
+# release.yml calls this one with attest set: the bundle's zip is then
+# signed with GitHub's build provenance.
 name: macos
 
 # On request only: every run builds a release candidate, and the inputs are
@@ -27,9 +29,20 @@ on:
         description: "The check stages to run (boot, validated, score, mod), or all"
         default: all
         required: false
+  workflow_call:
+    inputs:
+      stages:
+        type: string
+        default: all
+      attest:
+        type: boolean
+        default: false
+      prerelease:
+        type: string
+        default: ''
 
 concurrency:
-  group: macos-${{ github.ref }}
+  group: macos-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
 env:
@@ -40,6 +53,10 @@ jobs:
     name: Universal bundle
     runs-on: macos-15
     timeout-minutes: 120
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
     env:
       CCACHE_DIR: ${{ github.workspace }}/.ccache
     steps:
@@ -91,6 +108,9 @@ jobs:
             exit 1
           fi
           git clone --depth 1 "https://${OWNER}:${TOKEN}@github.com/${SNAP_INPUTS_REPO}.git" "$RUNNER_TEMP/inputs"
+          # The inputs must have been made from this tree (tools/ci_inputs.py):
+          # otherwise the build would carry another tree's patches.
+          python3 tools/ci_inputs.py --check "$RUNNER_TEMP/inputs"
           cp -R "$RUNNER_TEMP/inputs/RecompiledFuncs" "$RUNNER_TEMP/inputs/RecompiledPatches" .
           mkdir -p patches/build
           cp "$RUNNER_TEMP/inputs/patches/build/patches.bin" patches/build/
@@ -101,15 +121,15 @@ jobs:
           echo "$(ls RecompiledFuncs | wc -l | tr -d ' ') recompiled function files"
 
       - name: Configure
-        run: >
-          cmake -S . -B build-macos -G Ninja
-          -DCMAKE_BUILD_TYPE=Release
-          "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64"
-          -DSNAP_ROM="$PWD/pokemonsnap.z64"
-          -DCMAKE_C_COMPILER_LAUNCHER=ccache
-          -DCMAKE_CXX_COMPILER_LAUNCHER=ccache
-          -DCMAKE_OBJC_COMPILER_LAUNCHER=ccache
-          -DCMAKE_OBJCXX_COMPILER_LAUNCHER=ccache
+        env:
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          case "$PRERELEASE" in *[!a-z0-9.]*) echo "::error::a prerelease label is lower-case letters, digits and dots"; exit 1;; esac
+          cmake -S . -B build-macos -G Ninja -DCMAKE_BUILD_TYPE=Release \
+            "-DCMAKE_OSX_ARCHITECTURES=arm64;x86_64" -DSNAP_ROM="$PWD/pokemonsnap.z64" \
+            -DCMAKE_C_COMPILER_LAUNCHER=ccache -DCMAKE_CXX_COMPILER_LAUNCHER=ccache \
+            -DCMAKE_OBJC_COMPILER_LAUNCHER=ccache -DCMAKE_OBJCXX_COMPILER_LAUNCHER=ccache \
+            "-DSNAP_VERSION_PRERELEASE=$PRERELEASE"
 
       - name: Build
         run: |
@@ -144,6 +164,15 @@ jobs:
         run: |
           python3 tools/macos_bundle.py build-macos
           codesign --display --verbose=2 build-macos/Snap64Recomp.app 2>&1 | grep -E "Identifier|Format|flags|Signature" || true
+
+      - name: What the bundle script made
+        run: python3 tools/release_check.py --only package --zip build-macos/Snap64Recomp-*-macos-universal.zip
+
+      - name: Build provenance
+        if: inputs.attest
+        uses: actions/attest@v4
+        with:
+          subject-path: build-macos/Snap64Recomp-*-macos-universal.zip
 
       - uses: actions/upload-artifact@v4
         with:
