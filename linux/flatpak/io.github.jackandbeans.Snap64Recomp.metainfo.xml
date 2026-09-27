@@ -1,0 +1,40 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<component type="desktop-application">
+  <id>io.github.jackandbeans.Snap64Recomp</id>
+  <name>Snap64 Recomp</name>
+  <summary>Pokémon Snap, the N64 game, as a native PC program</summary>
+  <developer id="io.github.jackandbeans">
+    <name>JackandBeans</name>
+  </developer>
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0-or-later</project_license>
+  <description>
+    <p>
+      Snap64 Recomp is a native port of Pokémon Snap (Nintendo 64, US release)
+      made by static recompilation: the game's own code runs on the PC, the
+      port only hosts it. It plays like the cartridge by default; every
+      enhancement is off until turned on in the game's own Options screen:
+      widescreen, higher resolution, frame interpolation, mouse and gyro aim,
+      button rebinding, fast forward, photo export, mods and texture packs,
+      and the Snap Station's printer.
+    </p>
+    <p>
+      No game data is included. You need your own cartridge dump of the US
+      game; the program asks for it on the first start and copies it into its
+      own folder.
+    </p>
+  </description>
+  <launchable type="desktop-id">io.github.jackandbeans.Snap64Recomp.desktop</launchable>
+  <url type="homepage">https://github.com/JackandBeans/Snap64Recomp</url>
+  <url type="bugtracker">https://github.com/JackandBeans/Snap64Recomp/issues</url>
+  <url type="help">https://github.com/JackandBeans/Snap64Recomp/blob/main/docs/MANUAL.md</url>
+  <supports>
+    <control>pointing</control>
+    <control>keyboard</control>
+    <control>gamepad</control>
+  </supports>
+  <content_rating type="oars-1.1" />
+  <releases>
+    <release version="@VERSION@" date="@DATE@" />
+  </releases>
+</component>

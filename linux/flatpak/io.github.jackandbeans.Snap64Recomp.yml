@@ -1,0 +1,65 @@
+# The Flatpak: the Linux build of Snap64 Recomp in a sandbox, installable on
+# any Linux with Flatpak (a Steam Deck's Desktop Mode among them) as one
+# file. It is built by .github/workflows/build.yml from a checkout that has
+# its vendored trees and the private inputs in place (the workflow puts them
+# there); flatpak-builder takes that checkout as the one source and runs the
+# same CMake build the Linux tarball comes from, then installs the same flat
+# folder into /app/bin, where the program reads its shipped files from
+# beside itself. Everything it writes (the ROM it copies in, saves, photos,
+# settings, the log, mods) goes to the sandbox's config folder,
+# ~/.var/app/io.github.jackandbeans.Snap64Recomp/config/Snap64Recomp/,
+# since /app is read-only (src/paths.cpp). @PRERELEASE@ is filled in by the
+# workflow (empty for a release).
+id: io.github.jackandbeans.Snap64Recomp
+runtime: org.freedesktop.Platform
+runtime-version: '24.08'
+sdk: org.freedesktop.Sdk
+sdk-extensions:
+  - org.freedesktop.Sdk.Extension.llvm18
+command: Snap64Recomp
+finish-args:
+  # The window, sound and the GPU.
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --socket=pulseaudio
+  - --device=dri
+  # Controllers: the joystick devices under /dev/input. Flatpak 1.16 has
+  # --device=input for that alone; a Steam Deck and Ubuntu 24.04 carry 1.14,
+  # which knows only --device=all, so that is what every recompilation asks.
+  - --device=all
+  # Reading the ROM, mods and texture packs from wherever the player keeps
+  # them (the port copies the ROM into its own folder on the first start);
+  # the home folder and removable drives, read-only. Its own files live in
+  # the sandbox's config folder, which needs no permission.
+  - --filesystem=home:ro
+  - --filesystem=/media:ro
+  - --filesystem=/run/media:ro
+  - --filesystem=/mnt:ro
+cleanup:
+  - '*.a'
+modules:
+  - name: snap64recomp
+    buildsystem: simple
+    build-options:
+      append-path: /usr/lib/sdk/llvm18/bin
+      prepend-ld-library-path: /usr/lib/sdk/llvm18/lib
+    build-commands:
+      - >
+        cmake -S . -B build-flatpak -G Ninja -DCMAKE_BUILD_TYPE=Release
+        -DCMAKE_C_COMPILER=clang -DCMAKE_CXX_COMPILER=clang++
+        "-DSNAP_VERSION_PRERELEASE=@PRERELEASE@"
+      - cmake --build build-flatpak --target Snap64Recomp -j "$FLATPAK_BUILDER_N_JOBS"
+      # The flat folder of the tarball, into /app/bin: the program finds its
+      # shipped files beside itself there.
+      - cmake --install build-flatpak --prefix /app/bin
+      - install -Dm644 src/snap64.png /app/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png
+      - install -Dm644 linux/flatpak/${FLATPAK_ID}.desktop /app/share/applications/${FLATPAK_ID}.desktop
+      - install -Dm644 linux/flatpak/${FLATPAK_ID}.metainfo.xml /app/share/metainfo/${FLATPAK_ID}.metainfo.xml
+    sources:
+      - type: dir
+        path: ../..
+        skip:
+          - build-win
+          - build-linux
+          - build-macos
+          - .git

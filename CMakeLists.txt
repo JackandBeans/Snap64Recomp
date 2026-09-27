@@ -703,9 +703,15 @@ elseif (APPLE)
     set(CPACK_PACKAGE_FILE_NAME "Snap64Recomp-${SNAP_VERSION_FULL}-macos-${SNAP_TARGET_ARCH}")
 else()
     # The same flat folder as a tarball (permissions kept, so the binary is
-    # executable when unpacked); the Linux name says which machine it runs on.
+    # executable when unpacked); the Linux name says which machine it runs on,
+    # x86_64 or arm64 (the name the other recompilations use for AArch64).
+    if (SNAP_TARGET_ARCH MATCHES "aarch64|arm64|ARM64")
+        set(SNAP_LINUX_ARCH "arm64")
+    else()
+        set(SNAP_LINUX_ARCH "x86_64")
+    endif()
     set(CPACK_GENERATOR "TGZ")
-    set(CPACK_PACKAGE_FILE_NAME "Snap64Recomp-${SNAP_VERSION_FULL}-linux-x86_64")
+    set(CPACK_PACKAGE_FILE_NAME "Snap64Recomp-${SNAP_VERSION_FULL}-linux-${SNAP_LINUX_ARCH}")
 endif()
 set(CPACK_PACKAGE_CHECKSUM SHA256)
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY ON)

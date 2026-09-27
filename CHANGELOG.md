@@ -35,8 +35,17 @@
   map, which named every object file it linked. Clang and GCC now map the
   source and build folders away (`-ffile-prefix-map`), Apple's linker takes
   the build folder off the object names (`-oso_prefix`), and the package
-  check, which looked only at the Windows zip and only for `C:\Users\`,
-  now searches all three archives for any build machine's folders.
+  check, which looked only at the Windows zip and only for a Windows user
+  folder, now searches every archive for any build machine's folders.
+* Linux comes three ways: the x86_64 tarball as before, a tarball for ARM64
+  (a Raspberry Pi 5, an ARM laptop, a Linux virtual machine on a Mac), and
+  a Flatpak for x86_64 that brings its own SDL2, GTK 3 and Vulkan loader
+  and installs with one command on a Steam Deck or any desktop with
+  Flatpak (`linux/flatpak/`; it keeps its files under
+  `~/.var/app/io.github.jackandbeans.Snap64Recomp/`). Both are made on
+  GitHub's machines by the build workflow, the ARM64 one on GitHub's ARM
+  runners; the Flatpak is installed and started there on every run. No
+  machine has played the game from either yet (`docs/STEAM-DECK.md`).
 * The build workflows' private inputs name the tree they were made from
   (`inputs.json`, written by `tools/ci_inputs.py`, which was
   `tools/macos_inputs.py`), and every build stops when they belong to

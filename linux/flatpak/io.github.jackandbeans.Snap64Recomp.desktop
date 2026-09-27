@@ -1,0 +1,9 @@
+[Desktop Entry]
+Type=Application
+Name=Snap64 Recomp
+Comment=Pokémon Snap, the N64 game, as a native PC program; bring your own cartridge dump
+Exec=Snap64Recomp
+Icon=io.github.jackandbeans.Snap64Recomp
+Terminal=false
+Categories=Game;
+Keywords=Pokemon;Snap;N64;recomp;

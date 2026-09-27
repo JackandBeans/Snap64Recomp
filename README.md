@@ -5,7 +5,7 @@
 <a href="https://github.com/JackandBeans/Snap64Recomp/releases/latest"><img src="https://img.shields.io/github/v/release/JackandBeans/Snap64Recomp?label=release" alt="Latest release"></a>
 <a href="https://github.com/JackandBeans/Snap64Recomp/releases"><img src="https://img.shields.io/github/downloads/JackandBeans/Snap64Recomp/total?label=downloads" alt="Downloads"></a>
 <a href="https://github.com/JackandBeans/Snap64Recomp/actions/workflows/build.yml"><img src="https://github.com/JackandBeans/Snap64Recomp/actions/workflows/build.yml/badge.svg?branch=main" alt="Build"></a>
-<img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64%20%7C%20Linux%20x86__64%20%7C%20Steam%20Deck%20%7C%20macOS%2014%2B-lightgrey" alt="Platform: Windows 10 or 11 x64, Linux x86_64, Steam Deck, macOS 14 or newer">
+<img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64%20%7C%20Linux%20x86__64%20%2B%20ARM64%20%7C%20Steam%20Deck%20%7C%20macOS%2014%2B-lightgrey" alt="Platform: Windows 10 or 11 x64, Linux x86_64 and ARM64, Steam Deck, macOS 14 or newer">
 </p>
 
 # Snap64 Recomp
@@ -122,8 +122,9 @@ picture. The full set, with a caption for each, is in
 
 * **Windows:** 64-bit Windows 10 or 11, and a GPU whose driver supports
   Direct3D 12 with Shader Model 6.0.
-* **Linux and Steam Deck:** an x86_64 system with a Vulkan 1.2 driver, SDL2
-  and GTK 3. The Linux build is experimental.
+* **Linux and Steam Deck:** a Vulkan 1.2 driver, and either Flatpak or the
+  system's SDL2 and GTK 3; x86_64, or ARM64 for the tarball built for it.
+  The Linux builds are experimental.
 * **macOS:** macOS 14 (Sonoma) or newer, on Apple Silicon or Intel; one app
   runs on both. The Mac build has run on GitHub's virtual Mac and not yet on
   a physical one (see [macOS](#macos)).
@@ -256,12 +257,19 @@ in [the manual](docs/MANUAL.md#controls).
 
 ## Linux and Steam Deck
 
-The release page has a native Linux build, marked experimental, beside the
-Windows one. On a Steam Deck either route works. Players ran the Windows
-build through Proton on the day of the first release. The native build has
-been played on a Deck, in Desktop Mode and in Gaming Mode. It needs the
-system's SDL2, GTK 3 and a Vulkan 1.2 driver, and renders through Vulkan
-only. [STEAM-DECK.md](docs/STEAM-DECK.md) has the steps for each route, the
+The release page has three native Linux builds, marked experimental,
+beside the Windows one: a tarball for x86_64, a Flatpak for x86_64, and a
+tarball for ARM64. On a Steam Deck either the tarball, the Flatpak or the
+Windows build through Proton works; players ran Proton on the day of the
+first release, and the x86_64 tarball has been played on a Deck, in Desktop
+Mode and in Gaming Mode. The tarball needs the system's SDL2, GTK 3 and a
+Vulkan 1.2 driver; the Flatpak brings its own and installs with one
+command, `flatpak install --user Snap64Recomp-<version>-linux-x86_64.flatpak`,
+keeping everything it writes under `~/.var/app/io.github.jackandbeans.Snap64Recomp/`.
+Rendering is Vulkan only. The Flatpak and the ARM64 build are made and
+started on GitHub's machines and have not been played on any; the first
+report from a Deck or an ARM machine would be welcome.
+[STEAM-DECK.md](docs/STEAM-DECK.md) has the steps for each route, the
 Deck's controls and gyro, its screen, quitting from a pad, and the icon.
 
 ## macOS

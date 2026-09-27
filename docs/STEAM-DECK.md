@@ -2,14 +2,16 @@
 
 
 The release page carries the Windows build and, from 1.0.1, a native Linux
-build marked experimental. Two ways onto a Deck exist: the Windows build
-through Proton, which players ran on the day of the 1.0.0 release, and the
-native build, which has been played on a Steam Deck in Desktop Mode by me
-on 2026-09-06 -- the menus, the Beach, gyro aim and the settings all as on
-Windows, with one known blemish noted below. Both are described here as
-they stand on that date; the Gaming Mode instructions follow what the other
-N64 recompilations' players do, and every "untested" below means exactly
-that.
+build marked experimental; from the release after 1.1.0 the native build
+comes three ways, a tarball for x86_64, a Flatpak for x86_64 and a tarball
+for ARM64. Three ways onto a Deck exist: the Windows build through Proton,
+which players ran on the day of the 1.0.0 release; the native tarball,
+which has been played on a Steam Deck in Desktop Mode by me on 2026-09-06
+-- the menus, the Beach, gyro aim and the settings all as on Windows, with
+one known blemish noted below; and the Flatpak, which no Deck has run yet.
+All are described here as they stand; the Gaming Mode instructions follow
+what the other N64 recompilations' players do, and every "untested" below
+means exactly that.
 
 ## The Windows build through Proton
 
@@ -94,6 +96,48 @@ only, whatever `graphics_api` in the settings file says. If a Linux
 desktop shows no controller under Steam Input, that is a known problem of
 the whole family of ports outside the Deck; the Deck itself is reported
 fine.
+
+The same program is built for ARM64 Linux as
+`Snap64Recomp-<version>-linux-arm64.tar.gz`, on GitHub's ARM machines, for
+a Raspberry Pi 5, an ARM laptop or a Linux virtual machine on a Mac. It is
+used exactly as above. No ARM machine has run it; it is unverified beyond
+building and packing.
+
+## The Flatpak
+
+`Snap64Recomp-<version>-linux-x86_64.flatpak` is the same Linux build in a
+Flatpak sandbox, with its SDL2, GTK 3 and Vulkan loader inside, so nothing
+has to be installed beside it; it runs on any x86_64 Linux with Flatpak,
+which the Deck and most desktops have. It is used like this:
+
+1. Install it once, from a terminal in Desktop Mode:
+
+       flatpak install --user Snap64Recomp-<version>-linux-x86_64.flatpak
+
+   (a file manager that offers "Install" for the file does the same). It
+   fetches the freedesktop 24.08 runtime from Flathub if the machine does
+   not have it, about 300 MB, and appears in the application menu as
+   Snap64 Recomp. To remove it: `flatpak uninstall --user
+   io.github.jackandbeans.Snap64Recomp`.
+2. Start it from the menu, or `flatpak run io.github.jackandbeans.Snap64Recomp`.
+   The first start asks for the ROM and copies it in. Everything the port
+   writes, the ROM's copy, the saves, photos, settings, the log and the
+   mods folder, lives in
+   `~/.var/app/io.github.jackandbeans.Snap64Recomp/config/Snap64Recomp/`,
+   since the program's own folder is read-only in a sandbox; the log's
+   first line says so. The sandbox can read your home folder and removable
+   drives (`/media`, `/run/media`, `/mnt`), so the ROM, a mod or a texture
+   pack can be chosen from wherever it is.
+3. On a Deck, add it to Steam from Desktop Mode as any Flatpak (right-click
+   it in the application menu, **Add to Steam**) and launch it from Gaming
+   Mode; the screen, pad and gyro notes above apply as they do to the
+   tarball, and are untested for the Flatpak.
+
+The bundle is built and installed on GitHub's Ubuntu machine on every
+release candidate, where it starts, names its folder and exits when its ROM
+chooser is answered Cancel (`.github/workflows/build.yml`); it did the same
+installed under WSL's Ubuntu 24.04. No machine has played the game from it;
+the first report would be welcome, with `snap64.log` from the folder above.
 
 ## On a Deck, either way
 

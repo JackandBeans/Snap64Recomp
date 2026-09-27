@@ -7,13 +7,14 @@
 # branches and on request. A pull request from a fork has no secret and
 # builds nothing here; its jobs are skipped, not failed.
 #
-# What it makes: the archives a release ships, cpack's ZIP for Windows and
-# tarball for Linux with their .sha256 sidecars, kept as artifacts and, on a
-# pull request, linked from a comment. What it proves: that the tree
-# configures, compiles and packages on a machine that is not mine, with
-# Visual Studio 2022 on Windows and Clang on Ubuntu 24.04, and that each
-# archive passes the release suite's package checks (no build machine's
-# folders in it among them). It runs no game: the release suite runs on the
+# What it makes: the archives a release ships, cpack's ZIP for Windows, its
+# tarballs for Linux on x86_64 and on ARM64, and the Flatpak, with their
+# .sha256 sidecars, kept as artifacts and, on a pull request, linked from a
+# comment. What it proves: that the tree configures, compiles and packages
+# on a machine that is not mine, with Visual Studio 2022 on Windows and
+# Clang on Ubuntu 24.04 (on GitHub's ARM machines too), that the Flatpak
+# installs and starts, and that each archive passes the release suite's
+# package checks (no build machine's folders in it among them). It runs no game: the release suite runs on the
 # release's own archives before they are published (docs/VERIFICATION.md),
 # and the Mac has its own workflow (macos.yml). release.yml calls this one
 # with attest set: the archives are then signed with GitHub's build
@@ -133,10 +134,20 @@ jobs:
           if-no-files-found: error
 
   linux:
-    name: Linux x86_64
-    runs-on: ubuntu-24.04
+    name: Linux ${{ matrix.arch }}
+    runs-on: ${{ matrix.runner }}
     timeout-minutes: 120
     if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          # GitHub's ARM machines, free for a public repository; no ARM
+          # Linux machine has run the result (docs/VERIFICATION.md).
+          - arch: x86_64
+            runner: ubuntu-24.04
+          - arch: arm64
+            runner: ubuntu-24.04-arm
     permissions:
       contents: read
       id-token: write
@@ -161,8 +172,8 @@ jobs:
         uses: actions/cache/restore@v4
         with:
           path: .ccache
-          key: linux-x86_64-ccache-${{ github.run_id }}
-          restore-keys: linux-x86_64-ccache-
+          key: linux-${{ matrix.arch }}-ccache-${{ github.run_id }}
+          restore-keys: linux-${{ matrix.arch }}-ccache-
 
       - name: The vendored trees
         run: python3 tools/fetch_deps.py
@@ -205,7 +216,7 @@ jobs:
         uses: actions/cache/save@v4
         with:
           path: .ccache
-          key: linux-x86_64-ccache-${{ github.run_id }}
+          key: linux-${{ matrix.arch }}-ccache-${{ github.run_id }}
 
       - name: What the compiler cache did
         if: always()
@@ -214,29 +225,148 @@ jobs:
       - name: Package
         run: |
           cd build-linux && cpack -G TGZ
-          ls -l Snap64Recomp-*-linux-x86_64.tar.gz Snap64Recomp-*-linux-x86_64.tar.gz.sha256
-          tar -tzf Snap64Recomp-*-linux-x86_64.tar.gz | head -20
+          ls -l Snap64Recomp-*-linux-${{ matrix.arch }}.tar.gz Snap64Recomp-*-linux-${{ matrix.arch }}.tar.gz.sha256
+          tar -tzf Snap64Recomp-*-linux-${{ matrix.arch }}.tar.gz | head -20
 
       - name: What cpack made
-        run: python3 tools/release_check.py --only package --zip build-linux/Snap64Recomp-*-linux-x86_64.tar.gz
+        run: python3 tools/release_check.py --only package --zip build-linux/Snap64Recomp-*-linux-${{ matrix.arch }}.tar.gz
 
       - name: Build provenance
         if: inputs.attest
         uses: actions/attest@v4
         with:
-          subject-path: build-linux/Snap64Recomp-*-linux-x86_64.tar.gz
+          subject-path: build-linux/Snap64Recomp-*-linux-${{ matrix.arch }}.tar.gz
 
       - uses: actions/upload-artifact@v4
         with:
-          name: Snap64Recomp-linux-x86_64
+          name: Snap64Recomp-linux-${{ matrix.arch }}
           path: |
-            build-linux/Snap64Recomp-*-linux-x86_64.tar.gz
-            build-linux/Snap64Recomp-*-linux-x86_64.tar.gz.sha256
+            build-linux/Snap64Recomp-*-linux-${{ matrix.arch }}.tar.gz
+            build-linux/Snap64Recomp-*-linux-${{ matrix.arch }}.tar.gz.sha256
+          if-no-files-found: error
+
+  flatpak:
+    name: Flatpak x86_64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      FLATPAK_ID: io.github.jackandbeans.Snap64Recomp
+      FREEDESKTOP_VERSION: '24.08'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: The toolchain
+        # flatpak-builder, and the runtime and SDK the manifest names
+        # (linux/flatpak/*.yml), with the LLVM extension for clang.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y flatpak flatpak-builder
+          flatpak --user remote-add --if-not-exists flathub https://flathub.org/repo/flathub.flatpakrepo
+          flatpak --user install -y --noninteractive flathub \
+            "org.freedesktop.Platform//$FREEDESKTOP_VERSION" \
+            "org.freedesktop.Sdk//$FREEDESKTOP_VERSION" \
+            "org.freedesktop.Sdk.Extension.llvm18//$FREEDESKTOP_VERSION"
+          flatpak --version
+
+      - name: The compiler cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .flatpak-builder/ccache
+          key: flatpak-x86_64-ccache-${{ github.run_id }}
+          restore-keys: flatpak-x86_64-ccache-
+
+      - name: The vendored trees
+        run: python3 tools/fetch_deps.py
+
+      - name: The inputs the ROM produces
+        env:
+          TOKEN: ${{ secrets.SNAP64_INPUTS_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::SNAP64_INPUTS_TOKEN is not set; the build needs the private inputs repository (BUILDING.md, step 15)"
+            exit 1
+          fi
+          git clone --depth 1 "https://${OWNER}:${TOKEN}@github.com/${SNAP_INPUTS_REPO}.git" "$RUNNER_TEMP/inputs"
+          python3 tools/ci_inputs.py --check "$RUNNER_TEMP/inputs"
+          cp -R "$RUNNER_TEMP/inputs/RecompiledFuncs" "$RUNNER_TEMP/inputs/RecompiledPatches" .
+          mkdir -p patches/build
+          cp "$RUNNER_TEMP/inputs/patches/build/patches.bin" patches/build/
+          cp "$RUNNER_TEMP/inputs/pokemonsnap.z64" .
+          python3 tools/hook_funcs.py
+
+      - name: The manifest, filled in
+        env:
+          PRERELEASE: ${{ inputs.prerelease }}
+        run: |
+          case "$PRERELEASE" in *[!acdeikmnoprstuv0-9.]*) echo "::error::a prerelease label uses only the letters a c d e i k m n o p r s t u v, digits and dots (rc1, pre2): what the title screen's credits face can draw"; exit 1;; esac
+          ver=$(sed -n 's/^project(Snap64Recomp VERSION \([0-9.]*\).*/\1/p' CMakeLists.txt)
+          full="$ver${PRERELEASE:+-$PRERELEASE}"
+          sed -i "s/@PRERELEASE@/$PRERELEASE/" "linux/flatpak/$FLATPAK_ID.yml"
+          sed -i "s/@VERSION@/$full/; s/@DATE@/$(date -u +%Y-%m-%d)/" "linux/flatpak/$FLATPAK_ID.metainfo.xml"
+          echo "SNAP_FULL_VERSION=$full" >> "$GITHUB_ENV"
+          echo "version $full"
+
+      - name: Build
+        run: >
+          flatpak-builder --user --force-clean --disable-rofiles-fuse --ccache
+          --repo=flatpak-repo flatpak-build "linux/flatpak/$FLATPAK_ID.yml"
+
+      - name: The compiler cache, kept
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .flatpak-builder/ccache
+          key: flatpak-x86_64-ccache-${{ github.run_id }}
+
+      - name: Bundle
+        # One file a player installs with `flatpak install --user <file>`,
+        # with the sidecar the other archives have.
+        run: |
+          mkdir -p build-flatpak-out
+          out="build-flatpak-out/Snap64Recomp-$SNAP_FULL_VERSION-linux-x86_64.flatpak"
+          flatpak build-bundle flatpak-repo "$out" "$FLATPAK_ID" --runtime-repo=https://flathub.org/repo/flathub.flatpakrepo
+          (cd build-flatpak-out && sha256sum "$(basename "$out")" > "$(basename "$out").sha256")
+          ls -l build-flatpak-out
+
+      - name: The bundle, installed and started
+        # As a player would install it, then started with no ROM and no
+        # window: the first start's chooser is answered Cancel (SNAP_ROM_PICK)
+        # and the program says its name, where its files go, and exits.
+        run: |
+          flatpak --user install -y --noninteractive build-flatpak-out/*.flatpak
+          flatpak info "$FLATPAK_ID" | head -8
+          timeout 120 flatpak run --env=SNAP_ROM_PICK=cancel --env=SDL_VIDEODRIVER=dummy --env=SDL_AUDIODRIVER=dummy "$FLATPAK_ID" > flatpak-run.log 2>&1 || echo "exit $? (a Cancel exits on purpose)"
+          grep -E '^\[SNAP\] Snap64 Recomp ' flatpak-run.log
+          grep -E 'files resolve against|data directory' flatpak-run.log
+          grep -E 'ROM' flatpak-run.log | head -3
+          tail -3 flatpak-run.log
+
+      - name: What the bundle is
+        run: python3 tools/release_check.py --only package --zip build-flatpak-out/*.flatpak
+
+      - name: Build provenance
+        if: inputs.attest
+        uses: actions/attest@v4
+        with:
+          subject-path: build-flatpak-out/*.flatpak
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Snap64Recomp-linux-flatpak
+          path: |
+            build-flatpak-out/*.flatpak
+            build-flatpak-out/*.flatpak.sha256
           if-no-files-found: error
 
   links:
     name: The builds, linked from the pull request
-    needs: [windows, linux]
+    needs: [windows, linux, flatpak]
     if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     permissions:

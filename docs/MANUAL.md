@@ -54,6 +54,12 @@ Privacy & Security > Open Anyway. Everything it writes goes to
 (a Terminal gets a copy of every line, as on Linux). Metal draws; the
 settings file's `graphics_api` is ignored.
 
+On Linux the program comes as a tarball for x86_64 or for ARM64, or as a
+Flatpak for x86_64 (`flatpak install --user <the file>`, then it is in the
+application menu); the Flatpak keeps everything it writes under
+`~/.var/app/io.github.jackandbeans.Snap64Recomp/config/Snap64Recomp/`.
+[STEAM-DECK.md](STEAM-DECK.md) has each route.
+
 ### If Windows or your antivirus objects
 
 The executable is not signed, so

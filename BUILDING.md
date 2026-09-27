@@ -500,16 +500,30 @@ and never plays them; the port drops the queue and says so
 covers a Deck's sleep or a Bluetooth switch. Running the game on a Linux
 desktop or a Steam Deck is [unverified](docs/STEAM-DECK.md).
 
-GitHub's machines make both archives too. `.github/workflows/build.yml`
+GitHub's machines make the archives too. `.github/workflows/build.yml`
 runs on every push to `main` and on every pull request from a branch of
 this repository: Windows with Visual Studio 2022 on a `windows-2022`
-runner, Linux with Clang on `ubuntu-24.04`, each from a clean checkout
-plus `tools/fetch_deps.py` and the private inputs of step 15, ending in
-cpack's archive as an artifact, with the suite's package checks run on both
-archives. It runs no game. Its first run, on the 1.1.0 tree
-(2026-09-27), took ten minutes for Windows and six for Linux and made
-archives with the release's file lists. A pull request from a fork builds
-nothing there: the inputs are private, so its jobs are skipped.
+runner, Linux with Clang on `ubuntu-24.04` and, for ARM64, on
+`ubuntu-24.04-arm` (the same recipe; `SNAP_TARGET_ARCH` names the package
+`linux-arm64`, and the SSE flag on the audio microcode's source is x86's
+only), each from a clean checkout plus `tools/fetch_deps.py` and the
+private inputs of step 15, ending in cpack's archive as an artifact, with
+the suite's package checks run on every archive. A fourth job builds the
+Flatpak: `flatpak-builder` takes the same checkout as its one source
+(`linux/flatpak/io.github.jackandbeans.Snap64Recomp.yml`), runs the same
+CMake build inside the freedesktop 24.08 SDK with its LLVM 18 extension,
+installs the flat folder into `/app/bin` (the program reads its shipped
+files from beside itself, and writes to the sandbox's config folder since
+`/app` is read-only, `src/paths.cpp`), adds the icon, the desktop entry and
+the AppStream metainfo from that folder, bundles it as one `.flatpak` file
+with a `.sha256`, installs the bundle and starts it with no ROM and no
+window (`SNAP_ROM_PICK=cancel`, `SDL_VIDEODRIVER=dummy`): the program says
+its name and its folder and exits. The x86_64 job's first run, on the
+1.1.0 tree (2026-09-27), took ten minutes for Windows and six for Linux
+and made archives with the release's file lists; run 36348338742 the same day made
+the ARM64 tarball in two minutes and the Flatpak in nine. No game runs in the
+workflow beyond that start. A pull request from a fork builds nothing
+there: the inputs are private, so its jobs are skipped.
 
 ### 15. macOS build (GitHub's Mac)
 

@@ -114,7 +114,17 @@ here should be assumed untried.
   failed were the Options page and the three page checks, withheld because
   that label has a `y` the credits face cannot draw (a rule the build now
   enforces). Those four passed on the `rc1` executable, 4 of 4 in 175
-  seconds, and the Snap Station check on it 5 of 5 in 488.
+  seconds, and the Snap Station check on it 5 of 5 in 488. The Linux ARM64
+  tarball and the Flatpak are built by the same workflow (run 36348338742,
+  2026-09-27, labelled `rc2`, in which all five archives were made, checked
+  and signed), and no machine has played the game from either. The ARM64
+  tarball has only been built and packed: its package checks pass and its
+  executable's ELF header says AArch64. The Flatpak was installed on
+  GitHub's Ubuntu machine and started with no ROM and no window: it named
+  itself, named its data folder in the sandbox, and exited when its ROM
+  chooser was answered Cancel; the same bundle, installed under WSL's
+  Ubuntu 24.04 with Flatpak 1.14 on the release machine, did the same and
+  wrote its log to that folder.
   No other machine's build or run is recorded in this repository. Anything
   not listed here should be assumed untried.
 * The photo export (P, the controller's Back button, `photos/`) is checked

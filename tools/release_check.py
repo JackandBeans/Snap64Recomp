@@ -38,12 +38,15 @@ that a release build can be put through all of them in one go:
               byte-swapped dump in big-endian order, and a Cancel starts
               nothing and exits
   package     (with --zip, once per archive) a release archive, Windows zip,
-              Linux tarball or Mac zip: it carries the program, the
-              licences and the documents, its .sha256 sidecar matches it,
-              no file in it names a build machine's folders (this one's or
-              a GitHub runner's), the C++ runtime is linked in, and on
-              Windows dxil.dll is the redistributable v1.7.2308 file. With
-              --only package no executable folder is needed.
+              Linux tarball (x86_64 or arm64) or Mac zip: it carries the
+              program, the licences and the documents, its .sha256 sidecar
+              matches it, no file in it names a build machine's folders
+              (this one's or a GitHub runner's), the C++ runtime is linked
+              in, and on Windows dxil.dll is the redistributable v1.7.2308
+              file. A Flatpak bundle (.flatpak) is a sealed OSTree file, so
+              only its header (the app's id and runtime) and its sidecar are
+              checked here; the workflow that makes it installs and starts it. With --only package no
+              executable folder is needed.
     station     (only with --only station: it takes eight minutes and rewrites the
               save) the Snap Station print: the station replay plays a
               course, marks an album photo, saves, opens the Gallery's Print
@@ -667,6 +670,8 @@ PROGRAM = {'windows': EXE, 'linux': 'Snap64Recomp', 'macos': 'Snap64Recomp.app/C
 
 def read_archive(path):
     """(kind, {member name: bytes}) for a release archive; directories are left out."""
+    if path.name.endswith('.flatpak'):
+        return 'flatpak', {}
     if path.name.endswith('.tar.gz'):
         with tarfile.open(path) as t:
             return 'linux', {m.name: t.extractfile(m).read() for m in t.getmembers() if m.isfile()}
@@ -675,13 +680,7 @@ def read_archive(path):
     return ('macos' if '-macos-' in path.name else 'windows'), files
 
 
-def check_package(c, zip_path):
-    kind, files = read_archive(zip_path)
-    top = sorted(files)[0].split('/')[0]
-    names = set(files)
-    missing = [n for n in PACKAGE_NEEDS[kind] if (top + '/' + n) not in names]
-    c.add('package', not missing, '%s (%s): %d files%s' % (zip_path.name, kind, len(names),
-                                                          (', missing ' + ', '.join(missing)) if missing else ''))
+def check_sidecar(c, zip_path):
     # The checksum CPack (or the bundle script) writes beside the archive must match it.
     sidecar = zip_path.with_name(zip_path.name + '.sha256')
     if sidecar.is_file():
@@ -692,6 +691,29 @@ def check_package(c, zip_path):
         c.add('package', b'\r' not in raw, '.sha256 sidecar ends its line with %s' % ('LF' if b'\r' not in raw else 'CRLF (a release ships LF)'))
     else:
         c.add('package', False, 'no .sha256 sidecar beside the archive')
+
+
+def check_package(c, zip_path):
+    kind, files = read_archive(zip_path)
+    if kind == 'flatpak':
+        # A bundle is an OSTree file, its contents compressed (the 11 MB program
+        # comes out under 4 MB), with the app's metadata in its header as plain
+        # text: the id and the runtime it was built on are what to look for.
+        raw = zip_path.read_bytes()
+        app = b'io.github.jackandbeans.Snap64Recomp' in raw
+        runtime = b'org.freedesktop.Platform' in raw
+        c.add('package', app and runtime and len(raw) > 2 << 20,
+              '%s (flatpak): %.1f MB, %s' % (zip_path.name, len(raw) / 1e6,
+                                             'names the app and the freedesktop runtime' if app and runtime
+                                             else 'does NOT name ' + ' or '.join(n for n, ok in (('the app', app), ('the runtime', runtime)) if not ok)))
+        check_sidecar(c, zip_path)
+        return
+    top = sorted(files)[0].split('/')[0]
+    names = set(files)
+    missing = [n for n in PACKAGE_NEEDS[kind] if (top + '/' + n) not in names]
+    c.add('package', not missing, '%s (%s): %d files%s' % (zip_path.name, kind, len(names),
+                                                          (', missing ' + ', '.join(missing)) if missing else ''))
+    check_sidecar(c, zip_path)
     # Nothing from a build machine's file system may be in the archive.
     leaked = {}
     for n, blob in files.items():
@@ -720,6 +742,10 @@ def check_package(c, zip_path):
         needs = [lib for lib in (b'libstdc++.so', b'libgcc_s.so') if lib in program]
         c.add('package', program[:4] == b'\x7fELF' and not needs,
               'C++ runtime %s' % ('linked in' if not needs else 'loaded from ' + ', '.join(n.decode() for n in needs)))
+        # The tarball's name says the machine; the ELF header says it too (e_machine: 0x3E x86-64, 0xB7 AArch64).
+        machine = struct.unpack_from('<H', program, 18)[0] if len(program) > 20 else 0
+        want = 0xB7 if '-arm64' in zip_path.name else 0x3E
+        c.add('package', machine == want, 'the executable is for %s' % ({0x3E: 'x86_64', 0xB7: 'arm64'}.get(machine, 'machine 0x%X' % machine)))
     else:
         # One executable for both kinds of Mac: a universal (fat) Mach-O with two halves.
         fat = program[:4] == b'\xca\xfe\xba\xbe' and struct.unpack('>I', program[4:8])[0] == 2

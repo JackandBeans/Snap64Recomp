@@ -1,13 +1,13 @@
 # The release's archives, made on GitHub's machines: the Windows zip, the
-# Linux tarball and the Mac zip of one commit, each signed with GitHub's build
-# provenance, a statement of the commit and workflow that made it that anyone
+# Linux tarballs (x86_64 and ARM64), the Flatpak and the Mac zip of one
+# commit, each signed with GitHub's build provenance, a statement of the commit and workflow that made it that anyone
 # can check:
 #
 #     gh attestation verify Snap64Recomp-<version>-win64.zip --repo JackandBeans/Snap64Recomp
 #
 # It calls build.yml and macos.yml with attest set, so the release is built
 # exactly as every push is, and the Mac's checks run as they always do. Then
-# one job gathers the three archives, runs the release suite's package checks
+# one job gathers the five archives, runs the release suite's package checks
 # over all of them together, verifies each attestation as a downloader would,
 # and keeps them as one artifact with their checksums in the run's summary.
 # Nothing here publishes: the release suite runs on these files on the
@@ -60,7 +60,7 @@ jobs:
       attestations: write
 
   release:
-    name: The three archives, checked together
+    name: The archives, checked together
     needs: [windows-linux, macos]
     runs-on: ubuntu-24.04
     timeout-minutes: 30
@@ -76,17 +76,17 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: The package checks, all three
+      - name: The package checks, all five
         run: |
           ls -l dist
-          set -- $(for f in dist/*.zip dist/*.tar.gz; do printf -- '--zip %s ' "$f"; done)
+          set -- $(for f in dist/*.zip dist/*.tar.gz dist/*.flatpak; do printf -- '--zip %s ' "$f"; done)
           python3 tools/release_check.py --only package "$@"
 
       - name: The attestations, as a downloader checks them
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for f in dist/*.zip dist/*.tar.gz; do
+          for f in dist/*.zip dist/*.tar.gz dist/*.flatpak; do
             gh attestation verify "$f" --repo "$GITHUB_REPOSITORY" --deny-self-hosted-runners > /dev/null
             echo "verified: $(basename "$f")"
           done
@@ -100,7 +100,7 @@ jobs:
             echo
             echo "| File | Bytes | SHA-256 |"
             echo "| --- | ---: | --- |"
-            for f in dist/*.zip dist/*.tar.gz; do
+            for f in dist/*.zip dist/*.tar.gz dist/*.flatpak; do
               echo "| \`$(basename "$f")\` | $(stat -c %s "$f") | \`$(sha256sum "$f" | cut -c1-64)\` |"
             done
           } >> "$GITHUB_STEP_SUMMARY"
