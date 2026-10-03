@@ -148,7 +148,7 @@ shipped, 2x or 4x slower while Space, or the left stick pressed in, is held.
 <a href="screenshots/20-pause-options-109.png"><img src="screenshots/20-pause-options-109.png" width="640" alt="The pause menu, 1.0.9: Options"></a>
 
 **The pause menu, 1.0.9: Options.** A fourth pill under Retry, in green,
-the one colour of the set the menu did not use. It is composed from the
+the one color of the set the menu did not use. It is composed from the
 game's own pill artwork and lettering, and it opens the port's pages over
 the paused ride; Esc, or Select on a pad, opens them from any screen.
 

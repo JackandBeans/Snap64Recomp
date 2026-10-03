@@ -127,8 +127,8 @@
 * Oak's photo check, showing one picture at a time, did not take the mouse:
   the header's arrows turned the pages of the grid of pictures but did
   nothing on a single picture, where the stick's left and right step
-  through a Pokemon's pictures, so a mouse alone could not reach the second
-  picture of a Pokemon. The arrows step there now, as the wheel does; a
+  through a Pokémon's pictures, so a mouse alone could not reach the second
+  picture of a Pokémon. The arrows step there now, as the wheel does; a
   click on the picture is A on it; the right button is B. The view runs
   the stick's steps on its own, so the port's hooks on the grid never ran
   there (src/menu_mouse.cpp); the view's own picture lookup, made every
@@ -281,9 +281,9 @@
   side onto the left, the second one paint and all, which took the 64 off
   the label. Now the cut treats the burst's soft edge as ground, so the
   smear is gone on both sides; the outline's left takes the right side's
-  shape; and the right side's colours come across up to the 64 and fade into
+  shape; and the right side's colors come across up to the 64 and fade into
   the drawn pixels over the next columns, with the ink, the 64's strokes and
-  the Poke Ball, keeping its own colour (`tools/icon_gen.py`). The .ico, the
+  the Poke Ball, keeping its own color (`tools/icon_gen.py`). The .ico, the
   window icon and the macOS icon are regenerated; the canister's size in
   each is unchanged.
 
@@ -460,7 +460,7 @@
   punctuation it lacked; the row font gains ! ? ( ) " & and a g and y
   drawn a row higher. Checked with a replay in a scratch folder holding
   Unlimited Film and Unlock Everything: it turned Film off, moved Unlock
-  up, changed Film's counter, and cancelled each. The log said "1 change
+  up, changed Film's counter, and canceled each. The log said "1 change
   undone" and "2 changes undone", `mods.json` and Film's settings file
   were as before, and the captures showed each screen.
 * The Options pages opened with Esc over another screen were hard to
@@ -569,7 +569,7 @@
   page is read, not set, so it keeps a dark panel under its text. It
   starts with the facts: the name and version, "By" and who made it, and
   a sentence on its state ("This mod is on.", "On: Test User needs it."),
-  one word of each in colour, with the mod's picture beside them (the next
+  one word of each in color, with the mod's picture beside them (the next
   entry). Under a rule comes the description, four lines at a time, with
   a scroll bar when there is more; a click on the bar turns a page. The
   help box says what A leads to ("A: this mod's option.", or "This mod
@@ -611,8 +611,8 @@
   top and 2 over the rule, with the text 3 rows under that. The panel is
   spaced evenly now, measured on a capture: 5 rows above the picture, 5
   under it to the rule, 6 from the rule to the text, 6 under the last
-  line; the three lines beside the picture stand 13 rows apart, centred
-  on it, and a mod with no author has its two lines centred instead.
+  line; the three lines beside the picture stand 13 rows apart, centered
+  on it, and a mod with no author has its two lines centered instead.
 * A mod's details page shows the mod's picture, as the other
   recompilations' mod menus do. I asked for it in the space beside the
   name. It is `thumb.png` at the root of the mod's `.nrm`, which the
@@ -642,7 +642,7 @@
   copy adds them to the mod's own config, VENDORING.md). The page now
   applies them as values change: an option another one hides leaves the
   list and comes back when that option changes, and one it disables is
-  grey, has no arrows, keeps its value under Left and Right, and says why
+  gray, has no arrows, keeps its value under Left and Right, and says why
   in the help box ("Unavailable while Extra Film is Off."). The page read
   its row count once, when it opened; it follows the count now, and keeps
   the selection on the option that was changed. A name too long for its
@@ -652,7 +652,7 @@
   a bare number; it has its sign, which the row and help fonts lacked. A
   text option, which the page cannot change, showed arrows; it has none.
   Checked with a scripted mouse in a scratch folder: nine of the ten
-  shown with Ghost Mode Off, Film Rolls grey with its reason, Film Rolls
+  shown with Ghost Mode Off, Film Rolls gray with its reason, Film Rolls
   back when Extra Film was turned on, Ghost Opacity in the list when Ghost
   Mode went to Faint, "< Sunset Orange... >" and "< 80% >" on screen, the
   page scrolled to its last rows, and B undoing both changes. Then I asked
@@ -689,7 +689,7 @@
   longer list scrolls as one, the rule still over the first action,
   midway between the rows. With no mod at all the room above the actions
   says "No mods yet" in the rows' face and "Mods change or add to the
-  game." under it, both centred: a headline with no full stop, and what a
+  game." under it, both centered: a headline with no period, and what a
   mod is, since the help box under the Install row already says how to
   add one (a first line, "Install one below, then restart the game.",
   said it twice). A mod installed during play says NEW, in capitals as a
@@ -698,7 +698,7 @@
   opened; then it is a plain orange NEW, since it still loads only after
   a restart. Checked with a scripted mouse: the empty page; Unlimited
   Film installed from it, its NEW in different
-  colours in two captures 40 frames apart and orange once its details had
+  colors in two captures 40 frames apart and orange once its details had
   been opened; the rule in a longer list's first window and in the window
   scrolled to its end, measured with three clear rows above it and three
   below. And I found a mod's web address cut on its details page
@@ -847,7 +847,7 @@
   and one on "B Cancel" leaving the Option list for the title. The
   sounds were not heard: the runs are muted.
 * In the Mods page's NEW the N stood a row lower than the E and W, and the
-  rule over the actions was too dark a grey to see over the island. I
+  rule over the actions was too dark a gray to see over the island. I
   found both. The cartridge's own capitals are not one height: its C, H,
   M and N stand at rows 2 to 9 of the face and its A, B, D, P, R, S and Z
   at rows 1 to 9, as does every capital the port draws but its round G,
@@ -939,7 +939,7 @@
   Metal-leak fix. The rebase applied with no textual conflict. What the
   eleven commits bring: VIs with inverted regions are no longer treated as
   valid, draw-area detection considers the viewport's clip rectangle, tile
-  synchronisation detection is improved, and a Vulkan workaround for RDNA4
+  synchronization detection is improved, and a Vulkan workaround for RDNA4
   cards. That last one is taken differently: upstream forces Vulkan on an
   RX 90 card with a driver up to `0x200000794103EC` whatever the player
   chose, and my own RX 9060 XT is on exactly that driver, on which this
@@ -1064,7 +1064,7 @@
   "with the fix" carried the old code; an `.inc` edit rebuilds its object
   now. The pools that limit lifts grow from the screen's general heap, a
   bump allocator with no free, so the pages bring their own memory as well:
-  the heap's pointers are turned towards an arena of the port's own, in
+  the heap's pointers are turned toward an arena of the port's own, in
   RDRAM beyond anything the cartridge addresses, while the runner's object
   and thread are made and while its pages are up, and turned back after;
   the arena is cleared and its cursor moved back where the game starts a
@@ -1084,12 +1084,12 @@
   display list's read from the log, nothing hung or overrun); the released
   executable passed the suite's 28 checks in 1154 seconds and the Snap
   Station's 5 in 488. The pill is the pause menu's
-  own artwork: the three stock pills are 89x19 full-colour sprites with
+  own artwork: the three stock pills are 89x19 full-color sprites with
   their words baked in, so the port composes a fourth pair, plain and
   selected, out of the yellow pair in the ROM -- the word erased to the
-  fill, every texel's hue turned so the fill sits at green (the one colour
+  fill, every texel's hue turned so the fill sits at green (the one color
   of the set the menu does not use), and Options set in the pills' own
-  letters at the pills' own centring, the O being the Q of Quit Course
+  letters at the pills' own centering, the O being the Q of Quit Course
   without its tail and the p the n's stem closed like the o. The list wears
   the Options screen's own dress at the screen's own coordinates -- the
   rules above and below the heading, A OK and B Cancel, the help box --
@@ -1153,7 +1153,7 @@
   `~/Library/Application Support/Snap64 Recomp/`; the Linux log, lock and
   relaunch made POSIX; the controller subsystem owned by the pad thread,
   because SDL's IOKit driver only sees pads from the thread that
-  initialised it; and `tools/macos_bundle.py`, which lays out the
+  initialized it; and `tools/macos_bundle.py`, which lays out the
   application bundle, signs it ad hoc and zips it with a START HERE text.
   A workflow, `.github/workflows/macos.yml`, builds the bundle on GitHub's
   Mac from a private repository of the ROM-derived inputs, as the other
@@ -1235,7 +1235,7 @@
   it (issue #15, Succulent-Puppet, Intel UHD 630; my own review and Oak's
   comparison, since 1.0.0). Three faults in the ring of pinned copies,
   found one at a time from my own playtest logs. The ring pinned every
-  small colour render as a possible photo, the interface's 8x8 and 16x16
+  small color render as a possible photo, the interface's 8x8 and 16x16
   icons included, dozens a frame on the review screens, so it overflowed
   within a single frame and the photos on screen were the ones pushed out;
   nothing smaller than a thumbnail is pinned now, and a photo drawn within
@@ -1361,9 +1361,9 @@
   front of the camera, which makes its projected coordinate enormous. The
   Deck's Mesa driver (RADV) culls that triangle in its NGG stage, in
   software, ahead of the hardware clipper that copes with it, so the
-  corner kept whatever the colour buffer held before. Settled with the
+  corner kept whatever the color buffer held before. Settled with the
   driver's own switches on my Deck: `RADV_DEBUG=nonggc` (that
-  culling alone off) draws the frame whole, while its synchronisation,
+  culling alone off) draws the frame whole, while its synchronization,
   memory-zeroing, compression and shader-compiler switches change nothing;
   Windows (Direct3D 12 and Vulkan) and Mesa's software renderer always
   drew it. The port now sets `RADV_DEBUG=nonggc` before it creates its
@@ -1526,7 +1526,7 @@
 ## 1.0.3 -- 2026-09-10
 
 * The port ships `gamecontrollerdb.txt`, the community's list of pad
-  mappings (SDL_GameControllerDB, zlib licence, `licenses/`), beside the
+  mappings (SDL_GameControllerDB, zlib license, `licenses/`), beside the
   executable. SDL uses only the pads it has a mapping for; its own list
   holds a few thousand and no 8BitDo N64 Mod Kit, so that pad was seen at
   start-up and ignored, as the log said, while the recompilations that ship
@@ -1567,7 +1567,7 @@
   carry on regardless.
 * `pad_enabled` in the settings file: `false` makes the port ignore every
   pad without unplugging one.
-* The renderer no longer drops a Pokemon's pass because its triangles
+* The renderer no longer drops a Pokémon's pass because its triangles
   reach the camera plane. RT64 fits a box to where each triangle's
   vertices project, from positions divided by w with no clipping, and
   drops a pass whose box stays empty; a vertex at or behind the camera
@@ -1615,10 +1615,10 @@
   0 to 100, and `0` switches rumble off. The cartridge had no such control,
   so the default is full strength. [Removed in 1.0.2: the game never asks
   for rumble, so the key had nothing to set.]
-* A pad SDL does not recognise can be taught with `gamecontrollerdb.txt`,
+* A pad SDL does not recognize can be taught with `gamecontrollerdb.txt`,
   the community's own mapping list, dropped beside the executable; the port
   reads it at start-up and reports how many mappings it added. The log line
-  for an unrecognised pad now says so. What used to be offered instead was
+  for an unrecognized pad now says so. What used to be offered instead was
   SDL's `SDL_GAMECONTROLLERCONFIG` environment variable, which is a
   developer's tool rather than a player's.
 * The controller can be rebound. Its buttons and triggers were fixed in the

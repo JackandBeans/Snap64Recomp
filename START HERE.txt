@@ -45,7 +45,7 @@ Sampling, Anti-Aliasing, Widescreen, Frame Rate, 2D Detail, Filter, Texture
 Filter, Color Depth, Buffering, Dither, Fullscreen, Overscan Crop, Cutscene
 Fix, Photo Detail and Jynx Recolor.
 
-Everything there is OFF or set to the console's behaviour by default, on
+Everything there is OFF or set to the console's behavior by default, on
 purpose: out of the box this plays like the cartridge, and every change is
 yours to make. Widescreen and a higher frame rate are the two most people
 want first.

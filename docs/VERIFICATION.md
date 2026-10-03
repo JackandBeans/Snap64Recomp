@@ -99,13 +99,13 @@ here should be assumed untried.
   macOS workflow's, on GitHub's virtual Mac (step 15), passed 15 of 15
   checks natively and 10 of 10 through Rosetta 2 on the 1.1.0 candidate.
   The release workflow's first runs (2026-09-27, on the 1.1.0 tree with
-  the workflow added): run 36342595034, labelled `dryrun1`, made and signed
+  the workflow added): run 36342595034, labeled `dryrun1`, made and signed
   all three archives in ten minutes (Windows ten, Linux two, the Mac's
   build three and a half and its checks five more). On its first attempt
   the Mac's mod check through Rosetta 2 crashed (signal 11, just after the
   mod's first hook ran) where it had passed on the 1.1.0 candidate; the
   re-run of that job passed, and the cause is not known. Run 36344484310,
-  labelled `rc1`, passed every job at the first attempt. In both, the
+  labeled `rc1`, passed every job at the first attempt. In both, the
   package checks passed on all three archives and each signature verified,
   in the workflow and again on this machine with `gh attestation verify`.
   The release suite then ran on the Windows executables GitHub built with
@@ -117,7 +117,7 @@ here should be assumed untried.
   enforces). Those four passed on the `rc1` executable, 4 of 4 in 175
   seconds, and the Snap Station check on it 5 of 5 in 488. The Linux ARM64
   tarball and the Flatpak are built by the same workflow (run 36348338742,
-  2026-09-27, labelled `rc2`, in which all five archives were made, checked
+  2026-09-27, labeled `rc2`, in which all five archives were made, checked
   and signed), and no machine has played the game from either. The ARM64
   tarball has only been built and packed: its package checks pass and its
   executable's ELF header says AArch64. The Flatpak was installed on

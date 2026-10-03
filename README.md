@@ -183,7 +183,7 @@ every one in full.
   from the cartridge's own code for it, and Print gives you the sheet as
   PNG files ([SNAP-STATION.md](docs/SNAP-STATION.md)).
 * **Two things the re-releases changed**, reproduced and off by default.
-  One is the Virtual Console's Jynx recolour. The other is a Cutscene Fix
+  One is the Virtual Console's Jynx recolor. The other is a Cutscene Fix
   for the one frame the console drew from inside the player model, at the
   end of two intros.
 * **Linux and the Steam Deck.** A native Linux build, played on a Deck in
@@ -449,7 +449,7 @@ this repository. That C is compiled and linked with three other things:
 * the port's own code under `src/`: the window, input, audio and settings,
   the menu pages, the photo export and the Snap Station
 
-For some features the game's own behaviour had to change: the Graphics page
+For some features the game's own behavior had to change: the Graphics page
 on its Options screen, the fifth title entry, the intro's camera fix. Each
 changed function is a copy of its decompiled source under `patches/src`,
 compiled with the decompilation's own IDO toolchain and loaded over the

@@ -47,7 +47,7 @@ another game, a version older than the mod asks for, a missing dependency.
 
 No mod ships with the port and none is endorsed. A mod runs inside the
 recompiled game, with the game's memory and the port's patches, and can
-change anything; the port's promise of console behaviour by default holds
+change anything; the port's promise of console behavior by default holds
 for an empty `mods/` folder. Content made from another game's data is not
 something this project hosts, links or helps install.
 
@@ -82,7 +82,7 @@ uncompressed RGBA or BGRA, or BC1, BC2, BC3 or BC7.
 
 An option's `hidden_from` and `disabled_from` work on the Mods page: an
 option another one hides leaves the list while that option has one of the
-values named, and one it disables is grey, keeps its value and says why.
+values named, and one it disables is gray, keeps its value and says why.
 Upstream's runtime parsed these rules and then dropped them; the port's
 copy keeps them (VENDORING.md).
 

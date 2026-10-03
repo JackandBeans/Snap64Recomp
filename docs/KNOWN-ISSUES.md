@@ -25,10 +25,10 @@ the display was measured from.
 The console does the same. Each frame, the cartridge decides whether to
 draw a Pokémon. It projects the Pokémon's collision point and tests it
 against a box 1.5 times the half-screen each way (±240 by ±180 pixels around
-the centre; `func_80364618_504A28`). The seven `renderPokemonModelType*`
+the center; `func_80364618_504A28`). The seven `renderPokemonModelType*`
 wrappers skip any Pokémon that fails.
 
-A big, close one still has part of its body in the picture when its centre
+A big, close one still has part of its body in the picture when its center
 crosses that line. Snorlax on the Beach shows it: with the camera pitched up
 to the 45-degree limit, it vanishes, and returns as the camera comes down. A
 television's overscan hid part of the last sliver. The port keeps the rule

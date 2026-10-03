@@ -8,7 +8,7 @@ absolute address the port depends on all stay valid.
 
 This is the mechanism N64Recomp provides for patching (`single_file_output`
 plus link order), and the same approach shipped ports use to change game
-behaviour.
+behavior.
 
 ## Building
 

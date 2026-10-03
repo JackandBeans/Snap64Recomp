@@ -67,7 +67,7 @@ recording of a curved screen; `tools/osd_font_gen.py` regenerates them.
 
 What the sheet cannot be: the physical stickers were postage-stamp-sized
 prints of a captured analog video signal, made on a photo printer whose make,
-media size and colour processing the public sources do not agree on. So the
+media size and color processing the public sources do not agree on. So the
 files are the pixels the game sent, at their native size and in the layout the
 game defined, not a scan of a Blockbuster sheet. Nothing of the kiosk ships
 with the port; every pixel on the sheet is the player's own photo drawn by the

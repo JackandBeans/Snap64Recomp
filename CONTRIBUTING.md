@@ -11,7 +11,7 @@ first; I would rather talk it over than turn a finished pull request away.
 
 For code, these are the things that keep the port what it is:
 
-* **The cartridge's behaviour is the default.** Anything that changes how
+* **The cartridge's behavior is the default.** Anything that changes how
   the game looks, sounds or plays is opt-in and off until the player turns
   it on, and the README's tables get a row for it. A fix for something the
   console itself got wrong (see Cutscene Fix) is still opt-in.

@@ -113,7 +113,7 @@ shipped files are read from inside the app.
 | `menu_text/recomp_logo.png`, `menu_text/pointer.png`, `menu_text/pointer_flash.png` | the "Recomp" wordmark on the title screen, the mouse pointer's four frames (the lens open to closed), and the four of the flash it leaves and returns with |
 | `SDL2.dll`, `dxcompiler.dll`, `dxil.dll` | the window, input and audio library, and the shader compiler and validator the renderer needs; leave them beside the executable |
 | `Snap64Recomp.map` | the linker map; include it with crash reports (the `[SNAP-AV]` lines in the log are decoded against it) |
-| `LICENSE`, `NOTICE.md`, `licenses/` | licences |
+| `LICENSE`, `NOTICE.md`, `licenses/` | licenses |
 
 Coming from an earlier build: settings, saves and the ROM were already next to
 the executable and carry over as they are. Earlier builds kept the shader cache
@@ -365,13 +365,13 @@ are in its reset handler, and the port reports port one as a controller with
 nothing in its pak slot, as a console without a Rumble Pak does. Gyro aim
 needs a pad with a motion sensor: DualShock 4,
 DualSense, Switch Pro, and the Steam Deck. A pad shaped like the N64's -- the
-Switch Online N64 controller, over Bluetooth or USB -- is recognised by its
+Switch Online N64 controller, over Bluetooth or USB -- is recognized by its
 name, and its L, R and Z are L, R and Z, its C buttons the C buttons; the
 `pad_layout` key forces either layout. The D-pad walks every menu as the
 stick does, since the cartridge never reads it. `pad_enabled: false` in the
 settings file makes the port ignore every pad without unplugging one.
 
-The first pad SDL recognises is the one used, and SDL uses only a pad it
+The first pad SDL recognizes is the one used, and SDL uses only a pad it
 has a mapping for. Its own list holds a few thousand; for the rest the port
 ships `gamecontrollerdb.txt`, the community's list
 ([SDL_GameControllerDB](https://github.com/mdqinc/SDL_GameControllerDB)),
@@ -644,15 +644,15 @@ the [settings file](#settings-file).
 
 Two parts of the game read back the frame it has just drawn. Photo scoring
 draws the photographed Pokémon again and counts its pixels. The
-viewfinder's red focus dot is found by copying tiles of the colour buffer.
+viewfinder's red focus dot is found by copying tiles of the color buffer.
 
 Frame interpolation (Frame Rate set to Display or Manual) shows frames the
 game never drew. While it is on, the window title says
-`interpolation ON (F8)`. Colours the game steps once per frame are blended
+`interpolation ON (F8)`. Colors the game steps once per frame are blended
 too. The fade to black between screens is one: it is a full-screen
 rectangle whose transparency the game moves once per tick. When the
 interpolation matches that draw to the same draw in the frame before, it
-blends the colour between the two, so the fade moves at the display's rate
+blends the color between the two, so the fade moves at the display's rate
 like everything behind it.
 
 Photo scoring was measured with interpolation on: five photos, and the

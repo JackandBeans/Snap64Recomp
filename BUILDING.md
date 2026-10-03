@@ -342,7 +342,7 @@ writes `Snap64Recomp-1.0.0-win64.zip` and a `.sha256` beside it in
 drift from what was built (`concurrentqueue.txt` is cut from that header's
 leading comment at configure time). No ROM, no saves, no settings, no cache.
 
-Four licence texts come from the repository's `licenses/` instead, because the
+Four license texts come from the repository's `licenses/` instead, because the
 vendored copies carry none (`DirectXShaderCompiler-dxil.txt`, Microsoft's terms
 for `dxil.dll`, and `roboto.txt`, the Apache 2.0 text for the printer's lettering,
 are the other two; `NOTICE.md` describes both):
@@ -355,7 +355,7 @@ are the other two; `NOTICE.md` describes both):
   <https://raw.githubusercontent.com/microsoft/DirectXShaderCompiler/main/LICENSE.TXT>
   on 2026-09-02 (the LLVM Release License, University of Illinois/NCSA). If
   the file is ever removed, configure warns and `cpack` stops on it: a package
-  without the DXC licence is not meant to be produced.
+  without the DXC license is not meant to be produced.
 
 To cut a release (from the release after 1.1.0 on, the archives are
 GitHub's, not this machine's):
@@ -423,7 +423,7 @@ same flat folder as the Windows ZIP, without the DLLs and the linker map. At
 run time the binary needs the system's `libSDL2-2.0.so.0` (2.26 or newer;
 SteamOS 3.8 provides it through sdl2-compat), GTK 3 and a Vulkan driver
 (SDL loads the loader); it ships no shader compiler, because off Windows
-RT64 specialises its SPIR-V shaders with re-spirv instead of DXC. The C++
+RT64 specializes its SPIR-V shaders with re-spirv instead of DXC. The C++
 runtime is linked in (`-static-libstdc++ -static-libgcc`, as the other N64
 recompilations do); glibc is not, so the build machine's glibc is the
 floor (2.39 here; SteamOS 3.8 ships 2.41). The recompiled game, the
@@ -478,7 +478,7 @@ files:
   screen and the fullscreen that follows takes it (`snap::gamescope_request_output_size`,
   libX11 through the copy SDL loaded).
 * On Windows under Wine (Proton), `SDL_GAMECONTROLLER_ALLOW_STEAM_VIRTUAL_GAMEPAD`
-  is set before SDL initialises, so Steam's virtual controller is seen.
+  is set before SDL initializes, so Steam's virtual controller is seen.
 * `lib/rt64/src/hle/rt64_snap_diag.h` and `rt64_application.cpp` carry the
   two portability guards a contributor's macOS build found first: `mkdir`
   in place of `_mkdir`, and the pipeline counters defined where no D3D12
@@ -560,7 +560,7 @@ Then, in the port root:
 The last line installs the flat folder into `build-macos/bundle-stage`, lays
 `build-macos/Snap64Recomp.app` out from it, writes its `Info.plist`, signs
 it ad hoc with the hardened runtime and `tools/macos/entitlements.plist` (no
-developer account and no notarisation, which is how the other
+developer account and no notarization, which is how the other
 recompilations ship too: the first launch is a right-click and Open, or on
 macOS 15 System Settings > Privacy & Security > Open Anyway) and zips it as
 `Snap64Recomp-<version>-macos-universal.zip` with a `.sha256` beside it and
@@ -623,7 +623,7 @@ files and `if (APPLE)` blocks of the same `CMakeLists.txt`:
 * The controller subsystem is started and stopped by the pad thread, not by
   `SDL_Init` on the main thread (`src/input.cpp`, `pad_thread_main`): SDL's
   IOKit driver binds its device matching to the run loop of the thread that
-  initialised it and services that loop from `SDL_GameControllerUpdate`,
+  initialized it and services that loop from `SDL_GameControllerUpdate`,
   which the pad thread calls; on any other thread no pad on that driver is
   ever seen. HIDAPI pads (Xbox, PlayStation, Switch Pro) do not depend on it
   either way.
@@ -791,7 +791,7 @@ the repository, a second run reported every tree at its pin in 5 s, and after
 configure took 41 s and the Release build 244 s with no errors, leaving
 `Snap64Recomp.exe` (10,083,840 bytes) with `SDL2.dll`, `dxcompiler.dll` and
 `dxil.dll` (SHA-256 `9cccc7ef…`) beside it and the 53 shaders compiled. The
-clone was deleted afterwards.
+clone was deleted afterward.
 
 ## Replays and the headless suite
 
@@ -802,10 +802,10 @@ Three are used by `tools/release_check.py` and are tracked under
 not already there): `beach.inputs`
 and `eval.inputs` were recorded by me (a Beach ride; a ride, the
 Camera Check and Oak's evaluation of five photos), and `station.inputs` was
-synthesised from those two on 2026-09-03 for the Snap Station: the evaluation
+synthesized from those two on 2026-09-03 for the Snap Station: the evaluation
 replay, a second Beach ride, an Album Mark in the Camera Check, Oak's check,
 the lab's Save, the title menu's Gallery entry, four rows down and Print. The
 suite's default run takes about thirteen minutes; `--only station` adds the
-eight-minute print and puts the save and settings back afterwards. All of them need
+eight-minute print and puts the save and settings back afterward. All of them need
 the ROM beside the executable, and they open the game window; a hidden window
 starves the pacing numbers, so leave it on top.

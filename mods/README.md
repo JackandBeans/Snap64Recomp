@@ -20,7 +20,7 @@ orders them, shows each one's details and options, and installs new ones from a
 file picker, and `mods.json` records it; a change takes effect at the next
 start. No mod is bundled and none is endorsed. Mods run inside the
 recompiled game with the game's own memory and the port's patches, so a mod can
-change anything; the port's promise of console behaviour by default holds only
+change anything; the port's promise of console behavior by default holds only
 for a `mods/` folder that is empty.
 
 Content for the vendored runtime and renderer is the player's own and under its

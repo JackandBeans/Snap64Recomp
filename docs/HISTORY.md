@@ -57,7 +57,7 @@ The second was the re-release. When Nintendo brought the game to the Wii's
 Virtual Console in December 2007 (Wii U in 2016 and 2017, Nintendo Switch
 Online on 24 June 2022), it replaced the kiosk with saving photos to the
 Wii Message Board, from which they could go to an SD card or to friends
-(the Wii U version sent them to Miiverse instead). It also recoloured Jynx
+(the Wii U version sent them to Miiverse instead). It also recolored Jynx
 from black to purple, as it had in its other early Pokémon re-releases.
 The port's photo export and Jynx Recolor options are those two changes,
 reproduced and off by default.
@@ -65,7 +65,7 @@ reproduced and off by default.
 The port could not exist without the
 [decompilation](https://github.com/ethteck/pokemonsnap), the community's
 years of work turning the cartridge back into readable C. Every statement
-in this README about the game's own behaviour was checked there.
+in this README about the game's own behavior was checked there.
 
 Sources:
 

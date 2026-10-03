@@ -112,7 +112,7 @@ recovered from content:
   `.gitmodules` is identical to upstream's). Each local directory was hashed
   into a temporary git index (`add -A`, `write-tree`) and compared file by
   file with the pinned commit's tree: 14 of 15 are content-identical (7 also
-  match the tree hash exactly; the rest differ only by CRLF normalisation,
+  match the tree hash exactly; the rest differ only by CRLF normalization,
   whose raw bytes hash to the upstream blob, or by executable bits, which
   NTFS does not keep), plume differs in the port's three files, zstd in the
   two symlink stand-ins. Each directory still carries a `.git` gitfile
@@ -285,13 +285,13 @@ and the plume gitlink pointing at the plume fork) and a second that lets dxc's c
 its commit (the `dxil.dll` below). The 2026-09-16 rebase
 from `a012a23` (eleven upstream commits: the RDNA4 Vulkan workaround, VIs
 with inverted regions, the viewport clip rect in draw-area detection, tile
-synchronisation, and the plume bump that fixes Metal leaks) applied with no
+synchronization, and the plume bump that fixes Metal leaks) applied with no
 textual conflict. One upstream change is taken differently: RT64 now forces
 Vulkan on RDNA4 cards with a driver up to `0x200000794103EC` whatever API the
 player chose; this port's suite and a full playthrough ran on an RX 9060 XT
 at exactly that driver in D3D12, and the API is the player's choice, so in `hle/rt64_application.cpp` that clause
 applies only in Automatic mode, which the port never uses. The lists below
-describe the changes by area as they were catalogued against `a012a23`;
+describe the changes by area as they were cataloged against `a012a23`;
 `shaders/TextureDecodeCS.hlsl` joined them on 2026-09-10.
 
 **Forty-eight files carry the marker**: forty-seven under `lib/rt64/src` and
@@ -313,7 +313,7 @@ framebuffer readback and photo detail (`hle/rt64_framebuffer.h`,
 `shaders/TextureCopyPS.hlsl`, `shared/rt64_texture_copy.h`), the Vulkan
 image format the texture decoder declares (`shaders/TextureDecodeCS.hlsl`),
 the shader seen-list warmer (`render/rt64_raster_shader_cache.cpp`,
-`render/rt64_shader_blob_cache.h`), the Jynx recolour
+`render/rt64_shader_blob_cache.h`), the Jynx recolor
 (`render/rt64_snap_recolor.h`), the depth of primitive-depth sprites and the
 per-call parameters the pixel stage reads (`shaders/RasterPS.hlsl`,
 `shaders/RasterVS.hlsl`, `shared/rt64_rdp_params.h`,
