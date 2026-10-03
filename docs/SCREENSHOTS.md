@@ -10,7 +10,7 @@ them.
 
 ## The title
 
-<a href="screenshots/01k-title-110.png"><img src="screenshots/01k-title-110.png" width="640" alt="The title screen"></a>
+<a href="screenshots/01l-title-111.png"><img src="screenshots/01l-title-111.png" width="640" alt="The title screen"></a>
 
 **The title screen.** The game's own title with the port's "Recomp" wordmark
 under it, the copyright block, and the port's credits line

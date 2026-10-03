@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased
+## 1.1.1 -- 2026-10-03
 
 * RT64, N64ModernRuntime, plume and N64Recomp are git submodules on Snap64
   Recomp's own forks, with the port's changes as commits on each fork's
@@ -51,6 +51,149 @@
   `tools/macos_inputs.py`), and every build stops when they belong to
   another tree; before, a build could have carried a different tree's
   patches without a word.
+* Control Stick: Reverse, set from the pause menu's Options, did nothing for
+  the rest of the ride (issue #19, myleskeller, an Xbox 360 pad). The
+  Controls page wrote the game's own setting into the save at once, but a
+  ride reads that setting once, as it starts, into a copy of its own
+  (`IsAxisYInverted`), so the change waited for the next ride; Z Button
+  (Hold/Switch) did the same. The manual said both took effect the moment
+  they were changed. They do now: a change over a ride's pause is put into
+  the ride's copies as well, and Z Button's HUD hint for Switch, the Z
+  beside the camera while zoomed in, which the ride makes only when it
+  starts in Switch, is made or removed with it. The row's help line also
+  had the two settings backwards; on the cartridge, Normal tilts the camera
+  down when the stick is pushed up and Reverse tilts it up, and the line
+  says so now. Checked on the Beach replay: the same push of the stick
+  tilts the view down with Normal and, changed to Reverse over the pause,
+  up for the rest of the ride; Z Button changed to Switch mid-ride zoomed
+  on one tap, kept the zoom after the release with the hint shown, and
+  zoomed out on the next; changed back to Hold, it zoomed only while held,
+  with no hint.
+* The photographer card, where a new game's name is entered, takes the
+  keyboard. Its letters are picked from a grid with the stick and A, and
+  the port's keys were only the game's buttons there (W, A, S and D the
+  stick, X the A Button), so a name could not be typed. A key typed on the
+  card now enters its letter as if the cursor had been moved onto it and A
+  pressed: the capitals and small letters, the digits, the card's own
+  punctuation and the e acute, Space, Backspace (a letter back) and Enter
+  (End); a character the card lacks is passed over, and a full card goes to
+  End as it does. The arrow keys, which are the D-pad, move on the grid
+  (the cartridge's card listens to the stick only). While the card is up
+  only the keys that type are its own: Esc and the port's own keys keep
+  their jobs, and after the card the keyboard stays away from the game
+  until every key is up, so the Enter that ended it is not a Start.
+  Checked with scripted typing on the card: "T y'é1{" gave "T y'é1" (the
+  brace passed over), "ABCDEFGH" with an x and a Backspace gave "ABCDEF"
+  (the card full after seven), and the D-pad stepped the cursor from A to
+  B to G.
+* The question New Game asks over a saved game ("If you save a new game,
+  all previous data will be deleted") did not take the mouse: its Yes and
+  No were the stick's, where the title's list beside it had taken the
+  pointer since 1.0.4. The word under the pointer is selected as the
+  pointer moves onto it, a click on a word chooses it, a click anywhere
+  else does nothing, and the right button is No, as B is. Checked with the
+  scripted pointer: hovering selected Yes and then No, a click on the box's
+  red did nothing, a right click closed the question, and a click on Yes
+  while No was selected chose Yes.
+* The question asked when the last session did not close normally and mods
+  are on cut its second button's label off on Windows ("Start with mods
+  off" showed as "Start with mods"): SDL's Windows message box gives every
+  button the same 88 pixels whatever its label says. The button says "Turn
+  mods off" now, and the question "Turn the mods off?". The question itself
+  was asked after a session that had closed normally: the release suite's
+  Snap Station check ends the relaunched game from outside, as it must,
+  and left the session mark that the mark's own exit would have removed,
+  so the next start of a build the suite had run on asked it. The check
+  removes the mark it leaves.
+* The game's own questions take the mouse: Oak's "Shall I repeat this
+  information?", the lab's "Shall I save your progress?" and "Should I
+  take this course?", the photo check's "Should I show this to Prof.
+  Oak?", the album's "Delete this picture?", the Gallery's "How's this?",
+  and every other text with an A line and a B line. A click used to be A
+  wherever the pointer was, so the only answer a mouse could give was the
+  first, and Oak repeated himself until B was pressed on something else.
+  While such a text is on screen, the A or B icon under the pointer is
+  underlined in orange, with the move sound as the pointer comes onto it,
+  as the Options pages' A and B are; a click on an icon presses its
+  button (A, B, or Z where a text offers one), a click anywhere else,
+  the words beside the icons included, does nothing, and the right
+  button is B. The icons are the game's own button
+  images, one object each, made as the text is printed, so a question is
+  known from them wherever it appears, and the answer is laid into the
+  frame's input record, which every screen reads. Checked on Oak's repeat
+  question (hover underlined each line in turn, a click on the question's
+  words did nothing, a click on the B line answered No) and on the save
+  question, whose two answers share one line.
+* Oak's photo check, showing one picture at a time, did not take the mouse:
+  the header's arrows turned the pages of the grid of pictures but did
+  nothing on a single picture, where the stick's left and right step
+  through a Pokemon's pictures, so a mouse alone could not reach the second
+  picture of a Pokemon. The arrows step there now, as the wheel does; a
+  click on the picture is A on it; the right button is B. The view runs
+  the stick's steps on its own, so the port's hooks on the grid never ran
+  there (src/menu_mouse.cpp); the view's own picture lookup, made every
+  frame, is hooked now. Checked on the eval replay: the arrows and the
+  wheel showed DODUO's second picture and the first again, the click chose
+  the picture, and the right button left for the panel.
+* The mouse pointer on the menus is the port's own: an arrow carrying a
+  camera lens, JackandBeans's pictures at pointer size, as the system's
+  cursor (so it moves at the mouse's own rate, where a pointer drawn by
+  the game would trail a frame behind at the menus' thirty frames a
+  second). Its size follows the game's picture: 46 by 52 in a 1280 by
+  960 window, half that in a window under 720 lines, and never past 64
+  pixels on screen (at 92 by 104 the picture under it glitched a little
+  as the shutter changed, JackandBeans's report, the likely cause being
+  that a cursor too large for the display's hardware cursor is composed
+  in software). It is drawn as pixel art of 23 by 26, each pixel a block
+  of two screen pixels in that window, so it sits with the game's own
+  sprites; outside the lens the four frames are one picture, so only
+  the shutter moves. The lens has a shutter,
+  four frames from open to closed (`menu_text/pointer.png`, beside the
+  executable): a click closes it and opens it again, seven tenths of a
+  second in all. When it shows and
+  hides is unchanged: hidden while a course runs and the mouse aims, shown
+  on the menus, and in fullscreen while it moves or clicks (it hid three
+  seconds after the last move even under a clicking hand, JackandBeans's
+  report; a click counts as a move now; and it went at every fade between
+  two menus, since a fade drops the mouse for half a second, and flashed
+  back in on the next screen: it now rides through a drop of up to a
+  second and a half, and goes for a cutscene or the intro), and it goes
+  out in a flash:
+  JackandBeans's comic burst over the whole pointer in the last four
+  tenths of a second before the hide (`menu_text/pointer_flash.png`), the
+  pointer gone in it, and it comes back the same way in reverse, the
+  burst first and the pointer out of it. A turn of the wheel keeps it
+  shown as a move or a click does, and a course takes the mouse only
+  after the flash out, so a ride resumed from the pause menu no longer
+  snatches the pointer away. The Controls page's new Pointer
+  row picks Camera, the port's own, or System, the system's arrow
+  (`custom_pointer` in `snapsettings.json` is the same switch); a
+  missing `pointer.png` leaves the system's.
+* The mouse turned the camera of the title's attract demo, the course the
+  title plays from a recorded script after a while idle (JackandBeans).
+  The port's mouse look writes the view's angles straight into the game,
+  which the demo's script never reads back, so the picture followed the
+  hand while the demo rode on. On the cartridge the stick does nothing to
+  the demo and only A or Start ends it (`updateIdle`, app_level/player.c).
+  The mouse and the gyro now leave the demo's camera alone, the demo does
+  not take the mouse, and a click, which is A, ends it as the cartridge
+  does.
+* The side panel's buttons (the lab, the course list, the PKMN Report, the
+  album, the Gallery, the photo check) turned crisp and moved half a pixel
+  the instant a choice was made, before the screen faded. The buttons slide
+  in by their scale, and the cartridge's slide-in stops one step short of
+  setting it to one, so each button rests a little under its height (97.8%
+  and 99.4% for the album's two); a choice sets the scale to exactly one
+  before the buttons slide out. At 320 by 240 the two look the same. The
+  port's renderer draws scaled 2D smoothly at the output resolution and
+  one-to-one 2D on the native grid, so the buttons were soft at rest and
+  jumped at the choice. The slide-in now ends at exactly one
+  (`patches/src/layout_patch.c`, the game's `UILayout_UpdateButtons` with
+  that one change), so the buttons rest as they were drawn after a choice.
+  Found in playtesting, fullscreen, with and without interpolation; checked
+  on the album from a real save at 2560 by 1440: the buttons do not move or
+  change from rest through the choice, and match, pixel for pixel, how the
+  choice used to draw them.
 
 ## 1.1.0 -- 2026-09-27
 

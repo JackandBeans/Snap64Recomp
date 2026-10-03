@@ -110,7 +110,7 @@ bool set_window_icon(void* sdlWindow) {
 // the data directory when that is a different folder (a read-only Linux
 // install; paths.h): the player's wins. On Windows and on a writable
 // install the two folders are one, and this is base_path.
-static std::filesystem::path asset_path(const std::string& rel) {
+std::filesystem::path asset_path(const std::string& rel) {
     const std::filesystem::path own = base_path(rel);
     if (base_dir() == exe_dir()) {
         return own;
@@ -1845,6 +1845,8 @@ static void write_setting_bytes(const Settings &s) {
     write_u8(MailboxAddr + 0x6C, uint8_t(std::clamp(s.fast_forward_speed, 1, 4) - 1));
     // Slow Motion: 0 Off, 1 half speed, 2 a quarter.
     write_u8(MailboxAddr + 0x6D, uint8_t((s.slow_motion_speed >= 4) ? 2 : ((s.slow_motion_speed >= 2) ? 1 : 0)));
+    // Pointer: 0 the system's, 1 the port's own (Camera).
+    write_u8(MailboxAddr + 0x6E, s.custom_pointer ? 1 : 0);
 }
 
 void seed_mailbox() {
@@ -2072,7 +2074,7 @@ void stage_menu_strings(uint8_t* rdram) {
     // shows without crowding its frame.
     static const char* const ctlDescs[6][2] = {
         { "", "" },   // +85, Zoom's: worded for the device in hand (hand_words)
-        { "Normal tilts the camera up with the stick",  "pushed up. Reverse tilts it down instead." },
+        { "Normal tilts the camera down when the",      "stick is pushed up. Reverse tilts it up." },
         { "Move the mouse to look around a course.",    "Off leaves the camera to the stick." },
         { "How far the mouse turns the camera.",        "Lower is slower, higher is faster." },
         { "Mouse speed while zoomed in, as a share",    "of the normal speed. Lower is steadier." },
@@ -2095,6 +2097,10 @@ void stage_menu_strings(uint8_t* rdram) {
     // The CONTROLS page's Slow Motion row (ids BaseCount+200 and +201): its
     // values are Off and the Graphics page's 2x and 4x.
     static const char* const slowDesc[2] = { "Hold Space or press the left stick in to", "run the game this many times slower." };
+    // The CONTROLS page's Pointer row (ids BaseCount+250..+253, the patch's
+    // absolute 280..283: the patch numbers from 0, this file from BaseCount,
+    // which is 30): its label, its values System and Camera, its description.
+    static const char* const ptrDesc[2] = { "Camera is a lens that snaps shut on a", "click. System is the normal arrow." };
     static const char* const sticksDesc[2] = { "Normal aims with the left stick, the", "right does the C buttons. Swapped flips." };
     static const char* const gyroDescs[2][2] = {
         { "Turn the pad to look around a course, on",  "pads with a gyro. Zoomed aims zoomed in." },
@@ -2404,6 +2410,26 @@ void stage_menu_strings(uint8_t* rdram) {
         }
         else if (id == BaseCount + 201) {
             strip = compose_lines(slowDesc[0], slowDesc[1]);
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 250) {
+            strip = compose("Pointer");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 251) {
+            strip = compose("< System >");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 252) {
+            strip = compose("< Camera >");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 253) {
+            strip = compose_lines(ptrDesc[0], ptrDesc[1]);
             w = strip.width;
             h = strip.height;
         }
@@ -5250,6 +5276,13 @@ void poll_menu_mailbox(uint8_t* rdram) {
                 printf("[SNAP-CFG] pad sticks: %s\n",
                        swapped ? "swapped (the right stick aims, the left works the C buttons)"
                                : "normal (the left stick aims, the right works the C buttons)");
+                fflush(stdout);
+            }
+            const bool camera = read_u8_mail(MailboxAddr + 0x6E) != 0;
+            if (camera != c.custom_pointer) {
+                c.custom_pointer = camera;
+                pointer_enable(camera);
+                printf("[SNAP-CFG] pointer: %s\n", camera ? "the port's own (Camera)" : "the system's");
                 fflush(stdout);
             }
         }

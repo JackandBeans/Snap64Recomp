@@ -54,10 +54,13 @@
 
 #include "input.h"
 
+#include <algorithm>
 #include <atomic>
 #include <chrono>
+#include <climits>
 #include <memory>
 #include <mutex>
+#include <deque>
 #include <string>
 #include "hle/rt64_snap_diag.h"
 #include <vector>
@@ -457,6 +460,10 @@ constexpr uint32_t ADDR_TargetDirectionZoomedIn = 0x80382C4C;  // s32: nonzero w
 constexpr uint32_t ADDR_ZoomedInCameraHeld      = 0x80382D08;  // s32 (D_80382D08_523118): nonzero holds the zoomed camera
 constexpr uint32_t ADDR_IsInputDisabled         = 0x80382D0C;  // s32
 constexpr uint32_t ADDR_IsPaused                = 0x80382D20;  // u8
+// IdleScript*: set while the title's attract demo plays a course from a
+// recorded script (app_level/player.c updateIdle; the cartridge ends the
+// demo on A or Start alone, never on the stick).
+constexpr uint32_t ADDR_gIdleScript             = 0x803AE518;
 
 // The recompiled memory keeps each 32-bit word in host order, so a word is
 // read in place; bytes sit at their address XOR 3 (recomp.h's MEM_W and
@@ -486,6 +493,14 @@ constexpr uint32_t ADDR_MailboxPointerCounts    = 0x80C0008C;  // u32: moved, cl
 constexpr uint32_t ADDR_MailboxWheelDown        = 0x80C00090;  // u8
 constexpr uint32_t ADDR_MailboxMouseClaim       = 0x80C00091;  // u8
 constexpr uint32_t ADDR_MailboxMouseHeld        = 0x80C00092;  // u8: 1 while the left button is down, for a drag
+// Typing on the photographer card (patches/src/mouse_patch.inc): the card
+// raises the claim every frame it is up and each reading here lowers it;
+// while it is up, the keys that type are the card's, and each typed
+// character is handed over one at a time in the slot (Latin-1: printable
+// ASCII and 0xE9 for e acute; 0x08 a letter back, 0x0D done), which the
+// card empties when it takes it.
+constexpr uint32_t ADDR_MailboxTypeClaim        = 0x80C0009D;  // u8
+constexpr uint32_t ADDR_MailboxTypeChar         = 0x80C0009E;  // u8
 void write_u8(uint8_t* rdram, uint32_t addr, uint8_t v) {
     rdram[(addr - 0x80000000u) ^ 3u] = v;
 }
@@ -578,6 +593,11 @@ void apply_mouse_look(uint8_t* rdram) {
     if (dx == 0.0f && dy == 0.0f && gyaw == 0.0f && gpitch == 0.0f) SNAP_GYRO_DROP("no angle arrived");
     if (rdram == nullptr) SNAP_GYRO_DROP("no rdram");
     if (!g_app_level_resident.load(std::memory_order_relaxed)) SNAP_GYRO_DROP("not in a course");
+    // The title's attract demo is a course played from a script: on the
+    // cartridge the stick does nothing to it and A or Start ends it, so the
+    // mouse and the gyro leave its camera alone (the view followed the mouse
+    // through the demo: JackandBeans, Oct 3 2026). A click is A, and ends it.
+    if (read_s32(rdram, ADDR_gIdleScript) != 0) SNAP_GYRO_DROP("the attract demo");
     if (read_u8(rdram, ADDR_IsPaused) != 0) SNAP_GYRO_DROP("paused");
     if (read_s32(rdram, ADDR_IsInputDisabled) != 0) SNAP_GYRO_DROP("input disabled");
     const int32_t direction = read_s32(rdram, ADDR_gDirectionIndex);
@@ -1479,6 +1499,7 @@ struct TextEdit {
 TextEdit g_text;
 std::atomic<bool> g_text_active{false};
 std::atomic<bool> g_text_hold_keys{false};
+std::atomic<bool> g_typing{false};   // the photographer card has the keyboard (below)
 
 void input_text_begin(const std::string& value, size_t maxBytes) {
     std::lock_guard<std::mutex> lock(g_text.mutex);
@@ -1506,19 +1527,31 @@ void input_text_end() {
 void input_update_text() {
     static bool on = false;
     static uint32_t testEndAt = 0;
-    const bool want = g_text_active.load(std::memory_order_relaxed);
+    const bool card = g_typing.load(std::memory_order_relaxed);
+    const bool want = g_text_active.load(std::memory_order_relaxed) || card;
     if (want && !on) {
         SDL_StartTextInput();
         on = true;
         // SNAP_TEXT_TEST=<text> (SNAP_TEXT_TEST_ESC=1 to leave instead):
         // SDL's own events once typing begins -- the text and one character
         // more, a Backspace for that one, and Enter or Esc 1.5 s later -- so
-        // a replay types through the same path as a keyboard.
-        const char* test = std::getenv("SNAP_TEXT_TEST");
+        // a replay types through the same path as a keyboard. SNAP_TYPE_TEST
+        // does the same on the photographer card ("^e" stands for e acute,
+        // which a Windows environment cannot carry as UTF-8), ending on Enter.
+        const char* test = std::getenv(card ? "SNAP_TYPE_TEST" : "SNAP_TEXT_TEST");
+        std::string typed = (test != nullptr) ? test : "";
+        for (size_t at = typed.find("^e"); at != std::string::npos; at = typed.find("^e")) {
+            typed.replace(at, 2, "\xC3\xA9");
+        }
+        test = typed.c_str();
         if ((test != nullptr) && (test[0] != '\0')) {
             SDL_Event e{};
             e.type = SDL_TEXTINPUT;
             SDL_snprintf(e.text.text, sizeof(e.text.text), "%sx", test);
+            if (card) {
+                printf("[SNAP-Input] SNAP_TYPE_TEST: typing \"%s\" (and an x, then Backspace) on the card\n", test);
+                fflush(stdout);
+            }
             SDL_PushEvent(&e);
             SDL_Event bs{};
             bs.type = SDL_KEYDOWN;
@@ -1530,7 +1563,7 @@ void input_update_text() {
         testEndAt = 0;
         SDL_Event e{};
         e.type = SDL_KEYDOWN;
-        const char* esc = std::getenv("SNAP_TEXT_TEST_ESC");
+        const char* esc = card ? nullptr : std::getenv("SNAP_TEXT_TEST_ESC");
         e.key.keysym.scancode = ((esc != nullptr) && (esc[0] == '1')) ? SDL_SCANCODE_ESCAPE : SDL_SCANCODE_RETURN;
         SDL_PushEvent(&e);
     } else if (!want && on) {
@@ -1590,6 +1623,113 @@ static bool text_event(const SDL_Event& event) {
     }
 }
 
+// --- typing on the photographer card --------------------------------------
+// The card's letters are picked from a grid with the stick; a keyboard can
+// type them as well. While the card claims the keyboard (the mailbox claim,
+// raised by the card every frame), every character typed is queued here and
+// handed to the card one at a time; the keys that type, Backspace and Enter
+// are the card's, so X is the letter X and not the A button, and the rest
+// (the arrows, Esc, the function keys) keep their bindings.
+std::mutex g_type_mutex;
+std::deque<uint8_t> g_type_queue;
+
+// The keys that type: their bindings rest while the card is up.
+static bool typing_key(int sc) {
+    if ((sc >= SDL_SCANCODE_A) && (sc <= SDL_SCANCODE_0)) {          // letters, digits
+        return true;
+    }
+    if ((sc >= SDL_SCANCODE_SPACE) && (sc <= SDL_SCANCODE_SLASH)) {  // space, punctuation
+        return true;
+    }
+    if ((sc >= SDL_SCANCODE_KP_DIVIDE) && (sc <= SDL_SCANCODE_KP_PERIOD)) {   // the keypad
+        return true;
+    }
+    return (sc == SDL_SCANCODE_RETURN) || (sc == SDL_SCANCODE_BACKSPACE) || (sc == SDL_SCANCODE_NONUSBACKSLASH);
+}
+
+static void type_push(uint8_t c) {
+    std::lock_guard<std::mutex> lock(g_type_mutex);
+    if (g_type_queue.size() < 32) {
+        g_type_queue.push_back(c);
+    }
+}
+
+// A key or a typed text while the card has the keyboard.
+static bool type_event(const SDL_Event& event) {
+    switch (event.type) {
+        case SDL_TEXTINPUT: {
+            // UTF-8 in; the card's letters are ASCII's and one more, e acute.
+            const uint8_t* p = reinterpret_cast<const uint8_t*>(event.text.text);
+            while (*p != 0) {
+                if ((*p >= 0x20) && (*p < 0x7F)) {
+                    type_push(*p);
+                    p++;
+                } else if ((p[0] == 0xC3) && ((p[1] == 0xA9) || (p[1] == 0x89))) {
+                    type_push(0xE9);   // e acute, either case: the card has the one
+                    p += 2;
+                } else {
+                    p++;
+                    while ((*p & 0xC0) == 0x80) {
+                        p++;
+                    }
+                }
+            }
+            return true;
+        }
+        case SDL_KEYDOWN: {
+            const int sc = event.key.keysym.scancode;
+            if (sc == SDL_SCANCODE_BACKSPACE) {
+                type_push(0x08);
+                return true;
+            }
+            if ((sc == SDL_SCANCODE_RETURN) || (sc == SDL_SCANCODE_KP_ENTER)) {
+                // The Deck's desktop layout sends Return for its pad's A.
+                const bool deckA = (sc == SDL_SCANCODE_RETURN) &&
+                                   g_deck_pad_keys_ignored.load(std::memory_order_relaxed);
+                if (!event.key.repeat && !deckA) {
+                    type_push(0x0D);
+                }
+                return true;
+            }
+            return false;
+        }
+        default:
+            return false;
+    }
+}
+
+bool input_typing_takes(int scancode) {
+    return g_typing.load(std::memory_order_relaxed) && typing_key(scancode);
+}
+
+// Each reading: the claim lowered, the mode followed, and the next character
+// handed over when the card has taken the last. On the game's thread.
+static void type_update(uint8_t* rdram) {
+    if (rdram == nullptr) {
+        return;
+    }
+    const uint8_t claim = read_u8(rdram, ADDR_MailboxTypeClaim);
+    const bool on = claim != 0;
+    if (on) {
+        write_u8(rdram, ADDR_MailboxTypeClaim, uint8_t(claim - 1));
+    }
+    const bool was = g_typing.exchange(on, std::memory_order_relaxed);
+    std::lock_guard<std::mutex> lock(g_type_mutex);
+    if (!on) {
+        g_type_queue.clear();
+        if (was) {
+            // Every key up before any reaches the game again: the Enter that
+            // finished the card would otherwise be a fresh Start.
+            g_text_hold_keys.store(true, std::memory_order_relaxed);
+        }
+        return;
+    }
+    if ((read_u8(rdram, ADDR_MailboxTypeChar) == 0) && !g_type_queue.empty()) {
+        write_u8(rdram, ADDR_MailboxTypeChar, g_type_queue.front());
+        g_type_queue.pop_front();
+    }
+}
+
 bool input_capture_active() {
     return g_capture_active.load(std::memory_order_relaxed);
 }
@@ -1643,8 +1783,13 @@ static void pointer_seen(uint32_t windowID, int32_t x, int32_t y, uint32_t which
     g_ptr_wx.store(x, std::memory_order_relaxed);
     g_ptr_wy.store(y, std::memory_order_relaxed);
     const int64_t t = now_us();
-    if (motion && (t >= g_ptr_quiet_until.load(std::memory_order_relaxed))) {
-        g_ptr_moved.fetch_add(1, std::memory_order_relaxed);
+    if (t >= g_ptr_quiet_until.load(std::memory_order_relaxed)) {
+        if (motion) {
+            g_ptr_moved.fetch_add(1, std::memory_order_relaxed);
+        }
+        // A click is as much a hand on the mouse as a move: it keeps the
+        // pointer shown in fullscreen (a player clicking in place saw it
+        // vanish under him).
         g_ptr_moved_at.store(t, std::memory_order_relaxed);
     }
 }
@@ -1716,6 +1861,10 @@ void input_handle_sdl_event(const SDL_Event& event) {
     if (g_text_active.load(std::memory_order_relaxed) && text_event(event)) {
         return;
     }
+    // The photographer card is up: what types is the card's.
+    if (g_typing.load(std::memory_order_relaxed) && type_event(event)) {
+        return;
+    }
     const bool captured = g_captured.load(std::memory_order_relaxed);
     const bool buttons_live = g_focused.load(std::memory_order_relaxed) &&
                               (now_us() >= g_buttons_from.load(std::memory_order_relaxed));
@@ -1765,6 +1914,10 @@ void input_handle_sdl_event(const SDL_Event& event) {
                 g_mouse_held.fetch_or(1u << event.button.button, std::memory_order_relaxed);
                 g_mouse_press_until[event.button.button].store(now_us() + PressHoldUs, std::memory_order_relaxed);
             }
+            // The pointer's shutter, on the pointer's own click (pointer.cpp).
+            if (!captured && (event.button.button == SDL_BUTTON_LEFT)) {
+                pointer_click();
+            }
             if (buttons_live && !captured && !replaying_run()) {
                 pointer_seen(event.button.windowID, event.button.x, event.button.y, event.button.which, false);
                 if (event.button.button == SDL_BUTTON_LEFT) {
@@ -1790,6 +1943,9 @@ void input_handle_sdl_event(const SDL_Event& event) {
                 if (!captured && !replaying_run()) {
                     if (y > 0) g_ptr_wheel_up.fetch_add(1, std::memory_order_relaxed);
                     if (y < 0) g_ptr_wheel_down.fetch_add(1, std::memory_order_relaxed);
+                    // A turn of the wheel is a hand on the mouse too: it
+                    // keeps the pointer shown in fullscreen, as a move does.
+                    g_ptr_moved_at.store(now_us(), std::memory_order_relaxed);
                 }
             }
             break;
@@ -1930,11 +2086,25 @@ void input_update_mouse_capture() {
     // out of it.
     static const bool replaying = (getenv("SNAP_REPLAY") != nullptr);
     const bool claimed = g_menu_claimed.load(std::memory_order_relaxed);
-    const bool wanted = !replaying &&
-                        settings().mouse_aim &&
-                        g_focused.load(std::memory_order_relaxed) &&
-                        g_app_level_resident.load(std::memory_order_relaxed) &&
-                        !claimed;
+    // The title's attract demo is a course the mouse cannot steer (its
+    // camera follows the recorded script), so it does not take the mouse
+    // either: the cursor stays free over it, and a click is A, which ends
+    // the demo as on the cartridge.
+    const bool demo = (g_rdram != nullptr) && (read_s32(g_rdram, ADDR_gIdleScript) != 0);
+    const bool wantedNow = !replaying &&
+                           settings().mouse_aim &&
+                           g_focused.load(std::memory_order_relaxed) &&
+                           g_app_level_resident.load(std::memory_order_relaxed) &&
+                           !claimed && !demo;
+    // A course takes the mouse after the pointer's flash out: a capture
+    // first wanted while the pointer is on screen waits four tenths of a
+    // second (the flash's length, pointer.cpp), the flash playing, and then
+    // takes it; a pointer already hidden is taken at once. A ride resumed
+    // from the pause menu snatched the pointer away with no flash, the one
+    // exit without one (JackandBeans, Oct 3 2026).
+    constexpr int64_t kPointerFlashUs = 400000;
+    static int64_t captureAtUs = 0;
+    bool wanted = wantedNow;
     // The pointer has no business on screen in fullscreen: there is nothing
     // beside the game to point at, and on a Steam Deck, which boots
     // fullscreen, it sat over the picture for the whole session. Windowed it
@@ -1943,15 +2113,50 @@ void input_update_mouse_capture() {
     // capture state does not.
     {
         static int cursorState = -1;
+        static int64_t lastClaimUs = 0;
+        const int64_t nowUs = now_us();
+        if (wantedNow && !g_captured.load(std::memory_order_relaxed)) {
+            if (captureAtUs == 0) {
+                captureAtUs = (cursorState == SDL_ENABLE) ? (nowUs + kPointerFlashUs) : nowUs;
+            }
+            if (nowUs < captureAtUs) {
+                wanted = false;
+            }
+        } else {
+            captureAtUs = 0;
+        }
+        const bool capturePending = wantedNow && !wanted;
         // In fullscreen, a menu that takes the mouse shows the pointer while
-        // it is being moved, and hides it three seconds after it stops.
-        const bool pointing = claimed &&
-                              ((now_us() - g_ptr_moved_at.load(std::memory_order_relaxed)) < 3000000);
+        // it is being moved, and the pointer hides three seconds after the
+        // hand stops, or a second and a half after the last menu that took
+        // the mouse: a fade between two menus drops the mouse for less than
+        // that, so the pointer rides through it, while a cutscene or the
+        // intro keeps it dropped and the pointer goes (it went at every fade
+        // before: JackandBeans, Oct 3 2026).
+        if (claimed) {
+            lastClaimUs = nowUs;
+        }
+        const int64_t idleUs = nowUs - g_ptr_moved_at.load(std::memory_order_relaxed);
+        const int64_t unclaimedUs = nowUs - lastClaimUs;
+        const int64_t hideInUs = std::min<int64_t>(3000000 - idleUs, 1500000 - unclaimedUs);
+        const bool pointing = hideInUs > 0;
         const int want = (settings().fullscreen && !wanted && !pointing) ? SDL_DISABLE : SDL_ENABLE;
         if (cursorState != want) {
             SDL_ShowCursor(want);
             cursorState = want;
         }
+        // The port's own pointer: it flashes in as it comes on screen
+        // (shown, and not captured for aiming), flashes out in the last
+        // moments before either hide, and plays on from here.
+        pointer_visible((want == SDL_ENABLE) && !wanted);
+        if (capturePending) {
+            pointer_hiding_in(int32_t(std::clamp<int64_t>((captureAtUs - nowUs) / 1000, 0, INT32_MAX)));
+        } else if (settings().fullscreen && !wanted) {
+            pointer_hiding_in(int32_t(std::clamp<int64_t>(hideInUs / 1000, INT32_MIN, INT32_MAX)));
+        } else {
+            pointer_hiding_in(INT32_MAX);
+        }
+        pointer_update();
     }
     const bool current = g_captured.load(std::memory_order_relaxed);
     if (wanted == current) {
@@ -2908,7 +3113,21 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
     static const uint8_t kNoKeys[SDL_NUM_SCANCODES] = {};
     if (g_text_active.load(std::memory_order_relaxed)) {
         keys = kNoKeys;
-    } else if (g_text_hold_keys.load(std::memory_order_relaxed)) {
+    }
+    // The photographer card takes the keys that type (type_update follows
+    // its claim); the others keep their bindings.
+    type_update(g_rdram);
+    static uint8_t typingKeys[SDL_NUM_SCANCODES];
+    if (g_typing.load(std::memory_order_relaxed) && (keys != kNoKeys)) {
+        std::memcpy(typingKeys, keys, sizeof typingKeys);
+        for (int k = 0; k < SDL_NUM_SCANCODES; k++) {
+            if (typing_key(k)) {
+                typingKeys[k] = 0;
+            }
+        }
+        keys = typingKeys;
+    }
+    if ((keys != kNoKeys) && g_text_hold_keys.load(std::memory_order_relaxed)) {
         bool anyDown = false;
         for (int k = 0; (k < SDL_NUM_SCANCODES) && !anyDown; k++) {
             anyDown = keys[k] != 0;

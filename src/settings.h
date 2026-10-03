@@ -159,6 +159,10 @@ struct Settings {
     // strings, and this struct's lock-free readers need word-sized fields
     // (below).
     bool  mouse_aim         = true;   // load_settings turns it off on a Steam Deck
+    // The pointer on the menus is the port's own, an arrow carrying a camera
+    // lens whose shutter closes on a click (src/pointer.cpp); false keeps
+    // the system's.
+    bool  custom_pointer    = true;
     // False makes the port ignore every controller: none is opened, the
     // keyboard and mouse carry on. For a pad whose driver misbehaves (issue
     // #7) without unplugging it. There is no rumble setting: the cartridge
@@ -433,6 +437,23 @@ void session_mark_clean();
 // the file. write_desktop_entry writes the launcher beside the executable
 // once, with absolute paths (Linux).
 bool set_window_icon(void* sdlWindow);
+// The port's own mouse pointer as the system's cursor (src/pointer.cpp),
+// unless custom_pointer is off, menu_text/pointer.png is absent or the
+// cursor cannot be made. Its shutter: a click closes and reopens it
+// (pointer_click, from the mouse's button event), its appearance opens it
+// (pointer_visible, told once a pump whether the pointer is on screen),
+// and pointer_update moves it along, once a pump on the pumping thread.
+void install_pointer(void* sdlWindow);
+void pointer_click();
+void pointer_visible(bool visible);
+void pointer_update();
+// The Controls page's Pointer row: the port's own (true) or the system's;
+// from any thread, applied on the next pump.
+void pointer_enable(bool on);
+// How long until fullscreen hides the pointer for sitting idle, in ms (0 or
+// less once hidden), or INT32_MAX when it will not: the flash plays in the
+// last four tenths of a second. Once a pump, before pointer_update.
+void pointer_hiding_in(int32_t msLeft);
 void write_desktop_entry();
 
 // The horizontal widening the renderer is applying to the game's

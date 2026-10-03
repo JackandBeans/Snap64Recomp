@@ -57,10 +57,10 @@ The rest of the documentation is listed [near the end](#documentation).
 These steps are for Windows. Linux and the Steam Deck are [further
 down](#linux-and-steam-deck).
 
-1. Download `Snap64Recomp-1.1.0-win64.zip` from the
+1. Download `Snap64Recomp-1.1.1-win64.zip` from the
    [Releases](https://github.com/JackandBeans/Snap64Recomp/releases/latest)
    page and unpack it anywhere. It holds one folder,
-   `Snap64Recomp-1.1.0-win64`, with `Snap64Recomp.exe` inside. Nothing has
+   `Snap64Recomp-1.1.1-win64`, with `Snap64Recomp.exe` inside. Nothing has
    to be installed.
 2. Have your ROM of the US cartridge ready. (A ROM is the cartridge's
    contents, read out into one file.) Put it next to `Snap64Recomp.exe`
@@ -99,7 +99,7 @@ bug report.
 ## Screenshots
 
 <table><tr>
-<td><a href="docs/screenshots/01k-title-110.png"><img src="docs/screenshots/01k-title-110.png" width="400" alt="The title screen"></a></td>
+<td><a href="docs/screenshots/01l-title-111.png"><img src="docs/screenshots/01l-title-111.png" width="400" alt="The title screen"></a></td>
 <td><a href="docs/screenshots/03-course-select.png"><img src="docs/screenshots/03-course-select.png" width="400" alt="Course select"></a></td>
 </tr><tr>
 <td><a href="docs/screenshots/04-beach.png"><img src="docs/screenshots/04-beach.png" width="400" alt="The Beach: Surfing Pikachu"></a></td>
@@ -420,7 +420,7 @@ GitHub's virtual Mac, the intro, a Beach ride with its photos scored and a
 mod's hooks have run, natively and under Rosetta 2.
 
 Every release also passes an automated suite before it ships
-(`tools/release_check.py`). On the 1.1.0 executable it passed 29 of 29
+(`tools/release_check.py`). On the 1.1.1 executable it passed 29 of 29
 checks, and the station's 5 of 5. [VERIFICATION.md](docs/VERIFICATION.md) says what
 each check does, what every release reported, and what has only been read
 from the code and not seen.
@@ -432,7 +432,7 @@ under WSL, N64Recomp for the game and the patches, CMake and MSVC on
 Windows, and a list of things git does not carry
 ([What a clean checkout is missing](BUILDING.md#what-a-clean-checkout-is-missing)).
 `cpack -C Release` in the build directory then writes
-`Snap64Recomp-1.1.0-win64.zip` ([step 13](BUILDING.md#13-package)).
+`Snap64Recomp-1.1.1-win64.zip` ([step 13](BUILDING.md#13-package)).
 
 <a id="how-i-made-it"></a>
 ## How it was made

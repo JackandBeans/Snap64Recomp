@@ -192,6 +192,9 @@ static ultramodern::renderer::WindowHandle create_window(void* /*gfx_data*/) {
         SDL_StopTextInput();
     }
 #endif
+    if (sdl_window != nullptr) {
+        snap::install_pointer(sdl_window);
+    }
 #if defined(__linux__)
     // The icon a Windows executable carries as a resource; a Linux binary
     // has none, so it comes from the file beside it. (A macOS bundle's icon
@@ -571,8 +574,10 @@ static void update_gfx(void* /*gfx_data*/) {
             case SDL_KEYDOWN:
                 // The BUTTON SETUP page is listening for a key: the input layer
                 // took this one as the binding (or refused it), and it is
-                // neither a hotkey nor Esc's Start here.
-                if (snap::input_capture_active() || snap::input_text_active()) {
+                // neither a hotkey nor Esc's Start here. A mod's text editor
+                // has every key; the photographer card the keys that type.
+                if (snap::input_capture_active() || snap::input_text_active() ||
+                    snap::input_typing_takes(event.key.keysym.scancode)) {
                     break;
                 }
                 if (snap::handle_settings_hotkey(event.key.keysym.scancode)) {

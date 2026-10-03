@@ -315,6 +315,7 @@ target in `CMakeLists.txt`); the ROM is the one file to copy by hand:
 | `SDL2.dll` | the `SDL2` target built from `lib/SDL` (step 11) |
 | `dxcompiler.dll`, `dxil.dll` | `lib/rt64/src/contrib/dxc/bin/x64/` (the same files RT64's CMake copies into `build-win/lib/rt64/`) |
 | `menu_text/recomp_logo.png` | the repository's `menu_text/` (the title-screen badge; absent file, absent badge) |
+| `menu_text/pointer.png`, `menu_text/pointer_flash.png` | the repository's `menu_text/` (the mouse pointer's four frames and its flash's four; absent pointer file, the system's pointer; absent flash file, no flash) |
 | `pokemonsnap.z64` | your ROM: copy it next to the executable yourself |
 
 The executable also loads `d3d12.dll`, `dxgi.dll` and `vulkan-1.dll` from the
@@ -334,7 +335,8 @@ still resolve against the working directory.
 
 writes `Snap64Recomp-1.0.0-win64.zip` and a `.sha256` beside it in
 `build-win`. The ZIP holds one folder of the same name: `Snap64Recomp.exe`,
-`Snap64Recomp.map`, the three DLLs, `menu_text/recomp_logo.png`, `LICENSE`,
+`Snap64Recomp.map`, the three DLLs, `menu_text/recomp_logo.png`,
+`menu_text/pointer.png`, `LICENSE`,
 `NOTICE.md`, `README.md` and `licenses/` -- one `.txt` per component in
 `NOTICE.md`, copied from the vendored trees at packaging time so they cannot
 drift from what was built (`concurrentqueue.txt` is cut from that header's

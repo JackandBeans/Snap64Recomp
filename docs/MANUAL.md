@@ -20,7 +20,7 @@ and so do [Linux and the Steam Deck](STEAM-DECK.md).
 Start `Snap64Recomp.exe`; a shortcut works from anywhere, because the port
 reads and writes the folder the executable is in, whatever the working
 directory (`src/paths.cpp`). It opens a 1280x960 window titled
-`Snap64 Recomp 1.1.0`; `SNAP_WINDOW=WxH` in the environment opens it at
+`Snap64 Recomp 1.1.1`; `SNAP_WINDOW=WxH` in the environment opens it at
 an exact size instead (at least 320x240). The window's maximize button is the
 fullscreen switch; the in-game Graphics page and F11 do the same, and F11
 is the way out of fullscreen from anywhere. **A tap of Esc opens the port's
@@ -110,7 +110,7 @@ shipped files are read from inside the app.
 | `mods/`, `mod_config/`, `mods.json` | the runtime's mod folders and its list of the mods that are on; the loader runs at every start, no mod ships with this release, and the game's Options screen has a Mods page for them (see "Mods and texture packs") |
 | `texture_packs/` | HD texture packs you install yourself, scanned once at start-up; created empty, none ships with this port (see "Mods and texture packs") |
 | `stickers/` | the sticker sheets the Snap Station prints (see [SNAP-STATION.md](SNAP-STATION.md)); created on the first print |
-| `menu_text/recomp_logo.png` | the "Recomp" wordmark on the title screen |
+| `menu_text/recomp_logo.png`, `menu_text/pointer.png`, `menu_text/pointer_flash.png` | the "Recomp" wordmark on the title screen, the mouse pointer's four frames (the lens open to closed), and the four of the flash it leaves and returns with |
 | `SDL2.dll`, `dxcompiler.dll`, `dxil.dll` | the window, input and audio library, and the shader compiler and validator the renderer needs; leave them beside the executable |
 | `Snap64Recomp.map` | the linker map; include it with crash reports (the `[SNAP-AV]` lines in the log are decoded against it) |
 | `LICENSE`, `NOTICE.md`, `licenses/` | licences |
@@ -153,7 +153,9 @@ deleted. The first start after the change rebuilds the cache once.
   is never included with this project.
 * Beside `Snap64Recomp.exe`: `SDL2.dll`, `dxcompiler.dll` and `dxil.dll`,
   and optionally `menu_text/recomp_logo.png` for the "Recomp" badge under the
-  title logo (no file, no badge). The release ZIP already holds all of them;
+  title logo (no file, no badge) and `menu_text/pointer.png` for the port's
+  own mouse pointer (no file, the system's pointer). The release ZIP already
+  holds all of them;
   if you build the port yourself, the build places them there
   (`BUILDING.md`, step 12).
 
@@ -178,15 +180,37 @@ Keyboard and mouse (`src/input.cpp`), as the port ships them:
 
 The mouse points on the menus: the title's list, the lab's panel and the
 course list, the pause menu, every Options page, the album, the PKMN
-Report, Oak's photo check, the Gallery and the name card. Moving the
-pointer over an item or a photo selects it. A click chooses the item under the pointer, and
+Report, Oak's photo check, the Gallery, the name card, the question
+New Game asks over a saved game, and every question the game asks with
+an A line and a B line (Oak's "Shall I repeat this information?", the
+save question, the photo check's). Moving the
+pointer over an item or a photo selects it; on a question, the A or B
+icon under the pointer is underlined, and a click on the icon presses
+that button. On a photo screen showing one picture, the header's arrows
+and the wheel step to the previous and the next picture, and a click on
+the picture is A on it. A click chooses the item under the pointer, and
 a click anywhere else does nothing. The right button goes back, as B
 does, and the wheel steps up and down. On an Options page, a click on a
 setting's value steps it: the left half back, the right half forward. The
 header's A and B are buttons too: moving onto one sounds as a row does and
 underlines it in orange, and a click presses it. So are the arrows that
 scroll a long page. In fullscreen the pointer shows while you move it on
-a menu and hides again after three seconds.
+a menu and hides again three seconds after the last move, click or
+turn of the wheel, or a second and a half after the last screen that
+took the mouse (it rides through the fades between menus and goes for a
+cutscene), going out in a flash and coming back in one; a course takes
+the mouse after that flash too. The pointer itself is the
+port's own, an arrow carrying a camera lens: the lens's shutter closes
+and opens again on a click. The Controls page's Pointer row, Camera or
+System, picks the system's arrow instead (`custom_pointer` in the
+settings file is the same switch).
+
+The keyboard types on the name card, where a new game's name is entered:
+a letter, a digit or one of the card's own marks is entered as if the
+cursor had been moved onto it and A pressed, Space is a space, Backspace
+takes a letter back and Enter is End. The arrow keys move on the grid.
+While the card is up, only the keys that type are its own; Esc and the
+port's own keys keep their jobs.
 
 The port's help lines that name a button name the one in your hand:
 whatever was pressed last, a controller, the keyboard or the mouse. On a
@@ -377,16 +401,20 @@ Volume, Speaker Output (Stereo/Mono), Background Mute.
 
 Options > **Controls**: Z Button (Hold/Switch) and Control Stick
 (Normal/Reverse), the game's own two settings, moved here from the Options
-list so the list keeps the stock rhythm; then Button Setup, the row that
-opens the Button Setup page; Pad Sticks; Dead Zone; Fast Forward (Off, 2x,
-3x or 4x: the speed the held key runs the game at); Slow Motion (Off, 2x or
-4x slower, the same way); Mouse Aim, Mouse Speed (25 to 400 percent of the
-shipped speed), Zoom Speed (the share of that speed used while zoomed in),
-Camera Tilt (Normal/Reverse, for the mouse and the gyro alike), Gyro Aim
-(Off, On, or Zoomed for only while zoomed in) and Gyro Speed (25 to 400
-percent of natural). Thirteen rows, six on screen; the page scrolls for the
-last seven, as the Graphics page does. Every change applies as it is made;
-B puts the page back as it was opened.
+list so the list keeps the stock rhythm (Normal, the cartridge's default,
+tilts the camera down when the stick is pushed up; Reverse tilts it up; both
+are kept in the save, as on the cartridge, not in `snapsettings.json`); then
+Button Setup, the row that opens the Button Setup page; Pad Sticks; Dead
+Zone; Fast Forward (Off, 2x, 3x or 4x: the speed the held key runs the game
+at); Slow Motion (Off, 2x or 4x slower, the same way); Mouse Aim, Mouse
+Speed (25 to 400 percent of the shipped speed), Zoom Speed (the share of
+that speed used while zoomed in), Camera Tilt (Normal/Reverse, for the mouse
+and the gyro alike), Gyro Aim (Off, On, or Zoomed for only while zoomed in)
+Gyro Speed (25 to 400 percent of natural) and Pointer (Camera, the port's
+own arrow with a lens, or System, the system's arrow, for the mouse pointer
+the menus show). Fourteen rows, six on screen; the page scrolls for the
+last eight, as the Graphics page does. Every change
+applies as it is made; B puts the page back as it was opened.
 
 **From anywhere**: Esc on a keyboard, or Select (View, Back, Minus: the
 small left button) on a pad, opens the same list on any screen -- the
@@ -496,8 +524,8 @@ listed with the value Error and the reason. With an empty folder the page
 says that instead ([Mods](MODS.md)).
 
 When the last session did not close normally (a crash, or the game ended
-from outside) and mods are on, the next start asks whether to start with
-the mods off, so a mod that stops the game can be turned off without
+from outside) and mods are on, the next start asks whether to turn the
+mods off, so a mod that stops the game can be turned off without
 editing `mods.json`; Options > Mods turns them back on.
 
 Options > **Exit Game**: the list's sixth row, under Mods, in the
@@ -667,7 +695,8 @@ the defaults below are that file's.
 | `pad_deadzone` | `15` | the aiming stick's dead zone in percent of full travel, 0 to 40 in steps of five (Dead Zone) |
 | `fast_forward_speed` | `3` | the speed the held fast-forward key runs the game at: 1 Off, 2, 3 or 4 (Fast Forward) |
 | `slow_motion_speed` | `1` | how much slower the held slow-motion key runs the game: 1 Off, 2 half speed, 4 a quarter (Slow Motion) |
-| `mouse_aim` | `true` | the mouse aims while a course runs and the window has focus ("Controls"); its buttons work whenever the window has focus, through `keys` |
+| `mouse_aim` | `true` | the mouse aims while a course runs and the window has focus ("Controls"), but not during the title's attract demo, which only A or Start ends, as on the cartridge (a click is A); its buttons work whenever the window has focus, through `keys` |
+| `custom_pointer` | `true` | the pointer on the menus is the port's own, an arrow carrying a camera lens whose shutter closes on a click; `false` keeps the system's. The Controls page's Pointer row (Camera or System) sets it |
 | `mouse_sensitivity` | `1.0` | angle per pixel of mouse: 1 is a full turn in about 2500 pixels, 2 twice as quick, 0.5 half; 0.1 to 10 |
 | `mouse_invert_y` | `false` | mouse forward, or the pad's front rising, tilts the view down (Camera Tilt: Reverse) |
 | `mouse_zoom_speed` | `0.5` | the mouse's speed while zoomed in, as a share of `mouse_sensitivity`; 0.25 to 1 (Zoom Speed) |

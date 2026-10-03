@@ -103,8 +103,12 @@ bool input_text_active();
 // 0 while typing (`text` is the text so far), 1 kept (Enter), 2 left (Esc).
 int input_text_poll(std::string& text);
 void input_text_end();
-// Main thread: SDL's text input on while the editor is, off after it on Linux
-// (where the port keeps it off).
+// The photographer card has the keyboard (patches/src/mouse_patch.inc): a key
+// that types (a letter, a digit, punctuation, Space, Backspace, Enter) is the
+// card's, neither a game button nor a hotkey; the others keep their jobs.
+bool input_typing_takes(int scancode);
+// Main thread: SDL's text input on while the editor or the card is, off after
+// it on Linux (where the port keeps it off).
 void input_update_text();
 bool input_take_menu_request();
 

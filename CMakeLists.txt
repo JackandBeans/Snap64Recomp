@@ -4,7 +4,7 @@
 # Silicon build was proved on; -DCMAKE_OSX_DEPLOYMENT_TARGET on the command
 # line wins over this.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "The oldest macOS the build runs on")
-project(Snap64Recomp VERSION 1.1.0 LANGUAGES C CXX)
+project(Snap64Recomp VERSION 1.1.1 LANGUAGES C CXX)
 if (APPLE)
     # Objective-C for RT64's Apple sources and SDL's Cocoa back end; the
     # port's own sources stay C++ (main.cpp takes the Metal layer through SDL).
@@ -293,6 +293,7 @@ set(SNAP_SOURCES
     src/mod_data_api.cpp
     src/mod_installer.cpp
     src/menu_mouse.cpp
+    src/pointer.cpp
     src/dds_image.cpp
     src/rt64_render_context.cpp
     src/rsp_microcode.cpp
@@ -514,6 +515,12 @@ if (WIN32)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/menu_text/recomp_logo.png"
             "$<TARGET_FILE_DIR:Snap64Recomp>/menu_text/recomp_logo.png"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/menu_text/pointer.png"
+            "$<TARGET_FILE_DIR:Snap64Recomp>/menu_text/pointer.png"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/menu_text/pointer_flash.png"
+            "$<TARGET_FILE_DIR:Snap64Recomp>/menu_text/pointer_flash.png"
         COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:Snap64Recomp>/cache"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/shaders/rt64-seen-shaders.bin"
@@ -530,6 +537,12 @@ else()
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/menu_text/recomp_logo.png"
             "$<TARGET_FILE_DIR:Snap64Recomp>/menu_text/recomp_logo.png"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/menu_text/pointer.png"
+            "$<TARGET_FILE_DIR:Snap64Recomp>/menu_text/pointer.png"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/menu_text/pointer_flash.png"
+            "$<TARGET_FILE_DIR:Snap64Recomp>/menu_text/pointer_flash.png"
         COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_FILE_DIR:Snap64Recomp>/cache"
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/shaders/rt64-seen-shaders.bin"
@@ -586,6 +599,8 @@ if (WIN32)
     install(FILES "${SNAP_MAP_FILTERED}" DESTINATION . OPTIONAL)
 endif()
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/menu_text/recomp_logo.png" DESTINATION menu_text)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/menu_text/pointer.png" DESTINATION menu_text)
+install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/menu_text/pointer_flash.png" DESTINATION menu_text)
 # The list of every shader the game is known to ask for -- 623 raw packed
 # ShaderDescriptions from a full playthrough, no compiled code, valid on both
 # backends. RT64 warms the whole list during the boot logos on idle threads

@@ -86,6 +86,9 @@ HOOKED = [
     'func_801E2CF8_9D9668',
     'func_camera_check_801DFA80',
     'func_camera_check_801DFCD4',
+    # The check's one-picture view and the lookup it makes every frame.
+    'func_camera_check_801E04F4',
+    'func_camera_check_801E24D8',
     'func_801E41FC_993C6C',
     'func_801DF8A4_9FD564',
     'func_801DFA94_9FD754',

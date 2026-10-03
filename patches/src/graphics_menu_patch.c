@@ -236,13 +236,20 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *   +0x9C  u8   BIND_CLEAR, host-owned, taken by the BUTTON SETUP page: 1
  *               when Delete or Backspace was pressed there (it clears the
  *               row, as Z does); the page sets it back to 0
+ *   +0x9D  u8   TYPE_CLAIM, raised by the photographer card every frame
+ *               (mouse_patch.inc), lowered by the host each reading: while
+ *               it is up, the keys that type are the card's
+ *   +0x9E  u8   TYPE_CHAR, host-owned: the next character typed (ASCII,
+ *               0xE9 e acute, 0x08 Backspace, 0x0D Enter); the card sets it
+ *               back to 0 when it takes it
  *   +0x60  u32  CONTROLS sequence word
- *   +0x64  u8   CONTROLS fields 0..9, through +0x6D: mouse aim, the mouse
+ *   +0x64  u8   CONTROLS fields 0..10, through +0x6E: mouse aim, the mouse
  *               speed's step, the zoom speed's step, the tilt, the gyro
  *               mode (off, on, zoomed), the gyro speed's step, the pad
  *               sticks swapped, the stick dead zone's step (fives), the
  *               fast forward speed (0 off, 1..3 for 2x, 3x, 4x), the slow
- *               motion speed (0 off, 1 half, 2 a quarter)
+ *               motion speed (0 off, 1 half, 2 a quarter), the pointer (0
+ *               the system's, 1 the port's own)
  *   +0x7C  u32  MBOX_POOL_FAIL, the patch's own: strips the pool refused
  *   +0x80  u32  MBOX_POOL_PEAK, the patch's own: the pool's high water
  *   +0xA0  u32  BIND_REQ, the BUTTON SETUP page's request to the host: the
@@ -425,6 +432,13 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  * +201); its values are Off and the Graphics page's 2x and 4x. */
 #define STR_SM_LABEL         230
 #define STR_SM_DESC          231
+
+/* The CONTROLS page's Pointer row (2026-10-03): the mouse pointer the
+ * menus show, the system's arrow or the port's own lens. */
+#define STR_PTR_LABEL        280
+#define STR_PTR_SYSTEM       281
+#define STR_PTR_CAMERA       282
+#define STR_PTR_DESC         283
 /* The MODS page (snap_mods_page): the Option list's item and its help line,
  * the heading, the empty-folder line, and the strips the host composes
  * while the page is open -- two banks of six names and six help lines, one
@@ -2950,27 +2964,32 @@ static void snap_sound_page(void) {
  * are held; then the mouse and gyro dials. The settings are numbered in
  * the order the strings and the CONTROLS bank were laid out in (the six
  * mouse and gyro settings first, Pad Sticks, Dead Zone, Fast Forward and
- * Slow Motion last as the seventh to tenth fields), and snap_ctl_setting
- * maps a row to its setting. */
-#define CTL_ROWS 13
+ * Slow Motion last as the seventh to tenth fields; Pointer, the last row,
+ * is the eleventh), and snap_ctl_setting maps a row to its setting. */
+#define CTL_ROWS 14
 #define CTL_VISIBLE 6
 #define CTL_ROW_BUTTONS 2
 #define CTL_ROW_STICKS 3
 #define CTL_ROW_DEADZONE 4
 #define CTL_ROW_FAST 5
 #define CTL_ROW_SLOW 6
+#define CTL_ROW_POINTER 13
 #define CTL_SETTING_STICKS 8
 #define CTL_SETTING_DEADZONE 9
 #define CTL_SETTING_FAST 10
 #define CTL_SETTING_SLOW 11
+#define CTL_SETTING_POINTER 12
 
 /* A row's setting: 0 and 1 the game's own, 2..7 the six mouse and gyro
  * settings (CONTROLS bank fields 0..5), 8 Pad Sticks (field 6), 9 Dead
- * Zone (field 7), 10 Fast Forward (field 8), 11 Slow Motion (field 9); -1
- * for the Button Setup row, which has none. */
+ * Zone (field 7), 10 Fast Forward (field 8), 11 Slow Motion (field 9),
+ * 12 Pointer (field 10); -1 for the Button Setup row, which has none. */
 static s32 snap_ctl_setting(s32 row) {
     if (row == CTL_ROW_BUTTONS) {
         return -1;
+    }
+    if (row == CTL_ROW_POINTER) {
+        return CTL_SETTING_POINTER;
     }
     if (row == CTL_ROW_STICKS) {
         return CTL_SETTING_STICKS;
@@ -3021,6 +3040,9 @@ static s32 snap_ctl_label_str(s32 row) {
     if (setting == CTL_SETTING_SLOW) {
         return STR_SM_LABEL;
     }
+    if (setting == CTL_SETTING_POINTER) {
+        return STR_PTR_LABEL;
+    }
     return (setting < 6) ? (STR_CTL_LABEL + setting) : (STR_GYRO_LABEL + (setting - 6));
 }
 
@@ -3041,6 +3063,9 @@ static s32 snap_ctl_desc_str(s32 row) {
     }
     if (setting == CTL_SETTING_SLOW) {
         return STR_SM_DESC;
+    }
+    if (setting == CTL_SETTING_POINTER) {
+        return STR_PTR_DESC;
     }
     return (setting < 6) ? (STR_CTL_DESC + setting) : (STR_GYRO_DESC + (setting - 6));
 }
@@ -3097,6 +3122,7 @@ static s32 snap_ctl_value_str(s32 row, s32 v) {
     }
     switch (snap_ctl_setting(row)) {
         case CTL_SETTING_STICKS: return v ? STR_SWAPPED : STR_NORMAL;
+        case CTL_SETTING_POINTER: return v ? STR_PTR_CAMERA : STR_PTR_SYSTEM;
         case CTL_SETTING_DEADZONE:
             /* 0, 10, 20, 30 and 40 are the volume steps; 25 a mouse speed. */
             switch (v) {
@@ -3125,9 +3151,82 @@ static s32 snap_ctl_value_str(s32 row, s32 v) {
 
 /* The game's Z Button and Control Stick settings. On the Option screen
  * they are the overlay's mirrors, which the screen's exit path writes into
- * the player flags (the dispatcher below); from a course the overlay is not
- * loaded and the flags are read and written directly, in force at once. */
+ * the player flags (the dispatcher below); from anywhere else the overlay is
+ * not loaded and the flags are read and written directly. A ride reads the
+ * two flags once, when it starts (src/app_level/player.c: ProgressFlags,
+ * then ZoomSwitchMode and IsAxisYInverted), so a change made over a ride's
+ * pause is also put into those (issue #19: the flag alone waited for the
+ * next ride). */
 s32 checkPlayerFlag(s32 pfid);   /* .more_funcs; also declared below */
+
+/* The ride's copies (app_level, loaded whenever snap_page_ctx is 1) and the
+ * HUD's icons (src/app_level/icons.c, whose structs are private to it). */
+typedef struct {
+    u32 x;
+    u32 y;
+    SObj* spriteObj;
+    char unused[12];
+} SnapIcon;            /* SpriteStruct, 0x18 */
+typedef struct {
+    u32 x;
+    u32 y;
+    s32 shownWhenZoomedIn;
+    s32 moveOutDirection;
+    s32 unk_10;
+    Sprite* spriteDef;
+} SnapIconDef;         /* SpriteDefStruct, 0x18 */
+extern u32 ProgressFlags;
+extern s8 ZoomSwitchMode;
+extern s8 IsAxisYInverted;
+extern SnapIcon Icons_IconObjects[];
+extern SnapIconDef Icons_IconDefs[];
+extern GObj* Icons_MainObject;
+extern u8 Icons_IsZoomedIn;
+#define SNAP_PF_ZOOM_SWITCH 0x1000   /* PF_ZOOM_SWITCH */
+#define SNAP_PF_INVERTED_Y  0x2000   /* PF_INVERTED_Y */
+#define SNAP_ICON_ZOOM_OFF  7        /* ICON_ID_ZOOM_OFF */
+
+/* Switch mode's HUD has one icon Hold mode has not: the Z beside the
+ * camera while zoomed in, the press that zooms back out. Icons_Init makes it
+ * only when the ride starts in Switch mode; here it is made or removed as
+ * the mode changes, shown at once if the view is zoomed in now. */
+static void snap_ride_zoom_icon(s32 on) {
+    SnapIcon* icon = &Icons_IconObjects[SNAP_ICON_ZOOM_OFF];
+    SnapIconDef* def = &Icons_IconDefs[SNAP_ICON_ZOOM_OFF];
+
+    if (Icons_MainObject == NULL) {
+        return;
+    }
+    if (on && (icon->spriteObj == NULL)) {
+        icon->spriteObj = omGObjAddSprite(Icons_MainObject, def->spriteDef);
+        if (icon->spriteObj == NULL) {
+            return;
+        }
+        spMove(&icon->spriteObj->sprite, def->x, def->y);
+        icon->x = def->x;
+        icon->y = def->y;
+        if (Icons_IsZoomedIn) {
+            spClearAttribute(&icon->spriteObj->sprite, SP_HIDDEN);
+        } else {
+            spSetAttribute(&icon->spriteObj->sprite, SP_HIDDEN);
+        }
+    } else if (!on && (icon->spriteObj != NULL)) {
+        omGObjRemoveSprite(icon->spriteObj);
+        icon->spriteObj = NULL;
+    }
+}
+
+static void snap_ride_apply(s32 which, s32 v) {
+    if (which == 0) {
+        ZoomSwitchMode = v ? 1 : 0;
+        ProgressFlags = v ? (ProgressFlags | SNAP_PF_ZOOM_SWITCH) : (ProgressFlags & ~SNAP_PF_ZOOM_SWITCH);
+        snap_ride_zoom_icon(v);
+    } else {
+        IsAxisYInverted = v ? 1 : 0;
+        ProgressFlags = v ? (ProgressFlags | SNAP_PF_INVERTED_Y) : (ProgressFlags & ~SNAP_PF_INVERTED_Y);
+    }
+}
+
 static s32 snap_ctl_flag_get(s32 which) {
     if (snap_page_ctx != 0) {
         return checkPlayerFlag((which == 0) ? PFID_ZOOM_SWITCH : PFID_INVERTED_Y) ? 1 : 0;
@@ -3138,6 +3237,9 @@ static s32 snap_ctl_flag_get(s32 which) {
 static void snap_ctl_flag_set(s32 which, s32 v) {
     if (snap_page_ctx != 0) {
         setPlayerFlag((which == 0) ? PFID_ZOOM_SWITCH : PFID_INVERTED_Y, v);
+        if (snap_page_ctx == 1) {
+            snap_ride_apply(which, v);
+        }
         return;
     }
     if (which == 0) {
@@ -3154,7 +3256,7 @@ static s32 snap_ctl_get(s32 row) {
     switch (snap_ctl_setting(row)) {
         case 0:  return snap_ctl_flag_get(0);
         case 1:  return snap_ctl_flag_get(1);
-        default: return CTL_FIELD(snap_ctl_setting(row) - 2);   /* Pad Sticks is field 6, Dead Zone 7, Fast Forward 8, Slow Motion 9 */
+        default: return CTL_FIELD(snap_ctl_setting(row) - 2);   /* Pad Sticks is field 6, Dead Zone 7, Fast Forward 8, Slow Motion 9, Pointer 10 */
     }
 }
 
@@ -6779,6 +6881,140 @@ s32 func_800E3974_A0AF04(s8 arg0) {
     return ret;
 }
 
+/* New Game over a saved game asks first: the box's three sprites on one
+ * object (func_800E2654_A09BE4), the question, then No at 170, 172 and Yes
+ * at 124, 172; the word that pulses is No while the object's user data is
+ * NULL, Yes while it is 1. Each word's own box below, measured from where
+ * the letters change as the selection pulses, placed from its sprite, with
+ * a pixel to spare. */
+void func_800E3C7C_A0B20C(GObj* gobj);
+void func_800E1CAC_A0923C(void);
+#define YESNO_YES_DX 4    /* Yes: x 128..146, y 172..180 */
+#define YESNO_YES_W  19
+#define YESNO_NO_DX  6    /* No: x 176..189 */
+#define YESNO_NO_W   14
+#define YESNO_DY     0
+#define YESNO_H      9
+
+/* 1 for Yes, 0 for No, -1 for neither. */
+static s32 snap_yesno_hit(SObj* yes, SObj* no) {
+    if (snap_mouse_in(yes->sprite.x + YESNO_YES_DX - 1, yes->sprite.y + YESNO_DY - 1, YESNO_YES_W + 2,
+                      YESNO_H + 2)) {
+        return 1;
+    }
+    if (snap_mouse_in(no->sprite.x + YESNO_NO_DX - 1, no->sprite.y + YESNO_DY - 1, YESNO_NO_W + 2, YESNO_H + 2)) {
+        return 0;
+    }
+    return -1;
+}
+
+/* Stock, with the mouse: the word under the pointer is selected as it
+ * moves there, a click on a word is A on it, a click anywhere else is
+ * nothing, and the right button is B (No, as B is). */
+s32 func_800E3E28_A0B3B8(void) {
+    SObj* sobj2;
+    SObj* sobj1;
+    SObj* sobj0;
+    GObj* gobj;
+    s32 flags;
+    s32 ret;
+    s32 cond;
+    s32 one;
+    SnapMouse mouse;
+    s32 ev, hit;
+    UnkStruct800BEDF8* input;
+
+    gobj = D_800E82DC_A0F86C;
+    sobj0 = gobj->data.sobj;
+    sobj1 = sobj0->next;
+    sobj2 = sobj1->next;
+
+    ohEndAllObjectProcesses(D_800E82CC_A0F85C);
+    func_800E18E0_A08E70(D_800E82CC_A0F85C->data.sobj, 0xFF, 0xFF, 0xFF);
+    func_800E18AC_A08E3C(sobj0, true);
+    func_800E18AC_A08E3C(sobj2, true);
+    func_800E18AC_A08E3C(sobj1, true);
+    func_800E18E0_A08E70(sobj2, 0x80, 0x80, 0x80);
+    func_800E18E0_A08E70(sobj1, 0x80, 0x80, 0x80);
+    cond = false;
+    gobj->userData = NULL;
+    omCreateProcess(gobj, func_800E3C7C_A0B20C, 0, 1);
+    auSetBGMVolume(1, 0x7F00);
+    auPlaySong(1, 0x23);
+    auSetBGMVolumeSmooth(0, 0x4000, 30);
+    ohWait(30);
+
+    one = 1;
+    snap_mouse_begin(&mouse);
+
+    while (true) {
+        input = func_800AA38C(0);
+        ev = snap_mouse_take(&mouse);
+        hit = snap_yesno_hit(sobj2, sobj1);
+        if ((ev & (SNAP_MOUSE_MOVED | SNAP_MOUSE_CLICK)) && (hit >= 0) && (hit != cond)) {
+            /* What the stick's step to that word does, below. */
+            auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
+            cond = hit;
+            ohEndAllObjectProcesses(gobj);
+            gobj->userData = cond ? (void*) one : NULL;
+            func_800E18E0_A08E70(cond ? sobj1 : sobj2, 0x80, 0x80, 0x80);
+            omCreateProcess(gobj, func_800E3C7C_A0B20C, 0, 1);
+        }
+        if ((ev & SNAP_MOUSE_CLICK) && (hit >= 0)) {
+            input->pressedButtons |= A_BUTTON;
+        }
+        if (ev & SNAP_MOUSE_BACK) {
+            input->pressedButtons |= B_BUTTON;
+        }
+        flags = input->pressedButtons;
+        if (flags & 0x4000) {
+            cond = false;
+            break;
+        } else {
+            if (flags & 0x80000) {
+                if (gobj->userData == NULL) {
+                    auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
+                    cond = true;
+                    ohEndAllObjectProcesses(gobj);
+                    gobj->userData = (void*) one;
+                    func_800E18E0_A08E70(sobj1, 0x80, 0x80, 0x80);
+                    omCreateProcess(gobj, func_800E3C7C_A0B20C, 0, 1);
+                }
+            } else if (flags & 0x40000) {
+                if (gobj->userData == (void*) one) {
+                    auPlaySoundWithParams(0x41, 0x7FFF, 0x40, 1.0f, 0);
+                    cond = false;
+                    ohEndAllObjectProcesses(gobj);
+                    gobj->userData = NULL;
+                    func_800E18E0_A08E70(sobj2, 0x80, 0x80, 0x80);
+                    omCreateProcess(gobj, func_800E3C7C_A0B20C, 0, 1);
+                }
+            } else if (flags & (0x8000 | 0x1000)) {
+                break;
+            }
+
+            ohWait(one);
+        }
+    }
+
+    if (cond) {
+        auPlaySoundWithParams(0x42, 0x7FFF, 0x40, 1.0f, 0);
+        func_800E1CAC_A0923C();
+        ret = 6;
+    } else {
+        ohEndAllObjectProcesses(gobj);
+        func_800E18AC_A08E3C(sobj0, false);
+        func_800E18AC_A08E3C(sobj2, false);
+        func_800E18AC_A08E3C(sobj1, false);
+        auPlaySoundWithParams(0x43, 0x7FFF, 0x40, 1.0f, 0);
+        auSetBGMVolumeSmooth(0, 0x7FFF, 30);
+        ohWait(30);
+        ret = 3;
+    }
+    ohWait(1);
+    return ret;
+}
+
 /* Stock, plus the Snap Station label's deletion beside the Gallery's. */
 void func_800E1B78_A09108(u8 arg0) {
     if (!arg0) {
@@ -6906,3 +7142,4 @@ s32 func_800E6B2C_A0E0BC(void) {
 #include "pause_menu_patch.inc"
 #include "anywhere_patch.inc"
 #include "mouse_patch.inc"
+#include "question_patch.inc"

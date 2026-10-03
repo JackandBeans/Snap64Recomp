@@ -30,7 +30,7 @@ on its help line which version waits for that restart. A mod file this
 release will not load is listed with the value Error and the reason.
 
 If the game did not close normally last time and mods are on, the next
-start asks whether to start with the mods off, so a mod that stops the
+start asks whether to turn the mods off, so a mod that stops the
 game can be turned off from outside it.
 
 A mod is enabled the first time it is found unless its own manifest says

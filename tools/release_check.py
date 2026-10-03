@@ -528,6 +528,11 @@ def check_station(c, exe_dir):
     for f in (save, save.with_suffix('.bin.bak'), exe_dir / 'snapsettings.json'):
         if f.is_file():
             keep[f] = f.read_bytes()
+    # The relaunched games run without the replay, so they mark the session
+    # as running (mod_installer.cpp), and the last is ended by taskkill: the
+    # mark it leaves would make the next start ask whether to turn the mods off.
+    mark = exe_dir / 'snap64.running'
+    mark_was = mark.is_file()
     settings = json.loads((exe_dir / 'snapsettings.json').read_text(encoding='utf-8')) if (exe_dir / 'snapsettings.json').is_file() else {}
     settings['snap_station'] = True
     (exe_dir / 'snapsettings.json').write_text(json.dumps(settings, indent=2), encoding='utf-8')
@@ -601,6 +606,8 @@ def check_station(c, exe_dir):
             f.write_bytes(data)
         if (exe_dir / 'snapstation.job').exists():
             (exe_dir / 'snapstation.job').unlink()
+        if mark.is_file() and not mark_was:
+            mark.unlink()
 
 
 def check_rompick(c, exe_dir):
@@ -655,10 +662,12 @@ PACKAGE_NEEDS = {
                 'licenses/DirectXShaderCompiler.txt', 'licenses/DirectXShaderCompiler-dxil.txt',
                 'licenses/nlohmann-json.txt', 'licenses/roboto.txt', 'licenses/SDL_GameControllerDB.txt',
                 'gamecontrollerdb.txt',
-                'menu_text/recomp_logo.png', 'mods/README.md', 'texture_packs/README.txt', 'Snap64Recomp.map'],
+                'menu_text/recomp_logo.png', 'menu_text/pointer.png', 'menu_text/pointer_flash.png', 'mods/README.md',
+                'texture_packs/README.txt', 'Snap64Recomp.map'],
     'linux': ['Snap64Recomp', 'START HERE.txt', 'LICENSE', 'NOTICE.md', 'README.md', 'CHANGELOG.md',
               'licenses/nlohmann-json.txt', 'licenses/roboto.txt', 'licenses/SDL_GameControllerDB.txt',
-              'gamecontrollerdb.txt', 'menu_text/recomp_logo.png', 'mods/README.md', 'texture_packs/README.txt'],
+              'gamecontrollerdb.txt', 'menu_text/recomp_logo.png', 'menu_text/pointer.png', 'menu_text/pointer_flash.png',
+              'mods/README.md', 'texture_packs/README.txt'],
     'macos': ['START HERE.txt', 'Snap64Recomp.app/Contents/Info.plist', 'Snap64Recomp.app/Contents/MacOS/Snap64Recomp',
               'Snap64Recomp.app/Contents/Resources/LICENSE', 'Snap64Recomp.app/Contents/Resources/NOTICE.md',
               'Snap64Recomp.app/Contents/Resources/README.md', 'Snap64Recomp.app/Contents/Resources/gamecontrollerdb.txt',

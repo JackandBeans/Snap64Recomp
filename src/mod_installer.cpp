@@ -502,10 +502,13 @@ void mods_safe_start() {
         if (on > 0) {
             const std::string text = std::string(SNAP_PORT_NAME) + " did not close normally last time, and " +
                 std::to_string(on) + ((on == 1) ? " mod is" : " mods are") + " on. If a mod stopped the game, "
-                "it can stop it again.\n\nStart with the mods off? Options > Mods turns them back on.";
+                "it can stop it again.\n\nTurn the mods off? Options > Mods turns them back on.";
+            // Windows gives each button 88 pixels whatever its label
+            // (SDL_windowsmessagebox.c, the box without Common Controls 6):
+            // a label wider than "Keep mods on" is cut off.
             const SDL_MessageBoxButtonData buttons[] = {
                 { SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT | SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Keep mods on" },
-                { 0, 1, "Start with mods off" },
+                { 0, 1, "Turn mods off" },
             };
             const SDL_MessageBoxData box = {
                 SDL_MESSAGEBOX_WARNING, nullptr, SNAP_PORT_NAME, text.c_str(),

@@ -113,7 +113,15 @@ s32 func_800E3264_8A8A84(UnkStruct800BEDF8* arg0, s32* arg1) {
  * the file's own words, and its screen loop is the game's below with the
  * mouse added: the letter under the pointer is where the cursor goes, a
  * click enters it (A), the right button is B (a letter back), the wheel
- * steps up and down. */
+ * steps up and down.
+ *
+ * The keyboard types on it as well (src/input.cpp): the card claims the
+ * keys that type every frame it is up, and the host hands over what was
+ * typed one character at a time. A character the card has is entered as if
+ * the cursor were moved onto it and A pressed, so the cursor follows the
+ * typing and a full card goes to End as it does; Space is the card's right
+ * arrow (a space), Backspace its left arrow (a letter back), Enter its End.
+ * A character the card lacks is passed over. */
 #define NG_CURSOR_X (*(volatile s32*) 0x80168120)   /* menu_new_game_CursorX */
 #define NG_CURSOR_Y (*(volatile s32*) 0x80168124)   /* menu_new_game_CursorY */
 #define NG_STATE    (*(volatile u8*) 0x80168144)    /* 2 when the card is done */
@@ -126,6 +134,92 @@ void func_800E2800_A5DBB0(void);
 void func_800E270C_A5DABC(void);
 void func_800E2314_A5D6C4(void);
 void func_800E2200_A5D5B0(void);
+void func_800E2758_A5DB08(void);
+u8** func_800E18B4_A5CC64(s32 arg0);
+#define NG_LENGTH   (*(volatile u8*) 0x80168143)    /* the name's bytes so far, two a letter, 14 full */
+#define TYPE_CLAIM  (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x9D))
+#define TYPE_CHAR   (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x9E))
+
+/* The card's two-byte code (EUC-JP's full-width forms, as its table holds
+ * them) for a typed character, or 0. */
+static u16 snap_type_code(u8 c) {
+    static const char sym[] = "!?@#%&*()_+=-'\";:/$.,<>[]~";
+    static const u16 code[] = {
+        0xA1AA, 0xA1A9, 0xA1F7, 0xA1F4, 0xA1F3, 0xA1F5, 0xA1F6, 0xA1CA, 0xA1CB,
+        0xA1B2, 0xA1DC, 0xA1E1, 0xA1BC, 0xA1C7, 0xA1C9, 0xA1A8, 0xA1A7, 0xA1BF,
+        0xA1F0, 0xA1A5, 0xA1A4, 0xA1E3, 0xA1E4, 0xA1CE, 0xA1CF, 0xA1C1,
+    };
+    s32 i;
+
+    if ((c >= 'A') && (c <= 'Z')) {
+        return 0xA3C1 + (c - 'A');
+    }
+    if ((c >= 'a') && (c <= 'z')) {
+        return 0xA3E1 + (c - 'a');
+    }
+    if ((c >= '0') && (c <= '9')) {
+        return 0xA3B0 + (c - '0');
+    }
+    if (c == 0xE9) {
+        return 0xA6C5;   /* e acute: the card's epsilon, which its font draws as one */
+    }
+    for (i = 0; sym[i] != 0; i++) {
+        if ((u8) sym[i] == c) {
+            return code[i];
+        }
+    }
+    return 0;
+}
+
+/* One typed character on the card. */
+static void snap_name_type(u8 c) {
+    u8** table;
+    u16 code;
+    s32 i;
+
+    if (c == 0x08) {
+        func_800E2800_A5DBB0();
+        func_800E2A84_A5DE34(NG_LETTER);
+        return;
+    }
+    if (c == 0x0D) {
+        /* End, and A on it: the name is kept and the card is done. */
+        NG_CURSOR_X = 2;
+        NG_CURSOR_Y = 19;
+        func_800E2200_A5D5B0();
+        func_800E270C_A5DABC();
+        return;
+    }
+    if (c == ' ') {
+        func_800E2758_A5DB08();
+        func_800E2A84_A5DE34(NG_LETTER);
+        return;
+    }
+    code = snap_type_code(c);
+    if (code == 0) {
+        return;
+    }
+    table = func_800E18B4_A5CC64(0);
+    for (i = 0; i < 95; i++) {
+        if ((table[i][0] == (code >> 8)) && (table[i][1] == (code & 0xFF))) {
+            break;
+        }
+    }
+    if (i == 95) {
+        return;
+    }
+    if (NG_LENGTH >= 14) {
+        func_800E2314_A5D6C4();
+        func_800E2A84_A5DE34(NG_LETTER);
+        return;
+    }
+    NG_CURSOR_X = i % 5;
+    NG_CURSOR_Y = i / 5;
+    func_800E2200_A5D5B0();
+    func_800E2A84_A5DE34(NG_LETTER);
+    func_800E270C_A5DABC();
+    func_800E2A84_A5DE34(NG_LETTER);
+}
 
 /* The cell under the pointer as y * 8 + x, or -1. */
 static s32 snap_name_hit(void) {
@@ -152,14 +246,26 @@ static s32 snap_name_hit(void) {
 void func_800E2ED0_A5E280(void) {
     SnapMouse mouse;
     s32 ev, hit;
+    u8 typed;
 
     func_800E23B0_A5D760();
     func_800E2E00_A5E1B0();
     func_800E2A84_A5DE34(NG_LETTER);
     snap_mouse_begin(&mouse);
+    TYPE_CHAR = 0;
     while (1) {
         UnkStruct800BEDF8* temp_v0 = func_800AA38C(0);
         s32 temp_v1 = temp_v0->pressedButtons;
+
+        TYPE_CLAIM = 4;
+        typed = TYPE_CHAR;
+        if (typed != 0) {
+            TYPE_CHAR = 0;
+            snap_name_type(typed);
+            if (NG_STATE == 2) {
+                break;
+            }
+        }
 
         ev = snap_mouse_take(&mouse);
         hit = snap_name_hit();
@@ -183,6 +289,21 @@ void func_800E2ED0_A5E280(void) {
         if (ev & SNAP_MOUSE_DOWN) {
             temp_v1 |= 0x20000;
         }
+        /* The D-pad (its N64 bits: up 0x0800, down 0x0400, left 0x0200,
+         * right 0x0100) moves on the grid as the stick does: the keyboard's
+         * arrows are the D-pad, and its W, A, S and D type here. */
+        if (temp_v1 & 0x0800) {
+            temp_v1 |= STICK_SLOW_UP;
+        }
+        if (temp_v1 & 0x0400) {
+            temp_v1 |= STICK_SLOW_DOWN;
+        }
+        if (temp_v1 & 0x0200) {
+            temp_v1 |= STICK_SLOW_LEFT;
+        }
+        if (temp_v1 & 0x0100) {
+            temp_v1 |= STICK_SLOW_RIGHT;
+        }
         temp_v0->pressedButtons = temp_v1;
 
         if (temp_v1 & 0xF0000) {
@@ -205,4 +326,6 @@ void func_800E2ED0_A5E280(void) {
         }
         ohWait(1);
     }
+    TYPE_CLAIM = 0;
+    TYPE_CHAR = 0;
 }

@@ -12,6 +12,10 @@
 #include <filesystem>
 #include <fstream>
 #include <mutex>
+
+// The presented-frame capture's count of presents still to photograph
+// (lib/rt64 rt64_present_queue.cpp), armed here by F12 under SNAP_PCAP_KEY.
+extern "C" std::atomic<int32_t> snap_frame_dump_pending;
 #include <span>
 #include <string>
 #include <system_error>
@@ -145,6 +149,7 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         s.jynx_vc            = j.value("jynx_vc", s.jynx_vc);
         s.snap_station       = j.value("snap_station", s.snap_station);
         s.mouse_aim          = j.value("mouse_aim", s.mouse_aim);
+        s.custom_pointer     = j.value("custom_pointer", s.custom_pointer);
         // rumble_strength, written by 1.0.1, is read by nothing: the
         // cartridge never rumbles. A file that still carries it loads as
         // before, and the key is not written back.
@@ -364,6 +369,7 @@ bool save_settings() {
         {"jynx_vc",               copy.jynx_vc},
         {"snap_station",          copy.snap_station},
         {"mouse_aim",             copy.mouse_aim},
+        {"custom_pointer",        copy.custom_pointer},
         {"pad_enabled",           copy.pad_enabled},
         {"pad_layout",            copy.pad_layout},
         {"pad_sticks_swapped",    copy.pad_sticks_swapped},
@@ -622,6 +628,18 @@ bool handle_settings_hotkey(int scancode) {
             snapdiag::markRequestCounter().fetch_add(1, std::memory_order_relaxed);
             snapdiag::pairDumpPending().store(2, std::memory_order_relaxed);
             printf("[SNAP-CFG] marked -- see the [SNAP-MARK] report below (needs SNAP_STATS=1)\n");
+            // SNAP_PCAP_KEY=1: the key also photographs the next presents
+            // (SNAP_PCAP_BURST of them, 24 unless set) into snap_frame_dumps/,
+            // so a moment only a hand can reach is captured from a live
+            // session. The capture's schedule gate (rt64_present_queue.cpp,
+            // snapPcapScheduled) wants one of the schedule variables set:
+            // SNAP_PCAP_AT at a reading never reached does.
+            if (std::getenv("SNAP_PCAP_KEY") != nullptr) {
+                const char* burstEnv = std::getenv("SNAP_PCAP_BURST");
+                const int32_t burst = (burstEnv != nullptr) ? std::max(1, std::atoi(burstEnv)) : 24;
+                snap_frame_dump_pending.store(burst, std::memory_order_relaxed);
+                printf("[SNAP-PCAP] F12: photographing the next %d presents\n", burst);
+            }
             fflush(stdout);
             return true;
         case SDL_SCANCODE_F2: {

@@ -52,6 +52,8 @@ constexpr uint32_t kStickSlowUp    = 0x10000;
 constexpr uint32_t kStickSlowDown  = 0x20000;
 constexpr uint32_t kStickSlowRight = 0x40000;
 constexpr uint32_t kStickSlowLeft  = 0x80000;
+constexpr uint32_t kStickRight     = 0x400000;   // the stick pushed past 0.7
+constexpr uint32_t kStickLeft      = 0x800000;
 constexpr uint16_t kButtonA = 0x8000;
 constexpr uint16_t kButtonB = 0x4000;
 constexpr int32_t kButtonNone = 35;              // BUTTON_NONE, an empty panel slot
@@ -244,6 +246,40 @@ Seen g_check_panel, g_check_photos;
 Seen g_gallery_panel, g_gallery_photos, g_gallery_print, g_gallery_place;
 Seen g_pick;
 
+// Oak's photo check showing one picture at a time (func_camera_check_801E04F4
+// below, which steps through the ride's pictures on the stick's full left
+// and right): the header's arrows step to the previous and the next, and so
+// does the wheel; a click on the picture (its frame: 101, 46, 147 by 113) is
+// A on it; the right button is B. Both are laid into the frame's record
+// here, before the view reads it, because its text lines ("Should I show
+// this to Prof. Oak?") are answered by the patches (question_patch.inc) in
+// the same record, and a B pressed on the next reading as well would have
+// left the grid too. A click on the text is nothing here.
+bool g_check_single_on = false;
+Seen g_check_single;
+
+void single(uint8_t* rdram) {
+    const int ev = take(rdram, g_check_single);
+    if (ev & Click) {
+        if (in(rdram, 86, 0, 40, 40)) {
+            or_pressed(rdram, kLiveRecord, kStickLeft);
+        } else if (in(rdram, 270, 0, 44, 40)) {
+            or_pressed(rdram, kLiveRecord, kStickRight);
+        } else if (in(rdram, 101, 46, 147, 113)) {
+            or_pressed(rdram, kLiveRecord, kButtonA);
+        }
+    }
+    if (ev & Back) {
+        or_pressed(rdram, kLiveRecord, kButtonB);
+    }
+    if (ev & Up) {
+        or_pressed(rdram, kLiveRecord, kStickLeft);
+    }
+    if (ev & Down) {
+        or_pressed(rdram, kLiveRecord, kStickRight);
+    }
+}
+
 }  // namespace
 
 extern "C" {
@@ -255,6 +291,8 @@ void __real_func_801E28D8_9D9248(uint8_t* rdram, recomp_context* ctx);
 void __real_func_801E2AC0_9D9430(uint8_t* rdram, recomp_context* ctx);
 void __real_func_camera_check_801DFA80(uint8_t* rdram, recomp_context* ctx);
 void __real_func_camera_check_801DFCD4(uint8_t* rdram, recomp_context* ctx);
+void __real_func_camera_check_801E04F4(uint8_t* rdram, recomp_context* ctx);
+void __real_func_camera_check_801E24D8(uint8_t* rdram, recomp_context* ctx);
 void __real_func_801E41FC_993C6C(uint8_t* rdram, recomp_context* ctx);
 void __real_func_801E2CF8_9D9668(uint8_t* rdram, recomp_context* ctx);
 void __real_func_801DF8A4_9FD564(uint8_t* rdram, recomp_context* ctx);
@@ -360,8 +398,28 @@ void func_camera_check_801DFA80(uint8_t* rdram, recomp_context* ctx) {
 }
 
 void func_camera_check_801DFCD4(uint8_t* rdram, recomp_context* ctx) {
+    g_check_single_on = false;   // the grid is up, whatever ended the single view
     grid(rdram, ctx, g_check_photos, 107, 66, true);
     __real_func_camera_check_801DFCD4(rdram, ctx);
+}
+
+// One picture at a time: the view runs on its own game thread until the
+// player leaves it, so the flag stands while it does, and the lookup it
+// makes every frame (func_camera_check_801E24D8, the picture at an index,
+// called after the frame's record is read and before its buttons are) is
+// where the mouse is laid in.
+void func_camera_check_801E04F4(uint8_t* rdram, recomp_context* ctx) {
+    g_check_single_on = true;
+    begin(rdram, g_check_single);
+    __real_func_camera_check_801E04F4(rdram, ctx);
+    g_check_single_on = false;
+}
+
+void func_camera_check_801E24D8(uint8_t* rdram, recomp_context* ctx) {
+    if (g_check_single_on) {
+        single(rdram);
+    }
+    __real_func_camera_check_801E24D8(rdram, ctx);
 }
 
 // The Gallery (src/gallery/9FD510.c): its panel, whose help line follows

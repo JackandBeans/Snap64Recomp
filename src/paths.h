@@ -36,6 +36,11 @@ std::filesystem::path base_path(std::string_view rel);
 const std::filesystem::path& exe_dir();
 std::filesystem::path exe_path(std::string_view rel);
 
+// A file the port ships beside the executable, or the player's own copy in
+// the data directory when that is a different folder: the player's wins
+// (menu_assets.cpp).
+std::filesystem::path asset_path(const std::string& rel);
+
 } // namespace snap
 
 #endif
