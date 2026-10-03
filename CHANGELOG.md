@@ -102,7 +102,7 @@
   mods off" now, and the question "Turn the mods off?". The question itself
   was asked after a session that had closed normally: the release suite's
   Snap Station check ends the relaunched game from outside, as it must,
-  and left the session mark that the mark's own exit would have removed,
+  and left the session mark that the game's own exit would have removed,
   so the next start of a build the suite had run on asked it. The check
   removes the mark it leaves.
 * The game's own questions take the mouse: Oak's "Shall I repeat this
@@ -121,9 +121,9 @@
   images, one object each, made as the text is printed, so a question is
   known from them wherever it appears, and the answer is laid into the
   frame's input record, which every screen reads. Checked on Oak's repeat
-  question (hover underlined each line in turn, a click on the question's
-  words did nothing, a click on the B line answered No) and on the save
-  question, whose two answers share one line.
+  question (the pointer on an icon underlined it and on the words beside
+  it did not, a click on the words did nothing, a click on the B icon
+  answered No) and on the save question, whose two answers share one line.
 * Oak's photo check, showing one picture at a time, did not take the mouse:
   the header's arrows turned the pages of the grid of pictures but did
   nothing on a single picture, where the stick's left and right step
