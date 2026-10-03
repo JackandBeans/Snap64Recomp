@@ -2,8 +2,8 @@
 
 
 Pokémon Snap was made at HAL Laboratory, with Pax Softnica assisting, and
-published by Nintendo: Japan on 21 March 1999, North America in the summer
-of 1999 (sources give 30 June and 26 July), Europe on 15 September 2000.
+published by Nintendo: Japan on March 21, 1999, North America in the summer
+of 1999 (sources give June 30 and July 26), Europe on September 15, 2000.
 
 It did not begin as a Pokémon game. In 1995 a small team at HAL under
 Yoichi Yamamoto, with Satoru Iwata (then HAL's president, later Nintendo's)
@@ -55,7 +55,7 @@ own, and it matches the decompilation; the port emulates the device ([SNAP-STATI
 
 The second was the re-release. When Nintendo brought the game to the Wii's
 Virtual Console in December 2007 (Wii U in 2016 and 2017, Nintendo Switch
-Online on 24 June 2022), it replaced the kiosk with saving photos to the
+Online on June 24, 2022), it replaced the kiosk with saving photos to the
 Wii Message Board, from which they could go to an SD card or to friends
 (the Wii U version sent them to Miiverse instead). It also recolored Jynx
 from black to purple, as it had in its other early Pokémon re-releases.
@@ -124,11 +124,11 @@ comes from, with that channel's own title.
   1999](https://youtu.be/VQ5eX9K2GXw). The "Take Your Best Shot" contest
   Blockbuster ran around the kiosks.
 * **Transmit Him** -- [Pokemon Snap, N64 (Nintendo, 2000) UK TV
-  advert](https://youtu.be/FrB9hBb2O3Q). Europe waited until 15 September
+  advert](https://youtu.be/FrB9hBb2O3Q). Europe waited until September 15,
   2000.
 * **83Chrisaaron** -- [Pokemon Snap (Katsuhiko Wakabiki) Japanese
-  Commercial](https://youtu.be/cZAd3r498cA). Japan had the game first, on 21
-  March 1999.
+  Commercial](https://youtu.be/cZAd3r498cA). Japan had the game first, on March
+  21, 1999.
 * **83Chrisaaron** -- [Pokemon Snap (Katsuhiko Wakabiki) (Lawson Stickers)
   Japanese Commercial](https://youtu.be/dypI8_sU2_E). Lawson is the
   convenience-store chain that carried Snap Stations in Japan.

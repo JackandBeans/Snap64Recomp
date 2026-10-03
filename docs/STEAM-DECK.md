@@ -24,7 +24,7 @@ On a Steam Deck:
    Windows. Saves, settings, photos and the log stay in that folder; they
    do not go into Proton's prefix.
 2. Right-click `Snap64Recomp.exe` and choose **Add to Steam**. In Steam,
-   open the shortcut's **Properties**: under **Compatibility** tick
+   open the shortcut's **Properties**: under **Compatibility** check
    *Force the use of a specific Steam Play compatibility tool* and pick the
    newest Proton; check that *Start in* is the folder holding the
    executable.

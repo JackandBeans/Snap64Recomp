@@ -44,7 +44,7 @@ yet.
   `core.longpaths` on in the checkout and in every submodule, so git copes
   with a deeper folder; the compiler and the build do not, so a short path
   is still the way. `git config --global core.longpaths true` together with
-  Windows' long-path setting is the other way round it.
+  Windows' long-path setting is the other way around it.
 
 ### WSL
 

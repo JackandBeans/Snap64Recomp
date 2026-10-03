@@ -580,14 +580,14 @@
   title and over a paused Beach: captures of the list, of three mods'
   details, of Unlimited Film's details before and after a click on the
   bar, and of its options. Then, asked to critique the pages again and
-  again until nothing was left, I went round six more times. The help
+  again until nothing was left, I went around six more times. The help
   boxes spoke in button codes ("A: details. L, R: move it up or down."),
   where the Graphics page's help box speaks in sentences; they say "L and
   R move it up or down the load order." and "A opens this mod's option."
   now. The header said "A Details" on Install Mods..., Open Mods Folder
   and Restart Game too, where A carries the row out: it says "A OK  B
   Back" there. The By line had its label orange and its value white, the
-  other way round from Graphics: "By" is white and the author orange. A
+  other way around from Graphics: "By" is white and the author orange. A
   mod that another mod keeps on showed "< On >" with arrows that did
   nothing: its On has no arrows now, like New and Error, and all three
   stand where the word stands between arrows. The same wait was worded
