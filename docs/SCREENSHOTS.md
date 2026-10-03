@@ -161,6 +161,16 @@ three rows that install mods, open the folder and restart the game. The
 help box carries the selected mod's own description and what moves it in
 the load order, worded for the device in hand (here a mouse had clicked).
 
+<a href="screenshots/22-oak-question-111.png"><img src="screenshots/22-oak-question-111.png" width="640" alt="Prof. Oak's question, 1.1.1: answered with the mouse"></a>
+
+**Prof. Oak's question, 1.1.1.** A new game's first visit to the lab, at
+"Shall I repeat this information?". Every question the game asks with
+an A line and a B line answers the mouse: the icon under the pointer is
+underlined in orange, and a click on it presses that button. The pointer
+is the port's own, an arrow carrying a camera lens. It is drawn into this
+picture where it stood, at the size it has on a 1440-line screen: it is
+the system's cursor, which a capture of the game's frame does not hold.
+
 ## The Snap Station
 
 <a href="screenshots/11-gallery-print.png"><img src="screenshots/11-gallery-print.png" width="640" alt="The Gallery with Print"></a>
