@@ -123,16 +123,18 @@ deleted. The first start after the change rebuilds the cache once.
 ## What you need, in detail
 
 
-* A 64-bit Windows 10 or 11 PC (the port asks Windows for per-monitor DPI
-  awareness, which needs Windows 10 version 1703 or later). The executable
+* A 64-bit Windows 10 or 11 PC; Windows 10 must be version 1809 or later,
+  the first with the Shader Model the renderer needs (below). The executable
   imports `d3d12.dll`, `dxgi.dll` and `d3dcompiler_47.dll` from Windows, so
   the GPU driver must provide Direct3D 12; `vulkan-1.dll` is loaded only if
   you switch the renderer to Vulkan (`graphics_api` in the settings file,
   "Settings file" below). The Visual C++ runtime is linked into the
   executable; nothing else has to be installed. The renderer creates its
-  Direct3D 12 device at feature level 11_0 and needs shader model 6.0 (its
-  Vulkan path needs Vulkan 1.2), which GPU drivers have provided for years;
-  no slowest card has been measured. It has run on an AMD Radeon RX 9060 XT
+  Direct3D 12 device at feature level 11_0 and needs Shader Model 6.3, the
+  one its shaders are compiled for (its Vulkan path needs Vulkan 1.2). A
+  driver from before late 2018 does not have it, and 1.1.1 does not check:
+  the window opens black and closes within seconds
+  ([Known issues](KNOWN-ISSUES.md)). No slowest card has been measured. It has run on an AMD Radeon RX 9060 XT
   (mine), an NVIDIA GeForce RTX 4070 Ti Super (a reporter,
   issue #13), the Steam Deck's own GPU under Linux, and Mesa's software
   Vulkan, which draws the game slowly but correctly.

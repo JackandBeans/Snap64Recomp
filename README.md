@@ -120,8 +120,9 @@ picture. The full set, with a caption for each, is in
 <a id="what-you-need"></a>
 ## System requirements
 
-* **Windows:** 64-bit Windows 10 or 11, and a GPU whose driver supports
-  Direct3D 12 with Shader Model 6.0.
+* **Windows:** 64-bit Windows 10 (version 1809 or newer) or 11, and a GPU
+  whose driver supports Direct3D 12 with Shader Model 6.3. A driver from
+  before late 2018 is too old; see [Known issues](#known-issues).
 * **Linux and Steam Deck:** a Vulkan 1.2 driver, and either Flatpak or the
   system's SDL2 and GTK 3; x86_64, or ARM64 for the tarball built for it.
   The Linux builds are experimental.
@@ -351,6 +352,9 @@ them, and how to write one.
 <a id="known-limitations"></a>
 ## Known issues
 
+* On a graphics driver from before late 2018, the port opens a black
+  window and closes within seconds, with no message. Updating the driver
+  is the fix. The next release will say so itself.
 * Some 2D pictures still move at the game's rate when the frame rate is
   raised: the photo panels, Oak's thumbnails, and full-screen backgrounds
   while they slide.
@@ -376,12 +380,22 @@ Planned, roughly in this order.
 1. **Reports from other machines.** Most releases so far were made of what
    players reported, and later ones will be too. The issue form is the way
    to send one, with `snap64.log` attached.
-2. **A Linux desktop.** The native build has run under WSL and on a Deck,
+2. **A physical Mac.** The Mac build runs on GitHub's virtual Mac; it needs
+   someone with a physical one to try it.
+3. **A Linux desktop.** The native build has run under WSL and on a Deck,
    and on no Linux desktop yet. The first report from one would be welcome.
-3. **macOS.** The Mac build runs on GitHub's virtual Mac; it needs someone
-   with a physical one to try it.
+4. **Linux on ARM64 and the Flatpak.** Both are built on GitHub's machines,
+   and no machine has played the game from either yet.
+5. **Gyro on a controller.** Gyro aim is confirmed on a Steam Deck and on
+   no other pad. A DualSense, a DualShock 4 or a Switch Pro controller
+   would settle it.
+6. **Smooth 2D at high frame rates.** The photo panels, Oak's thumbnails
+   and full-screen backgrounds while they slide still move at the game's
+   own rate.
+7. **A mod that adds something new to a course.** It will show what the
+   mod kit can do.
 
-The same list, with a place to reply, is pinned under
+The same list, with what to try and a place to reply, is pinned under
 [Discussions](https://github.com/JackandBeans/Snap64Recomp/discussions/1).
 
 ## Reporting a bug

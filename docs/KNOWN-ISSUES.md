@@ -5,6 +5,23 @@ each. The short list is on the [front page](../README.md#known-issues). If
 you meet something that is not here, [a report](../README.md#reporting-a-bug)
 is welcome.
 
+## On an old graphics driver, the window opens black and closes
+
+The renderer's shaders are built for Shader Model 6.3, which Windows 10 has
+had since version 1809 and graphics drivers since late 2018. Before it
+starts, 1.1.1 only asks a driver for Shader Model 6.0. So an older driver
+is accepted, cannot build the shaders, and the port closes within seconds
+with no message. One report shows it: a GeForce GTX 960M on NVIDIA's driver
+391.25 of early 2018
+([#21](https://github.com/JackandBeans/Snap64Recomp/issues/21)). That this
+driver stops short of 6.3 is read from its date; it has not been measured
+on that machine.
+
+Install the current driver from the GPU maker's site (NVIDIA, AMD or
+Intel), and make sure Windows 10 is version 1809 or newer (`winver` shows
+it). The next release checks the driver at start and says this in a
+message.
+
 ## Some 2D pictures still move at the game's rate
 
 This shows when the frame rate is raised. The interpolation pairs what it
