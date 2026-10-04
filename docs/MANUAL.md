@@ -20,7 +20,7 @@ and so do [Linux and the Steam Deck](STEAM-DECK.md).
 Start `Snap64Recomp.exe`; a shortcut works from anywhere, because the port
 reads and writes the folder the executable is in, whatever the working
 directory (`src/paths.cpp`). It opens a 1280x960 window titled
-`Snap64 Recomp 1.1.1`; `SNAP_WINDOW=WxH` in the environment opens it at
+`Snap64 Recomp 1.1.2`; `SNAP_WINDOW=WxH` in the environment opens it at
 an exact size instead (at least 320x240). The window's maximize button is the
 fullscreen switch; the in-game Graphics page and F11 do the same, and F11
 is the way out of fullscreen from anywhere. **A tap of Esc opens the port's
@@ -132,9 +132,10 @@ deleted. The first start after the change rebuilds the cache once.
   executable; nothing else has to be installed. The renderer creates its
   Direct3D 12 device at feature level 11_0 and needs Shader Model 6.3, the
   one its shaders are compiled for (its Vulkan path needs Vulkan 1.2). A
-  driver from before late 2018 does not have it, and 1.1.1 does not check:
-  the window opens black and closes within seconds
-  ([Known issues](KNOWN-ISSUES.md)). No slowest card has been measured. It has run on an AMD Radeon RX 9060 XT
+  driver from before late 2018 does not have it: the port writes each
+  adapter, its driver and its highest Shader Model to `snap64.log`
+  (`[SNAP-D3D12]`) and refuses one that falls short with a message that
+  names it. No slowest card has been measured. It has run on an AMD Radeon RX 9060 XT
   (mine), an NVIDIA GeForce RTX 4070 Ti Super (a reporter,
   issue #13), the Steam Deck's own GPU under Linux, and Mesa's software
   Vulkan, which draws the game slowly but correctly.
@@ -676,7 +677,7 @@ the defaults below are that file's.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `fullscreen` | `false` | saved as set; the window opens windowed and goes fullscreen a moment later when the file says so (a window created fullscreen comes up with broken chrome), and the Snap Station's own relaunches return in the state the print started in |
-| `widescreen` | `false` | RT64 Expand: a true wider field of view in a course, as wide as the window's own shape (16:9, 16:10, 21:9 or wider), not a stretch; the title, the lab and the other 4:3 screens sit in black bars. Pokémon and effect sprites at the edges are kept ([Known issues](KNOWN-ISSUES.md)) |
+| `widescreen` | `false` | RT64 Expand: a true wider field of view in a course, as wide as the window's own shape (16:9, 16:10, 21:9 or wider), not a stretch; the film counter sits against the picture's right edge and the R and Z icons slide out to it; the title, the lab and the other 4:3 screens sit in black bars. Pokémon and effect sprites at the edges are kept ([Known issues](KNOWN-ISSUES.md)) |
 | `msaa` | `0` | 0, 2, 4 or 8 |
 | `fps_mode` | `0` | 0 Original, 1 Display refresh, 2 Manual (`fps_manual_target`) |
 | `fps_manual_target` | `120` | the rate a number on the Frame Rate row holds; a value not on the row shows as the nearest of its eight and becomes it once the page is edited |

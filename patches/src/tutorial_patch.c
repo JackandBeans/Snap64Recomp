@@ -2,7 +2,7 @@
  * Replaces func_80354FB8_4F53C8 from src/app_level/player.c -- the Beach
  * tutorial's watch for the Control Stick.
  *
- * The original counts frames and reports whether the stick left its centre
+ * The original counts frames and reports whether the stick left its center
  * by six or more on any of them:
  *
  *     while (duration > 0) {

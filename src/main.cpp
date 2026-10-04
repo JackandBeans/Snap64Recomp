@@ -146,7 +146,7 @@ static void* create_gfx() {
 #if defined(__APPLE__)
     // On macOS the controller subsystem is not started here: SDL's IOKit
     // driver binds its device matching to the run loop of the thread that
-    // initialised it, and the pad thread is the thread that polls, so it
+    // initialized it, and the pad thread is the thread that polls, so it
     // starts and stops the subsystem itself (input.cpp, pad_thread_main).
     const Uint32 sdlSubsystems = SDL_INIT_VIDEO | SDL_INIT_AUDIO;
 #else
@@ -476,7 +476,7 @@ static void update_gfx(void* /*gfx_data*/) {
     // presented, and every game thread with its state and the queue it
     // waits on. Not before the first step (the renderer warms its shaders
     // before the boot logos, for as long as that takes) and not while the
-    // window is minimised.
+    // window is minimized.
     {
         static uint32_t stallSteps = 0;
         static bool stallTimed = false;
@@ -485,14 +485,14 @@ static void update_gfx(void* /*gfx_data*/) {
         static std::chrono::steady_clock::time_point stallLastLook;
         const uint32_t steps = snap_logic_steps_total.load(std::memory_order_relaxed);
         const auto now = std::chrono::steady_clock::now();
-        const bool minimised = (sdl_window != nullptr) && ((SDL_GetWindowFlags(sdl_window) & SDL_WINDOW_MINIMIZED) != 0);
+        const bool minimized = (sdl_window != nullptr) && ((SDL_GetWindowFlags(sdl_window) & SDL_WINDOW_MINIMIZED) != 0);
         // This runs every frame; a gap of seconds between two looks is the
         // machine asleep or the process held, not the game stuck, and the
         // clock behind it kept counting.
         const bool wasAway = stallTimed && (now - stallLastLook > std::chrono::seconds(2));
         stallLastLook = now;
-        if (!stallTimed || (steps != stallSteps) || minimised || wasAway) {
-            // A minimised window may hold the game at its present; the
+        if (!stallTimed || (steps != stallSteps) || minimized || wasAway) {
+            // A minimized window may hold the game at its present; the
             // clock starts again when it comes back.
             stallTimed = true;
             stallSteps = steps;
@@ -756,7 +756,7 @@ void snap_show_deferred_message_boxes() {
     }
 }
 
-static void error_message_box(const char* msg) {
+static void show_error_box(const char* msg) {
     fprintf(stderr, "[SNAP] ERROR: %s\n", msg);
     fflush(stderr);
     // Linux only. The hazard is SDL's fork-based message box there; Windows
@@ -804,6 +804,30 @@ static void error_message_box(const char* msg) {
     // above on stderr is what remains.
     SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, SNAP_PORT_NAME " - Error", msg, nullptr);
 #endif
+}
+
+static void error_message_box(const char* msg) {
+    // The runtime's word that the renderer did not start. It throws next, on
+    // the game's thread, where nothing catches it: the process ended by
+    // abort, and the session's mark stayed for the next start to ask about.
+    const bool startup = (std::strstr(msg, "An error has been encountered on startup") != nullptr);
+    // A graphics device the port refused itself (gpu_check.cpp) comes with
+    // the adapter, its driver and what to do; that says more than the
+    // runtime's line about the same failure.
+    std::string refused;
+    if ((std::strstr(msg, "compatible graphics device") != nullptr) && !snap::renderer_failure_detail().empty()) {
+        refused = snap::renderer_failure_detail();
+        msg = refused.c_str();
+    }
+    show_error_box(msg);
+    if (startup) {
+        // Said; the port ends here, as a start that was refused and not as
+        // a session that crashed.
+        snap::session_mark_clean();
+        fflush(stdout);
+        fflush(stderr);
+        std::_Exit(1);
+    }
 }
 
 // ---------------------------------------------------------------------------

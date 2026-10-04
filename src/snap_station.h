@@ -106,7 +106,7 @@ void station_title_reached();
 // station; otherwise only once the title menu is up (station_title_reached)
 // or the title's Snap Station item was chosen, so a boot with the setting on
 // goes to the title screen and the game's periodic detection finds the
-// station afterwards, the way the kiosk's own enable switch was used.
+// station afterward, the way the kiosk's own enable switch was used.
 bool station_port4_present();
 
 // The Controller Pak RAM calls the game makes through __osContRamWrite and

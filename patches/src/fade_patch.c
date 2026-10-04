@@ -7,15 +7,15 @@
  * by a camera at x = 290 with a 45 degree vertical field of view. At that
  * distance the screen spans +-120.1 units tall and +-160.2 wide, and the
  * quad reaches +-120 by +-160: an eighth of a pixel short at every edge.
- * The console's RDP samples pixel centres, so that margin never showed on
+ * The console's RDP samples pixel centers, so that margin never showed on
  * a console; the port renders at many times the resolution and samples
- * sub-pixel centres inside the margin, and a bright hairline of the scene
+ * sub-pixel centers inside the margin, and a bright hairline of the scene
  * stayed along the top, left and right of every fade, brighter the more
  * the screen behind it was lit.
  *
  * The two render functions that draw this quad full-screen widen its scale
  * to 3.3 by 2.5 -- five pixels past every edge, entirely off screen --
- * before the model matrix is built. The colour, alpha and pacing of the
+ * before the model matrix is built. The color, alpha and pacing of the
  * fade are untouched; the other quad drawn with this display list, the
  * iris that shrinks to a point, keeps its own scale.
  *

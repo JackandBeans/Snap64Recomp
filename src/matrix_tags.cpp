@@ -56,7 +56,7 @@ constexpr uint32_t Param(uint32_t value, uint32_t bits, uint32_t shift) {
     return (value & ((1u << bits) - 1u)) << shift;
 }
 
-// G_SPNOOP under F3DEX2, which Snap uses. RT64 recognises the magic number
+// G_SPNOOP under F3DEX2, which Snap uses. RT64 recognizes the magic number
 // that follows and treats the command as a hook rather than a no-op.
 constexpr uint32_t HookOpcode = 0xE0;
 constexpr uint32_t HookMagicNumber = 0x525464;
@@ -100,7 +100,7 @@ constexpr uint32_t AuthoredStepWord0 = Param(ExtendedOpcode, 8, 24) | Param(Auth
 // blends the two view matrices element by element, and a rotation blended
 // that way cuts across the arc instead of following it: the angle advances
 // unevenly through each tick and the matrix loses a little of its length in
-// the middle, which for a view transform is a slight pull towards the centre
+// the middle, which for a view transform is a slight pull toward the center
 // of the screen. Standing still it is unnoticeable. Spinning, it repeats
 // thirty times a second and reads as choppiness that no amount of frame
 // pacing can fix, because every frame is arriving perfectly on time carrying
@@ -579,7 +579,7 @@ extern "C" void renPrepareCameraMatrix(uint8_t* rdram, recomp_context* ctx) {
 // built. Tagged by address, a new object's limb and a dead one's limb are the
 // same id, they pair, and the limb is interpolated from an object a world
 // block away. Stretched between two unrelated transforms it covers the screen,
-// which is the frame of flat colour at a block boundary.
+// which is the frame of flat color at a block boundary.
 //
 // The counter it carries has to be wide. A first attempt folded three bits into
 // the spare low bits of the address, which leaves a one in eight chance that a
@@ -627,7 +627,7 @@ namespace snap {
 // Left as plain data this dropped rebases outright: the deltas could be read
 // from the previous one, or a flag raised for the next display list could be
 // cleared by this one. A dropped rebase is a frame interpolated across a move
-// of the world origin, which is the whole-screen flat colour this exists to
+// of the world origin, which is the whole-screen flat color this exists to
 // prevent.
 std::atomic<bool> g_world_rebased = { false };
 float g_world_rebase_delta[3] = {};

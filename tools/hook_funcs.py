@@ -75,7 +75,7 @@ HOOKED = [
     # renderer can find the same sprite in the previous frame. Texture
     # rectangles carry no matrix and no vertices, so this is the only thing
     # that can tell one from another. spX2Draw is the sprite; renDrawSprite
-    # is the object that owns them, and closes the group afterwards.
+    # is the object that owns them, and closes the group afterward.
     # The mouse on the photo screens (src/menu_mouse.cpp): each screen's
     # navigation function, run after the pointer has moved its selection.
     'album_UpdateButtonSelection',
@@ -106,6 +106,10 @@ HOOKED = [
     # The menu overlay's private copy of the sprite library, and the camera's
     # own background fills.
     'func_80373670_846E20',
+    # The lab's monitor, one logic step of its ease: with the frame rate
+    # raised, a move's first step takes the second with it when it would
+    # stand alone in its drawn frame (src/lab_monitor.cpp).
+    'func_800E1CA0_8A74C0',
     # Every volume that reaches a sound-player voice after it has started:
     # the patched auSetSoundVolume (positional sounds every tick, ambience
     # ramps) and the level-end global fades. Logged under SNAP_STATS so the

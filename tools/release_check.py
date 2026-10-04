@@ -39,7 +39,7 @@ that a release build can be put through all of them in one go:
               nothing and exits
   package     (with --zip, once per archive) a release archive, Windows zip,
               Linux tarball (x86_64 or arm64) or Mac zip: it carries the
-              program, the licences and the documents, its .sha256 sidecar
+              program, the licenses and the documents, its .sha256 sidecar
               matches it, no file in it names a build machine's folders
               (this one's or a GitHub runner's), the C++ runtime is linked
               in, and on Windows dxil.dll is the redistributable v1.7.2308
@@ -53,7 +53,7 @@ that a release build can be put through all of them in one go:
               row and presses it; the port relaunches twice; the sixteen
               slots and both sheets appear and the sheet holds four 2x2
               blocks of one photo each. The save and settings are put back
-              afterwards.
+              afterward.
 
 It opens the real game window for each run; runs are killed at their time
 limit, which is how the recipe has always worked (the replays never reach a
@@ -636,7 +636,7 @@ def check_rompick(c, exe_dir):
         asked = '[SNAP] ROM: none at' in out
         dest = rig / 'pokemonsnap.z64'
         if name == 'cancel':
-            ok = asked and ('the chooser was cancelled' in out) and not dest.exists() and ('[SNAP] surface' not in out)
+            ok = asked and ('the chooser was canceled' in out) and not dest.exists() and ('[SNAP] surface' not in out)
             c.add('rompick', ok, 'cancel: asked %s, no file %s, no window %s'
                   % (asked, not dest.exists(), '[SNAP] surface' not in out))
         else:

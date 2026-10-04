@@ -363,7 +363,7 @@ constexpr Source kHelpSources[] = {
 constexpr Source kHeaderSource = { 0x80341790, "Options" };
 
 // The credits face: the copyright block. No commas in the transcript -- their
-// tails tuck under the neighbouring digits' columns and never form runs.
+// tails tuck under the neighboring digits' columns and never form runs.
 constexpr Source kCreditsSource = { 0x802F82C8, "@1995 1996 1998 Nintendo/Creatures/GAMEFREAK" };
 
 // The two sprites the furniture is cut from.
@@ -520,7 +520,7 @@ constexpr SynthGlyph kHelpSynth[] = {
 // Characters the copyright text lacks, in its 1px condensed style. '\x01' is
 // the credits face's middle dot. The digits are here for the version
 // line under the title (STR_CREDITS): the copyright years supply 1,5,6,8,9,
-// and 0,2,3,4,7 are synthesised so any version number renders -- a missing
+// and 0,2,3,4,7 are synthesized so any version number renders -- a missing
 // digit (the 2 of "rc2", say) would otherwise withhold the whole menu
 // directory (menu_assets.cpp note_missing).
 constexpr SynthGlyph kCreditsSynth[] = {
@@ -995,7 +995,7 @@ void dump_bitmap(FILE* f, const char* name, const MenuBitmap& b) {
 // The title screen's items ("New Game", "Continue", "Gallery", "Options") are
 // whole-word sprites in a larger face: a white core inside a dark ring one to
 // two pixels wide with a soft fringe beyond, the cores one column apart so
-// neighbouring rings share a column. Segmented on the white core, since the
+// neighboring rings share a column. Segmented on the white core, since the
 // rings would merge every letter into one run; each cell keeps the one
 // column either side that is its ring. "Continue" is left out (its u and
 // e touch) and so is "Gallery" (two bitmap rows; the decoder reads the
@@ -1007,12 +1007,24 @@ constexpr Source kTitleSources[] = {
     { 0x8034FAD8, "No Controller Connected" },
 };
 
-// Core rows only (kMenuTtlCapH of them); the ring is generated.
-constexpr SynthGlyph kTitleSynth[] = {
-    /* Built from the face's own C: its top arc (rows 1-3) and, mirrored, its
-     * bottom arc (rows 8-10), the stems thinning to one column at the middle
-     * as the C's does, joined by a two-row spine. */
-    { 'S', { "..####.", ".######", "##....#", "##.....", ".###...", "...###.", ".....##", "#....##", "######.", ".####..", "", "" } },
+// The port's own letter, one row per cap row with a column of ring either
+// side; 0 to F are sixteenths of white and G is white.
+//
+// The S is drawn the way the face draws its round letters: one stroke a
+// pixel and a half wide around two bowls and a curved spine, its edges on
+// the face's sixteen levels, the top terminal hooking down and the bottom
+// one up as the C's do, six columns where the C is seven and the O eight.
+// The S before it was the C's top arc, a straight bar and one row of the C's
+// bottom arc: the bar 2.3 pixels wide where the face's strokes are about one
+// and a half, in place of both bowls, so the letter had no lower bowl, stood
+// eight columns wide, and read as a 5 (seen by hand, Oct 4 2026).
+struct DrawnGlyph {
+    char ch;
+    const char* rows[kMenuTtlCapH];
+};
+constexpr DrawnGlyph kTitleDrawn[] = {
+    { 'S', { "02BGGC30", "0CF99FD0", "0G9008F0", "0EE30010", "04FGC400",
+             "0017EG60", "01000CE0", "0F8009G0", "0DF99FC0", "03CGGB20" } },
 };
 
 bool title_core(const Px& p) {
@@ -1021,8 +1033,8 @@ bool title_core(const Px& p) {
 
 // A title cell: the core run and one column either side, the kMenuTtlCellH
 // rows from the row above the core's top. One column, not two: cores sit one
-// column apart in a word, so the column past the ring is the neighbour's
-// core, and a second margin would carry a neighbour that the composed word
+// column apart in a word, so the column past the ring is the neighbor's
+// core, and a second margin would carry a neighbor that the composed word
 // does not have (an earlier cut turned it into ring and every letter grew a
 // stray dark column beside it). The shared ring column is taken from both
 // letters when the word is composed, as the sprites share it.
@@ -1041,55 +1053,6 @@ Cell cut_title_cell(const Img& img, int s, int e, int top) {
         }
         for (int x = x0; x < x1; x++) {
             c.px[size_t(r) * size_t(c.w) + size_t(x - x0)] = img.at(x, y);
-        }
-    }
-    return c;
-}
-
-// A title letter of the port's own: the core at cell rows 1..kMenuTtlCapH,
-// then the ring by dilation, one pixel of dark at the originals' ring
-// strength and one of the faint fringe beyond it.
-Cell synth_title(const SynthGlyph& g) {
-    const int coreW = int(std::strlen(g.rows[0]));
-    Cell c;
-    c.w = coreW + 4;
-    c.cs = 2;
-    c.ce = 2 + coreW;
-    c.px.assign(size_t(c.w) * size_t(kMenuTtlCellH), Px{});
-    std::vector<bool> core(c.px.size(), false);
-    for (int r = 0; r < kMenuTtlCapH; r++) {
-        const int w = int(std::strlen(g.rows[r]));
-        for (int x = 0; x < w; x++) {
-            if (g.rows[r][x] == '#') {
-                core[size_t(1 + r) * size_t(c.w) + size_t(2 + x)] = true;
-            }
-        }
-    }
-    auto near = [&](int y, int x, int d) {
-        for (int dy = -d; dy <= d; dy++) {
-            for (int dx = -d; dx <= d; dx++) {
-                const int ny = y + dy;
-                const int nx = x + dx;
-                if ((ny >= 0) && (ny < kMenuTtlCellH) && (nx >= 0) && (nx < c.w) &&
-                    core[size_t(ny) * size_t(c.w) + size_t(nx)]) {
-                    return true;
-                }
-            }
-        }
-        return false;
-    };
-    for (int y = 0; y < kMenuTtlCellH; y++) {
-        for (int x = 0; x < c.w; x++) {
-            Px& p = c.px[size_t(y) * size_t(c.w) + size_t(x)];
-            if (core[size_t(y) * size_t(c.w) + size_t(x)]) {
-                p = Px{ 255, 255 };
-            }
-            else if (near(y, x, 1)) {
-                p = Px{ 0, 220 };
-            }
-            else if (near(y, x, 2)) {
-                p = Px{ 0, 60 };
-            }
         }
     }
     return c;
@@ -1121,95 +1084,63 @@ float nearest_core(const std::vector<bool>& core, int w, int h, int x, int y) {
     return std::sqrt(best);
 }
 
-// The face's intensities sit on sixteen levels (255 * n / 16: 16, 32, 48 ...
-// 239, 255); a drawn pixel takes the nearest so it cannot be told from a
-// harvested one.
-uint8_t title_face_level(float i) {
-    const float n = std::floor(i * 16.0f / 255.0f + 0.5f);
-    return uint8_t(std::min(255.0f, std::floor(255.0f * n / 16.0f + 0.5f)));
+// A letter's own pixel is as opaque as the face makes one of its brightness,
+// read off the C as harvested: opaque from ten sixteenths of white, 253 at
+// nine, 250 at eight, then 232, 211 and 206, and the ring's 202 below that.
+uint8_t title_face_alpha(uint8_t i) {
+    if (i >= 159) {
+        return 255;
+    }
+    if (i >= 143) {
+        return 253;
+    }
+    if (i >= 128) {
+        return 250;
+    }
+    if (i >= 112) {
+        return 232;
+    }
+    if (i >= 96) {
+        return 211;
+    }
+    if (i >= 80) {
+        return 206;
+    }
+    return (i > 0) ? 202 : 0;
 }
 
-// The S, built from the face's own C rather than drawn: the C's top arc and
-// upper stem as they are (cell rows 0-3), its bottom arc mirrored left to
-// right (rows 10 on), and between them a spine of the C's stroke weight: a
-// stroke 2.3 pixels wide from the upper-left stem to the lower-right one,
-// its coverage sampled eight by eight per pixel so its steps are
-// anti-aliased the way every diagonal of the face is (a hard pixel
-// staircase read sharper than its neighbours on the title screen). Around
-// the whole letter the face's shadow falloff, where the C's own shadow does
-// not already reach. The geometry is the C's as cut_title_cell cuts it: a
-// 9-wide cell, the seven-column core at columns 1..7 (cs 1, ce 8); a C of
-// any other shape falls back to the drawn S in kTitleSynth, and
-// harvest_title logs which one the title got.
-bool synth_title_s_from_c(const Cell& c, Cell& out) {
-    if ((c.w != 9) || (c.cs != 1) || (c.ce != 8) || (c.px.size() != size_t(c.w) * size_t(kMenuTtlCellH))) {
-        return false;
-    }
-    out = c;
-    for (int r = 9; r < kMenuTtlCellH; r++) {
-        for (int x = 0; x < c.w; x++) {
-            out.px[size_t(r) * size_t(c.w) + size_t(x)] = c.px[size_t(r) * size_t(c.w) + size_t(c.w - 1 - x)];
-        }
-    }
-    // The spine, in cell coordinates (columns 0..8, rows 0..15).
-    const float x0 = 2.3f, y0 = 4.2f, x1 = 7.6f, y1 = 8.9f, width = 2.3f;
-    const float dxl = x1 - x0, dyl = y1 - y0;
-    const float len = std::sqrt(dxl * dxl + dyl * dyl);
-    const float ux = dxl / len, uy = dyl / len;
-    std::vector<float> cov(out.px.size(), 0.0f);
-    for (int y = 4; y < 10; y++) {
-        for (int x = 0; x < c.w; x++) {
-            int hits = 0;
-            for (int sy = 0; sy < 8; sy++) {
-                for (int sx = 0; sx < 8; sx++) {
-                    const float px = float(x) + (float(sx) + 0.5f) / 8.0f;
-                    const float py = float(y) + (float(sy) + 0.5f) / 8.0f;
-                    float t = (px - x0) * ux + (py - y0) * uy;
-                    t = std::min(std::max(t, 0.0f), len);
-                    const float ex = px - (x0 + t * ux);
-                    const float ey = py - (y0 + t * uy);
-                    if (std::sqrt(ex * ex + ey * ey) <= width * 0.5f) {
-                        hits++;
-                    }
-                }
-            }
-            cov[size_t(y) * size_t(c.w) + size_t(x)] = float(hits) / 64.0f;
-        }
-    }
-    std::vector<bool> core(out.px.size(), false);
-    for (int y = 0; y < kMenuTtlCellH; y++) {
-        for (int x = 0; x < c.w; x++) {
-            const size_t at = size_t(y) * size_t(c.w) + size_t(x);
-            if ((y >= 4) && (y < 10)) {
-                core[at] = cov[at] > 0.5f;
-            }
-            else {
-                core[at] = (out.px[at].a >= Core) && (out.px[at].i >= Core);
+// A title letter of the port's own: its levels at cell rows 1..kMenuTtlCapH,
+// the core where they reach half white as in a harvested cell, and around
+// it the face's shadow falloff.
+Cell drawn_title(const DrawnGlyph& g) {
+    Cell c;
+    c.w = int(std::strlen(g.rows[0]));
+    c.cs = c.w;
+    c.ce = 0;
+    c.px.assign(size_t(c.w) * size_t(kMenuTtlCellH), Px{});
+    std::vector<bool> core(c.px.size(), false);
+    for (int r = 0; r < kMenuTtlCapH; r++) {
+        for (int x = 0; (x < c.w) && (g.rows[r][x] != 0); x++) {
+            const char d = g.rows[r][x];
+            const int n = (d == 'G') ? 16 : ((d >= 'A') ? (d - 'A' + 10) : (d - '0'));
+            const size_t at = size_t(1 + r) * size_t(c.w) + size_t(x);
+            c.px[at].i = uint8_t(std::min(255.0f, std::floor(255.0f * float(n) / 16.0f + 0.5f)));
+            if (c.px[at].i >= Core) {
+                core[at] = true;
+                c.cs = std::min(c.cs, x);
+                c.ce = std::max(c.ce, x + 1);
             }
         }
     }
     for (int y = 0; y < kMenuTtlCellH; y++) {
         for (int x = 0; x < c.w; x++) {
             const size_t at = size_t(y) * size_t(c.w) + size_t(x);
-            Px& p = out.px[at];
-            if ((y >= 4) && (y < 10)) {
-                const float cv = cov[at];
-                if (cv > 0.5f) {
-                    p.i = title_face_level(std::min(255.0f, 128.0f + (cv - 0.5f) * 2.0f * 127.0f));
-                    p.a = 255;
-                }
-                else {
-                    const uint8_t shadow = title_shadow_alpha(nearest_core(core, c.w, kMenuTtlCellH, x, y));
-                    p.i = title_face_level(std::min(255.0f, cv * 2.0f * 200.0f));
-                    p.a = std::max(shadow, uint8_t((cv > 0.3f) ? 255 : 0));
-                }
-            }
-            else if (!core[at]) {
-                p.a = std::max(p.a, title_shadow_alpha(nearest_core(core, c.w, kMenuTtlCellH, x, y)));
-            }
+            Px& p = c.px[at];
+            p.a = core[at] ? title_face_alpha(p.i)
+                           : std::max(title_face_alpha(p.i), title_shadow_alpha(nearest_core(core, c.w, kMenuTtlCellH, x, y)));
         }
     }
-    return true;
+    return c;
 }
 
 bool harvest_title(const Segment& seg, Table& ttl, std::string& why) {
@@ -1265,20 +1196,11 @@ bool harvest_title(const Segment& seg, Table& ttl, std::string& why) {
             ttl[ch] = cut_title_cell(img, runs[i].first, runs[i].second, top);
         }
     }
-    if ((ttl.count('S') == 0) && (ttl.count('C') != 0)) {
-        const Cell& c = ttl['C'];
-        Cell s;
-        if (synth_title_s_from_c(c, s)) {
-            ttl['S'] = s;
-            printf("[SNAP-MENU] title S built from the C (cell %d wide, core %d..%d)\n", c.w, c.cs, c.ce);
-        }
-        else {
-            printf("[SNAP-MENU] title S drawn: the C cell is %d wide, core %d..%d, not the 9/1/8 the S is built on\n", c.w, c.cs, c.ce);
-        }
-    }
-    for (const SynthGlyph& s : kTitleSynth) {
-        if (ttl.count(s.ch) == 0) {
-            ttl[s.ch] = synth_title(s);
+    for (const DrawnGlyph& g : kTitleDrawn) {
+        if (ttl.count(g.ch) == 0) {
+            const Cell c = drawn_title(g);
+            ttl[g.ch] = c;
+            printf("[SNAP-MENU] title %c drawn by the port (cell %d wide, core %d..%d)\n", g.ch, c.w, c.cs, c.ce);
         }
     }
     return true;

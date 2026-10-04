@@ -75,7 +75,7 @@ RIM = (58, 45, 96)              # the thin edge
 CANISTER_BOX = (1006, 560, 1084, 694)   # generous box around the canister in docs/logo.png
 # In the cut canister (78 px wide): the first column of the 64 on the label,
 # and the column by which the right side's label shading has faded to the
-# label's flat colour. Measured on this logo; see cut_canister.
+# label's flat color. Measured on this logo; see cut_canister.
 CANISTER_INK_FROM = 14
 CANISTER_FADE_TO = 28
 SS = 8                          # supersampling for the tile's edges
@@ -113,7 +113,7 @@ def tile(s):
 
 def on_tile(art, s, width, pad_y=0.04):
     """art on the s-by-s tile: scaled so its width is `width` times the
-    tile's (over 1 lets the burst's tips leave through the edges), centred,
+    tile's (over 1 lets the burst's tips leave through the edges), centered,
     clipped to the tile's face, and never taller than the face less pad_y."""
     art = art.crop(alpha_bbox(art))
     S = s * SS
@@ -175,7 +175,7 @@ def cut_canister(logo):
     # The outline's right side is the clean one; the left takes its shape
     # (the silhouette alone), which drops what the filmstrip's end left on
     # the body's left. A pixel the mirror makes opaque was ground on the
-    # left, with the burst's yellow under it, so it takes the mirror's colour
+    # left, with the burst's yellow under it, so it takes the mirror's color
     # as well. Everything else keeps its paint: the 64, the Poke Ball, the
     # cap's highlight.
     px = np.asarray(im).copy()
@@ -189,7 +189,7 @@ def cut_canister(logo):
     # them in the logo: a few olive pixels at the cap's tip, and a faint
     # olive fringe down the body's sides. Above the shoulders nothing of the
     # canister is yellow, and below them the outline's outer two pixels are
-    # never the label, so a yellow-tinted pixel there takes the colour of
+    # never the label, so a yellow-tinted pixel there takes the color of
     # the nearest plain pixel inward in its row, its own alpha kept.
     opaque = px[..., 3] > 8
     widths = opaque.sum(axis=1)
@@ -213,13 +213,13 @@ def cut_canister(logo):
             nx += step
         if 0 <= nx < w:
             px[y, x, :3] = px[y, nx, :3]
-    # The left edge's colours too: in the logo the filmstrip's dark end
+    # The left edge's colors too: in the logo the filmstrip's dark end
     # covers the canister's left outline and the label's shaded edge, so
     # the left had a flat dark bar where the right has a black outline and
-    # a label that shades in from it. The right side's colours come across
+    # a label that shades in from it. The right side's colors come across
     # outright up to the 64, then fade into the drawn pixels over the next
     # columns, so there is no seam; ink (the 64's strokes, the Poke Ball's
-    # outline and red) keeps its own colour throughout.
+    # outline and red) keeps its own color throughout.
     h = px.shape[0]
     lum = px[..., :3].astype(int).sum(axis=2) // 3
     ink = (px[..., 3] > 200) & ((lum < 120) | ((px[..., 0] > 150) & (px[..., 1] < 110)))

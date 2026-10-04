@@ -40,7 +40,7 @@ on:
         default: ''
 
 # Called by release.yml, github.workflow is the caller's name, so a release
-# never cancels a push's build or the other way round.
+# never cancels a push's build or the other way around.
 concurrency:
   group: build-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true

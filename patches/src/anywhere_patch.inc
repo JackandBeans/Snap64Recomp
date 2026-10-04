@@ -10,7 +10,7 @@
  * omCreateProcess called from the frame's update, the process given the
  * game's address of the function below). The process freezes every other
  * object -- its update skipped by the flag the object manager already
- * honours, its processes paused the way the level's pause pauses the
+ * honors, its processes paused the way the level's pause pauses the
  * player's -- draws the black tile over the picture at 245 of 255, and
  * runs the list in the Option screen's dress. When it
  * closes, the objects wake exactly as they were, the press that closed it
@@ -57,7 +57,7 @@ extern u16 gContInputCurrentButtons;
 #include "sys/oh.h"
 #include "sys/render.h"
 /* The game's fade (src/app_render/52DE0.c): a full-screen veil in the
- * colour set, its alpha stepped by a process of its own, and a flag
+ * color set, its alpha stepped by a process of its own, and a flag
  * while a step is under way. Between a fade out and the fade in that
  * follows, the flag is down and the veil is up. */
 extern s32 D_800AF050;   /* a fade is stepping */

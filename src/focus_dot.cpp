@@ -39,10 +39,10 @@ std::atomic<bool> g_focus_dot_visible = { false };
 
 namespace {
 
-// GPACK_RGBA5551(255, 0, 0, 255): the colour pokemon_detect.c fills with.
+// GPACK_RGBA5551(255, 0, 0, 255): the color pokemon_detect.c fills with.
 constexpr uint16_t DotColor = 0xF801;
 
-// The dot spans (157..161, 117..121) minus its corners, so this is its centre
+// The dot spans (157..161, 117..121) minus its corners, so this is its center
 // and is always written whenever the dot is drawn at all.
 constexpr uint32_t ScreenWidth = 320;
 constexpr uint32_t DotCenterX = 157 + 2;
@@ -69,12 +69,12 @@ extern "C" void PokemonDetector_PostProcessImage(uint8_t* rdram, recomp_context*
     }
 
     // Clear the pixel that is about to be sampled, so that finding the dot
-    // colour there afterwards can only mean the game wrote it on this call.
+    // color there afterward can only mean the game wrote it on this call.
     // Reading it cold is not enough: render to RAM copies each rendered frame
     // back over the framebuffer in RDRAM, and that frame contains the dot RT64
     // drew last time, so the test would keep seeing its own output.
     //
-    // The original value goes back afterwards. This used to claim the write
+    // The original value goes back afterward. This used to claim the write
     // was free because RDRAM is never presented, and that was wrong in the
     // configuration the game ships in: with render to RAM on, the renderer
     // hashes the framebuffer every frame to notice when the game has drawn
@@ -92,7 +92,7 @@ extern "C" void PokemonDetector_PostProcessImage(uint8_t* rdram, recomp_context*
     // a thread being destroyed while it waits into an exception -- so a scene
     // torn down at the wrong moment unwound straight past the restore and left
     // the sentinel in the framebuffer permanently. The framebuffer hash then
-    // differed on every frame afterwards, which is the whole-buffer upload and
+    // differed on every frame afterward, which is the whole-buffer upload and
     // GPU fence this design exists to avoid.
     struct SentinelGuard {
         uint8_t* rdram;

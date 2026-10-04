@@ -5,11 +5,11 @@
  *        data rather than argued from the shader.
  *
  * score.c scores a photo by rendering the scene twice per Pokemon and
- * copying the depth image into colour-format buffers with a G_CYC_COPY rect
+ * copying the depth image into color-format buffers with a G_CYC_COPY rect
  * (score_GfxCopyZBuffer). The third clause of its per-pixel test compares
  * that snapshot against the live depth buffer for equality. On hardware a
  * copy-mode rect writes the fetched texel's sixteen bits verbatim; the port's
- * renderer used to synthesise the low bit from coverage, which made every
+ * renderer used to synthesize the low bit from coverage, which made every
  * snapshot pixel odd against an always-even depth buffer, and the clause
  * could never fail.
  *

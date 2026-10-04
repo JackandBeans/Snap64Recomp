@@ -562,7 +562,7 @@ void open_folder(const std::string& utf8) {
         return;
     }
     // ShellExecute may hand the open to a shell extension, which wants COM
-    // initialised on the calling thread.
+    // initialized on the calling thread.
     const HRESULT com = CoInitializeEx(nullptr, COINIT_APARTMENTTHREADED | COINIT_DISABLE_OLE1DDE);
     ShellExecuteW(nullptr, L"open", p.wstring().c_str(), nullptr, nullptr, SW_SHOWNORMAL);
     if (SUCCEEDED(com)) {
@@ -580,7 +580,7 @@ void open_folder(const std::string& utf8) {
 // ---------------------------------------------------------------------------
 // The kiosk's video printer sat between the console and the monitor and, while
 // it worked, showed its own picture: after each capture, the sixteen-picture
-// grid it had collected so far (the empty places light grey, thin white lines
+// grid it had collected so far (the empty places light gray, thin white lines
 // between them), and after the last, that grid under "PRINTING... PLEASE
 // WAIT" with three marks over the upper right that became stars one by one,
 // each popping up and blinking a few times before it held, as each of the
@@ -616,7 +616,7 @@ constexpr int PrintFinalHoldMs = 2500;
 // in two photographs of the real screen (2026-09-03; the grid's cells are
 // 160 by 120, the one known size in them): a condensed grotesque, capitals
 // thirty-six pixels tall and about sixteen wide, stems four wide and bars
-// three tall, centred on a twenty-three pixel pitch, white with a dark
+// three tall, centered on a twenty-three pixel pitch, white with a dark
 // edge. The printer's own character set cannot be read off a curved
 // screen, so the letters are bitmaps set from a freely licensed grotesque
 // of the same construction (snap_station_osd_font.h, tools/osd_font_gen.py).
@@ -627,7 +627,7 @@ constexpr int OsdFontRing = 2;
 
 void osd_put(std::vector<uint8_t>& img, int x, int y, uint8_t r, uint8_t g, uint8_t b);
 
-// A five-pointed star, filled, centred on (cx, cy): outer radius r, inner
+// A five-pointed star, filled, centered on (cx, cy): outer radius r, inner
 // radius 0.42 r, a point straight up. Even-odd against the ten edges.
 bool osd_in_star(float px, float py, float cx, float cy, float r) {
     float vx[10], vy[10];
@@ -740,7 +740,7 @@ void osd_bar(std::vector<uint8_t>& img, int cx, int cy, int w, int h, int ring =
 // come, a star for one done; a blinking star is a star or nothing.
 enum class Mark { Dash, Star, Blank };
 void osd_marks(std::vector<uint8_t>& img, const Mark marks[3]) {
-    // Over the lower part of the top row's third and fourth photos, centred
+    // Over the lower part of the top row's third and fourth photos, centered
     // 445, 498 and 551 pixels in and 89 down (27 above the middle of the
     // hem between the first two rows), fifty-three apart: the stars
     // thirty-two across, the dashes twenty-four by six. Measured against
@@ -759,10 +759,10 @@ void osd_marks(std::vector<uint8_t>& img, const Mark marks[3]) {
 }
 
 // The grid the printer had collected: cells in the order the game showed
-// them, each a box-filtered copy of its captured frame; light grey where
+// them, each a box-filtered copy of its captured frame; light gray where
 // nothing has been captured yet, white lines between.
 std::vector<uint8_t> osd_grid(const std::vector<Frame>& frames) {
-    // Empty places a near-white grey, as the footage's first frame shows
+    // Empty places a near-white gray, as the footage's first frame shows
     // them before the second capture arrives.
     std::vector<uint8_t> img(size_t(OsdW) * OsdH * 4u, 255);
     for (int y = 0; y < OsdH; y++) {
@@ -809,7 +809,7 @@ std::vector<uint8_t> osd_printing(const std::vector<uint8_t>& grid, const Mark m
     // quarters of the way down; the second line's top is seventy-four
     // lower; both start fourteen pixels into the second column. The three
     // dots after PRINTING are not on the letter pitch: three-pixel squares
-    // with a two-pixel edge, twenty-five apart, centred on the hem.
+    // with a two-pixel edge, twenty-five apart, centered on the hem.
     osd_text(img, "PRINTING", 174, 209);
     for (int i = 0; i < 3; i++) {
         osd_bar(img, 387 + i * 25, 235, 2, 2, 2);
@@ -1258,7 +1258,7 @@ void station_init() {
         say("the run that relaunched was fullscreen; this one returns to it once its window is up");
     }
     if (mode == "print" && age >= 0 && age < 600) {
-        // The job is honoured whatever the setting says: the run that wrote
+        // The job is honored whatever the setting says: the run that wrote
         // it had the station present, by the setting or by the title screen's
         // item, and the age check above is what guards against a stale one.
         s.jobPending.store(true);
@@ -1342,7 +1342,7 @@ bool station_ram_read(uint8_t* rdram, int32_t channel, uint32_t address, gpr buf
         for (uint32_t i = 0; i < BlockSize; i++) {
             MEM_B(i, buffer) = int8_t(fill);
         }
-        say("probe: answered the detect block with 0x%02X%s", fill, (fill == PrinterId) ? " (recognised as the printer)" : "");
+        say("probe: answered the detect block with 0x%02X%s", fill, (fill == PrinterId) ? " (recognized as the printer)" : "");
         (void)PakCheckByte;
         *result = 0;
         return true;

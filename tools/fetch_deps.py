@@ -16,7 +16,7 @@ Microsoft's v1.7.2308 `dxil.dll` in place of the one dxc-bin carries
     python tools/fetch_deps.py --list     # print every submodule's commit and exit
     python tools/fetch_deps.py --full     # whole histories instead of one commit each
 
-Afterwards each submodule is detached at its recorded commit, and each one
+Afterward each submodule is detached at its recorded commit, and each one
 on a fork of the project's also has the fork's `snap64` branch ref, so
 `git switch snap64` in it works (VENDORING.md, "Changing RT64 or the
 runtime").

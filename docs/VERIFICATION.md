@@ -37,7 +37,7 @@ here should be assumed untried.
   published archives are GitHub's: `release.yml` builds all three and signs
   each with GitHub's build provenance, and the suite runs on those files
   here before they are published (`BUILDING.md`, "To cut a release").
-* Version `1.1.1`, typed once in `CMakeLists.txt` and shown in the title
+* Version `1.1.2`, typed once in `CMakeLists.txt` and shown in the title
   bar, the log banner, the credits line, the executable's file properties and
   the ZIP's name. `CHANGELOG.md` says what each release changed.
 * Licensed under the GPLv3 (`LICENSE`); `NOTICE.md` lists every third-party
@@ -80,9 +80,10 @@ here should be assumed untried.
   the screen: the host's line for each BGM player gives its own clock at
   the hold and at the release, and the check passes only when they are
   equal.
-  On the 1.1.1 executable built here (SHA-256 beginning `a91a567f`), run
+  On the 1.1.2 executable built here (SHA-256 beginning `0fc1b702`), run
   without diagnostics in the environment, the suite passed 29 of 29 checks
-  in 1149 seconds, and the station's 5 of 5 in 487; the 1.1.0 executable had
+  in 1151 seconds, and the station's 5 of 5 in 488; the 1.1.1 executable had
+  passed 29 of 29 in 1149 and the station's 5 in 487, the 1.1.0 executable had
   passed 29 of 29 in 1149 and the station's 5 in 487, the 1.0.9 executable had passed
   28 of 28 in 1154 and the station's 5 in 488, the 1.0.8 executable had passed
   the 26 checks of its day in 1103 and the station's 5 in 488, 1.0.7 the earlier 25 of 25 in 825

@@ -3,11 +3,11 @@
  * @brief See photo_export.h.
  *
  * Where the picture is. The window library (decomp src/window/847B60.c,
- * overlay section 108 at 0x80369F80) allocates one colour buffer and one
+ * overlay section 108 at 0x80369F80) allocates one color buffer and one
  * depth buffer of 0x20D00 bytes each at start-up, and its data words at
  * 0x803A6660/0x803A6664 -- the width and height every render passes to
  * renInitCameraEx -- are 0x140 and 0xD2: the buffer is 320x210 RGBA16.
- * (0x20D00 also factorises as 280x240; the game's own words settle it.) A
+ * (0x20D00 also factorizes as 280x240; the game's own words settle it.) A
  * photo is rendered into it through func_80374608_847DB8, which clamps the
  * requested size to 16..320 by 16..210, sets the camera's viewport to that
  * rectangle at the top-left corner, and draws once through gtlDrawOne, which
@@ -106,7 +106,7 @@ constexpr int32_t CourseCount = int32_t(sizeof(CourseTokens) / sizeof(CourseToke
 
 struct Target {
     uint32_t serial = 0;        // 0: nothing recorded yet
-    uint32_t buffer = 0;        // KSEG0 address of the RGBA16 colour image
+    uint32_t buffer = 0;        // KSEG0 address of the RGBA16 color image
     int32_t  width = 0;         // the buffer's dimensions
     int32_t  height = 0;
     int32_t  x0 = 0;            // the rendered region, [x0,x1) by [y0,y1)

@@ -1,5 +1,241 @@
 # Changelog
 
+## 1.1.2 -- 2026-10-04
+
+* The capital S of "Snap Station" on the title screen is drawn the way the
+  face draws its round letters; it read as a 5 (seen by hand). No title word
+  of the game has a capital S, so the port makes one. It was the C's top arc,
+  a straight bar, and one row of the C's bottom arc: the bar 2.3 pixels wide
+  where the face's strokes are about one and a half, running from the upper
+  left to the lower right in place of both bowls, so the letter had no lower
+  bowl and stood eight columns wide, one more than the C. The new one is drawn
+  like the game's own lowercase s at capital height: two bowls and a curved
+  spine a pixel and a half wide, its edges on the face's sixteen levels, the
+  top end hooking down and the bottom end up as the C's do, six columns wide
+  where the C is seven and the O eight. It was drawn against the game's own
+  word sprites (`tools/extract_menu_sprite.py`) and composed with the port's
+  own rules before it went in. Seen by hand on the title; the replays' save
+  has no Snap Station entry.
+* In Oak's check the pictures slide to a stop without steps when the frame
+  rate is raised; they came in smoothly and ended a pixel at a time (seen by
+  hand). Both slides, the picture being judged from the right and the report's
+  own from the left, are an ease kept in a float, and the sprite takes its
+  whole pixels: near the end the picture moves a pixel, waits a step or three,
+  and moves another. The two functions are now the port's copies of the game's
+  (`patches/src/check_slide_patch.c`) with one addition: what the float holds
+  past the whole pixel is left for the port in quarter pixels, with the sprite
+  it belongs to. The port's sprite hook draws that picture, and everything
+  attached to it, that much further along, through the rectangle alignment
+  that draws a sprite whole. The sprite's own position, and everything the
+  game does with it, is unchanged; at the game's own rate nothing is drawn
+  differently. On the evaluation replay the judged picture is drawn at quarter
+  pixels through its slow end and the 45 photo scores are unchanged; the
+  comparison with an older picture was played by hand.
+* In widescreen the film counter sits against the screen's right edge, and the
+  R and Z icons slide out to that edge and back; the counter's strip stopped
+  in mid-air and the icons vanished short of the side (seen by hand). The
+  counter's picture is 63 pixels wide and ends at the game's own right edge;
+  the side icons rest at 268, slide 48 pixels in eight logic steps and are
+  hidden there with four pixels showing. In a wide picture that edge is in the
+  middle of the view, 53 pixels from the side at 16:9. The counter is now
+  drawn the width of the margin further right. The viewfinder closes the wide
+  picture to the game's own frame behind black bars, and the counter comes in
+  with the bars, so it stays as far from the scene's edge as the cartridge has
+  it. The icons' way out is stretched by the margin: they cover the longer
+  distance in the same eight steps and are hidden with the same four pixels
+  showing at the real edge; at rest they are where the game put them, and the
+  stretch is taken from where the game keeps the icon, so the dash engine's
+  shake is not stretched. Both are done where the port draws a sprite whole
+  (`src/rect_tags.cpp`), while a course's code is loaded and Widescreen is on.
+  The code does not ask what the frame rate is. It was played by hand with the
+  rate raised, in fullscreen widescreen; at the game's own rate the Beach
+  replay in a wide window was captured, and its pictures show the counter
+  against the real edge, coming in with the bars, and the Z icon at 267, 293
+  and 318 by its picture and then out over the bars to the side. The replays'
+  save has no R icon, so no replay shows the icons' full set; the Beach replay
+  in a wide window shows the counter and the Z icon, and measured there the
+  counter rests at 311, comes in to 257 with the bars and the icon goes 268,
+  293, 319, 344, 370. One thing that run found: the renderer snaps a
+  rectangle's right or bottom edge to the scissor when it lands within a pixel
+  of it, its cure for games whose rectangles stop a pixel short. A sprite the
+  port has moved can land there by chance: the Z icon came out one pixel
+  narrow on one frame of its slide, and by the same rule the counter's first
+  strip would lose a column on a 3:2 window, where the two strips meet at that
+  line (not looked at before the change). A rectangle moved by an alignment
+  offset is no longer snapped (`RDP::drawRect`); measured after, the icon is
+  28 wide on every frame at 16:9, and at 3:2 the strips are 44 and 19 wide and
+  touch.
+* Scrolling textures move at the display's rate; the water of the River and
+  the Valley shook as the view turned (seen by hand). The game gives a
+  scrolling material a new tile position on every frame it draws
+  (`renLoadTextures`), and the port's matrix groups told the renderer to skip
+  the tile, so the texture moved at the game's rate over a surface that moved
+  at the display's. The groups now ask for the tile to be interpolated
+  (`patches/src/render_patch.c`), and the renderer places a tile between
+  frames only while its scroll is steady, each direction by itself: the same
+  way as the frame before, and between 0.4 and 2.5 times as far. A steady
+  direction is placed from where the tile was; any other is drawn where the
+  game put it. The renderer as it came draws a tile from where the last
+  frame's scroll says it was, whatever this frame's is. Read from its code, a
+  picture stepping to another cell would slide there a frame late, a slow
+  scroll that moves on every other frame would slide back on the frames it
+  rests, and a scroll that changes speed would start each frame in the wrong
+  place; none of the three was looked for on the screen. Under `SNAP_STATS` a
+  line counts both (`scrolling textures: N placed between frames, M left where
+  the game put them`). On the evaluation replay's ride 5709 were placed and 6
+  left; on the title, in the lab and in Oak's check 1024 were placed and 1144
+  left, which by the rule are textures that did not move steadily. The 45
+  photo scores are unchanged. No replay reaches the River or the Valley. They
+  were played by hand with the rule's first form, which judged a tile's two
+  directions together and started from the last frame's scroll, and again once
+  the rule was made exact, and looked right both times.
+* The lab's monitor leaves at an even pace when the frame rate is raised; when
+  a course was picked it started slowly, sped up and slowed again (measured on
+  captured frames once the monitor was drawn whole: 16, 24, 16, 10 pixels a
+  frame on its way up; it was found while a report was being chased that
+  turned out to be of the 1.1.1 build, and was not itself reported). The
+  monitor closes a fifth of what is left on every logic step, and the lab runs
+  two logic steps for each frame it draws; from where it stands hidden that
+  makes 31, 20, 12, 8 on its way down, and the end of the way down, as
+  captured, agrees with it. The order to hide it comes after the monitor's own
+  step, so when the press lands on the first step of a frame, that frame holds
+  one step of the move and every later one two. By the game's code a console
+  does the same whenever the press lands there; that is read from the code,
+  not seen on one. At thirty frames a second nobody could tell, and drawn
+  between the frames it shows. With the frame rate raised, the first step of a
+  move now takes the second with it when it is the last step before a draw
+  (`src/lab_monitor.cpp`, a hook on the monitor's step): measured, the way up
+  goes 29, 20, 12, 8, 5, 4, 2, 1, 1, 1. For that move the monitor is one logic
+  step ahead of the cartridge, and it comes to rest in the same place; nothing
+  in the game reads its position. At the game's own rate nothing changes. The
+  evaluation replay's 45 photo scores are unchanged, and the build with it was
+  played by hand and looked right.
+* A 2D picture that leaves past an edge of the screen moves at the display's
+  rate, as one that comes in does; the course monitor rolled down smoothly
+  and rolled up in the game's own steps (seen by hand; 1.1.1 does the same,
+  frame for frame). A texture rectangle cannot say a negative coordinate, so
+  the sprite library clips in its own code: a strip that crosses the edge of
+  its clip box is cut to what shows, and one wholly past it is not drawn. A
+  picture on its way out therefore loses each strip a frame before the strip
+  is gone from view, and the renderer, which draws the current frame's
+  rectangles between two frames, had nothing to draw it with. The library is
+  now handed such a sprite moved inside the box, where it draws every strip
+  whole, and the renderer moves the rectangles back by the same distance
+  (`gEXSetRectAlign`): the screen's scissor cuts them where the library
+  would have, the picture is the same, and the strips keep their size and
+  their count in every frame, so they pair by their ordinals in both
+  directions. It applies at all four edges, in both copies of the library,
+  while a picture is being placed between frames, when the clip box is the
+  screen, and within 64 pixels of the edge; sideways only where the picture
+  reaches the window's sides, so not over the black beside a menu in a wide
+  window. In widescreen the word PAUSE now comes in through the right margin
+  and leaves through the left one, where it was cut at the 4:3 edges. A
+  first version counted a picture that fills the screen exactly as one that
+  overhangs it by a pixel: the photo check's backdrop was moved and lost its
+  first row and column (seen by hand in a test window; after the correction
+  no border pixel differs from 1.1.1 on three captures of that screen).
+  Checked after: 36 screens of the evaluation replay against 1.1.1, alike
+  but where a picture is in motion; the monitor whole and at a new height in
+  every captured image on its way up; the 45 photo scores unchanged; and
+  played by hand in fullscreen widescreen. The word PAUSE is slanted while
+  it slides: that is the game's own second drawing of it, whole in every
+  captured image.
+* In widescreen, the viewfinder's black frame opens and closes at an even
+  pace; it jumped the width of the side margin on the first frame of raising
+  the viewfinder and on the last frame of lowering it (seen by hand at 2560
+  by 1440, then measured on captured frames: of 640 pixels the left band ran
+  93, 92, 90, 89, 87, 86 and then 6). The game insets the scene three pixels
+  a frame for ten frames, on its 4:3 screen. While the inset is anything but
+  zero the renderer keeps the crop on the 4:3 picture, which is what makes
+  the raised viewfinder the box the console shows, and the side bands cover
+  the margins beside it; at zero the scene fills the wide picture. So the
+  whole margin, 53 pixels a side at 16:9, was covered and uncovered in one
+  frame. The crop now travels from the picture's true edge: its inset from
+  the 4:3 edge, as a share of the full thirty pixels, is the share of the
+  way it has come from the true edge to its 4:3 place, so the raised
+  viewfinder is the box it was and the lowered one fills the picture. The
+  renderer places the crop, from the scissor the game still sets in its own
+  numbers, and `fillBorderBlack`'s side bands end a pixel inside it,
+  measured from the wide left edge. A first attempt replaced the game's
+  `mainCameraSetScissor` and failed in three ways worth keeping: the
+  renderer drops a fill rectangle whose right is left of its left before it
+  applies any origin; an origin on the right is resolved against the color
+  image's width at the command, and the photo detector calls that function
+  while its 8-pixel buffer is the color image; and the renderer's own rule
+  for this crop compares the scissor with the viewport in 4:3 numbers.
+  Measured after, on captured frames: both bands run 2, 3, 6 ... 125 raising
+  and back again, alike on the two sides, and the last frame's step is 8
+  pixels of 640; at 4:3 the bands glide to zero as before, and the
+  evaluation replay's 45 photo scores are unchanged. Then played by hand in fullscreen widescreen.
+* 2D pictures that come in past the edge of the screen, and the black bands
+  around the viewfinder, move at the display's rate with the frame rate
+  raised; both stepped at the game's. Known issues had said such pictures
+  are "drawn without a name". Measured on the evaluation replay, every 2D
+  rectangle on every screen carries one, and the two faults were in the
+  pairing. A picture entering past the edge it is clipped at has its nearest
+  strip cut to a different size each frame and gains a strip as each one
+  enters, so its rectangle count changes; the translation vote that covers
+  that case pairs rectangles of one size, and a picture of two to four
+  strips left it a single strip to vote with. The sprite library clips in
+  its own code and loads each strip's whole texture whatever it cuts, so the
+  renderer now tells an element's strips apart by their textures, takes the
+  distance most of their edges moved, two edges at least, as the element's
+  slide, and draws every rectangle of the element from that far back, kept
+  inside what the element covered in the two frames. It does so on the way
+  in only: on the way out the strips that leave are gone from the frame's
+  list before they are off the screen, and what is left, moved back, showed
+  the edge flickering (the course monitor rolling up, compared frame for
+  frame with 1.1.1). The viewfinder's bands are each drawn twice a frame,
+  into the depth image and into the picture, 320 wide in the first and
+  aligned to the picture's true edges in the second; both drawings counted
+  from zero, so the band in the picture was paired with the one in the depth
+  image and refused for travelling 320 pixels, twice every frame. A name
+  drawn again in one display list now carries its count on. On the replay
+  the refused pairs went from about 64 a second to 5 in all, the word PAUSE
+  coming in from the right shows whole at a new place in every captured
+  image, a band's height differs between the images of one game frame, and
+  the ride's 45 photo scores are the same before and after. Then played by
+  hand with statistics on, in fullscreen widescreen, through a course, the
+  album and the gallery: no pair refused, nothing left unpaired but pictures
+  on their way out, and the bands seen to glide. One jump was seen at the
+  end of lowering the viewfinder, and measured from captures: in widescreen
+  the side bands cover the whole margin from the first frame of raising it
+  to the last frame of lowering it, a jump of the margin's width, where at
+  4:3 they glide to the end. That is the game's 4:3 placement of the bands;
+  the entry above this one is its fix. Under `SNAP_STATS`, `[SNAP-2D] named
+  content STEPPED` now names any named rectangle left unpaired, with the
+  reason, and `2D slid` counts the rectangles paired by a slide.
+* A graphics driver too old for the renderer is refused at start with a
+  message that names it, where the port opened a black window and closed
+  within three seconds with none
+  ([#21](https://github.com/JackandBeans/Snap64Recomp/issues/21), reported
+  by tiago-a, on a GeForce GTX 960M with NVIDIA's driver 391.25 of early
+  2018). The renderer's shaders are compiled for Shader Model 6.3, all 53 of
+  them, and the device selection asked an adapter for 6.0 only. A driver
+  between the two was accepted; every pipeline it was asked for then failed
+  to be created, with the result unread, and the first one used handed
+  Direct3D a null pointer. The reporter's log ends there: an access
+  violation inside Direct3D reading address 0x18C, called from `setPipeline`
+  under a framebuffer copy from RAM, on the presenting thread. The port now
+  asks each Direct3D 12 adapter for its highest Shader Model before the
+  renderer is set up, writes the adapters to `snap64.log` with their drivers
+  (`[SNAP-D3D12]`, with NVIDIA's own version number beside Windows's, and
+  the build of Windows), and refuses the one the renderer would take when it
+  offers less than 6.3: "The graphics driver is too old for Snap64 Recomp",
+  then the adapter, its driver, what it offers and what to install. After a
+  message that the renderer did not start, this one or the runtime's own,
+  the port ends as a start that was refused: the runtime threw next on the
+  game's thread, where nothing caught it, so the process ended by abort
+  (0xC0000409) and left the session's mark for the next start to ask about.
+  Seen with the test switch below: the box, exit code 1, no mark. That the
+  reported driver stops short of 6.3 is read from its date -- Shader Model
+  6.3 arrived with Windows 10 version 1809, half a year after that driver --
+  and has not been measured on that machine. The documents named Shader
+  Model 6.0 as the requirement, read from the same selection code; they say
+  6.3 and Windows 10 version 1809 now. `SNAP_SM_TEST=6.2` has the chosen
+  adapter answer that model, to see the refusal on a machine whose driver
+  gives no cause for it.
+
 ## 1.1.1 -- 2026-10-03
 
 * RT64, N64ModernRuntime, plume and N64Recomp are git submodules on Snap64

@@ -2,7 +2,7 @@
  * A GRAPHICS entry in the game's own Option screen.
  *
  * "Graphics" appears as a sixth item, directly under "Screen", drawn in the
- * game's UI font with the screen's own colours, sounds, pulse animation and
+ * game's UI font with the screen's own colors, sounds, pulse animation and
  * help line. Selecting it opens a page in the same dress as the Option list
  * itself: the same island background, the same header and rules, values in
  * the same "< Stereo >" style, the help box explaining the controls. Nothing
@@ -97,7 +97,7 @@ void func_800E1930_A08EC0(u8 arg0, u8 red, u8 green, u8 blue, f32 speed);
 void ohRemoveSprite(GObj* obj);
 
 /* The sprite field writes the pages used to make through the main menu
- * overlay's little helpers (A08E30 and A0E190: an attribute, a colour, a
+ * overlay's little helpers (A08E30 and A0E190: an attribute, a color, a
  * position, hidden or shown). The overlay is not loaded in a course, and
  * the pages open there too now (pause_menu_patch.c), so the writes are
  * made here; they are what the helpers did, line for line. */
@@ -257,7 +257,7 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *               3 the shipped table back), the device in 8..15 (0
  *               keyboard, 1 mouse, 2 pad), the input row in 0..7 (1..18)
  *   +0xA4  u32  BIND_ACK, the host's answer: the request in the low 24
- *               bits, the result above them (1 done, 2 cancelled, 3
+ *               bits, the result above them (1 done, 2 canceled, 3
  *               refused, a key with a job of its own, 4 refused, nothing
  *               else would press the input, 5 nothing pressed in time)
  *   +0xA8  u32  BIND_GEN, host-owned: bumped when the page's row values
@@ -281,6 +281,12 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *   +0xDE  u8   MODS_NEEDED, host-owned, one byte per bank: the rows a mod
  *               that is on keeps on (+0xC2 options, +0xDA new, +0xDC error)
  *   +0xC6  u8   DET_NO_BY, host-owned: the details page's mod names no author
+ *   +0xE0  u32  the slides kept finer than a pixel, two words through +0xE7
+ *               (check_slide_patch.c): a sprite object in the low 24 bits
+ *               and, above them, four more than the quarter pixels its
+ *               picture stands past the sprite's whole pixel; zero is none.
+ *               Written by that patch, cleared by the host at a scene's
+ *               set-up, read by the host's sprite hook (src/rect_tags.cpp)
  *   +0x100      SCRATCH_ARRAYS, the page's pointer and snapshot arrays
  *               (the BUTTON SETUP page's own twenty-row arrays sit at +0x300
  *               and +0x350 inside it)
@@ -497,8 +503,8 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_DET_THUMB        345  /* ..352: the mod's picture, eight bands of 256x32 RGBA16 */
 #define STR_LEGEND_OK_BACK   353  /* A OK  B Back, on the rows under the mods */
 #define STR_MODS_VAL_ON_FIXED 354 /* On without chevrons: a mod that a mod that is on needs */
-#define STR_MODS_VAL_NEW_GLOW 356 /* New in the title's rainbow, RGBA16, recoloured live by the host */
-#define STR_MODS_EMPTY_SUB   357  /* the empty page's second line, centred in 256 texels */
+#define STR_MODS_VAL_NEW_GLOW 356 /* New in the title's rainbow, RGBA16, recolored live by the host */
+#define STR_MODS_EMPTY_SUB   357  /* the empty page's second line, centered in 256 texels */
 #define DET_THUMB_BANDS      8
 #define DET_RIGHT            270    /* where a page's version and rules end, 10 in from the panel as the text starts */
 #define RULE_GRAY            0xB0   /* a page's rules: clear over the island, one step under the header's (217) */
@@ -1182,7 +1188,7 @@ typedef struct SnapStripSlot {
  * turns every access into the same absolute lui/addiu pair it uses for game
  * data, so nothing needs relocating at run time; and the rdram allocation is
  * zero-filled at start-up (VirtualAlloc / mmap MAP_ANON), so the table
- * starts empty without an initialiser. patches/check_bss.sh refuses a build
+ * starts empty without an initializer. patches/check_bss.sh refuses a build
  * whose .bss reaches the menu mailbox at 0x80C00000; the ASSERT in patch.ld
  * says the same thing but only prints it, because ld runs with
  * --noinhibit-exec and exits 0 on a failed assert under that flag. */
@@ -1877,11 +1883,11 @@ static void snap_graphics_page(void) {
     }
 
     /* The scroll arrows sit at the list's right edge, doubled in their
-     * own texels and bobbing a couple of pixels in the main loop: colour
+     * own texels and bobbing a couple of pixels in the main loop: color
      * alone at the screen's edge went unnoticed, and motion is the one
      * thing the eye cannot ignore. RGBA like the credits line, wearing
      * the same live rainbow inside the same baked ring -- the port's
-     * marks speak one language. White prim so the texel colours pass
+     * marks speak one language. White prim so the texel colors pass
      * through. snap_page_layout owns their visibility. */
     PAGE_ARROW_UP = (u32) snap_make_strip_fmt(STR_SCROLL_UP, ARROW_X, ARROW_UP_Y, G_IM_FMT_RGBA);
     PAGE_ARROW_DN = (u32) snap_make_strip_fmt(STR_SCROLL_DN, ARROW_X, ARROW_DN_Y, G_IM_FMT_RGBA);
@@ -2098,7 +2104,7 @@ static void snap_graphics_page(void) {
         /* The arrows breathe on an eased four-phase sway (0-1-2-1, not a
          * hard toggle), each leaning the way it points -- and they hop
          * two pixels further when the list actually scrolls past them,
-         * the acknowledgement every era menu owes the hand on the stick.
+         * the acknowledgment every era menu owes the hand on the stick.
          * No table: patch .data never loads. */
         bobTick++;
         if (nudgeUp > 0) {
@@ -2643,7 +2649,7 @@ static void snap_sound_page(void) {
 
     /* The header promises A OK and B Cancel, and here B keeps the
      * promise: the values as they stood at entry, restored and re-applied
-     * on the way out. The stock Sound row cancelled the same way. */
+     * on the way out. The stock Sound row canceled the same way. */
     for (i = 0; i < 6; i++) {
         entryFields[i] = SND_FIELD(i);
     }
@@ -3736,7 +3742,7 @@ static s32 snap_controls_page(void) {
 #define BIND_HINT(i)  (*(volatile u32*) (SCRATCH_ARRAYS + 0x2A0 + (i) * 4))   /* SObj*, 4: the header's hints */
 /* The host's answers (BIND_ACK bits 24..31). */
 #define BIND_DONE      1
-#define BIND_CANCELLED 2
+#define BIND_CANCELED 2
 #define BIND_JOB       3
 #define BIND_KEEP      4
 #define BIND_TIMEOUT   5
@@ -3819,11 +3825,11 @@ static void snap_bind_layout(s32 top) {
 }
 
 /* One request to the host, waited for; the value blinks while the host
- * listens for a press. The host's answer, or BIND_CANCELLED after sixteen
+ * listens for a press. The host's answer, or BIND_CANCELED after sixteen
  * seconds of silence (the host itself stops listening after six). */
 static s32 snap_bind_request(u32 req, GObj* value) {
     s32 frames;
-    s32 result = BIND_CANCELLED;
+    s32 result = BIND_CANCELED;
     u32 ack;
 
     BIND_ACK = 0;
@@ -4380,8 +4386,8 @@ static void snap_mods_tint_values(u32 gen) {
     for (i = 0; i < MODS_VISIBLE; i++) {
         GObj* value = (GObj*) MODS_VALUE(i);
         const s32 glow = ((MODS_NEW(gen & 1) >> i) & 1) && ((MODS_UNSEEN(gen & 1) >> i) & 1);
-        /* The rainbow New is RGBA16 in its own colours: drawn as such, and
-         * untinted; every other value is IA16 text in a colour. */
+        /* The rainbow New is RGBA16 in its own colors: drawn as such, and
+         * untinted; every other value is IA16 text in a color. */
         if ((value != NULL) && (value->data.sobj != NULL)) {
             value->data.sobj->sprite.bmfmt = glow ? G_IM_FMT_RGBA : G_IM_FMT_IA;
         }
@@ -4575,8 +4581,8 @@ static void snap_arrows_bob(u8* bobTick, u8* nudgeUp, u8* nudgeDn) {
 /* The panel (57..164) spaced evenly: 5 rows, the facts beside the picture
  * (40 rows from DET_BLOCK_Y), 5 rows, the rule, 6 rows to the text's ink,
  * four lines, and the rest under them. The facts -- the name, By and the
- * status -- stand DET_FACT_PITCH apart, their ink centred on the picture's
- * height; with no author the two lines are centred instead. */
+ * status -- stand DET_FACT_PITCH apart, their ink centered on the picture's
+ * height; with no author the two lines are centered instead. */
 #define DET_BLOCK_Y    62
 #define DET_FACT_PITCH 13
 #define DET_RULE_Y     107
@@ -4627,7 +4633,7 @@ static s32 snap_opt_help_str(s32 slot, u32 gen) {
     return STR_OPT_DYN + ((s32) (gen & 1)) * OPT_BANK + 2 * OPT_VISIBLE + slot;
 }
 
-/* A slot's colours: a row another option disables is grey, label and value
+/* A slot's colors: a row another option disables is gray, label and value
  * (its value has no arrows either: the host drew it without); any other
  * row white with its value in orange, as on the Graphics page. */
 static void snap_opt_tint_slot(s32 slot, u32 gen) {
@@ -4982,7 +4988,7 @@ static void snap_mod_options_page(s32 modRow) {
  * window the actions stand at its last three places, with room between the
  * groups; a longer list scrolls as one, and the rule still stands over the
  * first action. With no mod at all the room above the actions says so: "No
- * mods yet." in the rows' face and a line under it, centred. */
+ * mods yet." in the rows' face and a line under it, centered. */
 static GObj* snap_mods_head;
 static GObj* snap_mods_sub;
 static GObj* snap_mods_rule;
@@ -5100,7 +5106,7 @@ static void snap_mod_block_make(void) {
      * made it, and the status as a sentence -- the values in orange, the
      * labels white, as on the Graphics page, an error in red. With no author
      * the status takes the By line's place: no hole under the name, and the
-     * two lines centred. */
+     * two lines centered. */
     snap_block_strip[0] = snap_make_strip(STR_DET_TITLE, 50, factY);
     snap_block_strip[1] = snap_make_strip(STR_DET_VERSION, (snap_block_thumb_on ? DET_THUMB_X - 8 : DET_RIGHT) - 192, factY);
     snap_tint(snap_block_strip[1], SEL_R, SEL_G, SEL_B);
@@ -5431,8 +5437,8 @@ static void snap_mods_page(void) {
         MODS_VALUE(i) = (u32) snap_make_strip(snap_mods_value_str(i, gen), 163, y);
     }
     snap_mods_tint_values(gen);
-    /* The rule over the actions, and the empty page's two centred lines
-     * (256-texel strips, the text centred in them). */
+    /* The rule over the actions, and the empty page's two centered lines
+     * (256-texel strips, the text centered in them). */
     snap_mods_rule = snap_tile_make(STR_WHITE_TILE, 50, PAGE_TOP_Y, DET_RIGHT - 50, 1, 0xFF);
     snap_tint(snap_mods_rule, RULE_GRAY, RULE_GRAY, RULE_GRAY);
     snap_mods_head = snap_make_strip(STR_MODS_NONE, 160 - 128, PAGE_TOP_Y + 2);
@@ -6478,17 +6484,17 @@ void func_800E2058_A095E8(void) {
 
     snap_show_badge();
 
-    /* The port's own credits line, centred, in the rows under the block
+    /* The port's own credits line, centered, in the rows under the block
      * that nothing on the title uses: no sprite of this screen seats below
      * 198, and the main menu's icons stop at 174. The block's second line
-     * ends its coloured cores at 216 (one stray comma pixel at 217) and its
+     * ends its colored cores at 216 (one stray comma pixel at 217) and its
      * black ring at 218; this strip's cores sit one row inside its ring, so
      * at 219 they start at 220 with two clear rows between the two texts.
      * Its letters' cores end at 226 and their ring at 227 -- the last row
      * the overscan crop leaves visible when a player turns it on -- and
      * only the p descender's ring, at 228, falls under that crop. The
      * block's own three-row rhythm would seat this at 220 and lose every
-     * letter's bottom ring to the crop instead. The port recolours its
+     * letter's bottom ring to the crop instead. The port recolors its
      * texels live, so all the sprite carries is position. Rides this gobj
      * and leaves with it. */
     {
@@ -6513,7 +6519,7 @@ void func_800E2058_A095E8(void) {
  * The title menu is built by func_800E33C8_A0A958 from four whole-word
  * sprites ("New Game", "Continue", "Gallery", "Options") into the cursor
  * loop's four-slot buffer, positioned from a 3x4 table of y values that
- * re-centres the block for two, three or four items. There is no fifth slot
+ * re-centers the block for two, three or four items. There is no fifth slot
  * anywhere: the buffer, the table and the dispatch (func_800E37E8_A0AD78)
  * all end at four. The functions below are the stock ones with one more
  * item, "Snap Station", shown whenever "Gallery" is (the saved report holds
@@ -6545,8 +6551,8 @@ void func_800E2058_A095E8(void) {
 /* Five rows at the stock four-row pitch of 18. The block sits so the
  * letters' cores clear the logo's lowest stroke (near 100) above and the
  * copyright block's cores (from 197) below by the same eight pixels: cores
- * from 107 to 189. The label strip is 128 wide with its text centred, so
- * its x centres it on the column the stock words share. */
+ * from 107 to 189. The label strip is 128 wide with its text centered, so
+ * its x centers it on the column the stock words share. */
 #define TITLE_ROW_Y(i)   (106 + (i) * 18)
 #define TITLE_STATION_X  96
 

@@ -12,7 +12,7 @@ sidecar, and inside the zip a START HERE text next to the bundle. In order:
    (BUILDING.md, step 13).
 2. The bundle: the executable in Contents/MacOS, everything else in
    Contents/Resources with its folder names kept (menu_text/, cache/,
-   gamecontrollerdb.txt, the icons, the licences, the texts), because a
+   gamecontrollerdb.txt, the icons, the licenses, the texts), because a
    bundled program's SDL_GetBasePath is its Resources folder and that is
    where snap::exe_dir() reads the shipped files (src/paths.cpp). Nothing
    the port writes goes into the bundle: the data directory is
@@ -22,7 +22,7 @@ sidecar, and inside the zip a START HERE text next to the bundle. In order:
 4. An ad-hoc signature with the hardened runtime and the entitlements in
    tools/macos/entitlements.plist (JIT for mods' code, and a code segment
    that mods may patch; see tools/macos/ld64), which is what Zelda64Recomp
-   ships: no developer account and no notarisation, so the first launch is a
+   ships: no developer account and no notarization, so the first launch is a
    right-click > Open, or on macOS 15 System Settings > Privacy & Security >
    Open Anyway. `--no-sign` skips it.
 5. The zip, made by ditto so the bundle survives the trip, and its SHA-256

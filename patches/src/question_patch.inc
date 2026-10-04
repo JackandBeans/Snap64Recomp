@@ -20,7 +20,7 @@
  * is on screen exactly when an A image and a B image are both in that
  * list, and each has its screen place. The underline is drawn into the
  * text box's own bitmap with the game's fill, and undrawn with the box's
- * background colour; no object is made, which a screen whose heap is spent
+ * background color; no object is made, which a screen whose heap is spent
  * could not give.
  *
  * This runs in the frame's button filter (src/app_render/53AD0.c,

@@ -18,7 +18,7 @@
  *
  * Worth knowing because an overrun does not fail cleanly. Nothing bounds-checks
  * during the frame; the game writes straight past the end into whatever
- * gtlMalloc handed out next, which is the neighbouring display list buffer and
+ * gtlMalloc handed out next, which is the neighboring display list buffer and
  * then the matrix heap. Geometry emitted late in the frame would be the part
  * that lands outside, and the matrices it refers to would be the ones
  * overwritten.

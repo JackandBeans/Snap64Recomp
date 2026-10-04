@@ -9,7 +9,7 @@
  * menu of its own outside the game, so the game's own pause is the place.
  * Two ways in: Start pauses the ride as the cartridge does, and the pause
  * menu gains a fourth pill under Continue, Quit Course and Retry -- green,
- * the one colour of the set the menu does not use, in the pills' own
+ * the one color of the set the menu does not use, in the pills' own
  * artwork and letters (src/menu_assets.cpp composes the pair, plain and
  * selected, out of the stock pills when the strings are staged); Esc, or
  * the pad's Select, pauses the ride the same way and opens the pages at
@@ -142,7 +142,7 @@ static void snap_pause_mouse_begin(void) {
     snap_pause_mouse_b = 0;
 }
 
-static void snap_sprite_colour(Sprite* sp, u8 red, u8 green, u8 blue, u8 alpha) {
+static void snap_sprite_color(Sprite* sp, u8 red, u8 green, u8 blue, u8 alpha) {
     sp->red = red;
     sp->green = green;
     sp->blue = blue;
@@ -228,7 +228,7 @@ static void snap_pause_resume(GObj* obj) {
 
 /* Everything of the pause menu's off, the pages, then everything back as it
  * was, with the pause menu's own processes asleep in between -- or, when
- * Start closed the pages or Esc opened them, the resume straight away. */
+ * Start closed the pages or Esc opened them, the resume right away. */
 static void snap_pause_pages(GObj* obj) {
     GObj* counter = D_803B09D8_550DE8;
     u32 counterFlags = 0;
@@ -249,7 +249,7 @@ static void snap_pause_pages(GObj* obj) {
          * brought up is set here, at its full 153, for the slide-out to
          * fade from. */
         Sprite* sprite = &obj->data.sobj->sprite;
-        snap_sprite_colour(sprite, D_80382D2C_52313C, D_80382D30_523140, D_80382D34_523144, 153);
+        snap_sprite_color(sprite, D_80382D2C_52313C, D_80382D30_523140, D_80382D34_523144, 153);
         sprite->attr &= ~SP_HIDDEN;
         D_80382D28_523138 = 153;
     }
@@ -379,7 +379,7 @@ void Pause_ShowUI(GObj* obj) {
     }
 
     D_80382D28_523138 = 0;
-    snap_sprite_colour(sprite, D_80382D2C_52313C, D_80382D30_523140, D_80382D34_523144, 0);
+    snap_sprite_color(sprite, D_80382D2C_52313C, D_80382D30_523140, D_80382D34_523144, 0);
     sprite->attr &= ~SP_HIDDEN;
     Pause_LabelPause->sprite.x = 360;
     Pause_LabelPause->sprite.y = 94;
@@ -389,7 +389,7 @@ void Pause_ShowUI(GObj* obj) {
     while (1) {
         if (D_80382D28_523138 > 153) {
             D_80382D28_523138 = 153;
-            snap_sprite_colour(sprite, D_80382D2C_52313C, D_80382D30_523140, D_80382D34_523144, 153);
+            snap_sprite_color(sprite, D_80382D2C_52313C, D_80382D30_523140, D_80382D34_523144, 153);
             Pause_LabelPause2->sprite.x = 111;
             Pause_LabelPause2->sprite.y = 94;
             Pause_LabelPause2->sprite.attr &= ~SP_HIDDEN;
@@ -401,7 +401,7 @@ void Pause_ShowUI(GObj* obj) {
         } else {
             Pause_LabelPause->sprite.x = (s16) D_80382D38_523148;
             Pause_LabelPause->sprite.y = 94;
-            snap_sprite_colour(sprite, D_80382D2C_52313C, D_80382D30_523140, D_80382D34_523144, (u8) D_80382D28_523138);
+            snap_sprite_color(sprite, D_80382D2C_52313C, D_80382D30_523140, D_80382D34_523144, (u8) D_80382D28_523138);
             D_80382D28_523138 += 15;
             D_80382D38_523148 -= 24;
         }

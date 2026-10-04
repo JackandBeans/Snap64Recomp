@@ -19,7 +19,7 @@
  * a fixed number: it skips by kind, continues early, and defers to custom
  * matrix handlers, all of which vary with animation state. One extra or
  * missing matrix then shifts every pairing after it, and a limb is
- * interpolated towards a different limb -- parts of a model landing elsewhere
+ * interpolated toward a different limb -- parts of a model landing elsewhere
  * or collapsing, which is what the lower half of a Pokemon vanishing while
  * the camera pans is. An OMMtx belongs to one matrix of one object and keeps
  * its address for as long as the object exists, so pairing by it cannot
@@ -34,9 +34,17 @@
 #include "rt64_extended_gbi.h"
 
 /* Neither reserved id can collide with a pointer: an OMMtx is never NULL
-   (G_EX_ID_IGNORE) and never 0xFFFFFFFF (G_EX_ID_AUTO). Vertex, tile,
-   texture coordinate and lookAt interpolation are all derived from data this
-   game rebuilds every frame, so only the transform itself is interpolated. */
+   (G_EX_ID_IGNORE) and never 0xFFFFFFFF (G_EX_ID_AUTO). Vertex, texture
+   coordinate and lookAt interpolation are all derived from data this game
+   rebuilds every frame, so of those only the transform is interpolated.
+
+   The tile is interpolated too. A material that scrolls -- the water of the
+   River and the Valley -- is given a new tile position by renLoadTextures on
+   every drawn frame, and with the tile skipped the texture moved at the
+   game's rate over a surface moving at the display's: it shook as the view
+   turned (seen by hand, Oct 4 2026). The renderer places a tile between
+   frames only while its scroll is steady, so a texture that steps to another
+   cell is left where the game put it. */
 /* sinf and cosf are weak aliases of __sinf and __cosf. Calling them by the
    alias emits a relocation named sinf, which the recompiler passes through
    unchanged and the host compiler then takes for its own math intrinsic;
@@ -82,10 +90,10 @@ static u32 renEXPassSalt = 0;
 
 /* The object every tagged matrix belongs to, carried in the packet's spare
    word. One matrix of a model can look like a teleport to the renderer's
-   automatic pose guard while its neighbours look continuous -- a limb swinging
+   automatic pose guard while its neighbors look continuous -- a limb swinging
    up from rest crosses the guard's velocity threshold, the torso holding it
    does not. The renderer then snaps that one matrix to its new pose while the
-   rest of the model blends towards it, and the parts come apart for a frame:
+   rest of the model blends toward it, and the parts come apart for a frame:
    the camera prop rising out of Todd's hand, a walking model ghosting against
    itself. A matrix cannot be judged on its own, because it is not on its own:
    it is one joint of one object, and the object either moved as a whole or it
@@ -93,7 +101,7 @@ static u32 renEXPassSalt = 0;
    apply it to every matrix underneath. */
 static u32 renEXCoherence = 0;
 
-#define renEXTagCoherent(gfx, id, mode, pos, rot, scale, skew, persp)                                                     G_EX_COMMAND2((gfx),                                                                                                     PARAM(RT64_EXTENDED_OPCODE, 8, 24) | PARAM(G_EX_MATRIXGROUP_V1, 24, 0),                                              (id),                                                                                                                PARAM(G_EX_NOPUSH, 1, 0) | PARAM(0, 1, 1) | PARAM(mode, 1, 2) | PARAM(pos, 2, 3) |                                        PARAM(rot, 2, 5) | PARAM(scale, 2, 7) | PARAM(skew, 2, 9) | PARAM(persp, 2, 11) |                                     PARAM(G_EX_COMPONENT_SKIP, 2, 13) | PARAM(G_EX_COMPONENT_SKIP, 2, 15) |                                              PARAM(G_EX_ORDER_LINEAR, 2, 17) | PARAM(G_EX_EDIT_ALLOW, 1, 19) |                                                    PARAM(G_EX_ASPECT_AUTO, 2, 20) | PARAM(G_EX_COMPONENT_SKIP, 2, 22) |                                                 PARAM(G_EX_COMPONENT_SKIP, 2, 24),                                                                               renEXCoherence)
+#define renEXTagCoherent(gfx, id, mode, pos, rot, scale, skew, persp)                                                     G_EX_COMMAND2((gfx),                                                                                                     PARAM(RT64_EXTENDED_OPCODE, 8, 24) | PARAM(G_EX_MATRIXGROUP_V1, 24, 0),                                              (id),                                                                                                                PARAM(G_EX_NOPUSH, 1, 0) | PARAM(0, 1, 1) | PARAM(mode, 1, 2) | PARAM(pos, 2, 3) |                                        PARAM(rot, 2, 5) | PARAM(scale, 2, 7) | PARAM(skew, 2, 9) | PARAM(persp, 2, 11) |                                     PARAM(G_EX_COMPONENT_SKIP, 2, 13) | PARAM(G_EX_COMPONENT_INTERPOLATE, 2, 15) |                                              PARAM(G_EX_ORDER_LINEAR, 2, 17) | PARAM(G_EX_EDIT_ALLOW, 1, 19) |                                                    PARAM(G_EX_ASPECT_AUTO, 2, 20) | PARAM(G_EX_COMPONENT_SKIP, 2, 22) |                                                 PARAM(G_EX_COMPONENT_SKIP, 2, 24),                                                                               renEXCoherence)
 
 #define renEXTagModelMatrix(gfx, ommtx)                                            renEXTagCoherent((gfx), OM_MTX_TAG(ommtx), G_EX_INTERPOLATE_DECOMPOSE,     G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO,                 G_EX_COMPONENT_AUTO, G_EX_COMPONENT_AUTO)
 
@@ -397,7 +405,7 @@ s32 renPrepareModelMatrix(Gfx** gfxPtr, DObj* dobj) {
                        overwritten matrix and files it under whichever identity
                        was named last -- some other object's -- so between
                        frames the billboard is paired with that object and its
-                       corners are interpolated towards it. Snorlax's sleep
+                       corners are interpolated toward it. Snorlax's sleep
                        symbols smear into a streak instead of drawing, and
                        every billboard in the game flashes the same streak for
                        a frame whenever the pairing lands differently. Naming

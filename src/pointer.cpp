@@ -22,7 +22,7 @@
  * screen changes the scale, the cursors are made again.
  *
  * The flash is menu_text/pointer_flash.png: four frames of 32 by 32 with
- * the pointer set in from the corner (its tip at the frame's centre less
+ * the pointer set in from the corner (its tip at the frame's center less
  * half the pointer, where the hotspot goes), JackandBeans's comic burst
  * over the whole pointer (make_flash.py), the pointer under the first two
  * and gone from the last two. In fullscreen the pointer hides three seconds
@@ -245,7 +245,7 @@ bool build(int scale) {
         ok = ok && (made[i] != nullptr);
     }
     if (!g_flash.pixels.empty()) {
-        // The pointer sits centred in a flash frame: its tip, the hotspot,
+        // The pointer sits centered in a flash frame: its tip, the hotspot,
         // is in from the corner by half the difference.
         const int hx = std::max(0, (g_flash.fw - g_sheet.fw) / 2);
         const int hy = std::max(0, (g_flash.fh - g_sheet.fh) / 2);

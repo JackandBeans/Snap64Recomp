@@ -57,10 +57,10 @@ The rest of the documentation is listed [near the end](#documentation).
 These steps are for Windows. Linux and the Steam Deck are [further
 down](#linux-and-steam-deck).
 
-1. Download `Snap64Recomp-1.1.1-win64.zip` from the
+1. Download `Snap64Recomp-1.1.2-win64.zip` from the
    [Releases](https://github.com/JackandBeans/Snap64Recomp/releases/latest)
    page and unpack it anywhere. It holds one folder,
-   `Snap64Recomp-1.1.1-win64`, with `Snap64Recomp.exe` inside. Nothing has
+   `Snap64Recomp-1.1.2-win64`, with `Snap64Recomp.exe` inside. Nothing has
    to be installed.
 2. Have your ROM of the US cartridge ready. (A ROM is the cartridge's
    contents, read out into one file.) Put it next to `Snap64Recomp.exe`
@@ -99,7 +99,7 @@ bug report.
 ## Screenshots
 
 <table><tr>
-<td><a href="docs/screenshots/01l-title-111.png"><img src="docs/screenshots/01l-title-111.png" width="400" alt="The title screen"></a></td>
+<td><a href="docs/screenshots/01m-title-112.png"><img src="docs/screenshots/01m-title-112.png" width="400" alt="The title screen"></a></td>
 <td><a href="docs/screenshots/03-course-select.png"><img src="docs/screenshots/03-course-select.png" width="400" alt="Course select"></a></td>
 </tr><tr>
 <td><a href="docs/screenshots/04-beach.png"><img src="docs/screenshots/04-beach.png" width="400" alt="The Beach: Surfing Pikachu"></a></td>
@@ -122,7 +122,7 @@ picture. The full set, with a caption for each, is in
 
 * **Windows:** 64-bit Windows 10 (version 1809 or newer) or 11, and a GPU
   whose driver supports Direct3D 12 with Shader Model 6.3. A driver from
-  before late 2018 is too old; see [Known issues](#known-issues).
+  before late 2018 is too old, and the port says so at start.
 * **Linux and Steam Deck:** a Vulkan 1.2 driver, and either Flatpak or the
   system's SDL2 and GTK 3; x86_64, or ARM64 for the tarball built for it.
   The Linux builds are experimental.
@@ -352,12 +352,9 @@ them, and how to write one.
 <a id="known-limitations"></a>
 ## Known issues
 
-* On a graphics driver from before late 2018, the port opens a black
-  window and closes within seconds, with no message. Updating the driver
-  is the fix. The next release will say so itself.
-* Some 2D pictures still move at the game's rate when the frame rate is
-  raised: the photo panels, Oak's thumbnails, and full-screen backgrounds
-  while they slide.
+* A few 2D pictures still move at the game's rate when the frame rate is
+  raised: one that slides past the side of a menu in a wide window, and one
+  that jumps a long way in a single frame.
 * Parts of the Snap Station printer's look are estimates: its lettering,
   and the timing of its passes.
 * A Pokémon can pop out of the picture before it has fully left it. The
@@ -389,9 +386,8 @@ Planned, roughly in this order.
 5. **Gyro on a controller.** Gyro aim is confirmed on a Steam Deck and on
    no other pad. A DualSense, a DualShock 4 or a Switch Pro controller
    would settle it.
-6. **Smooth 2D at high frame rates.** The photo panels, Oak's thumbnails
-   and full-screen backgrounds while they slide still move at the game's
-   own rate.
+6. **Smooth 2D, the last cases.** A picture that slides past the side of a
+   menu in a wide window still moves at the game's own rate.
 7. **A mod that adds something new to a course.** It will show what the
    mod kit can do.
 
@@ -434,7 +430,7 @@ GitHub's virtual Mac, the intro, a Beach ride with its photos scored and a
 mod's hooks have run, natively and under Rosetta 2.
 
 Every release also passes an automated suite before it ships
-(`tools/release_check.py`). On the 1.1.1 executable it passed 29 of 29
+(`tools/release_check.py`). On the 1.1.2 executable it passed 29 of 29
 checks, and the station's 5 of 5. [VERIFICATION.md](docs/VERIFICATION.md) says what
 each check does, what every release reported, and what has only been read
 from the code and not seen.
@@ -446,7 +442,7 @@ under WSL, N64Recomp for the game and the patches, CMake and MSVC on
 Windows, and a list of things git does not carry
 ([What a clean checkout is missing](BUILDING.md#what-a-clean-checkout-is-missing)).
 `cpack -C Release` in the build directory then writes
-`Snap64Recomp-1.1.1-win64.zip` ([step 13](BUILDING.md#13-package)).
+`Snap64Recomp-1.1.2-win64.zip` ([step 13](BUILDING.md#13-package)).
 
 <a id="how-i-made-it"></a>
 ## How it was made

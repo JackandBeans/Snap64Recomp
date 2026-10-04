@@ -53,7 +53,7 @@ namespace snap {
     std::atomic<uint32_t> g_scene_overlay_rom = { 0 };
 
     // Lets a frame be held inside a course, which the gate below otherwise
-    // forbids. Off by default, because that is the behaviour every measurement
+    // forbids. Off by default, because that is the behavior every measurement
     // so far was taken against.
     //
     // The gate says "hold only while a film is playing" and asks the wrong
@@ -86,6 +86,10 @@ extern "C" void __real_gtlInitHeap(uint8_t* rdram, recomp_context* ctx);
 extern "C" void gtlInitHeap(uint8_t* rdram, recomp_context* ctx) {
     __real_gtlInitHeap(rdram, ctx);
     snap::menu_arena_reset(rdram);
+    // The slides kept finer than a pixel name sprite objects of the scene
+    // that is gone (patches/src/check_slide_patch.c, src/rect_tags.cpp).
+    MEM_W(0, (gpr)(int32_t)0x80C000E0) = 0;
+    MEM_W(0, (gpr)(int32_t)0x80C000E4) = 0;
 }
 
 extern "C" void dmaLoadOverlay(uint8_t* rdram, recomp_context* ctx) {

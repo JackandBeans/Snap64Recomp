@@ -404,8 +404,8 @@ Strip compose_dyn(std::string text) {
 // "New Game", "Continue", "Options" and "Gallery" (menu_harvest.cpp). Cores
 // one column apart and six across a space, as measured on the originals; a
 // core pixel wins over ring and ring over fringe, so the shared ring columns
-// between letters read as they do in the sprites. The text is centred in
-// its 64-texel-rounded width, so the patch places the strip by its centre.
+// between letters read as they do in the sprites. The text is centered in
+// its 64-texel-rounded width, so the patch places the strip by its center.
 // A letter the face lacks leaves the strip empty (width 0) and is said, but
 // does not withhold the directory: this is the one string that may be
 // absent, and the patch then keeps the stock four items.
@@ -596,7 +596,7 @@ Strip compose_help(const char* text) {
 
     // One walk computes the layout; the second paints it. A character
     // outside the face still takes room: a silent zero advance would fuse
-    // its neighbours with nothing to show a string edit went too far.
+    // its neighbors with nothing to show a string edit went too far.
     bool counting = false;   // the missing-glyph count is taken on the painting walk only
     auto walk = [&](auto&& place) {
         int xc = 1;
@@ -665,7 +665,7 @@ void apply_outline(Strip &strip);
 // off-screen. Same pixels the player already reads as "more this way",
 // at the chevrons' own 1:1 scale -- an indicator must not outrank the
 // controls it serves -- wearing the credits line's treatment: rainbow
-// cores in a baked black ring, recoloured live by the same animator.
+// cores in a baked black ring, recolored live by the same animator.
 // One row and column of padding so the ring fits around the chevron.
 Strip compose_scroll_arrow(bool up) {
     Strip strip;
@@ -718,7 +718,7 @@ MenuArt compose_legend(const char* aWord, const char* bWord) {
         return out;
     }
     auto px = [&](int x, int y) { return art.rgba[size_t(y) * size_t(art.w) + size_t(x)]; };
-    auto colour = [&](int x, bool blue) {
+    auto color = [&](int x, bool blue) {
         for (int y = 0; y < art.h; y++) {
             const uint32_t v = px(x, y);
             const int r = int(v >> 24), g = int((v >> 16) & 0xFF), b = int((v >> 8) & 0xFF), a = int(v & 0xFF);
@@ -736,11 +736,11 @@ MenuArt compose_legend(const char* aWord, const char* bWord) {
         }
         return false;
     };
-    // An icon: the run of its colour, widened to the ink round it.
+    // An icon: the run of its color, widened to the ink round it.
     auto icon = [&](bool blue, int& x0, int& x1) {
         x0 = -1;
         for (int x = 0; x < art.w; x++) {
-            if (colour(x, blue)) {
+            if (color(x, blue)) {
                 x0 = x;
                 break;
             }
@@ -749,13 +749,13 @@ MenuArt compose_legend(const char* aWord, const char* bWord) {
             return false;
         }
         x1 = x0;
-        while ((x1 + 1 < art.w) && colour(x1 + 1, blue)) {
+        while ((x1 + 1 < art.w) && color(x1 + 1, blue)) {
             x1++;
         }
         while ((x0 > 0) && inked(x0 - 1)) {
             x0--;
         }
-        while ((x1 + 1 < art.w) && inked(x1 + 1) && !colour(x1 + 2 < art.w ? x1 + 2 : x1, !blue)) {
+        while ((x1 + 1 < art.w) && inked(x1 + 1) && !color(x1 + 2 < art.w ? x1 + 2 : x1, !blue)) {
             x1++;
             if (!inked(x1 + 1)) {
                 break;
@@ -887,7 +887,7 @@ Strip compose_lines(const char* line1, const char* line2) {
 }
 
 // The bold black border of the title screen's copyright block: one pixel
-// of opaque black in every empty 8-neighbourhood cell around a glyph core.
+// of opaque black in every empty 8-neighborhood cell around a glyph core.
 // That block bakes its ring into RGBA16 texel data (0x0001 black around
 // 0xFFFF white -- decoded straight from the ROM sprite), so the credits
 // line bakes the identical ring. Menu text gets none of this: the stock
@@ -964,8 +964,8 @@ Strip compose_credits(const char* text) {
     strip.intensity.assign(size_t(strip.width) * StripHeight, 0);
     strip.alpha.assign(size_t(strip.width) * StripHeight, 0);
 
-    // Centred inside the padded buffer, so placing the strip at
-    // 160 - width/2 centres the visible text on screen.
+    // Centered inside the padded buffer, so placing the strip at
+    // 160 - width/2 centers the visible text on screen.
     xc = 1 + (strip.width - visW) / 2;
     prev = 0;
     for (const char* c = text; *c != 0; c++) {
@@ -1195,11 +1195,11 @@ Strip compose_box_side() {
 // The pause menu's three items are 89x19 RGBA16 sprites in the level code's
 // data, each pill with its word baked in, a bright "selected" one and a dark
 // plain one per item: blue, yellow, red. The port's item is a fourth pill in
-// green -- the one colour of the set the menu does not use, and the B
+// green -- the one color of the set the menu does not use, and the B
 // button's -- made from the yellow pair: the pill kept texel for texel, its
 // word erased to the fill, every texel's hue turned by the one angle that
 // puts the fill at green, and "Options" set in the pills' own letters at the
-// pills' own centring (the left edge at (89 - core extent) / 2, which is
+// pills' own centering (the left edge at (89 - core extent) / 2, which is
 // where all three stock words stand). The O is the Q of "Quit Course"
 // without its tail, its bottom the mirror of its top; the p is the n's stem
 // and arch closed the way the o closes, with the one-row descender the y
@@ -1234,7 +1234,7 @@ constexpr int WordRight = 81;
 constexpr float TargetHue = 120.0f;   // green
 
 // The letters as coverage in tenths, read off the three stock words: '9' is
-// the word's colour outright, a digit d is (d + 0.5) / 10 of the way from
+// the word's color outright, a digit d is (d + 0.5) / 10 of the way from
 // the fill, '.' the fill. `top` is the glyph's first pill row, `core` its
 // width without the antialiasing column most letters carry on the right.
 struct Glyph {
@@ -1413,8 +1413,8 @@ bool compose_pause_pill(bool selected, Rgba16Art& out) {
     }
     auto at = [&](int x, int y) -> Rgba& { return img[size_t(y) * W + size_t(x)]; };
 
-    // The fill, and the word's own colour: white on the bright pill, a
-    // neutral grey on the dark one.
+    // The fill, and the word's own color: white on the bright pill, a
+    // neutral gray on the dark one.
     const Rgba fill = at(12, 9);
     Rgba word = fill;
     int brightest = -1;
@@ -1447,7 +1447,7 @@ bool compose_pause_pill(bool selected, Rgba16Art& out) {
     const int spread = int(std::max(word.r, std::max(word.g, word.b))) - int(std::min(word.r, std::min(word.g, word.b)));
     const Rgba ink = (spread < 24) ? word : turned(word, delta);
 
-    // "Options", centred as the stock words are.
+    // "Options", centered as the stock words are.
     const char* text = "Options";
     int extent = -LetterGap;
     for (const char* c = text; *c != 0; c++) {
@@ -1561,7 +1561,7 @@ constexpr uint32_t kDetHelpId = kDetLineId + uint32_t(DetLines);
 constexpr int DetChunks = 4;
 // The details page's fixed lines above its text: the version (right-aligned
 // in the rows' face), and "By ..." and the mod's status, each split into a
-// label and the rest so the page can colour the label (details_compose).
+// label and the rest so the page can color the label (details_compose).
 constexpr uint32_t kWhiteTileId = kStringBaseCount + 309;   // graphics_menu_patch.c STR_WHITE_TILE
 constexpr uint32_t kDetVersionId = kStringBaseCount + 310;
 constexpr uint32_t kDetByLabelId = kDetVersionId + 1;
@@ -1652,8 +1652,8 @@ int g_bind_shown_device = -1;     // the device the composed bank is for
 uint32_t g_bind_shown_gen = 0;    // the binding table's generation it was composed from
 
 // The rainbow strips keep their alpha masks host-side so their staged
-// RGBA16 texels can be recoloured live -- exactly the kind of
-// colour-cycled flourish the era loved. The sprite reads RDRAM every
+// RGBA16 texels can be recolored live -- exactly the kind of
+// color-cycled flourish the era loved. The sprite reads RDRAM every
 // frame, so rewriting the texels is the whole animation. The credits
 // line wears it as the port's signature, and the Graphics page's scroll
 // arrows wear the same one: the port's marks speak one language.
@@ -1707,7 +1707,7 @@ void hsv_to_rgb(int hue, uint8_t value, uint8_t &r, uint8_t &g, uint8_t &b) {
 // A calm scrolling rainbow at constant full brightness -- the classic
 // era treatment -- drifting one hue degree a tick, roughly a six second
 // lap. No pulsing: the black border carries the legibility and the
-// colour quietly moves.
+// color quietly moves.
 void animate_rainbow(const RainbowStrip& s, uint32_t tick) {
     if (s.addr == 0) {
         return;
@@ -1919,9 +1919,9 @@ void stage_menu_assets(uint8_t* rdram) {
 // next main-menu load.
 static int ink_width(const Strip& strip);
 
-// A strip's text centred in a canvas `width` wide (whole 64-texel blocks, as
+// A strip's text centered in a canvas `width` wide (whole 64-texel blocks, as
 // the patch draws them).
-static Strip centred(const Strip& st, int width) {
+static Strip centered(const Strip& st, int width) {
     Strip out;
     out.width = width;
     out.height = st.height;
@@ -1994,7 +1994,7 @@ void stage_menu_strings(uint8_t* rdram) {
         { "Switches between fullscreen and window.",   "" },
     };
     // Id BaseCount+22: the "Recomp" wordmark drawn under the Snap logo on
-    // the title screen -- the port's one badge. Full colour, RGBA16, loaded
+    // the title screen -- the port's one badge. Full color, RGBA16, loaded
     // from menu_text/recomp_logo.png; absent file, absent badge.
     // Id BaseCount+8: the page's heading, in the Options title's own face.
     // Ids BaseCount+9..BaseCount+17: the second wave of settings -- labels
@@ -2018,7 +2018,7 @@ void stage_menu_strings(uint8_t* rdram) {
         { "Triple buffering smooths frame delivery.","Takes effect after restarting the game." },
     };
     // Id BaseCount+23: the title's third credits line, in the copyright
-    // block's own condensed face, recoloured live by animate_credits().
+    // block's own condensed face, recolored live by animate_credits().
     // Ids BaseCount+24/+25: the Graphics page's scroll arrows.
     // Id BaseCount+26: the SOUND page's heading. Ids +27..+45: its labels
     // and values (six labels, the eleven shared volume steps, Stereo and
@@ -2184,7 +2184,7 @@ void stage_menu_strings(uint8_t* rdram) {
     };
 
     // The wordmark: any resolution, box-scaled to 128 texels wide (two
-    // chunks), colours un-premultiplied back out of the average so edges
+    // chunks), colors un-premultiplied back out of the average so edges
     // keep their hue, alpha cut at half for RGBA16's single bit.
     struct { int w = 0, h = 0; std::vector<uint16_t> texels; } logo;
     {
@@ -2193,7 +2193,7 @@ void stage_menu_strings(uint8_t* rdram) {
         if ((data != nullptr) && (lw > 0) && (lh > 0)) {
             // Image generators fight transparency: a fully opaque image is
             // treated as white-backgrounded, and near-white pixels become
-            // the transparency. The wordmark's own colours are saturated,
+            // the transparency. The wordmark's own colors are saturated,
             // so nothing of it gets keyed away.
             bool opaqueImg = true;
             for (int i = 0; i < lw * lh; i++) {
@@ -2660,7 +2660,7 @@ void stage_menu_strings(uint8_t* rdram) {
             // which take every id from kModsDynBase up).
             // What a mod is; how to add one is the help box's (the Install
             // row, selected when the page opens).
-            strip = centred(compose_help("Mods change or add to the game."), 256);
+            strip = centered(compose_help("Mods change or add to the game."), 256);
             w = strip.width;
             h = strip.height;
         }
@@ -2681,10 +2681,10 @@ void stage_menu_strings(uint8_t* rdram) {
         }
         else if (id == BaseCount + 205) {
             // The Mods page with no mod in the folder: its headline, in the
-            // rows' face, centred in 256 texels over the actions
+            // rows' face, centered in 256 texels over the actions
             // (graphics_menu_patch.c STR_MODS_NONE; the next line is
             // STR_MODS_EMPTY_SUB).
-            strip = centred(compose("No mods yet", true), 256);   // a headline: no full stop
+            strip = centered(compose("No mods yet", true), 256);   // a headline: no period
             w = strip.width;
             h = strip.height;
         }
@@ -2948,13 +2948,13 @@ void stage_menu_strings(uint8_t* rdram) {
                     }
                     else if (id == BaseCount + 318 + ThumbBands) {
                         // The rainbow New: its letters start white and the
-                        // animator colours them; no border, the rest clear.
+                        // animator colors them; no border, the rest clear.
                         const size_t src = size_t(y) * w + (cx + x);
                         texel = ((strip.alpha[src] >= 128) && (strip.intensity[src] >= 128)) ? 0xFFFF : 0;
                     }
                     else if ((id == BaseCount + 23) || (id == BaseCount + 24) ||
                              (id == BaseCount + 25)) {
-                        // Cores start white and are recoloured live by the
+                        // Cores start white and are recolored live by the
                         // rainbow animator; the border stays opaque black.
                         const size_t src = size_t(y) * w + (cx + x);
                         if (strip.alpha[src] >= 128) {
@@ -3100,9 +3100,9 @@ static void poll_bind_bank() {
                     input_bind_set(input, reqDevice, name);
                     result = 1;
                 }
-                else if (st == CaptureState::Cancelled) {
+                else if (st == CaptureState::Canceled) {
                     result = 2;
-                    printf("[SNAP-Input] Button Setup page: the listen was cancelled with Esc; the row stays as it was\n");
+                    printf("[SNAP-Input] Button Setup page: the listen was canceled with Esc; the row stays as it was\n");
                     fflush(stdout);
                 }
                 else if (st == CaptureState::TimedOut) {
@@ -3873,7 +3873,7 @@ static const char* const kModsActionHelps[ModsActions][2] = {
     { "Closes the game and starts it again with", "the mods as they are set here." },
 };
 
-// The installer's reason as a help line: a capital and a full stop.
+// The installer's reason as a help line: a capital and a period.
 static std::string mods_sentence(std::string s) {
     if (!s.empty()) {
         s[0] = char(toupper(uint8_t(s[0])));
@@ -4157,7 +4157,7 @@ static std::string mods_title_of(const std::string& id) {
 
 // A strip with only its columns [x0, x1) left: two strips cut from one line
 // keep their places, so drawn at one x they read as the line, each in its
-// own colour.
+// own color.
 static Strip keep_columns(const Strip& st, int x0, int x1) {
     Strip out = st;
     for (int y = 0; y < out.height; y++) {
@@ -4204,7 +4204,7 @@ static Strip right_aligned(const Strip& st, int width) {
     return out;
 }
 
-// A line with one word the page colours, "prefix word suffix", cut to
+// A line with one word the page colors, "prefix word suffix", cut to
 // `room`, as two strips at one place: the word's columns, and every other.
 static void stage_marked(uint32_t wordId, uint32_t wordAddr, uint32_t restId, uint32_t restAddr,
                          const std::string& prefix, const std::string& word, const std::string& suffix, int room) {
@@ -4222,7 +4222,7 @@ static void stage_marked(uint32_t wordId, uint32_t wordAddr, uint32_t restId, ui
     stage_dynamic_at(restId, restAddr, rest, DetChunks, kMenuHlpCellH);
 }
 
-// A mod's picture, fitted into ThumbSize square with its shape kept, centred,
+// A mod's picture, fitted into ThumbSize square with its shape kept, centered,
 // and staged for the details page as RGBA16 with an ordered dither (five
 // bits a channel band a smooth gradient otherwise). The runtime keeps the
 // bytes of thumb.dds, or else thumb.png: src/dds_image.cpp reads the DDS
@@ -4309,7 +4309,7 @@ static bool thumb_stage(const ModsRow& r) {
 //   - the title (the name, in the rows' face) and, right-aligned on the same
 //     line, the version, which the page draws in the values' orange;
 //   - "By" and who made it, and the mod's status as a sentence ("This mod is
-//     on.", "On: Test User needs it."), each with one word the page colours;
+//     on.", "On: Test User needs it."), each with one word the page colors;
 //   - the mod's picture at the right of those three lines, when it has one,
 //     the lines beside it ending ThumbRoom sooner;
 //   - the text: the whole description a paragraph at a time with a blank
@@ -4412,14 +4412,14 @@ static int details_compose(const ModsRow& r) {
 
     // Its status, a sentence: a bare "On" said nothing of what was on.
     std::string prefix, label, rest;
-    int colour = 0;
+    int color = 0;
     if (r.kind == ModsKind::Fresh) {
         label = "New";
         rest = ": it loads after a restart.";
     } else if (r.kind == ModsKind::Broken) {
         label = "Error";
         rest = ": it will not load.";
-        colour = 1;
+        color = 1;
     } else {
         const bool on = mods_on(r);
         bool changed = false;
@@ -4458,7 +4458,7 @@ static int details_compose(const ModsRow& r) {
     g_det_valid = true;
     g_det_hand = g_hand_now;
     stage_dynamic_at(kDetHelpId, DetHelpAddr, details_help_strip(r, lines.size()), ModsHelpChunks, ModsHelpHeight);
-    return int(lines.size()) + 64 * colour + (thumb ? 128 : 0);
+    return int(lines.size()) + 64 * color + (thumb ? 128 : 0);
 }
 
 static void poll_mods_bank() {
@@ -5131,7 +5131,7 @@ static void poll_opt_bank() {
             }
             result = 4;
             recompose = true;
-            printf("[SNAP-MENU] Mod options: cancelled; %u change%s undone\n", undone, (undone == 1) ? "" : "s");
+            printf("[SNAP-MENU] Mod options: canceled; %u change%s undone\n", undone, (undone == 1) ? "" : "s");
             fflush(stdout);
         }
         g_opt_handled = req;

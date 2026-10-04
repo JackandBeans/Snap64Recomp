@@ -127,7 +127,7 @@ bool valid_ram_address(uint32_t address) {
 // fx_ejectStruct pushes a freed block onto the head of a free list and
 // fx_createParticle pops it straight back, so the address of a particle that
 // died can name a different particle on the very next frame. Paired on address
-// alone, a new puff of sand would be drawn travelling from wherever the dead
+// alone, a new puff of sand would be drawn traveling from wherever the dead
 // one was. The port already solved this exact problem for object matrices by
 // stamping a serial in omGetMtx; the same idea applies here, except that
 // nothing is known about which words of this struct are spare, so the serial is
@@ -178,7 +178,7 @@ uint32_t particle_id(uint32_t particle, uint32_t serial, uint32_t pass) {
 // Whether the main display list has room for one tag, plus the margin the game
 // still needs for its own commands. The game sized these buffers for what it
 // draws and does not check during the frame; past the end it writes into the
-// neighbouring buffer and then the matrix heap.
+// neighboring buffer and then the matrix heap.
 static bool snap_fx_tag_fits(uint8_t* rdram, uint32_t cursor) {
     constexpr uint32_t GtlDLBuffers = 0x8004A850;
     constexpr uint32_t GtlContextId = 0x8004A910;
@@ -284,7 +284,7 @@ extern "C" void snap_fx_particle(uint8_t* rdram, recomp_context* ctx) {
     // one particle can be drawn once per pass in a single frame. Distinguished
     // only by drawing order, the on-screen drawing of one frame can carry the
     // same name as the OFFSCREEN drawing of the next, and pairing them blends a
-    // rectangle towards a position in a buffer nobody sees -- which garbles.
+    // rectangle toward a position in a buffer nobody sees -- which garbles.
     // The 3D path salts its ids by pass for precisely this reason
     // (renEXPassSalt, patches/src/render_patch.c); this is the same idea. The
     // pass slot is stable -- slot zero is the scene camera -- where drawing
@@ -329,9 +329,9 @@ extern "C" void snap_fx_particle(uint8_t* rdram, recomp_context* ctx) {
 //
 // Each particle opens a group naming itself, and a group stays current until
 // something replaces it. Without a close the last particle of the pass keeps
-// naming everything drawn afterwards, which then pairs against whatever
+// naming everything drawn afterward, which then pairs against whatever
 // happened to follow the last particle on the previous frame. Those are
-// unrelated rectangles being blended towards each other, which is what ghosting
+// unrelated rectangles being blended toward each other, which is what ghosting
 // is. src/rect_tags.cpp closes its groups for exactly this reason; this did not,
 // and that was an omission rather than a decision.
 extern "C" void fx_draw(uint8_t* rdram, recomp_context* ctx) {

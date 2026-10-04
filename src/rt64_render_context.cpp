@@ -97,7 +97,7 @@ static uint8_t s_DMEM[0x1000] = {};
 static uint8_t s_IMEM[0x1000] = {};
 
 // RDP / MI register storage -- RT64 may read/write these during HLE rendering.
-// Providing real zero-initialised storage prevents nullptr dereferences.
+// Providing real zero-initialized storage prevents nullptr dereferences.
 static unsigned int s_MI_INTR_REG     = 0;
 static unsigned int s_DPC_START_REG   = 0;
 static unsigned int s_DPC_END_REG     = 0;
@@ -136,7 +136,7 @@ static bool s_surface_warned = false;
 class RT64Context : public ultramodern::renderer::RendererContext {
 public:
     RT64Context(uint8_t* rdram, ultramodern::renderer::WindowHandle window_handle, bool developer_mode) {
-        // Both of these live in the base class with no initialisers, and the
+        // Both of these live in the base class with no initializers, and the
         // caller reads chosen_api BEFORE it asks whether setup succeeded. Every
         // path out of this constructor has to leave them defined -- including
         // the ones that give up early, and the one where something throws.
@@ -288,6 +288,21 @@ public:
         app_->userConfig.downsampleMultiplier = std::clamp(snap::settings().downsample, 1, 8);
         app_->userConfig.threePointFiltering = snap::settings().three_point_filtering;
         app_->userConfig.validate();
+
+#if defined(_WIN32)
+        // The adapter has to build Shader Model 6.3 pipelines. One that
+        // cannot is refused here, with its driver named, where it used to
+        // crash at the first pipeline it had failed to make (gpu_check.cpp).
+        if (app_->userConfig.graphicsAPI == RT64::UserConfiguration::GraphicsAPI::D3D12) {
+            std::string why;
+            if (!snap::d3d12_adapter_check(why)) {
+                setup_result = ultramodern::renderer::SetupResult::GraphicsDeviceNotFound;
+                s_live_app.store(nullptr, std::memory_order_release);
+                app_.reset();
+                return;
+            }
+        }
+#endif
 
         // Attempt setup.
         auto result = app_->setup(0);
@@ -694,7 +709,7 @@ public:
         // It has to be consumed, or the indicator latches on -- with render to
         // RAM enabled the frame RT64 drew, dot included, is copied back over
         // the framebuffer in RDRAM, so the pixel the hook samples would already
-        // be the dot colour before the game had decided anything. Doing it as a
+        // be the dot color before the game had decided anything. Doing it as a
         // separate write here also let it land on a value the game had set in
         // the meantime, which dropped the indicator for a frame.
 

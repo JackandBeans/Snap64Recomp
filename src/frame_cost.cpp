@@ -38,7 +38,7 @@
  * The timers are RAII rather than a matched pair of statements. Ultramodern
  * throws thread_terminated out of its scheduling calls, and that unwinds
  * straight through a recompiled frame when a scene tears down. A stop that can
- * be skipped would desynchronise the counter permanently, and this file is
+ * be skipped would desynchronize the counter permanently, and this file is
  * useless the moment its numbers cannot be trusted.
  */
 

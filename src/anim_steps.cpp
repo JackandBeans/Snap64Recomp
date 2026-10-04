@@ -16,9 +16,9 @@
  * hand sliding out of his grip just before the intro's close-up cut, and a leaf
  * of the intro's scenery spending a frame part-way through a thousand-unit jump
  * -- which, since the movie sets its fog wall at 989 units, is drawn beyond the
- * fog in solid fog colour and reads as the grass vanishing rather than moving.
+ * fog in solid fog color and reads as the grass vanishing rather than moving.
  *
- * Every defence the renderer already had asks how MUCH moved: a velocity
+ * Every defense the renderer already had asks how MUCH moved: a velocity
  * threshold, a vote across an object's matrices, a census of how many objects
  * changed at once. A step can be small -- the prop moves two and a half units
  * -- and still unmistakable, because it leaves a hand. Magnitude was never the

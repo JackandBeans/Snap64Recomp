@@ -29,7 +29,7 @@ struct Settings {
     // Original is the console's rate, which is reason enough under the
     // covenant. This game also reads back its own rendered framebuffer:
     // photo scoring re-renders and counts pixels, and the focus indicator
-    // copies tiles of the colour buffer after each Pokemon draws. Measured
+    // copies tiles of the color buffer after each Pokemon draws. Measured
     // Sep 2026 with Display interpolation on: five photos scored and the
     // game's own pixel counts were reproduced exactly, because the readback
     // runs on the frames the game draws, not on the synthetic presents
@@ -116,7 +116,7 @@ struct Settings {
     // twice the sprite's size, halving it on the CPU (each sprite pixel the
     // average of a 2x2 block) into the sprite's own bitmap, and drawing that
     // bitmap. Off, the port draws that bitmap as the console did: the halved
-    // pixels, scaled. On, the renderer recognises the bitmap as the halving
+    // pixels, scaled. On, the renderer recognizes the bitmap as the halving
     // of a render it made and serves the sprite from a 2x2-averaged copy of
     // its own full-resolution render instead (lib/rt64/src/hle/
     // rt64_snap_photo_detail.h), so the picture Oak holds up is as sharp as
@@ -127,9 +127,9 @@ struct Settings {
     // RT64's userConfig (snapPhotoDetail) on every config push.
     bool  photo_detail      = false;
     // Jynx's face and hands are black on the cartridge -- not a texture but
-    // the primitive colour of untextured triangles. Every release Nintendo
+    // the primitive color of untextured triangles. Every release Nintendo
     // has sold since the 2007 Virtual Console shows them purple. Off, the
-    // port draws the cartridge. On, the renderer swaps that primitive colour
+    // port draws the cartridge. On, the renderer swaps that primitive color
     // for a purple matched to a capture of the Virtual Console on each draw; the
     // shading is the game's own lighting and no pixels of anyone's are
     // shipped. Off by default: the console's look.
@@ -254,7 +254,7 @@ struct Settings {
     int   downsample        = 1;
 
     // Render resolution, in multiples of the game's 320x240. Zero follows the
-    // window (RT64's integer window scale, the old behaviour). A fixed value
+    // window (RT64's integer window scale, the old behavior). A fixed value
     // decouples rendering cost from window size: measured on this machine the
     // beach replay holds 280 fps at 4x (1280x960) and collapses at the ~6x a
     // 1440p window asks for, so a large window with a capped scale is the
@@ -282,12 +282,12 @@ struct Settings {
     bool  triple_buffering  = false;
 
     // Diagnostic, not shipped as a feature. RT64 draws every call through a
-    // fallback ubershader until the call's specialised pipeline finishes
+    // fallback ubershader until the call's specialized pipeline finishes
     // compiling, and Snorlax's sleep symbols are visible during exactly that
     // window and never after -- the two paths disagree about one material.
     // Forcing the fallback for every draw splits the renderer in half live:
     // if the symbols show while this is on and vanish when it is off, the
-    // specialised pipeline is convicted. F3 toggles it.
+    // specialized pipeline is convicted. F3 toggles it.
     bool  ubershaders_only  = false;
 };
 
@@ -305,7 +305,7 @@ constexpr int kMouseSpeedSteps[11] = { 25, 50, 75, 100, 125, 150, 175, 200, 250,
 //
 // Every mutation holds settings_mutex(): handle_settings_hotkey,
 // poll_menu_mailbox, load_settings and the maximize handler take it, and
-// save_settings copies the struct under it, then serialises and writes the
+// save_settings copies the struct under it, then serializes and writes the
 // copy with the lock released. Readers go through settings() without the
 // lock. In the language's terms that is a data race; it is tolerated on
 // purpose because every field is a bool, an int or a float, which x86-64
@@ -320,7 +320,7 @@ std::mutex& settings_mutex();
 
 // Reads snapsettings.json, or snapsettings.json.bak when the primary cannot
 // be opened or the parser rejects it. The session-only fields (fullscreen,
-// render_to_ram) are forced to their boot values afterwards, whatever either
+// render_to_ram) are forced to their boot values afterward, whatever either
 // file says.
 void load_settings();
 
@@ -455,6 +455,14 @@ void pointer_enable(bool on);
 // last four tenths of a second. Once a pump, before pointer_update.
 void pointer_hiding_in(int32_t msLeft);
 void write_desktop_entry();
+// Direct3D 12 only (src/gpu_check.cpp): names every adapter in the log with
+// its driver and its highest Shader Model, and says whether the one the
+// renderer will take can build the renderer's shaders, which are compiled
+// for Shader Model 6.3. False with the reason for the player in `why`; that
+// text then stands in for the runtime's own line in the error box
+// (renderer_failure_detail, main.cpp). Always true off Windows.
+bool d3d12_adapter_check(std::string& why);
+const std::string& renderer_failure_detail();
 
 // The horizontal widening the renderer is applying to the game's
 // projection under Widescreen, in Q8 (256 = none): max(window w/h, 4/3)

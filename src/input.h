@@ -217,7 +217,7 @@ void input_bind_reset(int device);
 // and eight seconds of nothing times it out; poll says how it stands and
 // hands over the name; end disarms it. active is what the window's thread asks
 // before it treats a key as a hotkey or as Esc's Start.
-enum class CaptureState { Idle, Listening, Bound, Cancelled, RefusedJob, TimedOut };
+enum class CaptureState { Idle, Listening, Bound, Canceled, RefusedJob, TimedOut };
 void input_capture_begin(int device);
 CaptureState input_capture_poll(std::string* name);
 void input_capture_end();

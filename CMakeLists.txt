@@ -4,7 +4,7 @@
 # Silicon build was proved on; -DCMAKE_OSX_DEPLOYMENT_TARGET on the command
 # line wins over this.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "The oldest macOS the build runs on")
-project(Snap64Recomp VERSION 1.1.1 LANGUAGES C CXX)
+project(Snap64Recomp VERSION 1.1.2 LANGUAGES C CXX)
 if (APPLE)
     # Objective-C for RT64's Apple sources and SDL's Cocoa back end; the
     # port's own sources stay C++ (main.cpp takes the Metal layer through SDL).
@@ -150,12 +150,12 @@ target_include_directories(recomp_funcs PUBLIC
 # Suppress warnings in generated recompiled code.
 if (MSVC)
     # /O2, not /O1: this target is the whole recompiled game and is the
-    # hottest code in the build, so favour speed over size.
+    # hottest code in the build, so favor speed over size.
     target_compile_options(recomp_funcs PRIVATE /w /bigobj /O2)
 else()
 target_compile_options(recomp_funcs PRIVATE
     # Emulated RAM is read through several widths at once; under strict
-    # aliasing an optimiser may reorder those, and a contributor's Clang
+    # aliasing an optimizer may reorder those, and a contributor's Clang
     # build crashed in the audio start-up on exactly that.
     -fno-strict-aliasing
     -g
@@ -294,6 +294,7 @@ set(SNAP_SOURCES
     src/mod_installer.cpp
     src/menu_mouse.cpp
     src/pointer.cpp
+    src/gpu_check.cpp
     src/dds_image.cpp
     src/rt64_render_context.cpp
     src/rsp_microcode.cpp
@@ -303,6 +304,7 @@ set(SNAP_SOURCES
     src/overlay_hook.cpp
     src/matrix_tags.cpp
     src/rect_tags.cpp
+    src/lab_monitor.cpp
     src/rect_census.cpp
     src/fx_tags.cpp
     src/menu_assets.cpp
@@ -339,7 +341,7 @@ endif()
 # runtime's include path provides, and the flag would be refused. A universal
 # Mac build compiles the file once for each; the flag goes to the Intel pass
 # only (a list of two options: the SHELL: prefix that keeps a pair together
-# in target options is not honoured by a source file's property, and clang
+# in target options is not honored by a source file's property, and clang
 # took it for a file name).
 if (APPLE AND CMAKE_OSX_ARCHITECTURES MATCHES "x86_64" AND CMAKE_OSX_ARCHITECTURES MATCHES "arm64")
     set_source_files_properties("${SNAP_ASPMAIN_CPP}" PROPERTIES COMPILE_OPTIONS "-Xarch_x86_64;-msse4.1")
@@ -420,6 +422,11 @@ target_link_libraries(Snap64Recomp PRIVATE
     ${SNAP_SDL_TARGET}
 )
 
+if (WIN32)
+    # The start-up check on the Direct3D 12 adapter (src/gpu_check.cpp).
+    target_link_libraries(Snap64Recomp PRIVATE d3d12 dxgi)
+endif()
+
 if (MSVC)
     # A patch defines a function the recompiled game also defines. Object
     # files are linked before libraries and the first definition wins, so the
@@ -443,7 +450,7 @@ if (APPLE)
     # A mod patches game functions inside the executable's own code, which
     # macOS allows only when the code segment's maximum protection includes
     # writing; ld64 will not link that, so a wrapper around it rewrites the
-    # one byte afterwards (tools/macos/ld64, Zelda64Recomp's; it needs
+    # one byte afterward (tools/macos/ld64, Zelda64Recomp's; it needs
     # Python 3 with macholib). The bundle's entitlements (tools/macos/
     # entitlements.plist) let the signed program use it.
     target_link_options(Snap64Recomp PRIVATE "-fuse-ld=${CMAKE_CURRENT_SOURCE_DIR}/tools/macos/ld64")
@@ -578,13 +585,13 @@ endif()
 # Installation and packaging: one flat, portable folder (README "Where things live")
 # =============================================================================
 # The package is the Windows one (cpack -C Release in the build directory
-# writes Snap64Recomp-<version>-win64.zip); the licence list below names the
+# writes Snap64Recomp-<version>-win64.zip); the license list below names the
 # trees the Windows build compiles.
 install(TARGETS Snap64Recomp RUNTIME DESTINATION .)
 if (WIN32)
     install(FILES ${SNAP_RUNTIME_DLLS} DESTINATION .)
     # The /MAP output. The [SNAP-AV] crash report (main.cpp) prints image RVAs
-    # that are symbolised against this file; a user's crash log is unreadable
+    # that are symbolized against this file; a user's crash log is unreadable
     # without it. The copy that ships has the build machine's paths replaced
     # (tools/filter_map.cmake); the symbols and addresses are untouched.
     set(SNAP_MAP_FILTERED "${CMAKE_CURRENT_BINARY_DIR}/generated/Snap64Recomp.map")
@@ -633,7 +640,7 @@ install(FILES
     "${CMAKE_CURRENT_SOURCE_DIR}/CHANGELOG.md"
     DESTINATION .)
 
-# Third-party licence texts, copied from the vendored trees at install time so
+# Third-party license texts, copied from the vendored trees at install time so
 # they can never drift from the code that was built. name|path pairs; the
 # name becomes licenses/<name>.txt. NOTICE.md lists the same components.
 set(SNAP_THIRD_PARTY_LICENSES
@@ -673,19 +680,19 @@ foreach(_entry IN LISTS SNAP_THIRD_PARTY_LICENSES)
     list(GET _pair 1 _file)
     install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/${_file}" DESTINATION licenses RENAME "${_name}.txt")
 endforeach()
-# concurrentqueue ships its licence only as the header's leading comment
+# concurrentqueue ships its license only as the header's leading comment
 # (everything before "#pragma once"); cut that out at configure time.
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/lib/N64ModernRuntime/thirdparty/concurrentqueue/concurrentqueue.h" _cq_head LIMIT 8192)
 string(FIND "${_cq_head}" "#pragma once" _cq_end)
 if (_cq_end LESS 1)
-    message(FATAL_ERROR "concurrentqueue.h: no '#pragma once' in the first 8 KB; its licence comment could not be cut out")
+    message(FATAL_ERROR "concurrentqueue.h: no '#pragma once' in the first 8 KB; its license comment could not be cut out")
 endif()
 string(SUBSTRING "${_cq_head}" 0 ${_cq_end} _cq_license)
 file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/licenses/concurrentqueue.txt" "${_cq_license}")
 install(FILES "${CMAKE_CURRENT_BINARY_DIR}/generated/licenses/concurrentqueue.txt" DESTINATION licenses)
-# Tracked in the repository because the vendored copies carry no licence file:
+# Tracked in the repository because the vendored copies carry no license file:
 # nlohmann/json has only an SPDX header, and the DXC binaries ship without
-# their licence texts (BUILDING.md, step 13). DirectXShaderCompiler.txt is the
+# their license texts (BUILDING.md, step 13). DirectXShaderCompiler.txt is the
 # LLVM Release License of the compiler and headers; DirectXShaderCompiler-dxil.txt
 # is Microsoft's LICENSE-MS.txt of release v1.7.2308, the terms dxil.dll is
 # shipped under (NOTICE.md, VENDORING.md "dxc"). A package without them is not

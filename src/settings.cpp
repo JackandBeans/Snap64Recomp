@@ -601,7 +601,7 @@ bool handle_settings_hotkey(int scancode) {
         case SDL_SCANCODE_HOME: {
             // Screen-space rectangle interpolation. See the note in
             // rt64_snap_diag.h: this says which half of the renderer an
-            // artefact lives in, which reading the code has repeatedly failed
+            // artifact lives in, which reading the code has repeatedly failed
             // to settle.
             const bool on = !snapdiag::rectInterpolationEnabled().load(std::memory_order_relaxed);
             snapdiag::rectInterpolationEnabled().store(on, std::memory_order_relaxed);

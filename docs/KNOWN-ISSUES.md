@@ -5,30 +5,29 @@ each. The short list is on the [front page](../README.md#known-issues). If
 you meet something that is not here, [a report](../README.md#reporting-a-bug)
 is welcome.
 
-## On an old graphics driver, the window opens black and closes
-
-The renderer's shaders are built for Shader Model 6.3, which Windows 10 has
-had since version 1809 and graphics drivers since late 2018. Before it
-starts, 1.1.1 only asks a driver for Shader Model 6.0. So an older driver
-is accepted, cannot build the shaders, and the port closes within seconds
-with no message. One report shows it: a GeForce GTX 960M on NVIDIA's driver
-391.25 of early 2018
-([#21](https://github.com/JackandBeans/Snap64Recomp/issues/21)). That this
-driver stops short of 6.3 is read from its date; it has not been measured
-on that machine.
-
-Install the current driver from the GPU maker's site (NVIDIA, AMD or
-Intel), and make sure Windows 10 is version 1809 or newer (`winver` shows
-it). The next release checks the driver at start and says this in a
-message.
-
 ## Some 2D pictures still move at the game's rate
 
-This shows when the frame rate is raised. The interpolation pairs what it
-draws by name, and a few things are drawn without one: the photo panels,
-Oak's thumbnails, and full-screen backgrounds while they slide during a
-transition. They step at the game's own rate when they move. Named sprites
-and menu frames, the HUD and the fades do interpolate.
+This shows when the frame rate is raised. Every 2D picture the game draws
+carries a name, and the renderer places a named picture between two frames
+when it can find the same picture in both. Two cases are left where the game
+put them, and step at its rate:
+
+* A picture that slides past the side of a menu in a wide window, or past a
+  clip box smaller than the screen. The game cuts each strip of it at that
+  edge, and the port leaves that alone there: drawn whole, the picture would
+  show on the black beside the menu.
+* A picture that jumps more than 160 pixels in one frame. It is taken for a
+  different picture, and shown where it lands.
+
+A slide that slows to a stop can end a pixel at a time. The game keeps a
+picture's place in whole pixels, so the last of a slow slide is a pixel, a
+wait and another pixel. The two pictures in Oak's check are placed
+finer than that; other slides are as the game has them.
+
+Pictures coming in and going out past the edges of the screen, the
+viewfinder's black frame, the HUD and the fades move at the display's rate.
+In the album and the gallery, played by hand with the port's statistics on,
+nothing was left unpaired.
 
 ## Parts of the Snap Station printer's look are estimates
 

@@ -10,13 +10,13 @@ them.
 
 ## The title
 
-<a href="screenshots/01l-title-111.png"><img src="screenshots/01l-title-111.png" width="640" alt="The title screen"></a>
+<a href="screenshots/01m-title-112.png"><img src="screenshots/01m-title-112.png" width="640" alt="The title screen"></a>
 
 **The title screen.** The game's own title with the port's "Recomp" wordmark
 under it, the copyright block, and the port's credits line
-(`JackandBeans (Snap64 Recomp) · v1.1.0`) set in the game's own lettering.
+(`JackandBeans (Snap64 Recomp) · v1.1.2`) set in the game's own lettering.
 The same picture from each earlier release, `01-title.png` for 1.0.0 and
-`01b` to `01j` for 1.0.1 to 1.0.9, stays in the folder for that release's
+`01b` to `01l` for 1.0.1 to 1.1.1, stays in the folder for that release's
 page.
 
 <a href="screenshots/02-title-menu.png"><img src="screenshots/02-title-menu.png" width="640" alt="The title menu with the Snap Station entry"></a>
@@ -53,11 +53,15 @@ buttons bottom right.
 course's own tally: pictures, points,
 kinds, the high score and the challenge score.
 
-<a href="screenshots/04b-beach-widescreen.png"><img src="screenshots/04b-beach-widescreen.png" width="640" alt="The Beach in Widescreen"></a>
+<a href="screenshots/04c-beach-widescreen-112.png"><img src="screenshots/04c-beach-widescreen-112.png" width="640" alt="The Beach in Widescreen"></a>
 
-**The Beach in Widescreen, 1.0.1.** Surfing Pikachu with Widescreen on, the
-whole 16:9 frame rather than the 4:3 crop: the wider field of view the
-renderer draws, with the Pokémon kept to its edges.
+**The Beach in Widescreen.** Surfing Pikachu with Widescreen on, the whole
+16:9 frame rather than the 4:3 crop: the wider field of view the renderer
+draws, with the Pokémon kept to its edges. Since 1.1.2 the film counter sits
+against the screen's own edge in a wide picture, and the R and Z icons slide
+out to that edge when the viewfinder comes up. The picture from 1.0.1,
+`04b-beach-widescreen.png`, has the counter at the edge of the game's 4:3
+screen; it stays in the folder for the earlier releases' pages.
 
 ## The lab
 
@@ -213,6 +217,13 @@ own re-render of the saved shot; the score is counted from that render.
 
 **The score.** Size, pose, technique and the special bonus, last time and
 this time.
+
+<a href="screenshots/24-oak-compare-112.png"><img src="screenshots/24-oak-compare-112.png" width="640" alt="Oak's check, 1.1.2: last time against this time"></a>
+
+**Last time against this time, 1.1.2.** A Snorlax already in the report:
+the picture kept from last time and the new one, their scores, and Oak's
+word on them. The two pictures slide in to these places, and since 1.1.2
+they come to a stop without steps when the frame rate is raised.
 
 <a href="screenshots/18-oak-check-total.png"><img src="screenshots/18-oak-check-total.png" width="640" alt="The evaluation total"></a>
 

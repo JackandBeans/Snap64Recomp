@@ -7,7 +7,7 @@
  * Steam puts SteamDeck=1 in the environment of a game it launches on a Deck
  * (on Linux and, through Proton, for the Windows build), and the Deck's
  * firmware names Valve as the board vendor, which Linux exposes under /sys.
- * Neither is a licence to hide anything: the answer only picks defaults
+ * Neither is a license to hide anything: the answer only picks defaults
  * (fullscreen at boot) and the wording of a log line.
  */
 #pragma once

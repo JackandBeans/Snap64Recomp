@@ -1,34 +1,34 @@
 #!/usr/bin/env python3
-"""Offline check and preview for the opt-in Virtual Console Jynx recolour.
+"""Offline check and preview for the opt-in Virtual Console Jynx recolor.
 
-The recolour lives in lib/rt64/src/render/rt64_snap_recolor.h. It is not a
+The recolor lives in lib/rt64/src/render/rt64_snap_recolor.h. It is not a
 texture operation: Jynx's face and hands carry no texture at all. They are
-drawn with the RDP's primitive colour multiplied by the lit shade
+drawn with the RDP's primitive color multiplied by the lit shade
 (gsDPSetCombineLERP(PRIMITIVE, 0, SHADE, 0, ...) with gsSPTexture(G_OFF)),
-and the cartridge's primitive colours for them are #050505 (face) and
-#505870 (hands). The renderer swaps those two colours for the purple of
+and the cartridge's primitive colors for them are #050505 (face) and
+#505870 (hands). The renderer swaps those two colors for the purple of
 Nintendo's official artwork on the recorded draw call; the shade, and so the
 lighting gradient, is the game's own.
 
 This script does three things, all offline, none of which needs the game:
 
   1. Parses Jynx's display lists from the decomp (assets/cave/jynx) and
-     lists every untextured PRIMITIVE*SHADE section with its primitive colour
-     and vertex bounding box, then checks that the primitive colours the
-     header claims to recognise are exactly the ones those sections use.
+     lists every untextured PRIMITIVE*SHADE section with its primitive color
+     and vertex bounding box, then checks that the primitive colors the
+     header claims to recognize are exactly the ones those sections use.
   2. Re-implements the header's match rule in Python (a texture-off draw
-     whose combiner is that exact LERP and whose primitive colour is one of
+     whose combiner is that exact LERP and whose primitive color is one of
      the two cartridge values) and applies it to every section, reporting
-     which are recoloured.
-  3. Renders the recoloured sections before and after, Gouraud-shaded from
+     which are recolored.
+  3. Renders the recolored sections before and after, Gouraud-shaded from
      the model's own vertex normals, to PNGs -- so the result can be looked
      at without a Cave recording, which the port does not have.
 
 The render is a preview, not the game: it uses a single white directional
-light with a dim ambient (the N64 lighting model, generic colours), an
+light with a dim ambient (the N64 lighting model, generic colors), an
 orthographic front view of each part in its own bone space, and no fog. The
 Cave's real lights, the pose and the fog are the game's. What the preview
-does show truthfully is the colour arithmetic: PRIMITIVE times SHADE, before
+does show truthfully is the color arithmetic: PRIMITIVE times SHADE, before
 and after the swap.
 
 Usage (Windows, numpy + Pillow):
@@ -60,7 +60,7 @@ RGB8_RE = re.compile(r"constexpr\s+RGB8\s+(\w+)\s*\{\s*(\d+)\s*,\s*(\d+)\s*,\s*(
 
 # The combiner Jynx's untextured parts use, as the gsDPSetCombineLERP
 # arguments appear in the decomp. Cycle 0: (PRIMITIVE - 0) * SHADE + 0 for
-# colour, (0 - 0) * 0 + PRIMITIVE for alpha. Cycle 1 passes COMBINED through.
+# color, (0 - 0) * 0 + PRIMITIVE for alpha. Cycle 1 passes COMBINED through.
 JYNX_LERP = "PRIMITIVE,0,SHADE,0,0,0,0,PRIMITIVE,0,0,0,COMBINED,0,0,0,COMBINED"
 
 
@@ -80,7 +80,7 @@ def load_vtx(path):
     if not rows:
         sys.exit(f"{path}: no vertices parsed")
     pos = np.array([r[0:3] for r in rows], dtype=np.float64)
-    # With lighting on, the colour bytes are the normal as signed bytes.
+    # With lighting on, the color bytes are the normal as signed bytes.
     nrm = np.array([[(v - 256) if v > 127 else v for v in r[3:6]] for r in rows], dtype=np.float64)
     return pos, nrm
 
@@ -144,7 +144,7 @@ def parse_sections(assets):
 
 def matches(prim, texture_on, combiner, consts):
     """The header's rule, restated: texture off, Jynx's exact LERP, and the
-    primitive colour equal to one of the two cartridge values with full alpha."""
+    primitive color equal to one of the two cartridge values with full alpha."""
     if texture_on or combiner != JYNX_LERP or prim is None:
         return False
     return prim[3] == 255 and prim[0:3] in (consts["CartridgeFace"], consts["CartridgeHands"])
@@ -203,7 +203,7 @@ def render_section(section, vtx, prim_rgb, size=256, light_dir=(0.35, 0.45, 0.82
         img[front] = col[front]
         zbuf[front] = z[front]
         covered |= front
-    out = np.full((size, size, 3), 0.45)  # neutral grey ground so a near-black part stays visible
+    out = np.full((size, size, 3), 0.45)  # neutral gray ground so a near-black part stays visible
     out[covered] = img[covered]
     return (np.clip(out, 0, 1) * 255.0 + 0.5).astype(np.uint8), int(covered.sum())
 
@@ -220,7 +220,7 @@ def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--assets", default=os.path.expanduser("~/pokemonsnap/assets/cave/jynx"),
                     help="directory holding Jynx's *.gfx.inc.c, model.vtx.inc.c and hd_model.vtx.inc.c")
-    ap.add_argument("--header", default=DEFAULT_HEADER, help="rt64_snap_recolor.h to read the colours from")
+    ap.add_argument("--header", default=DEFAULT_HEADER, help="rt64_snap_recolor.h to read the colors from")
     ap.add_argument("--out", required=True, help="directory for the PNGs")
     args = ap.parse_args()
 
@@ -229,7 +229,7 @@ def main():
     os.makedirs(args.out, exist_ok=True)
 
     consts = load_header_constants(args.header)
-    print("header colours:", {k: "#%02X%02X%02X" % v for k, v in consts.items()})
+    print("header colors:", {k: "#%02X%02X%02X" % v for k, v in consts.items()})
 
     vtx = {}
     for arr, fname in (("jynx_vtx", "model.vtx.inc.c"), ("jynx_hd_vtx", "hd_model.vtx.inc.c")):
@@ -243,12 +243,12 @@ def main():
     if not sections:
         sys.exit("no untextured PRIMITIVE*SHADE sections found; wrong --assets?")
 
-    # 1. The table, and the claim check: every explicit primitive colour in
-    #    those sections is either one the header recolours or one it leaves.
+    # 1. The table, and the claim check: every explicit primitive color in
+    #    those sections is either one the header recolors or one it leaves.
     print()
-    print(f"{'display list':24s} {'prim':9s} {'recolour':8s} tris  bounding box (bone space)")
+    print(f"{'display list':24s} {'prim':9s} {'recolor':8s} tris  bounding box (bone space)")
     explicit = set()
-    recoloured = []
+    recolored = []
     for s in sections:
         prim = s["prim"]
         hit = matches(prim, False, JYNX_LERP, consts)
@@ -265,16 +265,16 @@ def main():
         print(f"{s['name']:24s} {'#%02X%02X%02X' % prim[0:3] if prim else 'inherited':9s} {'yes' if hit else 'no':8s} {len(s['tris']):4d}  "
               f"x[{int(lo[0]):5d},{int(hi[0]):5d}] y[{int(lo[1]):5d},{int(hi[1]):5d}] z[{int(lo[2]):5d},{int(hi[2]):5d}]  {arr_name}[{ids[0]}..{ids[-1]}]")
         if hit:
-            recoloured.append(s)
+            recolored.append(s)
 
     print()
     for key in ("CartridgeFace", "CartridgeHands"):
         if consts[key] not in explicit:
-            sys.exit(f"FAIL: the header's {key} #%02X%02X%02X is not a primitive colour Jynx's untextured sections use" % consts[key])
+            sys.exit(f"FAIL: the header's {key} #%02X%02X%02X is not a primitive color Jynx's untextured sections use" % consts[key])
         print(f"ok: {key} #%02X%02X%02X is used by Jynx's untextured sections" % consts[key])
-    if not recoloured:
-        sys.exit("FAIL: nothing matched the recolour rule")
-    print(f"ok: {len(recoloured)} sections match the rule and would be recoloured; every other section is left alone")
+    if not recolored:
+        sys.exit("FAIL: nothing matched the recolor rule")
+    print(f"ok: {len(recolored)} sections match the rule and would be recolored; every other section is left alone")
 
     # 2. The rule must be blind to texture-on draws and to the other combiner.
     assert not matches(consts["CartridgeFace"] + (255,), True, JYNX_LERP, consts), "texture-on draw must not match"
@@ -285,7 +285,7 @@ def main():
     # 3. Pictures.
     purple = consts["ArtworkPurple"]
     tiles = []
-    for s in recoloured:
+    for s in recolored:
         before, covered = render_section(s, vtx, s["prim"][0:3])
         after, _ = render_section(s, vtx, purple)
         if covered == 0:

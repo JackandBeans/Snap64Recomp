@@ -161,16 +161,16 @@ void rgb565(uint16_t c, uint8_t out[4]) {
     out[3] = 255;
 }
 
-// A BC1 colour block (8 bytes) into 16 texels. `fourColour` is BC2 and
-// BC3's rule: always four colours, never BC1's transparent black.
-void bc1_block(const uint8_t* b, uint8_t out[16][4], bool fourColour) {
+// A BC1 color block (8 bytes) into 16 texels. `fourColor` is BC2 and
+// BC3's rule: always four colors, never BC1's transparent black.
+void bc1_block(const uint8_t* b, uint8_t out[16][4], bool fourColor) {
     const uint16_t c0 = uint16_t(b[0] | (b[1] << 8));
     const uint16_t c1 = uint16_t(b[2] | (b[3] << 8));
     uint8_t p[4][4];
     rgb565(c0, p[0]);
     rgb565(c1, p[1]);
     for (int ch = 0; ch < 3; ch++) {
-        if ((c0 > c1) || fourColour) {
+        if ((c0 > c1) || fourColor) {
             p[2][ch] = uint8_t((2 * p[0][ch] + p[1][ch]) / 3);
             p[3][ch] = uint8_t((p[0][ch] + 2 * p[1][ch]) / 3);
         } else {
@@ -179,14 +179,14 @@ void bc1_block(const uint8_t* b, uint8_t out[16][4], bool fourColour) {
         }
     }
     p[2][3] = 255;
-    p[3][3] = ((c0 > c1) || fourColour) ? 255 : 0;
+    p[3][3] = ((c0 > c1) || fourColor) ? 255 : 0;
     const uint32_t idx = uint32_t(b[4]) | (uint32_t(b[5]) << 8) | (uint32_t(b[6]) << 16) | (uint32_t(b[7]) << 24);
     for (int i = 0; i < 16; i++) {
         std::memcpy(out[i], p[(idx >> (2 * i)) & 3], 4);
     }
 }
 
-// BC2: four bits of alpha a texel, then a BC1 colour block.
+// BC2: four bits of alpha a texel, then a BC1 color block.
 void bc2_block(const uint8_t* b, uint8_t out[16][4]) {
     bc1_block(b + 8, out, true);
     for (int i = 0; i < 16; i++) {
@@ -195,7 +195,7 @@ void bc2_block(const uint8_t* b, uint8_t out[16][4]) {
     }
 }
 
-// BC3: an interpolated alpha block, then a BC1 colour block.
+// BC3: an interpolated alpha block, then a BC1 color block.
 void bc3_block(const uint8_t* b, uint8_t out[16][4]) {
     bc1_block(b + 8, out, true);
     unsigned a[8];

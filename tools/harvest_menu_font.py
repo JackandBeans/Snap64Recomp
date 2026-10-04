@@ -1041,7 +1041,7 @@ HLP_SYNTH = {
 # The credits face: the 1px-stroke condensed font of the title screen's
 # copyright lines (sprite 0x802F82C8). Harvested for the port's own third
 # line; the characters the copyright text lacks are drawn in its style.
-# No commas in the transcript: their tails tuck under the neighbouring
+# No commas in the transcript: their tails tuck under the neighboring
 # digits' columns and never form separate runs. Digit cells are clipped
 # below their baseline so a swallowed comma tail cannot ride along.
 CRD_SOURCE = (0x802F82C8, "@1995 1996 1998 Nintendo/Creatures/GAMEFREAK")
@@ -1512,7 +1512,7 @@ def main():
             # Trim to ink on BOTH sides so the advance matches the drawn
             # width -- a leading blank column is invisible padding that
             # shifts the glyph inside its own advance (the parens sat
-            # lopsided against their neighbours for exactly this reason).
+            # lopsided against their neighbors for exactly this reason).
             cols = [x for row in art for x, ch in enumerate(row) if ch == "#"]
             x0 = min(cols, default=0)
             x1 = max(cols, default=0) + 1

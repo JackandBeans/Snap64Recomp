@@ -207,7 +207,7 @@ bool ensure_rom(uint64_t expected_hash) {
         std::filesystem::path chosen;
         if (hook) {
             if (strcmp(hook, "cancel") == 0) {
-                printf("[SNAP] ROM: the chooser was cancelled; the game cannot start without the file\n");
+                printf("[SNAP] ROM: the chooser was canceled; the game cannot start without the file\n");
                 return false;
             }
             chosen = std::filesystem::path(std::u8string(reinterpret_cast<const char8_t*>(hook)));
@@ -216,7 +216,7 @@ bool ensure_rom(uint64_t expected_hash) {
             const nfdu8filteritem_t filters[] = { { "N64 ROM", "z64,v64,n64" } };
             const nfdresult_t r = NFD_OpenDialogU8(&out, filters, 1, nullptr);
             if (r == NFD_CANCEL) {
-                printf("[SNAP] ROM: the chooser was cancelled; the game cannot start without the file\n");
+                printf("[SNAP] ROM: the chooser was canceled; the game cannot start without the file\n");
                 tell("The game cannot run without the file. Start it again when you have it.");
                 NFD_Quit();
                 return false;

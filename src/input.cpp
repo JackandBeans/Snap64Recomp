@@ -564,7 +564,7 @@ void clear_mouse() {
 // the game's thread, from input_get, at the moment the game reads its pad:
 // the game's own camera code runs after that in the same frame, on the
 // same thread, so there is no race with its writes to the same words. The
-// game's states are honoured: nothing moves while paused, while input is
+// game's states are honored: nothing moves while paused, while input is
 // disabled (cutscenes, the end of a course), while the view is changing
 // direction (-2) or a C button is turning it, or while the zoomed camera
 // is held for a photo. Zoomed out, the game folds a yaw past 0.3 pi into
@@ -619,8 +619,8 @@ void apply_mouse_look(uint8_t* rdram) {
     float yaw = read_f32(rdram, ADDR_PlayerViewYaw) + dx * k + gyaw * gs;
     write_f32(rdram, ADDR_PlayerViewYaw, yaw);
 
-    // SDL's y grows downwards; the game's pitch grows upwards. The gyro's
-    // pitch already grows upwards; the same tilt setting flips both.
+    // SDL's y grows downward; the game's pitch grows upward. The gyro's
+    // pitch already grows upward; the same tilt setting flips both.
     const float dpitch = (s.mouse_invert_y ? dy : -dy) * k + (s.mouse_invert_y ? -gpitch : gpitch) * gs;
     float pitch = read_f32(rdram, ADDR_ViewPitch) + dpitch;
     const float lo = read_f32(rdram, ADDR_MinPitch);
@@ -1122,7 +1122,7 @@ bool capture_event(const SDL_Event& event) {
                 return true;
             }
             if (sc == SDL_SCANCODE_ESCAPE) {
-                capture_end_with(CaptureState::Cancelled, "");
+                capture_end_with(CaptureState::Canceled, "");
                 return true;
             }
             if (device != kBindKeyboard) {
@@ -2035,7 +2035,7 @@ void input_handle_sdl_event(const SDL_Event& event) {
                 // well, on the belief that the vector pointed down. It aimed
                 // backwards. The first Deck report said it felt right; a
                 // deliberate left-turn test on 2026-09-07 said otherwise, and
-                // two reviewers had said so from the maths before that. A
+                // two reviewers had said so from the math before that. A
                 // sign is confirmed by turning left and watching, never by
                 // feel.
                 const float rz = event.csensor.data[2];
@@ -2665,7 +2665,7 @@ static void pad_thread_main() {
 #if defined(__APPLE__)
     // Started here and not in SDL_Init on the main thread (main.cpp,
     // create_gfx): SDL's IOKit driver schedules its device matching on the
-    // run loop of the thread that initialised the joystick subsystem and
+    // run loop of the thread that initialized the joystick subsystem and
     // services that loop from SDL_GameControllerUpdate, which runs on this
     // thread; on any other thread no pad on that driver is ever seen.
     // Stopped at the end of this function for the same reason.
@@ -2677,7 +2677,7 @@ static void pad_thread_main() {
     }
 #endif
     // Any extra mappings first, so a pad this file teaches SDL about is
-    // recognised by the first open rather than on some later poll.
+    // recognized by the first open rather than on some later poll.
     load_controller_mappings();
     if (g_vpad_test) {
         SDL_VirtualJoystickDesc desc;
@@ -3227,7 +3227,7 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
         // The pad's buttons and triggers went through the binding table above,
         // beside the keyboard's: their defaults are the mapping that used to
         // be written out here, and the settings file can now say otherwise.
-        // What stays is the analogue: a stick is a direction and a magnitude,
+        // What stays is the analog: a stick is a direction and a magnitude,
         // not a button, and neither of the two below is expressible as one.
 
         // Which stick is which: the left aims and the right works the C
@@ -3255,7 +3255,7 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
         // stick has none, and this only covers the rest an analog stick on a
         // modern controller does not quite return to.
         //
-        // Taken as a distance from centre and then rescaled, so the first
+        // Taken as a distance from center and then rescaled, so the first
         // usable position is the smallest movement rather than a jump.
         // Applying it to each axis separately, and passing the raw value
         // through once it was crossed, did two things wrong. The output
@@ -3371,7 +3371,7 @@ void input_set_rumble(int controller_num, bool rumble) {
 ultramodern::input::connected_device_info_t input_get_connected_device_info(int controller_num) {
     // Port 4: the Snap Station, a controller with a pak-class device in it.
     // The game probes any port that reports a pak (contInitialize,
-    // contDetectDevices) and recognises the station by what the probe echoes
+    // contDetectDevices) and recognizes the station by what the probe echoes
     // (snap_station.cpp); "ControllerPak" here only says a pak is present --
     // the runtime's own rumble path checks for RumblePak and leaves it alone.
     if (controller_num == 3 && snap::station_port4_present()) {

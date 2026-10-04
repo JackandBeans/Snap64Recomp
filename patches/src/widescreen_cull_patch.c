@@ -6,7 +6,7 @@
  * projects it at a fixed focal length of 228.506 pixels (160 * cot 35
  * degrees: a 70-degree horizontal field over 320 pixels), then rejects it
  * outside +/-240 pixels horizontally or +/-180 vertically -- 1.5 times the
- * 4:3 half-screen each way, a margin so a Pokemon whose centre has left
+ * 4:3 half-screen each way, a margin so a Pokemon whose center has left
  * the picture still draws while its body is in it. It never reads the
  * camera's aspect: the bounds are the cartridge's own picture, in pixels.
  *
