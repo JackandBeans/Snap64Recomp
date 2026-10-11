@@ -361,6 +361,10 @@ bool save_settings();
 // F5 and the exit write without waiting (the exit only when dirty). A write
 // that failed is not retried until the next mark, F5 or the exit.
 void settings_mark_dirty();
+// The same, with the debounce already spent, so the main loop writes on its
+// next pass: for a change the next process must find on disk (the Game
+// page's Restart Game row, after Save File).
+void settings_flush_soon();
 bool settings_dirty();
 bool settings_flush_if_due(std::chrono::steady_clock::time_point now);
 

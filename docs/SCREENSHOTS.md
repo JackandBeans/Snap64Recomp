@@ -10,13 +10,13 @@ them.
 
 ## The title
 
-<a href="screenshots/01n-title-113.png"><img src="screenshots/01n-title-113.png" width="640" alt="The title screen"></a>
+<a href="screenshots/01o-title-114.png"><img src="screenshots/01o-title-114.png" width="640" alt="The title screen"></a>
 
 **The title screen.** The game's own title with the port's "Recomp" wordmark
 under it, the copyright block, and the port's credits line
-(`JackandBeans (Snap64 Recomp) · v1.1.3`) set in the game's own lettering.
+(`JackandBeans (Snap64 Recomp) · v1.1.4`) set in the game's own lettering.
 The same picture from each earlier release, `01-title.png` for 1.0.0 and
-`01b` to `01m` for 1.0.1 to 1.1.2, stays in the folder for that release's
+`01b` to `01n` for 1.0.1 to 1.1.3, stays in the folder for that release's
 page.
 
 <a href="screenshots/02-title-menu.png"><img src="screenshots/02-title-menu.png" width="640" alt="The title menu with the Snap Station entry"></a>
@@ -84,10 +84,29 @@ is in the game's own backdrop picture; the console drew the same pixels.
 <a href="screenshots/08-options.png"><img src="screenshots/08-options.png" width="640" alt="The Options screen"></a>
 
 **Options.** The game's own Options screen, its rows at the cartridge's
-own lines: Graphics, Controls and Exit Game are the port's entries, and
+own lines: Graphics, Controls, Mods and Game are the port's entries, and
 Sound opens the port's Sound page. The Z Button and Control Stick rows the
-cartridge kept here live on the Controls page now. Exit Game asks once
-(A again closes the program, B stays) and is how a pad quits.
+cartridge kept here live on the Controls page now; Exit Game is the Game
+page's last row since 1.1.3. The picture is from 1.0.4, when Exit Game
+stood on this list.
+
+<a href="screenshots/26-game-page-114.png"><img src="screenshots/26-game-page-114.png" width="640" alt="The Game page, 1.1.4: Save File with the file's state, Restart Game, Exit Game"></a>
+
+**The Game page, 1.1.4.** The list's sixth row opens it: Save File, File 1
+to File 4, each its own file under `saves/`, read at the next start, its
+value saying what the file holds ("File 1, playing", "File 2, empty", or
+the day of its last save); Restart Game, the Mods page's restart, which
+asks first, so a chosen file is played at once; and Exit Game, which asks
+once (A again closes the program, B stays) and is how a pad quits. 1.1.3
+had a Snap Station row between Save File and Exit Game, a second switch
+for the title screen's own Snap Station item; 1.1.4 took it out.
+
+<a href="screenshots/26-game-page-113.png"><img src="screenshots/26-game-page-113.png" width="640" alt="The Game page as 1.1.3 shipped it: Save File, Snap Station, Exit Game"></a>
+
+**The Game page as 1.1.3 shipped it**, captured from the published 1.1.3
+build: Save File ("File 1" alone), the Snap Station row, Exit Game. The
+1.1.3 release page shows this picture, since four save files were that
+release's own feature.
 
 <a href="screenshots/09-graphics.png"><img src="screenshots/09-graphics.png" width="640" alt="The Graphics page"></a>
 

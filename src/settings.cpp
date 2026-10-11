@@ -86,6 +86,14 @@ void settings_mark_dirty() {
     s_edit_gen.fetch_add(1, std::memory_order_release);
 }
 
+void settings_flush_soon() {
+    // Marked as settings_mark_dirty marks, with the debounce already spent,
+    // so the main loop's next settings_flush_if_due writes.
+    const auto spent = std::chrono::steady_clock::now() - SETTINGS_DEBOUNCE;
+    s_last_mark.store(spent.time_since_epoch().count(), std::memory_order_relaxed);
+    s_edit_gen.fetch_add(1, std::memory_order_release);
+}
+
 bool settings_dirty() {
     return s_edit_gen.load(std::memory_order_acquire) != s_saved_gen.load(std::memory_order_relaxed);
 }

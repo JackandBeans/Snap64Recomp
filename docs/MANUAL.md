@@ -409,7 +409,9 @@ list so the list keeps the stock rhythm (Normal, the cartridge's default,
 tilts the camera down when the stick is pushed up; Reverse tilts it up; both
 are kept in the save, as on the cartridge, not in `snapsettings.json`); then
 Button Setup, the row that opens the Button Setup page (its value column
-says Open); Stick Swap; Dead
+says what opens it, in the words of the device in hand: "Press X" on the
+keyboard as shipped, "Click" with the mouse, "Press A" on a pad); Stick
+Swap; Dead
 Zone; Fast Forward (Off, 2x, 3x or 4x: the speed the held key runs the game
 at); Slow Motion (Off, 2x or 4x slower, the same way); Mouse Aim, Mouse
 Speed (25 to 400 percent of the shipped speed), Zoom Speed (the share of
@@ -541,9 +543,15 @@ course. Three rows. **Save File**: which of four save files the game
 plays, File 1 (the file the port always had) to File 4, each a file of
 its own under `saves/` that starts empty, so a family can share the
 program; it takes effect at the next start, since the game reads its
-save as it boots. **Snap Station**: the Blockbuster kiosk's sticker
-printer on controller port 4, Off as the console had it; On, the Gallery
-shows its Print button, from the next start. **Exit Game**: A turns the
+save as it boots. The value says what each file holds: "File 1,
+playing" for the one the game is playing, "File 2, empty" for one that has
+never been saved to, and the day it was last saved for the others ("File
+4, Oct 9", with the year when it is not this one); the help box names the
+file in play for the whole session. When another file than the first is
+in play, the title screen's bottom line says so ("Save 2"). **Restart
+Game**: restarts the program, as the Mods page's row does, so a chosen file
+is played at once; it asks first, and anything not saved at the lab is
+lost. **Exit Game**: A turns the
 help box into a question, and the second A closes the program the way
 the window's close button does. B, or moving off the row, withdraws the
 question, which names the buttons in your hand: "Press A again to close

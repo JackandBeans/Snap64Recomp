@@ -504,6 +504,13 @@ void schedule_relaunch(const char* mode, const char* why, int delayMs, bool sett
         if (settleSave) {
             wait_for_save_to_settle();
         }
+        // A settings change the new process must find on disk (the Game
+        // page's Save File, then its Restart Game): the main loop's write
+        // is waited for, two seconds at the most (a write that failed
+        // stays dirty, and the relaunch goes ahead).
+        for (int i = 0; (i < 40) && settings_dirty(); i++) {
+            std::this_thread::sleep_for(std::chrono::milliseconds(50));
+        }
         std::this_thread::sleep_for(std::chrono::milliseconds(delayMs));
         write_marker(mode, extra);
         if (!relaunch_self(why)) {

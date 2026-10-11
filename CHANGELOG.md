@@ -1,5 +1,45 @@
 # Changelog
 
+## 1.1.4 -- 2026-10-11
+
+* The Controls page's Pointer row no longer shows a mod's option text.
+  After a mod's options page had been opened, the Pointer row's label
+  read as one option's description, its value as another's, and its
+  help line as a third's: the row's four strings, from 1.1.1, had ids
+  inside the bank the options page composes its window into, which
+  rewrites those entries. The four strings have ids of their own past
+  the table's end now, and the table's ids are checked against every
+  dynamic bank. Found by JackandBeans on Oct 11 2026 with Island Skies.
+* The Button Setup row's value column says what opens the page, in the
+  words of the device in hand: "Press X" on the keyboard (the key the
+  table binds to A; X as shipped), "Click" with the mouse, "Press A" on a
+  pad, reworded as the help lines are when the device changes. 1.1.3 had
+  put "Open" there, a word that read as a state as much as a verb. Asked
+  about by JackandBeans on Oct 11 2026.
+* The Save File row says what each file holds. "File 1, playing" is the
+  file the game is playing, "File 2, empty" one that has never been
+  saved to, and the others carry the day they were last saved, "File 4,
+  Oct 9" (with the year when it is not this one), read from the files
+  as the port starts. The row had said "File 2" alone, the same for an
+  empty file and a full one. The help box names the file in play for
+  the whole session, and the title screen's bottom line says "Save 2"
+  when another file than the first is loaded, so a shared program shows
+  whose game it is at a glance. Asked for by JackandBeans on Oct 11 2026.
+* A Restart Game row on the Game page, between Save File and Exit Game:
+  the Mods page's restart, asking first as it does there, so a chosen
+  file is played at once instead of at some later start. The file chosen
+  is written to the settings file before the new process starts, on every
+  platform; on Linux and macOS the new process reads its settings before
+  it waits for the old one to exit.
+* The Game page has two rows, Save File and Exit Game. 1.1.3 had put a
+  Snap Station row between them, a second switch for a thing the title
+  screen's own Snap Station item already switches, and the page's bank
+  could have written a stale value over the title's. Found by
+  JackandBeans on Oct 11 2026.
+* The Game row's help line on the Options screen fits its box. The
+  1.1.3 line ran past the box's right edge: 270 pixels of ink in a
+  226-pixel box. Found by JackandBeans on Oct 11 2026.
+
 ## 1.1.3 -- 2026-10-10
 
 * A settings file from an earlier release no longer loses its fullscreen

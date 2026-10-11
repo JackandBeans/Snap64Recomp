@@ -36,6 +36,8 @@
 #include <cstdio>
 #include <cstring>
 #include <filesystem>
+#include <ctime>
+#include <chrono>
 #include <functional>
 #include <map>
 #include <mutex>
@@ -251,6 +253,53 @@ struct Strip {
 };
 
 uint8_t* g_menu_rdram = nullptr;
+
+// The Save File row's value for file n (1 to 4): "< File n, playing >" for
+// the file the game is playing, "< File n, empty >" for one that has never
+// been saved to, else the day the file was last written ("< File n, Oct 9 >",
+// with the year when it is not this one). Read as the strings are staged:
+// the file in play changes only by the game's own saves and says so
+// without a date, and the others cannot change during a session, so a
+// start-time reading stays right. (His word, Oct 11 2026: "File 2" alone
+// read the same for an empty file and a full one.)
+static std::string save_file_value(int n) {
+    std::string text = "< File " + std::to_string(n);
+    if (n == std::clamp(snap::settings().save_file, 1, 4)) {
+        return text + ", playing >";
+    }
+    const std::filesystem::path file = snap::base_path((n == 1) ? std::string("saves/pokemonsnap.bin")
+                                                                 : ("saves/pokemonsnap-" + std::to_string(n) + ".bin"));
+    std::error_code ec;
+    if (!std::filesystem::exists(file, ec) || ec) {
+        return text + ", empty >";
+    }
+    const auto written = std::filesystem::last_write_time(file, ec);
+    if (ec) {
+        return text + " >";
+    }
+    // The file clock to the wall clock by their difference from now (C++17 has no clock_cast).
+    const auto age = std::filesystem::file_time_type::clock::now() - written;
+    const std::time_t t = std::chrono::system_clock::to_time_t(
+        std::chrono::system_clock::now() - std::chrono::duration_cast<std::chrono::system_clock::duration>(age));
+    const std::time_t now = std::time(nullptr);
+    std::tm local{};
+    std::tm today{};
+#ifdef _WIN32
+    localtime_s(&local, &t);
+    localtime_s(&today, &now);
+#else
+    localtime_r(&t, &local);
+    localtime_r(&now, &today);
+#endif
+    static const char* const months[12] = { "Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec" };
+    text += std::string(", ") + months[(local.tm_mon >= 0 && local.tm_mon < 12) ? local.tm_mon : 0];
+    if (local.tm_year == today.tm_year) {
+        text += " " + std::to_string(local.tm_mday);
+    } else {
+        text += " " + std::to_string(local.tm_year + 1900);     // another year: the month and the year
+    }
+    return text + " >";
+}
 
 // The harvested faces and furniture; empty until the first main-menu load.
 MenuFont g_font;
@@ -1696,9 +1745,14 @@ RainbowStrip g_new_glow;
 // pages' lines are composed again when it does.
 constexpr int HandW = 256;
 constexpr int HandH = 12 + kMenuHlpCellH;
+// The Button Setup row's value column is worded the same way ("Press X",
+// "Click", "Press A"), in the rows' face: its slot, and the ink that fits
+// the column, from x 163 to short of the scroll arrows at 286.
+constexpr int ValueHandW = 128;
+constexpr int ValueHandInk = 112;
 bool hand_line(uint32_t off) {
     return (off == 85) || (off == 98) || (off == 100) || (off == 125) || (off == 126) || (off == 128) ||
-           ((off >= 132) && (off <= 149)) || (off == 276);
+           ((off >= 132) && (off <= 149)) || (off == 276) || (off == 343);
 }
 std::map<uint32_t, uint32_t> g_hand_addr;   // a staged line's offset, and its pixels
 uint64_t g_hand_sig = 0;                     // what they were last worded for
@@ -1852,7 +1906,7 @@ static void write_setting_bytes(const Settings &s) {
     // The GAME bank's two value bytes (past the page arrays): the save file
     // and the Snap Station, both for the next start (src/save_file.cpp).
     write_u8(MailboxAddr + 0x604, uint8_t(std::clamp(s.save_file, 1, 4) - 1));
-    write_u8(MailboxAddr + 0x605, s.snap_station ? 1 : 0);
+    write_u8(MailboxAddr + 0x605, 0);    // the Game page's restart request, set by the page, cleared here
     // The CONTROLS bank's value bytes from +0x64: mouse aim, the mouse
     // speed's index into the page's eleven steps, the zoom speed's index
     // into its four, the tilt, gyro aim, the gyro speed's index.
@@ -2204,7 +2258,7 @@ void stage_menu_strings(uint8_t* rdram) {
     // device in hand (hand_words, kBindRowSays).
     // Through the picture, "A OK  B Back", a fixed On, "A Type  B Cancel",
     // the rainbow New and the empty Mods page's second line.
-    constexpr uint32_t StringCount = BaseCount + 315 + ThumbBands + 31;   // +328, +329: Wide HUD; +330: a mod's notice; +331..+342: the GAME page; +343..+353: the Controls pages' polish
+    constexpr uint32_t StringCount = BaseCount + 315 + ThumbBands + 35;   // +328, +329: Wide HUD; +330: a mod's notice; +331..+342: the GAME page; +343..+353: the Controls pages' polish; +354..+357: the Pointer row, moved out of the options bank
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -2316,7 +2370,15 @@ void stage_menu_strings(uint8_t* rdram) {
             h = 16;
         }
         else if (id == BaseCount + 23) {
-            strip = compose_credits(SNAP_PORT_CREDITS);
+            // With another file than the first in play, the line says so:
+            // the first thing a shared program shows is whose game is loaded.
+            // "Save", since the credits face has no l for "File".
+            {
+                const int playing = std::clamp(snap::settings().save_file, 1, 4);
+                const std::string line = (playing == 1) ? std::string(SNAP_PORT_CREDITS)
+                                                        : (std::string(SNAP_PORT_CREDITS) + " \x01 Save " + std::to_string(playing));
+                strip = compose_credits(line.c_str());
+            }
             apply_outline(strip);
             w = strip.width;
             h = strip.height;
@@ -2418,38 +2480,34 @@ void stage_menu_strings(uint8_t* rdram) {
             h = strip.height;
         }
         else if (id == BaseCount + 333) {
-            strip = compose_help("The save file, the Snap Station, and Exit Game.");
+            strip = compose_help("Save file, restart and Exit Game.");   // 226 texels of box: 1.1.3's longer line ran past its edge (his screenshot, Oct 11 2026)
             w = strip.width;
             h = strip.height;
         }
         else if ((id >= BaseCount + 334) && (id <= BaseCount + 336)) {
-            static const char* const gameLabels[3] = { "Save File", "Snap Station", "Exit Game" };
+            static const char* const gameLabels[3] = { "Save File", "Restart Game", "Exit Game" };
             strip = compose(gameLabels[id - (BaseCount + 334)]);
             w = strip.width;
             h = strip.height;
         }
         else if (id == BaseCount + 337) {
-            strip = compose_lines("Four files. A new one starts empty.",
-                                  "Takes effect at the next start.");
+            // The file in play, named for the whole session: it cannot
+            // change without a restart. Each line under 226 texels of box.
+            strip = compose_lines(("Playing File " + std::to_string(std::clamp(snap::settings().save_file, 1, 4)) + ". Changes need a restart.").c_str(),
+                                  "A date is the file's last save.");
             w = strip.width;
             h = strip.height;
         }
         else if (id == BaseCount + 338) {
-            strip = compose_lines("The Blockbuster sticker printer, port 4.",
-                                  "On, the Gallery prints. At the next start.");
+            strip = compose_lines("Restarts the game with the file above.",
+                                  "It asks first. Anything unsaved is lost.");
             w = strip.width;
             h = strip.height;
         }
         else if ((id >= BaseCount + 339) && (id <= BaseCount + 342)) {
-            static const char* const fileValues[4] = { "< File 1 >", "< File 2 >", "< File 3 >", "< File 4 >" };
-            strip = compose(fileValues[id - (BaseCount + 339)]);
-            w = strip.width;
-            h = strip.height;
-        }
-        else if (id == BaseCount + 343) {
-            // The Controls page's Button Setup row: it opens a page, and its
-            // value column says so, with no chevrons since nothing cycles.
-            strip = compose("Open");
+            // Each file's state, read from the saves folder as the strings
+            // are staged (save_file_value says why a start-time reading holds).
+            strip = compose(save_file_value(int(id - (BaseCount + 339)) + 1).c_str());
             w = strip.width;
             h = strip.height;
         }
@@ -2517,22 +2575,22 @@ void stage_menu_strings(uint8_t* rdram) {
             w = strip.width;
             h = strip.height;
         }
-        else if (id == BaseCount + 250) {
+        else if (id == BaseCount + 354) {
             strip = compose("Pointer");
             w = strip.width;
             h = strip.height;
         }
-        else if (id == BaseCount + 251) {
+        else if (id == BaseCount + 355) {
             strip = compose("< System >");
             w = strip.width;
             h = strip.height;
         }
-        else if (id == BaseCount + 252) {
+        else if (id == BaseCount + 356) {
             strip = compose("< Camera >");
             w = strip.width;
             h = strip.height;
         }
-        else if (id == BaseCount + 253) {
+        else if (id == BaseCount + 357) {
             strip = compose_lines(ptrDesc[0], ptrDesc[1]);
             w = strip.width;
             h = strip.height;
@@ -3706,11 +3764,16 @@ static std::vector<std::string> hand_words(uint32_t off, int device) {
             v.push_back("Press A again to close the game, B to stay.");
             break;
         case 100:
-            // The CONTROLS page's row that opens Button Setup: no value, as
-            // the Option list's own Screen row has none.
+            // The CONTROLS page's row that opens Button Setup: its help line.
             v = { mouse ? std::string("Click to choose what each key, mouse button and pad button does.")
                         : ("Press " + a + " to choose what each key, mouse button and pad button does."),
                   "Press A to choose what each key, mouse\nbutton and pad button does." };
+            break;
+        case 343:
+            // That row's value column: what opens the page, in the device's
+            // words, the pad's last. 1.1.3 had put "Open" there, a word that
+            // read as a state as much as a verb (JackandBeans, Oct 11 2026).
+            v = { mouse ? std::string("Click") : ("Press " + a), "Press A" };
             break;
         case 125:
             // Button Setup's Device row.
@@ -3751,6 +3814,18 @@ static std::vector<std::string> hand_words(uint32_t off, int device) {
 Strip hand_strip(uint32_t off, int device) {
     bool last = false;
     const std::vector<std::string> words = hand_words(off, device);
+    if (off == 343) {
+        // The Button Setup row's value, in the rows' face: the first of the
+        // device's words whose ink fits the value column, else the pad's.
+        Strip value;
+        for (size_t i = 0; i < words.size(); i++) {
+            value = compose(words[i].c_str(), true);
+            if ((ink_width(value) <= ValueHandInk) || (i + 1 == words.size())) {
+                break;
+            }
+        }
+        return pad_strip(value, ValueHandW, StripHeight);
+    }
     const Strip text = compose_para(words, &last);
     if (last && (words.size() > 1) && (device != kBindPad)) {
         printf("[SNAP-MENU] help line %u: the %s's words do not fit the help box; the controller's are shown\n",
@@ -3776,7 +3851,9 @@ static void refresh_hand_lines() {
     g_hand_sig = g_hand_now;
     const int device = input_last_device();
     for (const auto& line : g_hand_addr) {
-        stage_dynamic_at(kStringBaseCount + line.first, line.second, hand_strip(line.first, device), HandW / 64, HandH);
+        const bool value = (line.first == 343);   // the Button Setup row's value: its own slot, in the rows' face
+        stage_dynamic_at(kStringBaseCount + line.first, line.second, hand_strip(line.first, device),
+                         value ? (ValueHandW / 64) : (HandW / 64), value ? StripHeight : HandH);
     }
 }
 
@@ -5419,9 +5496,22 @@ void poll_menu_mailbox(uint8_t* rdram) {
             std::lock_guard<std::mutex> lock(settings_mutex());
             Settings& g = settings();
             g.save_file = std::clamp(int(read_u8_mail(MailboxAddr + 0x604)) + 1, 1, 4);
-            g.snap_station = read_u8_mail(MailboxAddr + 0x605) != 0;
         }
         settings_mark_dirty();
+        // The page's Restart Game row, confirmed: the same restart as the
+        // Mods page's. The file chosen above must be on disk before the new
+        // process reads its settings: the write is asked for at once (the
+        // main loop makes it on its next pass, not after the 750 ms
+        // debounce) and the relaunch waits for it (schedule_relaunch). On
+        // Windows the new process waits for this one to exit, whose exit
+        // writes; on Linux and macOS it reads its settings before it waits.
+        if (read_u8_mail(MailboxAddr + 0x605) != 0) {
+            write_u8(MailboxAddr + 0x605, 0);
+            settings_flush_soon();
+            printf("[SNAP-MENU] Game page: restarting the game\n");
+            fflush(stdout);
+            mods_restart_game();
+        }
     }
 
     // The CONTROLS bank: four mouse fields, consumed by input.cpp through

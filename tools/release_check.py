@@ -796,6 +796,11 @@ def main():
     if args.zip and (not args.only or 'package' in args.only):
         for archive in args.zip:
             check_package(c, pathlib.Path(archive).resolve())
+        # The menu's string ids against its dynamic banks (tools/check_menu_ids.py):
+        # a static id inside a bank shows the bank's text once the bank is used.
+        ids = subprocess.run([sys.executable, str(pathlib.Path(__file__).resolve().parent / 'check_menu_ids.py')],
+                             capture_output=True, text=True)
+        c.add('package', ids.returncode == 0, (ids.stdout.strip().splitlines() or ['check_menu_ids gave nothing'])[0])
     failed = [r for r in c.results if not r[1]]
     print('\n%d checks, %d failed, %.0f s' % (len(c.results), len(failed), time.time() - t0))
     return 1 if failed else 0

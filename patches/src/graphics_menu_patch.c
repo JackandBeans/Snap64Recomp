@@ -397,9 +397,10 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_GAME_DESC       367  /* ..368: the first two rows' help; Exit Game's is STR_EXIT_HELP */
 #define STR_FILE1           369  /* ..372: File 1 .. File 4 */
 /* The CONTROLS and BUTTON SETUP pages' polish (menu_assets.cpp
- * BaseCount+343..+353): "Open" in the Button Setup row's value column, the
- * BUTTON SETUP page's own legend, and the Dead Zone's values with their
- * percent sign. */
+ * BaseCount+343..+353): the Button Setup row's value column, worded by the
+ * host for the device in hand ("Press X", "Click", "Press A"), the BUTTON
+ * SETUP page's own legend, and the Dead Zone's values with their percent
+ * sign. */
 #define STR_OPEN            373
 #define STR_BIND_LEGEND     374
 #define STR_DZ0             375  /* ..383: 0% to 40% by five */
@@ -479,10 +480,10 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 
 /* The CONTROLS page's Pointer row (2026-10-03): the mouse pointer the
  * menus show, the system's arrow or the port's own lens. */
-#define STR_PTR_LABEL        280
-#define STR_PTR_SYSTEM       281
-#define STR_PTR_CAMERA       282
-#define STR_PTR_DESC         283
+#define STR_PTR_LABEL        384  /* ..387: out of the options page's dynamic bank (268..303), where 1.1.1 had put them */
+#define STR_PTR_SYSTEM       385
+#define STR_PTR_CAMERA       386
+#define STR_PTR_DESC         387
 /* The MODS page (snap_mods_page): the Option list's item and its help line,
  * the heading, the empty-folder line, and the strips the host composes
  * while the page is open -- two banks of six names and six help lines, one
@@ -3015,10 +3016,14 @@ static void snap_sound_page(void) {
 /* The GAME page: the Option list's sixth item, in the SOUND page's dress,
  * three rows. Save File: which of four files the game plays, from the next
  * start (the host swaps the file through the runtime before the game reads
- * it, src/save_file.cpp). Snap Station: the kiosk printer on port 4, from
- * the next start. Exit Game: the row the list's own item was, asking first
- * as it did, with the host's device-worded question (STR_EXIT_CONFIRM). The
- * two values live in the GAME bank; the host keeps them in the file. */
+ * it, src/save_file.cpp). Exit Game: the row the list's own item was, asking
+ * first as it did, with the host's device-worded question (STR_EXIT_CONFIRM).
+ * The value lives in the GAME bank; the host keeps it in the file. Restart
+ * Game, between them, is the Mods page's restart with the same ask, asked
+ * for through the bank's second byte (the Mods bank answers only while its
+ * page is open), so a change of file leads somewhere. The Snap Station row
+ * 1.1.3 had here is gone: the title screen's own Snap Station item is that
+ * switch (his word, Oct 11 2026). */
 #define GAME_ROWS 3
 static void snap_exit_game(void);
 
@@ -3120,7 +3125,7 @@ static void snap_game_page(void) {
 
     for (i = 0; i < GAME_ROWS; i++) {
         PAGE_LABEL(i) = (u32) snap_make_strip(STR_GAME_LABEL + i, 50, PAGE_TOP_Y + i * PAGE_PITCH);
-        if (i < 2) {
+        if (i < 1) {
             v = GAME_FIELD(i);
             PAGE_VALUE(i) = (u32) snap_make_strip(snap_game_value_str(i, v), 163, PAGE_TOP_Y + i * PAGE_PITCH);
             snap_tint((GObj*) PAGE_VALUE(i), SEL_R, SEL_G, SEL_B);
@@ -3150,7 +3155,7 @@ static void snap_game_page(void) {
             if (armed) {
                 /* The question withdrawn, the page stays. */
                 armed = 0;
-                snap_swap_strip(descStrip, STR_EXIT_HELP);
+                snap_swap_strip(descStrip, (sel == 2) ? STR_EXIT_HELP : (STR_GAME_DESC + sel));
                 ohWait(1);
                 continue;
             }
@@ -3163,6 +3168,21 @@ static void snap_game_page(void) {
 
         if ((gContInputPressedButtons & A_BUTTON) || clickA) {
             snap_ui_sound(SND_OK);
+            if (sel == 1) {
+                /* Restart Game: the Mods page's ask, then its request. */
+                if (!armed) {
+                    armed = 1;
+                    snap_swap_strip(descStrip, STR_MODS_RESTART_ASK);
+                    ohWait(1);
+                    continue;
+                }
+                GAME_FIELD(1) = 1;              /* the host restarts on its next tick */
+                GAME_SEQ = GAME_SEQ + 1;
+                armed = 0;
+                snap_swap_strip(descStrip, STR_GAME_DESC + 1);
+                ohWait(1);
+                continue;
+            }
             if (sel == 2) {
                 if (!armed) {
                     /* Exit Game asks first: the help box becomes the question
@@ -3262,7 +3282,7 @@ static void snap_game_page(void) {
             snap_swap_strip(descStrip, (sel == 2) ? STR_EXIT_HELP : (STR_GAME_DESC + sel));
             snap_ui_sound(SND_MOVE);
         }
-        else if ((navRight || navLeft) && (sel < 2)) {
+        else if ((navRight || navLeft) && (sel < 1)) {
             v = GAME_FIELD(sel);
             if (navRight) {
                 v = (v + 1) % snap_game_value_count(sel);
@@ -3507,7 +3527,7 @@ static void snap_ctl_layout(s32 top) {
 
 static s32 snap_ctl_value_str(s32 row, s32 v) {
     if (row == CTL_ROW_BUTTONS) {
-        return STR_OPEN;   /* the row opens a page: its value column says so */
+        return STR_OPEN;   /* the row opens a page: its value column says what press does, in the device's words */
     }
     switch (snap_ctl_setting(row)) {
         case CTL_SETTING_STICKS: return v ? STR_ON : STR_OFF;
