@@ -31,8 +31,8 @@
   is written to the settings file before the new process starts, on every
   platform; on Linux and macOS the new process reads its settings before
   it waits for the old one to exit.
-* The Game page has two rows, Save File and Exit Game. 1.1.3 had put a
-  Snap Station row between them, a second switch for a thing the title
+* The Game page's Snap Station row is gone. 1.1.3 had put it between
+  Save File and Exit Game, a second switch for a thing the title
   screen's own Snap Station item already switches, and the page's bank
   could have written a stale value over the title's. Found by
   JackandBeans on Oct 11 2026.
