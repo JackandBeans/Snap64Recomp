@@ -161,8 +161,12 @@ record of the last run.
     python3 tools/hook_funcs.py
 
 MSVC has no `--wrap`, so the port intercepts game functions by renaming the
-generated definition to `__real_<name>` and defining `<name>` itself
-(`src/overlay_hook.cpp`, `src/matrix_tags.cpp`, ...). The script edits
+generated definition to `__game_<name>` and defining `<name>` itself
+(`src/overlay_hook.cpp`, `src/matrix_tags.cpp`, ...). Between the two the
+script generates `__real_<name>` (`RecompiledFuncs/funcs_snap_hooks.c`, with
+`snap_host_hooks.h`), which the port's `<name>` calls: it runs the hooks mods
+put on the function around the game's code, so a mod's hook keeps the port's
+work in it (`src/host_hooks.cpp`). The script edits
 `RecompiledFuncs/funcs_*.c` and `funcs.h` in place, is idempotent, and also
 inserts the inner hooks listed in its `INNER_HOOKS` table. It also finishes
 `RecompiledPatches/recomp_overlays.inl` for mods' hooks (step 8). Run it after

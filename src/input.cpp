@@ -304,7 +304,7 @@ const Bindings& defaults() {
         {"d_down",      {"Down", "Pad DPDown"}},
         {"d_left",      {"Left", "Pad DPLeft"}},
         {"d_right",     {"Right", "Pad DPRight"}},
-        {"l",           {"Q", "Pad LeftTrigger"}},
+        {"l",           {"Pad LeftTrigger"}},   // the game never reads L: no key on the keyboard
         {"r",           {"E", "Pad RightTrigger"}},
         {"c_up",        {"I", "Wheel Up"}},
         {"c_down",      {"K", "Wheel Down"}},
@@ -455,6 +455,15 @@ constexpr uint32_t ADDR_PlayerViewYaw           = 0x80382CC8;  // f32, radians
 constexpr uint32_t ADDR_ViewPitch               = 0x80382C0C;  // f32, radians, up positive
 constexpr uint32_t ADDR_MinPitch                = 0x80382CEC;  // f32
 constexpr uint32_t ADDR_MaxPitch                = 0x80382CF0;  // f32
+// The player's object and its stick process (app_level/player.c,
+// handleAnalogStick), read to know when the game itself takes the stick:
+// the game pauses that process wherever the stick must not move the view.
+constexpr uint32_t ADDR_gObjPlayer              = 0x80382C00;  // GObj*
+constexpr uint32_t ADDR_handleAnalogStick       = 0x80350AE8;  // the process's function
+constexpr uint32_t GObj_processListHead         = 0x18;        // sys/om.h: GObj
+constexpr uint32_t GObjProcess_next             = 0x00;        // GObjProcess
+constexpr uint32_t GObjProcess_paused           = 0x15;
+constexpr uint32_t GObjProcess_function         = 0x20;
 constexpr uint32_t ADDR_gDirectionIndex         = 0x80382BFC;  // s32: 0..3 facing, -1 zoomed in, -2 changing
 constexpr uint32_t ADDR_TargetDirectionZoomedIn = 0x80382C4C;  // s32: nonzero while a C button turns the view
 constexpr uint32_t ADDR_ZoomedInCameraHeld      = 0x80382D08;  // s32 (D_80382D08_523118): nonzero holds the zoomed camera
@@ -477,6 +486,11 @@ float read_f32(uint8_t* rdram, uint32_t addr) {
 void write_f32(uint8_t* rdram, uint32_t addr, float f) {
     std::memcpy(word_at(rdram, addr), &f, sizeof f);
 }
+int32_t read_s32(uint8_t* rdram, uint32_t addr);
+uint32_t read_u32(uint8_t* rdram, uint32_t addr) {
+    return (uint32_t) read_s32(rdram, addr);
+}
+
 int32_t read_s32(uint8_t* rdram, uint32_t addr) {
     return static_cast<int32_t>(*word_at(rdram, addr));
 }
@@ -600,6 +614,27 @@ void apply_mouse_look(uint8_t* rdram) {
     if (read_s32(rdram, ADDR_gIdleScript) != 0) SNAP_GYRO_DROP("the attract demo");
     if (read_u8(rdram, ADDR_IsPaused) != 0) SNAP_GYRO_DROP("paused");
     if (read_s32(rdram, ADDR_IsInputDisabled) != 0) SNAP_GYRO_DROP("input disabled");
+    // IsInputDisabled covers the Beach tutorial only. Everywhere else the
+    // game stops the stick by pausing the player's stick process -- the
+    // course's scripted start, a cutscene, a message, a turn to a new
+    // direction, the pause menu -- and the mouse went on turning the view
+    // through all of it: a course began looking straight up after a hand on
+    // the mouse during the Zero-One's run-in (JackandBeans, Oct 5 2026). The
+    // mouse moves the view only while that process runs.
+    {
+        const uint32_t player = read_u32(rdram, ADDR_gObjPlayer);
+        if (player == 0) SNAP_GYRO_DROP("no player");
+        uint32_t proc = read_u32(rdram, player + GObj_processListHead);
+        bool stickRuns = false;
+        for (int n = 0; (proc != 0) && (n < 64); n++) {
+            if (read_u32(rdram, proc + GObjProcess_function) == ADDR_handleAnalogStick) {
+                stickRuns = (read_u8(rdram, proc + GObjProcess_paused) == 0);
+                break;
+            }
+            proc = read_u32(rdram, proc + GObjProcess_next);
+        }
+        if (!stickRuns) SNAP_GYRO_DROP("the stick process is paused");
+    }
     const int32_t direction = read_s32(rdram, ADDR_gDirectionIndex);
     if (direction < -1) SNAP_GYRO_DROP("direction changing");
     const bool zoomedIn = (direction == -1);
@@ -1897,7 +1932,20 @@ void input_handle_sdl_event(const SDL_Event& event) {
         // thumbs. Only a real pointer aims the camera; the synthetic one would
         // swing the view every time the screen was brushed.
         case SDL_MOUSEMOTION:
-            if (captured && (event.motion.which != SDL_TOUCH_MOUSEID)) {
+            // Taking the mouse warps the cursor to the window's center, and SDL
+            // reports the warp as motion: the pointer's offset from the center
+            // arrived as one delta and the view started a course aimed where
+            // the pointer had been (JackandBeans, Oct 5 2026). The quiet period
+            // after a capture change drops it, as it does for the pointer; so
+            // does any single delta too large for a hand.
+            if (captured && (event.motion.which != SDL_TOUCH_MOUSEID) &&
+                (now_us() >= g_ptr_quiet_until.load(std::memory_order_relaxed))) {
+                if ((std::abs(event.motion.xrel) > 400) || (std::abs(event.motion.yrel) > 400)) {
+                    printf("[SNAP-Input] mouse motion of %d,%d in one event dropped as a warp\n",
+                           event.motion.xrel, event.motion.yrel);
+                    fflush(stdout);
+                    break;
+                }
                 std::lock_guard<std::mutex> lock(g_motion_mutex);
                 g_motion_dx += float(event.motion.xrel);
                 g_motion_dy += float(event.motion.yrel);

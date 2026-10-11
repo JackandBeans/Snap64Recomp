@@ -1,5 +1,165 @@
 # Changelog
 
+## 1.1.3 -- 2026-10-10
+
+* A settings file from an earlier release no longer loses its fullscreen
+  on the first start. The port keeps a saved fullscreen aside as it
+  reads the file, since the window is never created fullscreen, and
+  enters it a moment after the window opens; a file missing a newer
+  field is rewritten at the first flush, and that flush came before the
+  moment, so it wrote fullscreen off and the second start was windowed.
+  The file keeps its own fullscreen until the live one is set. Found
+  while cutting 1.1.3, when the title picture's run left its folder's
+  file windowed.
+* The Controls and Button Setup pages, after JackandBeans's screenshots
+  of Oct 10 2026. The Button Setup row says Open in its value column,
+  where nothing said it opened a page. The Button Setup page has its own
+  legend, A Change and B Back, where the header was bare. Its top row
+  reads Device, not "Set Up:". Stick Swap is Off or On where Pad Sticks
+  was Normal or Swapped. The Dead Zone's values carry their percent
+  sign. The pages' scroll arrows sit at the right edge, beside the
+  scroll bar; at the left they read as a cursor beside the last row.
+  The keyboard ships no key for the L button, which the game never
+  reads.
+* In a wide picture the word PAUSE no longer pops in. The game starts it
+  forty pixels past the 4:3 edge and slides it in, which on the console
+  was off screen; in a 16:9 picture that start is thirteen pixels inside
+  the view, so the word appeared there in one step. Its way in is now
+  stretched by the margin, as the side icons' way out was in 1.1.2: it
+  starts at the wide edge and rests where the game put it.
+* Four save files. The Options screen's sixth row is Game now, a page
+  with three rows: Save File (File 1, the file the port always had, to
+  File 4, each its own file under `saves/` that starts empty and appears
+  when the game first saves, so a family
+  can share the program; it takes effect at the next start, since the
+  game reads its save as it boots, and the port swaps the file through
+  the runtime just before that), Snap Station (the kiosk printer's
+  switch, which had lived in the settings file alone), and Exit Game,
+  the row the list's item was, asking first as it did. The Options
+  screen has room for six rows, and the sixth was Exit Game alone.
+* The Graphics page's rows are in three groups, in the order a player
+  asks about them: the display (Render Scale, Super Sampling,
+  Anti-Aliasing, Frame Rate, Fullscreen, Buffering, Color Depth), the
+  picture (Widescreen, Wide HUD, Overscan Crop, 2D Detail, Filter, Texture
+  Filter, Dither) and the fixes (Cutscene Fix, Photo Detail, Jynx
+  Recolor). They had grown in the order they were written. Each row's
+  values are keyed by its setting now, not its place, so the order is
+  free to change again.
+* A mod can show a notice over a course: `snap64_notice` in the mod
+  SDK's `snap64.h`, a short line centered at the top of the picture in
+  the film counter's row, in the pages' help face over a dark panel,
+  for four seconds from the moment the HUD has first been shown,
+  fading in and out, as a sprite of its own that stays while the
+  viewfinder hides the HUD; a new line replaces the old. Island
+  Skies says the hour and the sky as a ride starts ("7:23 PM, clear
+  night") and names a change of weather when one comes ("The rain
+  comes"). A mod can also read the clock's
+  zone (`snap64_utc_offset`, minutes east of UTC), which Island Skies
+  uses to put solar noon where the clock has it.
+* A mod can put a line of its own on its details page (Options > Mods):
+  `snap64_set_status` in the mod SDK's `snap64.h`, with the mod's id and
+  the line. It is the first paragraph of the page, before the description,
+  and a `%T` in it is filled with the computer's clock as the page is
+  read, so a time it names stays right while the page is up. Island
+  Skies uses it to say what its Live set-up is doing: the hour, the
+  weather, the sun's hours and the next change of weather. Checked by
+  capture with the test clock running sixty times as fast: the line's
+  minute moved on the open page.
+* A Wide HUD row on the Graphics page, the seventeenth. On, as 1.1.2 made
+  it, the film counter sits against the wide picture's right edge and the
+  R and Z icons slide out to it; Off leaves both at the 4:3 picture's
+  edge, where the cartridge has them (`wide_hud` in the settings file).
+  The page's mailbox bank of sixteen value bytes was full, so this row's
+  byte sits apart from the others and the page's pointer arrays moved to
+  homes with room for seventeen.
+* The sky drum work above does not touch the Cave, which has no sky box,
+  nor the Rainbow Cloud, whose sky is a star painting in many tiles and
+  not a drum; the log says so for the Rainbow Cloud (`[SNAP-SKY] ... as
+  the cartridge has it`). Both checked by run on Oct 8 2026.
+* A mod can read the computer's clock and calendar: `snap64_local_time`
+  and `snap64_local_date` in the mod SDK's `snap64.h`, the port's first
+  functions of its own for mods. Island Skies' "Your clock" sets the
+  island's hour by it. `SNAP_CLOCK=HH:MM` in the environment holds the
+  clock a mod reads at that time, for a replay.
+* The lines across a course's sky are gone. Each sky is a six-sided drum
+  around the camera whose faces each show the whole cloud picture, with a
+  flat lid and a color at each of its 36 corners. On the console at
+  320x240 the drum read as a sky; at the port's resolution three lines
+  stood on it: the picture's last column meeting its first at every
+  join, the crease where the corner colors change pace at a join, and
+  the lid's rim. The port now reads the drum's list as the course loads,
+  cuts each of its triangles into sixteen with the picture carried
+  straight, colors the new corners smoothly from the game's own corner
+  colors (a periodic cubic around the drum, a cubic that flattens at the
+  lid up it) and dissolves the picture's columns either side of each join
+  into its own clearest stretch, since its first and last columns do not
+  agree and a cloud begins at the first. The game's corner colors are read again every
+  frame, so a mod that paints the sky paints the fine drum too, and the
+  game's own list still runs after it, so a mod's additions to the sky
+  stay. A sky that is not such a drum is left as it was. `SNAP_SKY_DRUM=
+  original` in the environment keeps every sky as the cartridge draws it;
+  the log says what the patch made of each course's sky (`[SNAP-SKY]`).
+  Found by JackandBeans on Oct 7 2026 on the Beach at dusk with the Island
+  at Night mod, whose sunset colors showed the joins first.
+* The window's maximize button maximizes the window, as any window's
+  does, and a window left maximized opens maximized at the next launch
+  (`window_maximized` in the settings file). From 1.0.0 the button had
+  been a fullscreen switch, so a window filling the screen with its title
+  bar and the taskbar showing, the windowed full screen, could not be
+  had, and a fullscreen entered with the button was not saved either.
+  F11 and the Graphics page are the fullscreen switch, and a fullscreen
+  left with F11 returns to the maximized window it came from. Asked for
+  by JackandBeans on Oct 7 2026.
+* A mod's options page drew its rows short. With a mod whose details
+  carry a picture, the second row of the three on screen lost its value
+  and the third did not appear at all; at the bottom of the list the
+  Restore Defaults row was the missing one while its help showed, so the
+  help seemed a row behind. The pages draw their text as sprite strips
+  from a fixed pool of 64, and the options page over the details block,
+  the Mods page and the list reached 64 live strips, so the last three
+  made were refused and left blank. The pool holds 128 now, and the log's
+  count of refused strips says if it ever runs dry again. Found by
+  JackandBeans on Oct 6 2026 with Island at Night's ten options.
+* A mod's hook on a function the port itself wraps or rewrites no longer
+  throws the port's work in that function away. The runtime the port
+  inherited gives a hooked function a fresh copy of itself, recompiled from
+  the cartridge as the mods load with the hook calls inside, and the copy
+  had none of the port's additions: a hook on `fx_draw` dropped the names
+  the port gives the particles' rectangles, so Doduo's dust and every other
+  2D effect stepped at the game's rate as the view turned while the world
+  moved at the display's, and the effects' widescreen bounds went with
+  them; a hook on `omGetMtx`, `fx_createParticle` or
+  `renPrepareCameraMatrix` would have dropped the matrix serials, the
+  particle serials or the renderer's extended commands. The port now
+  declares the functions it intercepts (the list in `tools/hook_funcs.py`),
+  and a hook on one of them runs from the port's own copy, before and after
+  the game's code, with everything the port added kept; the log says which
+  (`[SNAP-MODS] a mod hooks fx_draw at entry: ...`). Found by JackandBeans on
+  Oct 6 2026: the Island at Night mod hooked `fx_draw` to light its effects,
+  and the effects stepped whether that option was on or off.
+* A mod is N64 code only. The mod format the port inherited has two ways
+  to carry native code: a declared native library (a `.dll`, `.so` or
+  `.dylib`) that the loader opens on the computer, and an offline-recompiled
+  `.offline.nrm`, whose code is a library beside it. The port now refuses
+  both with a reason ("Mod declares a native library; mods are N64 code
+  only", "Offline-recompiled mod would load native code; mods are N64 code
+  only") and leaves either in a dropped zip where it is, naming it; every
+  mod goes through the live recompiler. This closes the native routes; it
+  does not make a mod a sandbox, and the mods page says so. Raised by
+  Thunderstore's review of the community request, Oct 6 2026.
+* With Mouse Aim on, a course no longer starts with the view aimed where the
+  mouse had been moved during the Zero-One's run-in; it started looking
+  straight up. The game stops the stick during its scripted moments (the
+  run-in, a cutscene, a message, a turn to a new direction, the pause menu)
+  by pausing the player's stick process, and the port's mouse look checked
+  only the flag the Beach tutorial sets, so it went on turning the view
+  through all of them until the pitch hit its limit. The mouse now moves
+  the view only while the game's own stick process is running. Also, when a
+  course takes the mouse, SDL warps the cursor to the window's center and
+  reports the warp as motion; the camera waits that out as the pointer
+  already did, and drops any single movement too large for a hand. Found by
+  JackandBeans on Oct 5 2026.
+
 ## 1.1.2 -- 2026-10-04
 
 * The capital S of "Snap Station" on the title screen is drawn the way the

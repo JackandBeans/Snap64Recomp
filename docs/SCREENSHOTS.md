@@ -10,13 +10,13 @@ them.
 
 ## The title
 
-<a href="screenshots/01m-title-112.png"><img src="screenshots/01m-title-112.png" width="640" alt="The title screen"></a>
+<a href="screenshots/01n-title-113.png"><img src="screenshots/01n-title-113.png" width="640" alt="The title screen"></a>
 
 **The title screen.** The game's own title with the port's "Recomp" wordmark
 under it, the copyright block, and the port's credits line
-(`JackandBeans (Snap64 Recomp) · v1.1.2`) set in the game's own lettering.
+(`JackandBeans (Snap64 Recomp) · v1.1.3`) set in the game's own lettering.
 The same picture from each earlier release, `01-title.png` for 1.0.0 and
-`01b` to `01l` for 1.0.1 to 1.1.1, stays in the folder for that release's
+`01b` to `01m` for 1.0.1 to 1.1.2, stays in the folder for that release's
 page.
 
 <a href="screenshots/02-title-menu.png"><img src="screenshots/02-title-menu.png" width="640" alt="The title menu with the Snap Station entry"></a>
@@ -62,6 +62,14 @@ against the screen's own edge in a wide picture, and the R and Z icons slide
 out to that edge when the viewfinder comes up. The picture from 1.0.1,
 `04b-beach-widescreen.png`, has the counter at the edge of the game's 4:3
 screen; it stays in the folder for the earlier releases' pages.
+
+<a href="screenshots/25-beach-sunset-113.png"><img src="screenshots/25-beach-sunset-113.png" width="640" alt="The Beach at sunset under Island Skies"></a>
+
+**The Beach at sunset, 1.1.3.** The sun over the sea with Widescreen on and
+the Island Skies mod set to Sunset. The sky is one smooth drum: since 1.1.3
+the port cuts each course's sky fine as it loads and blends the picture
+across its joins, where three lines had stood at the port's resolution. The
+mod paints the colors; the smoothness is the port's.
 
 ## The lab
 

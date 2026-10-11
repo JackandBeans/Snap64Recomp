@@ -17,7 +17,7 @@ carries nothing of the port's.
 | `lib/rt64` | <https://github.com/JackandBeans/rt64>, `snap64` | `9cb7f28` | rt64/rt64 `4337374` plus two commits: the port's changes (74 files, with `.gitmodules` and the plume gitlink pointing at the plume fork), and dxc allowed to differ from its commit (below, "dxc") |
 | `lib/rt64/src/contrib/plume` | <https://github.com/JackandBeans/plume>, `snap64` | `da8649e` | plume `d890ac8`, the commit rt64 pins, plus one commit (five files) |
 | `lib/rt64/src/contrib/*`, the rest | rt64's own submodules | rt64's pins | the table below |
-| `lib/N64ModernRuntime` | <https://github.com/JackandBeans/N64ModernRuntime>, `snap64` | `7ab8900` | N64ModernRuntime `cdf5abb` plus one commit (eighteen files, with `.gitmodules` and the N64Recomp gitlink pointing at the N64Recomp fork) |
+| `lib/N64ModernRuntime` | <https://github.com/JackandBeans/N64ModernRuntime>, `snap64` | `dbf375f` | N64ModernRuntime `cdf5abb` plus four commits: the port's changes (eighteen files, with `.gitmodules` and the N64Recomp gitlink pointing at the N64Recomp fork), native libraries refused, offline-recompiled mods refused, and hooks on the functions the port instruments recorded for the port's own copies to run instead of regenerated from the ROM |
 | `lib/N64ModernRuntime/N64Recomp` | <https://github.com/JackandBeans/N64Recomp>, `snap64` | `a726e15` | N64Recomp `81213c1`, the commit the runtime pins, plus one commit (`include/recomp.h`) |
 | `lib/N64ModernRuntime/thirdparty/*` | the runtime's own submodules (miniz, o1heap, xxHash) | the runtime's pins | upstream, unchanged |
 | `lib/SDL` | <https://github.com/libsdl-org/SDL>, upstream | `fa24d86` | `release-2.30.11`, unchanged |

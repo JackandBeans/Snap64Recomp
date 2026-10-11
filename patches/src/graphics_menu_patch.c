@@ -189,8 +189,8 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *                8 Super Sampling, 9 Texture Filter, 10 Color Depth,
  *                11 Buffering, 12 Overscan Crop, 13 Cutscene Fix (also
  *                read by the intro patches), 14 Photo Detail, 15 VC
- *                Recolor. The bank is full: field 16 would be the
- *                pointer word below.
+ *                Recolor. The bank is full: field 16, Wide HUD, is the
+ *                byte at +0x4D (MBOX_FIELD maps it there).
  *   +0x18  u32  SCRATCH_GRAPHICS_GOBJ, the patch's own (see below)
  *   +0x1C  u32  SCRATCH_HELP_ITEM, the patch's own
  *   +0x20  u32  SOUND sequence word
@@ -209,6 +209,15 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *   +0x48  u32  SNAP_VIEW_WIDE_SAVED, host-owned and zeroed at the seed:
  *               verdicts the widened bound turned from culled to drawn,
  *               counted by widescreen_cull_patch.c, printed under SNAP_STATS
+ *   +0x4C  u8   host-owned: the BGM players' mute (src/overlay_hook.cpp)
+ *   +0x4D  u8   GRAPHICS field 16, Wide HUD: the film counter and the side
+ *               icons at the wide picture's edges (settings.h wide_hud)
+ *   +0x5F4 u32  host-owned: the ticks a mod's notice has left to show (+0xE0 and +0xE4 are the fine slides', rect_tags.cpp)
+ *               (snap64_notice), counted down by Icons_UpdateDefault
+ *   +0x5FC u32  host-owned: the notices sent, so a new one replaces the old
+ *   +0x4E  u8   SKY_KEEP_DRUM, host-owned: 1 keeps every course's sky as
+ *               the cartridge draws it (SNAP_SKY_DRUM=original); read by
+ *               sky_patch.c
  *   +0x34  u8   MBOX_SEL, the patch's own: the current selection,
  *               readable from every coroutine
  *   +0x38  u8   MBOX_TITLE_REQ: the title's Snap Station item was chosen;
@@ -260,6 +269,9 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *               bits, the result above them (1 done, 2 canceled, 3
  *               refused, a key with a job of its own, 4 refused, nothing
  *               else would press the input, 5 nothing pressed in time)
+ *   +0xA8  u32  SKY_REPORT, sky_patch.c's own: the course's sky as the
+ *               patch read it (triangles << 16 | rings << 8 | nodes), or
+ *               0xFFFF0000 | a reason it was left alone; the host logs it
  *   +0xA8  u32  BIND_GEN, host-owned: bumped when the page's row values
  *               were recomposed; its low bit is the bank of ids to show
  *   +0xAC  u8   BIND_DEVICE, the page's: the device it shows
@@ -296,7 +308,9 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define SNAP_GFX_ASSETS    0x80C01000
 
 #define MBOX_SEQ     (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x4))
-#define MBOX_FIELD(i) (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x8 + (i)))
+/* The GRAPHICS value bytes: fields 0..15 at +0x08, and field 16 (Wide HUD)
+ * at +0x4D, since +0x18 is the pointer word below. */
+#define MBOX_FIELD(i) (*(volatile u8*) ((i) < 16 ? SNAP_GFX_MAILBOX + 0x8 + (i) : SNAP_GFX_MAILBOX + 0x4D))
 /* Moved off +0x16 when the GRAPHICS bank grew to sixteen fields (+0x08..
  * +0x17): field 14 (Photo Detail) now lives where the selection byte did.
  * Not +0x1F, the first free-looking byte -- that is the low byte of the
@@ -365,6 +379,30 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  * the name or the re-releases' platforms. */
 #define STR_JYNX_LABEL  88
 #define STR_JYNX_DESC   89
+/* "Wide HUD": the film counter and the side icons at the wide picture's
+ * edges (settings.h wide_hud), the seventeenth Graphics row. Its two ids
+ * sit past the Mods page's (menu_assets.cpp BaseCount+328 and +329). */
+#define STR_HUD_LABEL   358
+#define STR_HUD_DESC    359
+/* A mod's notice over a course (snap64_notice; menu_assets.cpp BaseCount+330):
+ * one boxed strip the host stages, shown by the HUD's own update below
+ * while the ticks at +0xE0 last. */
+#define STR_NOTICE      360
+/* The GAME page (menu_assets.cpp BaseCount+331..+342): the Option list's
+ * sixth item, which was Exit Game; Exit Game is the page's last row. */
+#define STR_GAME_HDR        361
+#define STR_GAME_ITEM       362
+#define STR_GAME_ITEM_HELP  363
+#define STR_GAME_LABEL      364  /* ..366: Save File, Snap Station, Exit Game */
+#define STR_GAME_DESC       367  /* ..368: the first two rows' help; Exit Game's is STR_EXIT_HELP */
+#define STR_FILE1           369  /* ..372: File 1 .. File 4 */
+/* The CONTROLS and BUTTON SETUP pages' polish (menu_assets.cpp
+ * BaseCount+343..+353): "Open" in the Button Setup row's value column, the
+ * BUTTON SETUP page's own legend, and the Dead Zone's values with their
+ * percent sign. */
+#define STR_OPEN            373
+#define STR_BIND_LEGEND     374
+#define STR_DZ0             375  /* ..383: 0% to 40% by five */
 /* "Snap Station" in the title menu's own face, for the title's fifth item
  * (the title section at the end of this file). Width 0 when the port could
  * not compose it, and then there is no fifth item. */
@@ -697,6 +735,12 @@ static s32 snap_mouse_on_sprite(SObj* sobj, s32 margin) {
 
 #define SND_SEQ      (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x20))
 #define SND_FIELD(i) (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x28 + (i)))
+/* The GAME bank, in the scratch area past the page arrays (the mailbox's
+ * first page is full): a sequence word and two value bytes, Save File
+ * (0..3 for File 1..4) and Snap Station (0/1), both kept by the host for
+ * the next start. */
+#define GAME_SEQ      (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x600))
+#define GAME_FIELD(i) (*(volatile u8*)  (SNAP_GFX_MAILBOX + 0x604 + (i)))
 
 /* The Option list: Screen, Graphics, Sound, Controls, Return, Exit Game.
  * The stock Z Button and Control Stick rows live on the CONTROLS page now,
@@ -715,7 +759,7 @@ static s32 snap_mouse_on_sprite(SObj* sobj, s32 margin) {
  * the MODS item stands there (snap_option_labels), so the dispatcher can
  * tell it from B, which comes back as OPT_RETURN as well. */
 #define OPT_MODS       6
-#define PAGE_ITEMS     16
+#define PAGE_ITEMS     17
 /* The stock Options list's own rhythm: first row at 73, sixteen rows of
  * pitch, six rows on screen -- the Graphics page reads as the same menu.
  * The rest scroll into view, which the edge arrows announce. */
@@ -731,7 +775,7 @@ static s32 snap_mouse_on_sprite(SObj* sobj, s32 margin) {
  * widths, so over there the arrow's distance to the nearest content
  * changed row by row and the pair read as unanchored. The down
  * arrow's travel stays above the help box frame at y=168. */
-#define ARROW_X        34
+#define ARROW_X        286    /* the right margin, beside the scroll bar: at the left the arrow read as a cursor */
 #define ARROW_UP_Y     72
 #define ARROW_DN_Y     151
 /* The first row's y and the up chevron's, as the page on screen has them:
@@ -1164,10 +1208,14 @@ static void snap_header_done(void) {
  * (snap_swap_strip's own clamp moves from 4 to this, and the stager's
  * warning threshold with it: src/menu_assets.cpp.) */
 #define SNAP_STRIP_CHUNKS 6
-#define SNAP_STRIP_SLOTS  64
+#define SNAP_STRIP_SLOTS  128
 /* 0x100 a slot, not the 0xA4 it uses: a round stride keeps the slot
  * arithmetic readable and leaves room to widen the chunk count again
- * without anything else moving. 64 * 0x100 is 16 KB of .bss. Correctness
+ * without anything else moving. 128 * 0x100 is 32 KB of .bss: 64 ran dry
+ * on Oct 6 2026, when a mod's options page over the details block, the
+ * Mods page and the list, with the mod's picture, had 64 strips live and
+ * the strips of the last rows made were refused (a value and a whole row
+ * blank, JackandBeans). Correctness
  * does not depend on the number -- snap_strip_slot_of confirms a candidate
  * against the slot's own address. */
 #define SNAP_STRIP_STRIDE 0x100
@@ -1504,90 +1552,109 @@ static void snap_tint(GObj* gobj, u8 r, u8 g, u8 b) {
  * screen ("gobjthread stack over"), which on the port is a silent freeze.
  * Measured: the page's original ~600 bytes of local arrays killed it. */
 #define SCRATCH_ARRAYS        (SNAP_GFX_MAILBOX + 0x100)
-/* Sixteen slots for the page rows, and sixteen rows now use them: the
- * day the page once gained a thirteenth row, twelve-slot arrays silently
+/* Seventeen slots for the page rows, and seventeen rows use them: the day
+ * the page once gained a thirteenth row, twelve-slot arrays silently
  * aliased -- label 12 landed on value 0 and value 12 landed on hidden 0,
  * which corrupted value swaps, leaked strips onto the root list, and left
- * the teardown restoring sprites through a clobbered pointer. A
- * seventeenth row needs wider arrays here, a seventeenth PAGE_ENTRY byte,
- * and a mailbox field past +0x17 -- which is the pointer word at +0x18,
- * so the field bank has to move first (see the byte map above). */
-#define PAGE_LABEL(i)  (*(volatile u32*) (SCRATCH_ARRAYS + 0x00 + (i) * 4))   /* GObj*, 16 */
-#define PAGE_VALUE(i)  (*(volatile u32*) (SCRATCH_ARRAYS + 0x40 + (i) * 4))   /* GObj*, 16 */
+ * the teardown restoring sprites through a clobbered pointer. The
+ * seventeenth row (Wide HUD) moved the label and value arrays and the
+ * entry snapshot to homes of their own past everything else here
+ * (+0x400, +0x480, +0x4E0; the scratch area runs to +0x1000, where the
+ * strings' directory begins), and put its mailbox field at +0x4D, since
+ * +0x18 is the pointer word. +0x00..+0x7F are free now. */
+#define PAGE_LABEL(i)  (*(volatile u32*) (SCRATCH_ARRAYS + 0x400 + (i) * 4))  /* GObj*, 17 */
+#define PAGE_VALUE_BASE (SCRATCH_ARRAYS + 0x480)                                /* the mouse indexes it by row */
+#define PAGE_VALUE(i)  (*(volatile u32*) (PAGE_VALUE_BASE + (i) * 4))         /* GObj*, 17 */
 #define PAGE_HIDDEN(i) (*(volatile u32*) (SCRATCH_ARRAYS + 0x80 + (i) * 4))   /* SObj*, 64 */
 #define LIST_LABEL(i)  (*(volatile u32*) (SCRATCH_ARRAYS + 0x180 + (i) * 4))  /* SObj*, 8 */
 #define LIST_HELP(i)   (*(volatile u32*) (SCRATCH_ARRAYS + 0x1A0 + (i) * 4))  /* SObj*, 8 */
 #define PAGE_ARROW_UP  (*(volatile u32*) (SCRATCH_ARRAYS + 0x1C0))            /* GObj* */
 #define PAGE_ARROW_DN  (*(volatile u32*) (SCRATCH_ARRAYS + 0x1C4))            /* GObj* */
 /* The Graphics page's entry snapshot of the mailbox value bytes, by field
- * index, for B to restore. Sixteen bytes for sixteen fields, one per row
- * array slot; nothing else lives past the arrow slots. */
-#define PAGE_ENTRY(i)  (*(volatile u8*)  (SCRATCH_ARRAYS + 0x1C8 + (i)))       /* u8, 16 */
+ * index, for B to restore. Seventeen bytes for seventeen fields, one per
+ * row array slot. */
+#define PAGE_ENTRY(i)  (*(volatile u8*)  (SCRATCH_ARRAYS + 0x4E0 + (i)))       /* u8, 17 */
 
-/* The page's sixteen rows, in display order. Each row cycles one mailbox
+/* The page's seventeen rows, in display order. Each row cycles one mailbox
  * field and shows one label, one value set and one description; the maps
  * below are functions so nothing needs a table in a coroutine frame. */
 static s32 snap_row_field(s32 row) {
     switch (row) {
+        /* The display. */
         case 0:  return 0;    /* Render Scale */
         case 1:  return 8;    /* Super Sampling */
         case 2:  return 1;    /* Anti-Aliasing */
-        case 3:  return 2;    /* Widescreen */
-        case 4:  return 3;    /* Frame Rate */
-        case 5:  return 4;    /* 2D Detail */
-        case 6:  return 5;    /* Filter */
-        case 7:  return 9;    /* Texture Filter */
-        case 8:  return 10;   /* Color Depth */
-        case 9:  return 11;   /* Buffering */
-        case 10: return 6;    /* Dither */
-        case 11: return 7;    /* Fullscreen */
-        case 12: return 12;   /* Overscan Crop */
-        case 13: return 13;   /* Cutscene Fix */
-        case 14: return 14;   /* Photo Detail */
+        case 3:  return 3;    /* Frame Rate */
+        case 4:  return 7;    /* Fullscreen */
+        case 5:  return 11;   /* Buffering */
+        case 6:  return 10;   /* Color Depth */
+        /* The picture. */
+        case 7:  return 2;    /* Widescreen */
+        case 8:  return 16;   /* Wide HUD */
+        case 9:  return 12;   /* Overscan Crop */
+        case 10: return 4;    /* 2D Detail */
+        case 11: return 5;    /* Filter */
+        case 12: return 9;    /* Texture Filter */
+        case 13: return 6;    /* Dither */
+        /* The fixes. */
+        case 14: return 13;   /* Cutscene Fix */
+        case 15: return 14;   /* Photo Detail */
         default: return 15;   /* Jynx Recolor */
     }
 }
 
-static s32 snap_row_label(s32 row) {
-    switch (row) {
-        case 0:  return STR_L_SCALE + 0;
-        case 1:  return STR_SS_LABEL;
-        case 2:  return STR_L_SCALE + 1;
-        case 3:  return STR_L_SCALE + 2;
-        case 4:  return STR_L_SCALE + 3;
-        case 5:  return STR_L_SCALE + 4;
-        case 6:  return STR_L_SCALE + 5;
-        case 7:  return STR_TEXF_LABEL;
-        case 8:  return STR_DEPTH_LABEL;
-        case 9:  return STR_BUF_LABEL;
-        case 10: return STR_L_SCALE + 6;
-        case 11: return STR_L_SCALE + 7;
+/* A field's label and description: keyed by the field, so the rows can be
+ * put in any order above. */
+static s32 snap_field_label(s32 field) {
+    switch (field) {
+        case 0:  return STR_L_SCALE + 0;   /* Render Scale */
+        case 1:  return STR_L_SCALE + 1;   /* Anti-Aliasing */
+        case 2:  return STR_L_SCALE + 2;   /* Widescreen */
+        case 3:  return STR_L_SCALE + 3;   /* Frame Rate */
+        case 4:  return STR_L_SCALE + 4;   /* 2D Detail */
+        case 5:  return STR_L_SCALE + 5;   /* Filter */
+        case 6:  return STR_L_SCALE + 6;   /* Dither */
+        case 7:  return STR_L_SCALE + 7;   /* Fullscreen */
+        case 8:  return STR_SS_LABEL;
+        case 9:  return STR_TEXF_LABEL;
+        case 10: return STR_DEPTH_LABEL;
+        case 11: return STR_BUF_LABEL;
         case 12: return STR_CROP_LABEL;
         case 13: return STR_INTRO_LABEL;
         case 14: return STR_PHOTO_LABEL;
-        default: return STR_JYNX_LABEL;
+        case 15: return STR_JYNX_LABEL;
+        default: return STR_HUD_LABEL;
     }
 }
 
-static s32 snap_row_desc(s32 row) {
-    switch (row) {
+static s32 snap_field_desc(s32 field) {
+    switch (field) {
         case 0:  return STR_DESC + 0;
-        case 1:  return STR_DESC2 + 0;
-        case 2:  return STR_DESC + 1;
-        case 3:  return STR_DESC + 2;
-        case 4:  return STR_DESC + 3;
-        case 5:  return STR_DESC + 4;
-        case 6:  return STR_DESC + 5;
-        case 7:  return STR_DESC2 + 1;
-        case 8:  return STR_DESC2 + 2;
-        case 9:  return STR_DESC2 + 3;
-        case 10: return STR_DESC + 6;
-        case 11: return STR_DESC + 7;
+        case 1:  return STR_DESC + 1;
+        case 2:  return STR_DESC + 2;
+        case 3:  return STR_DESC + 3;
+        case 4:  return STR_DESC + 4;
+        case 5:  return STR_DESC + 5;
+        case 6:  return STR_DESC + 6;
+        case 7:  return STR_DESC + 7;
+        case 8:  return STR_DESC2 + 0;
+        case 9:  return STR_DESC2 + 1;
+        case 10: return STR_DESC2 + 2;
+        case 11: return STR_DESC2 + 3;
         case 12: return STR_CROP_DESC;
         case 13: return STR_INTRO_DESC;
         case 14: return STR_PHOTO_DESC;
-        default: return STR_JYNX_DESC;
+        case 15: return STR_JYNX_DESC;
+        default: return STR_HUD_DESC;
     }
+}
+
+static s32 snap_row_label(s32 row) {
+    return snap_field_label(snap_row_field(row));
+}
+
+static s32 snap_row_desc(s32 row) {
+    return snap_field_desc(snap_row_field(row));
 }
 
 /* The twelve sprite chains of the Option screen, by index -- a function so
@@ -1613,46 +1680,46 @@ static GObj* snap_chain(s32 i) {
 }
 
 /* How many values a page row cycles through. */
-static s32 snap_value_count(s32 row) {
-    switch (row) {
+static s32 snap_value_count(s32 field) {
+    switch (field) {
         case 0:  return 9;   /* Render Scale: Auto, 1x..8x */
-        case 1:  return 8;   /* Super Sampling: Off, 2x..8x. The only lever
+        case 8:  return 8;   /* Super Sampling: Off, 2x..8x. The only lever
                               * against texture aliasing in a game that never
                               * enables the hardware's texture LOD, and the one
                               * every other N64 project leans on for it. */
-        case 2:  return 4;   /* Anti-Aliasing: Off, 2x, 4x, 8x */
-        case 4:  return 8;   /* Frame Rate: Original, Display, then 60, 90,
+        case 1:  return 4;   /* Anti-Aliasing: Off, 2x, 4x, 8x */
+        case 3:  return 8;   /* Frame Rate: Original, Display, then 60, 90,
                               * 120, 144, 165 and 240 held by interpolation
                               * (the Manual mode with that target) */
-        case 5:  return 3;   /* 2D Detail */
-        case 6:  return 3;   /* Filter */
-        case 8:  return 3;   /* Color Depth: Auto, Standard, High */
+        case 4:  return 3;   /* 2D Detail */
+        case 5:  return 3;   /* Filter */
+        case 10:  return 3;   /* Color Depth: Auto, Standard, High */
         default: return 2;   /* the on/off pairs */
     }
 }
 
-/* Which staged string a page row shows for a value -- computed, not a
- * table in the coroutine's frame. */
-static s32 snap_value_str(s32 row, s32 v) {
-    switch (row) {
+/* Which staged string a field shows for a value -- computed, not a
+ * table in the coroutine's frame; keyed by the field, as the counts are. */
+static s32 snap_value_str(s32 field, s32 v) {
+    switch (field) {
         case 0: return (v == 0) ? STR_AUTO : (STR_1X + v - 1);
-        case 1: return (v == 0) ? STR_OFF : (STR_1X + v);          /* 2x 3x 4x */
-        case 2: return (v == 0) ? STR_OFF
+        case 8: return (v == 0) ? STR_OFF : (STR_1X + v);          /* 2x 3x 4x */
+        case 1: return (v == 0) ? STR_OFF
                      : (v == 1) ? (STR_1X + 1)
                      : (v == 2) ? (STR_1X + 3) : (STR_1X + 7);
-        case 4: return (v == 0) ? STR_ORIGINAL
+        case 3: return (v == 0) ? STR_ORIGINAL
                      : (v == 1) ? STR_DISPLAY
                      : (v == 2) ? (STR_VOL0 + 6)      /* 60 */
                      : (v == 3) ? (STR_VOL0 + 9)      /* 90 */
                      : (STR_FPS120 + (v - 4));         /* 120, 144, 165, 240 */
-        case 5: return (v == 0) ? STR_CLASSIC : (v == 1) ? STR_AUTO : STR_SHARP;
-        case 6: return (v == 0) ? STR_POINT : (v == 1) ? STR_SMOOTH : STR_CRISP;
-        case 7: return (v == 0) ? STR_AUTHENTIC : STR_SMOOTH;
-        case 8: return (v == 0) ? STR_AUTO : (v == 1) ? STR_STANDARD : STR_HIGH;
-        case 9: return (v == 0) ? STR_DOUBLE : STR_TRIPLE;
+        case 4: return (v == 0) ? STR_CLASSIC : (v == 1) ? STR_AUTO : STR_SHARP;
+        case 5: return (v == 0) ? STR_POINT : (v == 1) ? STR_SMOOTH : STR_CRISP;
+        case 9: return (v == 0) ? STR_AUTHENTIC : STR_SMOOTH;
+        case 10: return (v == 0) ? STR_AUTO : (v == 1) ? STR_STANDARD : STR_HIGH;
+        case 11: return (v == 0) ? STR_DOUBLE : STR_TRIPLE;
         default: return v ? STR_ON : STR_OFF;  /* Widescreen, Dither, Fullscreen,
                                                 * Overscan Crop, Cutscene Fix,
-                                                * Photo Detail, Jynx Recolor */
+                                                * Photo Detail, Jynx Recolor, Wide HUD */
     }
 }
 
@@ -1862,12 +1929,12 @@ static void snap_graphics_page(void) {
     for (i = 0; i < PAGE_ITEMS; i++) {
         field = snap_row_field(i);
         v = MBOX_FIELD(field);
-        if ((v < 0) || (v >= snap_value_count(i))) {
+        if ((v < 0) || (v >= snap_value_count(field))) {
             v = 0;
             MBOX_FIELD(field) = 0;
         }
         PAGE_LABEL(i) = (u32) snap_make_strip(snap_row_label(i), 50, PAGE_TOP_Y);
-        PAGE_VALUE(i) = (u32) snap_make_strip(snap_value_str(i, v), 163, PAGE_TOP_Y);
+        PAGE_VALUE(i) = (u32) snap_make_strip(snap_value_str(field, v), 163, PAGE_TOP_Y);
         snap_tint((GObj*) PAGE_VALUE(i), SEL_R, SEL_G, SEL_B);
     }
 
@@ -2001,7 +2068,7 @@ static void snap_graphics_page(void) {
 
         {
             s32 cr, side;
-            cr = snap_page_mouse(&mouse, sel, top, PAGE_VISIBLE, PAGE_ITEMS, SCRATCH_ARRAYS + 0x40, -1,
+            cr = snap_page_mouse(&mouse, sel, top, PAGE_VISIBLE, PAGE_ITEMS, PAGE_VALUE_BASE, -1,
                                  &navUp, &navDown, &side, &mouseA, &mouseB);
             if (cr >= 0) {
                 if (side < 0) {
@@ -2048,7 +2115,7 @@ static void snap_graphics_page(void) {
         else if (navRight) {
             field = snap_row_field(sel);
             v = MBOX_FIELD(field) + 1;
-            if (v >= snap_value_count(sel)) {
+            if (v >= snap_value_count(field)) {
                 v = 0;
             }
             MBOX_FIELD(field) = v;
@@ -2058,7 +2125,7 @@ static void snap_graphics_page(void) {
             field = snap_row_field(sel);
             v = MBOX_FIELD(field) - 1;
             if (v < 0) {
-                v = snap_value_count(sel) - 1;
+                v = snap_value_count(field) - 1;
             }
             MBOX_FIELD(field) = v;
             moved = 1;
@@ -2066,7 +2133,7 @@ static void snap_graphics_page(void) {
 
         if (moved) {
             snap_ui_sound(SND_MOVE);
-            snap_swap_strip((GObj*) PAGE_VALUE(sel), snap_value_str(sel, MBOX_FIELD(snap_row_field(sel))));
+            snap_swap_strip((GObj*) PAGE_VALUE(sel), snap_value_str(snap_row_field(sel), MBOX_FIELD(snap_row_field(sel))));
             MBOX_SEQ = MBOX_SEQ + 1;
         }
 
@@ -2267,15 +2334,6 @@ s8 func_800E7700_A0EC90(void) {
         }
         if ((gContInputPressedButtons & A_BUTTON) || mouseA) {
             snap_ui_sound(SND_OK);
-            if ((MBOX_SEL == OPT_EXIT) && !armed) {
-                /* Exit Game asks first: the help line becomes the question
-                 * and the next A answers it. B, or moving off the row,
-                 * withdraws it. One press must not close the program. */
-                armed = 1;
-                shownHelp = -1;
-                ohWait(1);
-                continue;
-            }
             pressedB = 0;
             break;
         } else if ((gContInputPressedButtons & B_BUTTON) || (ev & SNAP_MOUSE_BACK)) {
@@ -2345,7 +2403,7 @@ s8 func_800E7700_A0EC90(void) {
                     }
                 }
                 else if (sel == OPT_EXIT) {
-                    GObj* line = armed ? helpExitAskObj : helpExitObj;
+                    GObj* line = helpExitObj;
                     if ((line != NULL) && (line->data.sobj != NULL)) {
                         line->data.sobj->sprite.attr &= ~SP_HIDDEN;
                     }
@@ -2842,7 +2900,7 @@ static void snap_sound_page(void) {
 
         {
             s32 cr, side;
-            cr = snap_page_mouse(&mouse, sel, 0, 6, 6, SCRATCH_ARRAYS + 0x40, -1,
+            cr = snap_page_mouse(&mouse, sel, 0, 6, 6, PAGE_VALUE_BASE, -1,
                                  &navUp, &navDown, &side, &mouseA, &mouseB);
             if (cr >= 0) {
                 if (side < 0) {
@@ -2930,6 +2988,331 @@ static void snap_sound_page(void) {
     }
 
     for (i = 0; i < 6; i++) {
+        if (PAGE_LABEL(i) != 0) {
+            omDeleteGObj((GObj*) PAGE_LABEL(i));
+            PAGE_LABEL(i) = 0;
+        }
+        if (PAGE_VALUE(i) != 0) {
+            omDeleteGObj((GObj*) PAGE_VALUE(i));
+            PAGE_VALUE(i) = 0;
+        }
+    }
+    if (hdrStrip != NULL) {
+        omDeleteGObj(hdrStrip);
+    }
+    if (descStrip != NULL) {
+        omDeleteGObj(descStrip);
+    }
+
+    for (i = 0; i < hiddenCount; i++) {
+        SObj* sobj = (SObj*) PAGE_HIDDEN(i);
+        sobj->sprite.attr &= ~SP_HIDDEN;
+    }
+    ohWait(1);
+}
+
+
+/* The GAME page: the Option list's sixth item, in the SOUND page's dress,
+ * three rows. Save File: which of four files the game plays, from the next
+ * start (the host swaps the file through the runtime before the game reads
+ * it, src/save_file.cpp). Snap Station: the kiosk printer on port 4, from
+ * the next start. Exit Game: the row the list's own item was, asking first
+ * as it did, with the host's device-worded question (STR_EXIT_CONFIRM). The
+ * two values live in the GAME bank; the host keeps them in the file. */
+#define GAME_ROWS 3
+static void snap_exit_game(void);
+
+static s32 snap_game_value_str(s32 row, s32 v) {
+    if (row == 0) {
+        return STR_FILE1 + v;
+    }
+    return v ? STR_ON : STR_OFF;
+}
+
+static s32 snap_game_value_count(s32 row) {
+    return (row == 0) ? 4 : 2;
+}
+
+static void snap_game_page(void) {
+    UnkStruct800BEDF8* input;
+    s32 navUp;
+    s32 navDown;
+    s32 navLeft;
+    s32 navRight;
+    SnapMouse mouse;
+    s32 mouseA, mouseB, clickA, clickB;
+    GObj* hdrStrip;
+    GObj* descStrip;
+    s32 sel, i, moved, hiddenCount, armed;
+    s32 v;
+    u8 pulseState, pulseCounter;
+    u8 entryFields[2];
+
+    if (DIR_MAGIC != 0x53474130) {
+        return;
+    }
+
+    for (i = 0; i < 2; i++) {
+        entryFields[i] = GAME_FIELD(i);
+        if ((i == 0) && (entryFields[i] > 3)) {
+            entryFields[i] = 0;
+            GAME_FIELD(i) = 0;
+        }
+        if ((i == 1) && (entryFields[i] > 1)) {
+            entryFields[i] = 0;
+            GAME_FIELD(i) = 0;
+        }
+    }
+
+    /* Hide the Option list's rows, as the SOUND page does. */
+    hiddenCount = 0;
+    for (i = 0; (i < 12) && (snap_page_ctx == 0); i++) {
+        GObj* chain = snap_chain(i);
+        SObj* sobj = (chain != NULL) ? chain->data.sobj : NULL;
+        while (sobj != NULL) {
+            const s32 y = sobj->sprite.y;
+            if ((y >= 56) && (y < 164) && !(sobj->sprite.attr & SP_HIDDEN) &&
+                (hiddenCount < 64)) {
+                sobj->sprite.attr |= SP_HIDDEN;
+                PAGE_HIDDEN(hiddenCount) = (u32) sobj;
+                hiddenCount++;
+            }
+            sobj = sobj->next;
+        }
+    }
+    {
+        u32 own[4];
+        own[0] = SCRATCH_GRAPHICS_GOBJ;
+        own[1] = SCRATCH_CONTROLS_GOBJ;
+        own[2] = SCRATCH_EXIT_GOBJ;
+        own[3] = SCRATCH_MODS_GOBJ;
+        for (i = 0; i < 4; i++) {
+            GObj* mine = (GObj*) own[i];
+            if ((mine != NULL) && (mine->data.sobj != NULL) &&
+                !(mine->data.sobj->sprite.attr & SP_HIDDEN) && (hiddenCount < 64)) {
+                mine->data.sobj->sprite.attr |= SP_HIDDEN;
+                PAGE_HIDDEN(hiddenCount) = (u32) mine->data.sobj;
+                hiddenCount++;
+            }
+        }
+    }
+    if (snap_page_ctx == 0) {
+        GObj* chain = snap_chain(2);
+        SObj* sobj = (chain != NULL) ? chain->data.sobj : NULL;
+        while (sobj != NULL) {
+            if ((sobj->sprite.y == 40) && !(sobj->sprite.attr & SP_HIDDEN) &&
+                (hiddenCount < 64)) {
+                sobj->sprite.attr |= SP_HIDDEN;
+                PAGE_HIDDEN(hiddenCount) = (u32) sobj;
+                hiddenCount++;
+            }
+            sobj = sobj->next;
+        }
+    }
+    hdrStrip = snap_make_strip(STR_GAME_HDR, 45, 41);
+    {
+        GObj* itemHelp = (GObj*) SCRATCH_HELP_ITEM;
+        if ((itemHelp != NULL) && (itemHelp->data.sobj != NULL)) {
+            itemHelp->data.sobj->sprite.attr |= SP_HIDDEN;
+        }
+    }
+    descStrip = snap_make_strip(STR_GAME_DESC + 0, 49, 171);
+
+    for (i = 0; i < GAME_ROWS; i++) {
+        PAGE_LABEL(i) = (u32) snap_make_strip(STR_GAME_LABEL + i, 50, PAGE_TOP_Y + i * PAGE_PITCH);
+        if (i < 2) {
+            v = GAME_FIELD(i);
+            PAGE_VALUE(i) = (u32) snap_make_strip(snap_game_value_str(i, v), 163, PAGE_TOP_Y + i * PAGE_PITCH);
+            snap_tint((GObj*) PAGE_VALUE(i), SEL_R, SEL_G, SEL_B);
+        } else {
+            PAGE_VALUE(i) = 0;      /* Exit Game has no value: A is its act */
+        }
+    }
+
+    sel = 0;
+    armed = 0;
+    pulseState = 0;
+    pulseCounter = 0;
+
+    ohWait(2);
+
+    snap_mouse_begin(&mouse);
+    mouseA = mouseB = 0;
+    while (1) {
+        clickA = mouseA;
+        clickB = mouseB;
+        mouseA = mouseB = 0;
+        input = func_800AA38C(0);
+        moved = 0;
+
+        if ((gContInputPressedButtons & B_BUTTON) || clickB) {
+            snap_ui_sound(SND_BACK);
+            if (armed) {
+                /* The question withdrawn, the page stays. */
+                armed = 0;
+                snap_swap_strip(descStrip, STR_EXIT_HELP);
+                ohWait(1);
+                continue;
+            }
+            for (i = 0; i < 2; i++) {
+                GAME_FIELD(i) = entryFields[i];
+            }
+            GAME_SEQ = GAME_SEQ + 1;
+            break;
+        }
+
+        if ((gContInputPressedButtons & A_BUTTON) || clickA) {
+            snap_ui_sound(SND_OK);
+            if (sel == 2) {
+                if (!armed) {
+                    /* Exit Game asks first: the help box becomes the question
+                     * and the next A answers it. B, or moving off the row,
+                     * withdraws it. One press must not close the program. */
+                    armed = 1;
+                    snap_swap_strip(descStrip, STR_EXIT_CONFIRM);
+                    ohWait(1);
+                    continue;
+                }
+                /* Confirmed: the host closes the program within a frame or
+                 * two; one that has not answered leaves the player here. */
+                snap_exit_game();
+                armed = 0;
+                snap_swap_strip(descStrip, STR_EXIT_HELP);
+                ohWait(1);
+                continue;
+            }
+            /* A accepts what is on screen and leaves, as the header says. */
+            break;
+        }
+        if (snap_start_closes()) {
+            break;
+        }
+
+        {
+            s32 sx = gContInputStickX;
+            s32 sy = gContInputStickY;
+            s32 mx = (sx < 0) ? -sx : sx;
+            s32 my = (sy < 0) ? -sy : sy;
+            s32 dirV = 0;
+            s32 dirH = 0;
+            navUp = navDown = navLeft = navRight = 0;
+            if ((my >= 24) && (my >= mx)) {
+                dirV = (sy > 0) ? 1 : -1;
+            }
+            else if ((mx >= 40) && (mx > 2 * my)) {
+                dirH = (sx > 0) ? 1 : -1;
+            }
+            if (dirV != snap_nav_dir_v) {
+                snap_nav_dir_v = dirV;
+                snap_nav_repeat_v = 15;
+                if (dirV > 0) {
+                    navUp = 1;
+                }
+                else if (dirV < 0) {
+                    navDown = 1;
+                }
+            }
+            else if ((dirV != 0) && (--snap_nav_repeat_v <= 0)) {
+                snap_nav_repeat_v = 6;
+                if (dirV > 0) {
+                    navUp = 1;
+                }
+                else {
+                    navDown = 1;
+                }
+            }
+            if (dirH != snap_nav_dir_h) {
+                snap_nav_dir_h = dirH;
+                snap_nav_repeat_h = 20;
+                if (dirH > 0) {
+                    navRight = 1;
+                }
+                else if (dirH < 0) {
+                    navLeft = 1;
+                }
+            }
+            else if ((dirH != 0) && (--snap_nav_repeat_h <= 0)) {
+                snap_nav_repeat_h = 12;
+                if (dirH > 0) {
+                    navRight = 1;
+                }
+                else {
+                    navLeft = 1;
+                }
+            }
+        }
+
+        {
+            s32 cr, side;
+            cr = snap_page_mouse(&mouse, sel, 0, GAME_ROWS, GAME_ROWS, PAGE_VALUE_BASE, -1,
+                                 &navUp, &navDown, &side, &mouseA, &mouseB);
+            if (cr >= 0) {
+                if (side < 0) {
+                    navLeft = 1;
+                } else if (side > 0) {
+                    navRight = 1;
+                }
+            }
+        }
+        if (navUp || navDown) {
+            snap_tint((GObj*) PAGE_LABEL(sel), 0xFF, 0xFF, 0xFF);
+            sel = navUp ? ((sel == 0) ? (GAME_ROWS - 1) : (sel - 1)) : ((sel + 1) % GAME_ROWS);
+            pulseState = 0;
+            armed = 0;      /* moving off the Exit Game row withdraws its question */
+            snap_swap_strip(descStrip, (sel == 2) ? STR_EXIT_HELP : (STR_GAME_DESC + sel));
+            snap_ui_sound(SND_MOVE);
+        }
+        else if ((navRight || navLeft) && (sel < 2)) {
+            v = GAME_FIELD(sel);
+            if (navRight) {
+                v = (v + 1) % snap_game_value_count(sel);
+            } else {
+                v = (v == 0) ? (snap_game_value_count(sel) - 1) : (v - 1);
+            }
+            GAME_FIELD(sel) = (u8) v;
+            moved = 1;
+        }
+
+        if (moved) {
+            snap_ui_sound(SND_MOVE);
+            snap_swap_strip((GObj*) PAGE_VALUE(sel), snap_game_value_str(sel, v));
+            GAME_SEQ = GAME_SEQ + 1;
+        }
+
+        /* The stock label pulse, on the selected row. */
+        if (PAGE_LABEL(sel) != 0) {
+            SObj* sobj = ((GObj*) PAGE_LABEL(sel))->data.sobj;
+            switch (pulseState) {
+                case 0:
+                    if (sobj->sprite.red >= 0x84) {
+                        sobj->sprite.red -= 4;
+                        snap_sprite_gray(sobj, sobj->sprite.red);
+                    } else {
+                        snap_sprite_gray(sobj, 0x80);
+                        pulseState = 1;
+                    }
+                    break;
+                case 1:
+                    if (sobj->sprite.red < 0xE2) {
+                        sobj->sprite.red += 0x1E;
+                        snap_sprite_gray(sobj, sobj->sprite.red);
+                    } else {
+                        pulseCounter = 0;
+                        snap_sprite_gray(sobj, 0xFF);
+                        pulseState = 2;
+                    }
+                    break;
+                case 2:
+                    if (pulseCounter++ > 30) {
+                        pulseState = 0;
+                    }
+                    break;
+            }
+        }
+        ohWait(1);
+    }
+
+    for (i = 0; i < GAME_ROWS; i++) {
         if (PAGE_LABEL(i) != 0) {
             omDeleteGObj((GObj*) PAGE_LABEL(i));
             PAGE_LABEL(i) = 0;
@@ -3124,24 +3507,13 @@ static void snap_ctl_layout(s32 top) {
 
 static s32 snap_ctl_value_str(s32 row, s32 v) {
     if (row == CTL_ROW_BUTTONS) {
-        return -1;   /* no value: snap_make_strip makes nothing of it */
+        return STR_OPEN;   /* the row opens a page: its value column says so */
     }
     switch (snap_ctl_setting(row)) {
-        case CTL_SETTING_STICKS: return v ? STR_SWAPPED : STR_NORMAL;
+        case CTL_SETTING_STICKS: return v ? STR_ON : STR_OFF;
         case CTL_SETTING_POINTER: return v ? STR_PTR_CAMERA : STR_PTR_SYSTEM;
         case CTL_SETTING_DEADZONE:
-            /* 0, 10, 20, 30 and 40 are the volume steps; 25 a mouse speed. */
-            switch (v) {
-                case 0:  return STR_VOL0;
-                case 1:  return STR_DZ5;
-                case 2:  return STR_VOL0 + 1;
-                case 3:  return STR_DZ15;
-                case 4:  return STR_VOL0 + 2;
-                case 5:  return STR_CTL_SPEED;
-                case 6:  return STR_VOL0 + 3;
-                case 7:  return STR_DZ35;
-                default: return STR_VOL0 + 4;
-            }
+            return STR_DZ0 + ((v < 0) ? 0 : (v > 8) ? 8 : v);   /* 0% to 40% by five, its own strings */
         case CTL_SETTING_FAST: return (v == 0) ? STR_OFF : (STR_1X + v);   /* Off, then 2x, 3x, 4x */
         case CTL_SETTING_SLOW: return (v == 0) ? STR_OFF : ((v == 1) ? (STR_1X + 1) : (STR_1X + 3));   /* Off, 2x, 4x */
         case 0:  return v ? STR_SWITCH : STR_HOLD;
@@ -3188,6 +3560,7 @@ extern SnapIcon Icons_IconObjects[];
 extern SnapIconDef Icons_IconDefs[];
 extern GObj* Icons_MainObject;
 extern u8 Icons_IsZoomedIn;
+extern s32 Icons_IsShown;
 #define SNAP_PF_ZOOM_SWITCH 0x1000   /* PF_ZOOM_SWITCH */
 #define SNAP_PF_INVERTED_Y  0x2000   /* PF_INVERTED_Y */
 #define SNAP_ICON_ZOOM_OFF  7        /* ICON_ID_ZOOM_OFF */
@@ -3220,6 +3593,130 @@ static void snap_ride_zoom_icon(s32 on) {
         omGObjRemoveSprite(icon->spriteObj);
         icon->spriteObj = NULL;
     }
+}
+
+/* A mod's notice over a course: a line the host composed in the help face
+ * over a dark panel (menu_notice_set), staged at STR_NOTICE as a strip four
+ * blocks wide (the panel only as wide as the words, in the middle of the
+ * strip, the rest clear), centered at the top of the 4:3 picture in the
+ * film counter's row while the ticks at +0x5F4 last, fading in over its
+ * first twelve frames and out over its last twelve. It is an
+ * object of its own on link 0, where ohCreateSprite puts the pages' strips,
+ * since the HUD's object hides with the viewfinder and the line should not;
+ * made once per course, the first time with the HUD shown (not over the
+ * intro), hidden at zero, shown again when the host restages the strip for
+ * the next line (+0x5FC counts them), and taken down with the course by the
+ * game: the pointer is trusted only while the object is still in link 0's
+ * list, and the strip pool's sweep reclaims the slot. The count runs in the
+ * scissor the camera sets every frame, since the HUD's own update stops
+ * while the HUD is hidden and a patch function cannot be a process (the
+ * runtime's tables do not dispatch one). The cartridge's Icons_UpdateDefault
+ * is empty; here it only notes that the HUD has been up this course. */
+#define MBOX_NOTICE_TICKS  (*(volatile u32*) (SCRATCH_ARRAYS + 0x4F4))   /* past the page arrays: +0xE0 is the fine slides' (rect_tags.cpp) */
+#define MBOX_NOTICE_SERIAL (*(volatile u32*) (SCRATCH_ARRAYS + 0x4FC))
+#define SNAP_NOTICE_X 32      /* the strip is 256 wide: centered in the 320 */
+#define SNAP_NOTICE_Y 23      /* the film counter's row: its digits stand at 26..40, the line's text at 27..39 */
+#define SNAP_NOTICE_FADE 12   /* frames in, and frames out: four tenths of a second */
+#define SNAP_NOTICE_LINK 0
+#define MBOX_NOTICE_STATE  (*(volatile u32*) (SCRATCH_ARRAYS + 0x4F8))   /* what the tick last did, for the log */
+static GObj* snap_notice_obj;
+static u32 snap_notice_serial;
+static GObj* snap_notice_hud;          /* the HUD object seen shown this course */
+static u32 snap_notice_age;            /* frames since the line came up, for the fade in */
+
+static s32 snap_notice_alive(void) {
+    GObj* obj;
+
+    if (snap_notice_obj == NULL) {
+        return 0;
+    }
+    for (obj = omGObjListHead[SNAP_NOTICE_LINK]; obj != NULL; obj = obj->next) {
+        if (obj == snap_notice_obj) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+void Icons_UpdateDefault(GObj* arg0) {
+    if (Icons_IsShown) {
+        snap_notice_hud = Icons_MainObject;
+    }
+}
+
+extern s32 MainCameraBorderXmin;
+extern s32 MainCameraBorderYmin;
+extern s32 MainCameraBorderXmax;
+extern s32 MainCameraBorderYmax;
+extern s32 gtlDrawnFrameCounter;
+static s32 snap_notice_frame = -1;
+
+/* The scissor is set several times a frame (the Pokemon detector sets it
+ * for each region it reads), so the count steps once per drawn frame, on
+ * the game's own counter. */
+static void snap_notice_tick(void) {
+    u32 ticks = MBOX_NOTICE_TICKS;
+    u32 serial = MBOX_NOTICE_SERIAL;
+
+    if (gtlDrawnFrameCounter == snap_notice_frame) {
+        return;
+    }
+    snap_notice_frame = gtlDrawnFrameCounter;
+    if ((snap_notice_obj != NULL) && !snap_notice_alive()) {
+        snap_notice_obj = NULL;         /* the last course took it */
+        MBOX_NOTICE_STATE = 4;
+    }
+    if (ticks == 0) {
+        if ((snap_notice_obj != NULL) && (snap_notice_obj->data.sobj != NULL)) {
+            snap_notice_obj->data.sobj->sprite.attr |= SP_HIDDEN;
+            MBOX_NOTICE_STATE = 3;
+        }
+        return;
+    }
+    if (snap_notice_obj == NULL) {
+        if (!Icons_IsShown && ((Icons_MainObject == NULL) || (snap_notice_hud != Icons_MainObject))) {
+            MBOX_NOTICE_STATE = 5;
+            return;             /* before the HUD's first showing: the intro; the ticks wait */
+        }
+        snap_notice_obj = snap_make_strip(STR_NOTICE, SNAP_NOTICE_X, SNAP_NOTICE_Y);
+        snap_notice_serial = serial;
+        if (snap_notice_obj == NULL) {
+            MBOX_NOTICE_TICKS = 0;
+            MBOX_NOTICE_STATE = 6;
+            return;
+        }
+        MBOX_NOTICE_STATE = 1;
+        snap_notice_age = 0;
+    } else if (serial != snap_notice_serial) {
+        snap_notice_serial = serial;    /* a new line in the same strip: shown again */
+        if (snap_notice_obj->data.sobj != NULL) {
+            snap_notice_obj->data.sobj->sprite.attr &= ~SP_HIDDEN;
+            MBOX_NOTICE_STATE = 2;
+            snap_notice_age = 0;
+        } else {
+            MBOX_NOTICE_STATE = 7;
+        }
+    }
+    /* The fade: the sprite's own alpha, which the draw puts in the prim
+     * color over the strip's texels, up over the first frames and down
+     * over the last. */
+    if (snap_notice_obj->data.sobj != NULL) {
+        u32 fadeIn = (snap_notice_age >= SNAP_NOTICE_FADE) ? 255 : snap_notice_age * 255 / SNAP_NOTICE_FADE;
+        u32 fadeOut = (ticks >= SNAP_NOTICE_FADE) ? 255 : ticks * 255 / SNAP_NOTICE_FADE;
+
+        snap_notice_obj->data.sobj->sprite.alpha = (u8) ((fadeIn < fadeOut) ? fadeIn : fadeOut);
+    }
+    snap_notice_age++;
+    MBOX_NOTICE_TICKS = ticks - 1;
+}
+
+void mainCameraSetScissor(Gfx** gfxPtr) {
+    Gfx* gfxPos = *gfxPtr;
+
+    gDPSetScissor(gfxPos++, G_SC_NON_INTERLACE, MainCameraBorderXmin, MainCameraBorderYmin, MainCameraBorderXmax, MainCameraBorderYmax);
+
+    *gfxPtr = gfxPos;
+    snap_notice_tick();
 }
 
 static void snap_ride_apply(s32 which, s32 v) {
@@ -3524,7 +4021,7 @@ static s32 snap_controls_page(void) {
 
         {
             s32 cr, side;
-            cr = snap_page_mouse(&mouse, sel, top, CTL_VISIBLE, CTL_ROWS, SCRATCH_ARRAYS + 0x40, -1,
+            cr = snap_page_mouse(&mouse, sel, top, CTL_VISIBLE, CTL_ROWS, PAGE_VALUE_BASE, -1,
                                  &navUp, &navDown, &side, &mouseA, &mouseB);
             if (cr == CTL_ROW_BUTTONS) {
                 mouseA = 1;   /* the Button Setup row opens its page, as A does */
@@ -3866,6 +4363,8 @@ static void snap_bind_page(void) {
     s32 mouseA, mouseB, clickA, clickB;
     GObj* hdrStrip;
     GObj* descStrip;
+    GObj* legendStrip;
+    SObj* stockLegend;
     s32 sel, i, hiddenCount;
     s32 top;
     s32 device;
@@ -3890,6 +4389,13 @@ static void snap_bind_page(void) {
         hiddenCount = snap_hide_option_list();
     }
     hdrStrip = snap_make_strip(STR_BIND_HDR, 45, 41);
+    /* Its own legend in the stock one's place: A changes a row here and B
+     * goes back with every change kept, so "A Change  B Back". */
+    stockLegend = snap_stock_legend();
+    legendStrip = snap_make_legend(STR_BIND_LEGEND);
+    if ((legendStrip != NULL) && (stockLegend != NULL)) {
+        snap_sprite_show(stockLegend, 0);
+    }
 
     /* The header's A OK and B Cancel hints (the y=41 sprites) come down
      * on this page: A changes a row here and B goes back with every change
@@ -4240,6 +4746,12 @@ static void snap_bind_page(void) {
     }
     if (descStrip != NULL) {
         omDeleteGObj(descStrip);
+    }
+    if (legendStrip != NULL) {
+        snap_free_legend(legendStrip);
+    }
+    if (stockLegend != NULL) {
+        snap_sprite_show(stockLegend, 1);
     }
     for (i = 0; i < hintCount; i++) {
         SObj* sobj = (SObj*) BIND_HINT(i);
@@ -5818,12 +6330,12 @@ static void snap_exit_game(void);
 
 static s32 snap_course_label_str(s32 i) {
     return (i == 0) ? STR_ITEM_LABEL : (i == 1) ? STR_SND_ITEM : (i == 2) ? STR_CTL_ITEM
-         : (i == 3) ? STR_MODS_ITEM : STR_EXIT_ITEM;
+         : (i == 3) ? STR_MODS_ITEM : STR_GAME_ITEM;
 }
 
 static s32 snap_course_help_str(s32 i) {
     return (i == 0) ? STR_ITEM_HELP : (i == 1) ? STR_SND_ITEM_HELP : (i == 2) ? STR_CTL_ITEM_HELP
-         : (i == 3) ? STR_MODS_ITEM_HELP : STR_EXIT_HELP;
+         : (i == 3) ? STR_MODS_ITEM_HELP : STR_GAME_ITEM_HELP;
 }
 
 static void snap_course_gobj_show(u32 word, s32 show) {
@@ -5954,16 +6466,6 @@ static void snap_port_pages(s32 ctx) {
 
         open = 0;
         if ((gContInputPressedButtons & A_BUTTON) || mouseA) {
-            if ((sel == COURSE_OPT_EXIT) && !armed) {
-                /* Exit Game asks first, as it does on the Option screen:
-                 * the help line becomes the question, the next A answers
-                 * it, B or a move withdraws it. */
-                snap_ui_sound(SND_OK);
-                armed = 1;
-                snap_swap_strip(helpStrip, STR_EXIT_CONFIRM);
-                ohWait(1);
-                continue;
-            }
             open = 1;
         }
 
@@ -6007,15 +6509,6 @@ static void snap_port_pages(s32 ctx) {
         if (open) {
             snap_ui_sound(SND_OK);
             snap_sprite_gray(((GObj*) COURSE_LABEL(sel))->data.sobj, 0xFF);
-            if (sel == COURSE_OPT_EXIT) {
-                /* Confirmed: the host closes the program within a frame or
-                 * two; one that has not answered leaves the list up. */
-                snap_exit_game();
-                armed = 0;
-                snap_swap_strip(helpStrip, snap_course_help_str(sel));
-                ohWait(1);
-                continue;
-            }
             /* The list steps aside for the page and comes back after it;
              * the pages hide nothing of the pause menu's on their own. */
             snap_course_show(0);
@@ -6034,8 +6527,11 @@ static void snap_port_pages(s32 ctx) {
                         snap_bind_page();
                     }
                     break;
-                default:
+                case 3:
                     snap_mods_page();
+                    break;
+                default:
+                    snap_game_page();
                     break;
             }
             if (snap_close_all) {
@@ -6276,15 +6772,12 @@ void func_800E7F98_A0F528(void) {
          * cadence puts it at 153, the last row the help box leaves room
          * for. Its help line and the question it turns into share the
          * help slot with the others and start hidden. */
-        exitLabel = snap_make_strip(STR_EXIT_ITEM, 43, 153);
-        exitHelp = snap_make_strip(STR_EXIT_HELP, 49, 171);
+        exitLabel = snap_make_strip(STR_GAME_ITEM, 43, 153);
+        exitHelp = snap_make_strip(STR_GAME_ITEM_HELP, 49, 171);
         if (exitHelp != NULL) {
             exitHelp->data.sobj->sprite.attr |= SP_HIDDEN;
         }
-        exitAsk = snap_make_strip(STR_EXIT_CONFIRM, 49, 171);
-        if (exitAsk != NULL) {
-            exitAsk->data.sobj->sprite.attr |= SP_HIDDEN;
-        }
+        exitAsk = NULL;         /* the question is the GAME page's now */
         SCRATCH_EXIT_GOBJ = (u32) exitLabel;
         SCRATCH_HELP_EXIT = (u32) exitHelp;
         SCRATCH_HELP_EXIT2 = (u32) exitAsk;
@@ -6358,7 +6851,7 @@ void func_800E7F98_A0F528(void) {
                     snap_mods_page();
                     break;
                 case OPT_EXIT:
-                    snap_exit_game();
+                    snap_game_page();
                     break;
                 default:
                     func_800BFB90_5CA30(viEdgeOffsetLeft, viEdgeOffsetTop);

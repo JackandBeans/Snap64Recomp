@@ -24,7 +24,9 @@ until you turn it on.
 ### [Download the latest release](https://github.com/JackandBeans/Snap64Recomp/releases/latest)
 
 **This repository and its releases contain no game assets. You need your own
-ROM of the US cartridge to play.**
+ROM of the US cartridge to play.** Only the US cartridge's ROM works: the
+Japanese, European and Australian releases are different builds of the game,
+and the port is made from the US one.
 
 The [Releases](https://github.com/JackandBeans/Snap64Recomp/releases) page
 of this repository is the only official download.
@@ -84,9 +86,10 @@ A few keys to know first:
 * **Enter** is the game's Start. In a course it opens the pause menu:
   Continue, Quit Course, Retry, Options.
 * **F11** switches fullscreen on and off, in a course or anywhere else.
-  The window's maximize button goes to fullscreen too.
-* **To quit**, choose **Exit Game**, the last row of the game's Options
-  screen: A asks, a second A closes, B stays. Or **hold Esc for a second
+  The window's maximize button fills the screen with the window itself,
+  and the port opens it that way again next time.
+* **To quit**, choose **Game**, the last row of the game's Options
+  screen, then **Exit Game**: A asks, a second A closes, B stays. Or **hold Esc for a second
   and let go**. A box asks first, and Enter or Esc keeps you playing, so a
   hand resting on the key cannot end a run.
 
@@ -99,7 +102,7 @@ bug report.
 ## Screenshots
 
 <table><tr>
-<td><a href="docs/screenshots/01m-title-112.png"><img src="docs/screenshots/01m-title-112.png" width="400" alt="The title screen"></a></td>
+<td><a href="docs/screenshots/01n-title-113.png"><img src="docs/screenshots/01n-title-113.png" width="400" alt="The title screen"></a></td>
 <td><a href="docs/screenshots/03-course-select.png"><img src="docs/screenshots/03-course-select.png" width="400" alt="Course select"></a></td>
 </tr><tr>
 <td><a href="docs/screenshots/04-beach.png"><img src="docs/screenshots/04-beach.png" width="400" alt="The Beach: Surfing Pikachu"></a></td>
@@ -155,10 +158,10 @@ Each of these is a row on the game's own Options screen, or a key. Each
 starts off, or at the console's setting. [The manual](docs/MANUAL.md) has
 every one in full.
 
-* **Settings inside the game.** The port adds Graphics, Sound, Controls and
-  Mods pages to the game's own Options screen, drawn in the game's own
-  font. The Graphics page has sixteen rows, from Render Scale and
-  Anti-Aliasing to Widescreen and Frame Rate.
+* **Settings inside the game.** The port adds Graphics, Sound, Controls,
+  Mods and Game pages to the game's own Options screen, drawn in the game's own
+  font. The Graphics page has seventeen rows in three groups, the
+  display, the picture and the fixes, from Render Scale to Jynx Recolor.
 * **Widescreen** shows more of the course: a wider field of view that
   fills the window's own shape, 16:9, the Deck's 16:10 or an ultrawide 21:9,
   not a stretched picture. The title, the lab and the menus stay 4:3.
@@ -249,8 +252,8 @@ opens the port's Options.
 Hold Tab, or the right shoulder button, for fast forward. Hold Space, or
 press the left stick in, for slow motion. A tap on Esc opens the port's
 Options on almost any screen. Esc held for a second and released asks
-whether to quit. From a pad, Exit Game, the last row of the Options screen,
-quits.
+whether to quit. From a pad, Exit Game, on the Game page of the Options
+screen, quits.
 
 Every binding can be changed in the game, on the Controls page's Button
 Setup row, or in the settings file's `keys` table. The mouse's speed, the
@@ -430,7 +433,7 @@ GitHub's virtual Mac, the intro, a Beach ride with its photos scored and a
 mod's hooks have run, natively and under Rosetta 2.
 
 Every release also passes an automated suite before it ships
-(`tools/release_check.py`). On the 1.1.2 executable it passed 29 of 29
+(`tools/release_check.py`). On the 1.1.3 executable it passed 29 of 29
 checks, and the station's 5 of 5. [VERIFICATION.md](docs/VERIFICATION.md) says what
 each check does, what every release reported, and what has only been read
 from the code and not seen.

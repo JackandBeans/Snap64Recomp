@@ -85,7 +85,7 @@ this:
    send the log.
    In Gaming Mode Steam offers the game only its own virtual pad, so gyro
    aim has to come from Steam's layout ([Controls](MANUAL.md#controls)). The port boots
-   fullscreen on a Deck (F11 or the maximize button leaves it); any
+   fullscreen on a Deck (F11 leaves it); any
    other machine boots as its settings file says, windowed until the
    file says fullscreen.
 

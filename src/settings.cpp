@@ -39,6 +39,11 @@ static Settings s_settings;
 static std::mutex s_settings_mutex;
 // What the settings file said about fullscreen when it was read (load_settings).
 static bool s_boot_fullscreen = false;
+// The same, until the restore has set the live field (main.cpp): a file
+// written in between keeps its own fullscreen. A file from before a field
+// existed is rewritten at the first flush, which came before the restore,
+// and every such upgrade lost its fullscreen that way (seen Oct 10 2026).
+static bool s_boot_fullscreen_pending = false;
 static const char* SETTINGS_FILE = "snapsettings.json";
 // The names recomp::write_file_with_backup derives from SETTINGS_FILE.
 static const char* SETTINGS_BACKUP_SUFFIX = ".bak";
@@ -110,6 +115,7 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         // value was always false, and the restore 1.0.5 promised ran only on
         // a Steam Deck, whose default is fullscreen.
         s.fullscreen         = j.value("fullscreen", s.fullscreen);
+        s.window_maximized   = j.value("window_maximized", s.window_maximized);
         s.widescreen         = j.value("widescreen", s.widescreen);
         s.msaa               = j.value("msaa", s.msaa);
         s.fps_mode           = j.value("fps_mode", s.fps_mode);
@@ -147,7 +153,9 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         s.intro_fix          = j.value("intro_fix", s.intro_fix);
         s.photo_detail       = j.value("photo_detail", s.photo_detail);
         s.jynx_vc            = j.value("jynx_vc", s.jynx_vc);
+        s.wide_hud           = j.value("wide_hud", s.wide_hud);
         s.snap_station       = j.value("snap_station", s.snap_station);
+        s.save_file          = std::clamp(j.value("save_file", s.save_file), 1, 4);
         s.mouse_aim          = j.value("mouse_aim", s.mouse_aim);
         s.custom_pointer     = j.value("custom_pointer", s.custom_pointer);
         // rumble_strength, written by 1.0.1, is read by nothing: the
@@ -190,7 +198,7 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         // Any field the file has never carried marks it for rewriting, so an
         // upgraded file gains the new keys (and keys_help) on the next flush
         // rather than staying silent about them.
-        s_fields_missing = !j.contains("gyro_aim") || !j.contains("pad_enabled") ||
+        s_fields_missing = !j.contains("window_maximized") || !j.contains("wide_hud") || !j.contains("save_file") || !j.contains("gyro_aim") || !j.contains("pad_enabled") ||
                            !j.contains("keys_help") || !j.contains("pad_layout") ||
                            !j.contains("pad_sticks_swapped") || !j.contains("pad_deadzone") ||
                            !j.contains("fast_forward_speed") || !j.contains("slow_motion_speed");
@@ -252,12 +260,13 @@ void load_settings() {
         // The window is never created fullscreen: one created that way comes
         // up with broken chrome -- no close, no minimize, no resize -- so
         // every launch starts windowed, and fullscreen is entered through
-        // the live path (the GRAPHICS page, F11, the window's own maximize
-        // button). A saved fullscreen is kept aside here and restored
+        // the live path (the GRAPHICS page, F11). A saved fullscreen is
+        // kept aside here and restored
         // through that same path a moment after the window opens
         // (main.cpp), as the Steam Deck's default already was: 1.0.4 forgot
         // it on every launch (issue #13, dCo3lh0 on Linux).
         s_boot_fullscreen = loaded.fullscreen;
+        s_boot_fullscreen_pending = loaded.fullscreen;
         s_settings.fullscreen = false;
         // Render-to-RAM is a session-only diagnostic that the file never
         // decides: every boot starts with it on, because photo scoring reads
@@ -337,7 +346,8 @@ bool save_settings() {
         {"not_bindable", "the sticks themselves: the left stick aims and the right stick works the C buttons"},
     };
     const nlohmann::json j{
-        {"fullscreen",            copy.fullscreen},
+        {"fullscreen",            copy.fullscreen || s_boot_fullscreen_pending},
+        {"window_maximized",      copy.window_maximized},
         {"widescreen",            copy.widescreen},
         {"msaa",                  copy.msaa},
         {"fps_mode",              copy.fps_mode},
@@ -367,7 +377,9 @@ bool save_settings() {
         {"intro_fix",             copy.intro_fix},
         {"photo_detail",          copy.photo_detail},
         {"jynx_vc",               copy.jynx_vc},
+        {"wide_hud",              copy.wide_hud},
         {"snap_station",          copy.snap_station},
+        {"save_file",             copy.save_file},
         {"mouse_aim",             copy.mouse_aim},
         {"custom_pointer",        copy.custom_pointer},
         {"pad_enabled",           copy.pad_enabled},
@@ -472,6 +484,10 @@ void apply_game_settings(uint8_t* rdram) {
 // Flips one flag under the settings lock and returns its new value.
 bool settings_boot_fullscreen() {
     return s_boot_fullscreen;
+}
+
+void settings_boot_fullscreen_applied() {
+    s_boot_fullscreen_pending = false;
 }
 
 static bool toggle_locked(bool Settings::*flag) {

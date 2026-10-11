@@ -4,7 +4,7 @@
 # Silicon build was proved on; -DCMAKE_OSX_DEPLOYMENT_TARGET on the command
 # line wins over this.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "The oldest macOS the build runs on")
-project(Snap64Recomp VERSION 1.1.2 LANGUAGES C CXX)
+project(Snap64Recomp VERSION 1.1.3 LANGUAGES C CXX)
 if (APPLE)
     # Objective-C for RT64's Apple sources and SDL's Cocoa back end; the
     # port's own sources stay C++ (main.cpp takes the Metal layer through SDL).
@@ -291,6 +291,7 @@ set(SNAP_SOURCES
     src/steam_deck.cpp
     src/mod_api.cpp
     src/mod_data_api.cpp
+    src/mod_time_api.cpp
     src/mod_installer.cpp
     src/menu_mouse.cpp
     src/pointer.cpp
@@ -305,8 +306,10 @@ set(SNAP_SOURCES
     src/matrix_tags.cpp
     src/rect_tags.cpp
     src/lab_monitor.cpp
+    src/save_file.cpp
     src/rect_census.cpp
     src/fx_tags.cpp
+    src/host_hooks.cpp
     src/menu_assets.cpp
     src/menu_harvest.cpp
     src/anim_steps.cpp

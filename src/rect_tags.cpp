@@ -110,6 +110,13 @@ constexpr int32_t SideIconTravel = 48;
 // (D_803B09D8), which owns the canister with its strip and the three digits.
 // An SObj names its owner at +0x4.
 constexpr uint32_t FilmCounterObject = 0x803B09D8;
+
+// The word PAUSE (Pause_LabelPause, the sprite object the pause code keeps):
+// the game starts it at 360, forty pixels past the 4:3 edge, and slides it
+// to 111 in steps of 24.
+constexpr uint32_t PauseWordSObj = 0x80382C78;
+constexpr int32_t PauseWordStart = 360;
+constexpr int32_t PauseWordRest = 111;
 constexpr uint32_t SObjOwner = 0x4;
 
 // The right edge of the scene as the viewfinder insets it
@@ -350,8 +357,26 @@ static int32_t snap_wide_shift(uint8_t* rdram, uint32_t sprite) {
     if ((q8 <= 256u) || !snap::g_app_level_resident.load(std::memory_order_relaxed)) {
         return 0;
     }
-
     const int32_t margin = static_cast<int32_t>((160u * (q8 - 256u) + 255u) / 256u);
+
+    // The word PAUSE comes in from the right. The game starts it forty
+    // pixels past the 4:3 edge, which in a wide picture is inside the view,
+    // so at 16:9 it popped in thirteen pixels from the edge. Its way in is
+    // stretched by the margin, as the icons' way out is: at its start it
+    // stands the margin further right, at its rest where the game put it.
+    {
+        const uint32_t pauseWord = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)snap::PauseWordSObj));
+        if (snap::valid_ram_address(pauseWord) && ((sprite - snap::SObjFromSprite) == pauseWord)) {
+            const int32_t wordX = static_cast<int16_t>(MEM_H(0x0, (gpr)(int32_t)sprite));
+            if ((wordX > snap::PauseWordRest) && (wordX <= snap::PauseWordStart)) {
+                return (margin * (wordX - snap::PauseWordRest)) / (snap::PauseWordStart - snap::PauseWordRest);
+            }
+            return 0;
+        }
+    }
+    if (!snap::settings().wide_hud) {
+        return 0;       // the Wide HUD row Off: both where the cartridge has them
+    }
     const uint32_t film = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)snap::FilmCounterObject));
     if (snap::valid_ram_address(film) &&
         (static_cast<uint32_t>(MEM_W(snap::SObjOwner, (gpr)(int32_t)(sprite - snap::SObjFromSprite))) == film)) {

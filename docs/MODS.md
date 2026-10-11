@@ -6,6 +6,15 @@ mod tool from code that hooks, follows or replaces the game's own functions.
 The loader has been in the port since 1.0.0; what this page adds is the kit
 for writing one, and what the port does and does not do with mods today.
 
+A mod is N64 code only. The mod format has two ways to carry native code,
+a declared native library (a `.dll`, `.so` or `.dylib`) and an
+offline-recompiled `.offline.nrm` with its library beside it; the port
+refuses both and does not take either out of a zip. Every mod goes through
+the live recompiler. A mod is still code the game runs: it can change
+anything in the game's memory, and nothing makes it a security sandbox,
+here or in any recompilation. Install mods from people you trust, as
+anywhere, and prefer ones whose source is published.
+
 ## Installing a mod
 
 Drop the mod on the game window: the `.nrm` itself, or the `.zip` it came
@@ -74,7 +83,19 @@ names are the decompilation's ([ethteck/pokemonsnap](https://github.com/ethteck/
 and the symbol files list every one the tool knows. Options declared in
 `mod.toml` are read with `recompconfig.h`; `recomp_printf` writes to
 `snap64.log`; the collections of `recompdata.h` hold what a mod keeps
-between calls. A `thumb.png` or `thumb.dds` at the `.nrm`'s root is the
+between calls. The port's own `snap64.h` gives a mod the computer's clock
+and calendar (`snap64_local_time`, `snap64_local_date`), which the
+cartridge never had, the clock's zone (`snap64_utc_offset`, minutes east
+of UTC), a line of its own on its details page
+(`snap64_set_status`: the mod's id and the line; a `%T` in it is filled
+with the clock as the page is read, so a time stays right while the page
+is up; an empty line takes it away), and a notice over a course
+(`snap64_notice`: the mod's id and a short line, centered at the top of
+the picture in the film counter's row for four seconds once the HUD is
+up, in the help face over a dark panel, fading in and out; a new one
+replaces the old, and none outlives its scene). A mod that
+imports them asks for
+1.1.3 in `minimum_recomp_version`. A `thumb.png` or `thumb.dds` at the `.nrm`'s root is the
 picture on the mod's details page, as in the other recompilations: list it
 in `additional_files` in `mod.toml`. It is fitted into a square and drawn
 from 256 pixels across, so 256 square is the size to make. A DDS may be
@@ -93,6 +114,24 @@ stopped when that process ended). A mod with such a hook should ask for
 1.1.0 in `minimum_recomp_version`. The template also packs a mod for
 Thunderstore: `tools/pack_thunderstore.py` makes the zip from `mod.toml`
 and the page, changelog and icon in its `thunderstore/` folder.
+
+A hook on a function the port itself intercepts -- `fx_draw`, `omGetMtx`,
+`fx_createParticle`, `renPrepareCameraMatrix` and the rest of the list in
+`tools/hook_funcs.py` -- runs from the port's own copy of that function
+since 1.1.3, with the port's work in it kept. Before 1.1.3 such a hook
+replaced the function with a plain copy of the cartridge's, and a hook on
+`fx_draw` made every 2D effect step as the view turned. A `RECOMP_PATCH` of
+one of those functions replaces the port's copy too, and its work goes with
+it.
+
+A matrix group of the renderer's extension that asks for interpolation (the
+form the port's own patches use for the game's objects), written into the
+display list while the sky is being drawn, stops the renderer's frames while
+the game runs on; the port's log shows nothing. Until that is fixed, a mod
+drawing with the sky should use the plain pushed group with no interpolation
+(an id of zero and a second word of one), as the port's storm bolt does. The
+see-through list, where the game's water and effects are, takes the
+interpolating form.
 
 ## What the port does not have yet
 

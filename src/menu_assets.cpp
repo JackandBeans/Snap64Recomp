@@ -47,6 +47,7 @@
 #include "dds_image.h"
 #include "hle/rt64_snap_diag.h"
 #include "input.h"
+#include "mod_api.h"
 #include "librecomp/game.hpp"
 #include "librecomp/mods.hpp"
 #include "recomp.h"
@@ -188,6 +189,7 @@ constexpr uint32_t STR_ITEM_LABEL_ID = 1;        // "Graphics", the Option item
 
 // The strips are exactly as tall as the original menu sprites: ten rows.
 constexpr int StripHeight = kMenuFontCellH;
+constexpr uint32_t kStripSlots = 128;   // graphics_menu_patch.c SNAP_STRIP_SLOTS, for the log's report
 
 // The BUTTON SETUP page's row values (ids kBindDynBase on, two banks of
 // eighteen) are composed while the page is open, for the device it shows,
@@ -1595,6 +1597,21 @@ constexpr uint32_t DetStValueAddr = DetStLabelAddr + DetLineBytes;
 // Below the pages' own heap, which the pages from anywhere put at 0x80E00000
 // (patches/src/anywhere_patch.inc, SNAP_ARENA_START).
 static_assert(DetStValueAddr + DetLineBytes <= 0x80E00000u, "the details page's slots run into the pages' arena");
+// A mod's notice over a course (snap64_notice, menu_notice_set): one boxed
+// strip at a fixed home past the details page's, shown centered at the top
+// of the picture by the camera's scissor tick (graphics_menu_patch.c
+// snap_notice_tick) while the ticks at +0x5F4 last; +0x5FC counts the
+// notices sent, so a new one replaces the old.
+constexpr uint32_t kNoticeId = kStringBaseCount + 330;   // graphics_menu_patch.c STR_NOTICE
+constexpr int NoticeChunks = 4;
+constexpr int NoticeHeight = kMenuHlpCellH + 8;
+constexpr uint32_t NoticeAddr = DetStValueAddr + DetLineBytes;
+constexpr uint32_t NoticeBytes = uint32_t(NoticeChunks * 64 * NoticeHeight * 2);
+static_assert(NoticeAddr + NoticeBytes <= 0x80E00000u, "the notice's strip runs into the pages' arena");
+constexpr uint32_t NoticeTicksAddr = MailboxAddr + 0x5F4;    // past the page arrays; +0xE0 is the fine slides' (rect_tags.cpp)
+constexpr uint32_t NoticeSerialAddr = MailboxAddr + 0x5FC;
+constexpr uint32_t NoticeTicks = 120;        // four seconds of the game's frames (thirty a second)
+static uint32_t g_notice_scene = 0;          // the scene the last notice was sent in
 // A mod's picture on its details page: thumb.png in the mod's file, which
 // the runtime keeps as it opens the mod, and which Zelda64Recomp's mod menu
 // shows too. It is fitted into 256 texels square, RGBA16, staged as eight
@@ -1746,6 +1763,7 @@ void animate_credits() {
 static const int* const kCtlSpeeds = kMouseSpeedSteps;
 static const int kCtlZoomShares[4] = { 25, 50, 75, 100 };
 static uint32_t g_last_applied_ctl_seq = 0;
+static uint32_t g_last_applied_game_seq = 0;
 
 // The Frame Rate row's rates: its values past Original and Display are
 // these, the Manual mode held at that rate by interpolation. A file may
@@ -1820,6 +1838,8 @@ static void write_setting_bytes(const Settings &s) {
     // word (the byte map at SNAP_GFX_MAILBOX in the patch).
     write_u8(MailboxAddr + 0x16, s.photo_detail ? 1 : 0);
     write_u8(MailboxAddr + 0x17, s.jynx_vc ? 1 : 0);
+    // Field 16, Wide HUD, past the full bank (the patch's MBOX_FIELD maps it).
+    write_u8(MailboxAddr + 0x4D, s.wide_hud ? 1 : 0);
     // The SOUND bank's six value bytes, read live by the patched audio
     // functions (volumes as straight percentages) and edited by the SOUND
     // page.
@@ -1829,6 +1849,10 @@ static void write_setting_bytes(const Settings &s) {
     write_u8(MailboxAddr + 0x2B, uint8_t(std::clamp(s.shutter_volume, 0, 100)));
     write_u8(MailboxAddr + 0x2C, s.stereo ? 1 : 0);
     write_u8(MailboxAddr + 0x2D, s.mute_unfocused ? 1 : 0);
+    // The GAME bank's two value bytes (past the page arrays): the save file
+    // and the Snap Station, both for the next start (src/save_file.cpp).
+    write_u8(MailboxAddr + 0x604, uint8_t(std::clamp(s.save_file, 1, 4) - 1));
+    write_u8(MailboxAddr + 0x605, s.snap_station ? 1 : 0);
     // The CONTROLS bank's value bytes from +0x64: mouse aim, the mouse
     // speed's index into the page's eleven steps, the zoom speed's index
     // into its four, the tilt, gyro aim, the gyro speed's index.
@@ -1858,6 +1882,14 @@ void seed_mailbox() {
     // (settings.h, set_view_wide_q8); refreshed every tick below.
     write_u32(MailboxAddr + 0x44, view_wide_q8());
     write_u32(MailboxAddr + 0x48, 0);
+    // The sky patch (patches/src/sky_patch.c): SNAP_SKY_DRUM=original keeps
+    // every course's sky as the cartridge draws it; its report word starts empty.
+    {
+        const char* drum = getenv("SNAP_SKY_DRUM");
+        write_u8(MailboxAddr + 0x4E, (drum == nullptr) ? 0 : (strcmp(drum, "original") == 0) ? 1
+                                     : (strcmp(drum, "mark") == 0) ? 2 : 0);
+        write_u32(MailboxAddr + 0xA8, 0);
+    }
     write_u32(MailboxAddr + 0x4, 0);
     // The SOUND bank's sequence word (its value bytes are above), and the
     // CONTROLS bank's at +0x60. The pages bump them on an edit; the host
@@ -1883,8 +1915,8 @@ void seed_mailbox() {
 Strip hand_strip(uint32_t off, int device);   // below, with the help lines
 uint64_t hand_sig();
 
-// A setting changed outside the pages (a hotkey, the maximize button, the
-// fullscreen restored after the window opened): the pages' bytes are made
+// A setting changed outside the pages (a hotkey, the fullscreen restored
+// after the window opened): the pages' bytes are made
 // to say so, or their next edit would write the old value back.
 void menu_mailbox_sync() {
     if ((g_menu_rdram == nullptr) || !g_mailbox_seeded) {
@@ -2172,7 +2204,7 @@ void stage_menu_strings(uint8_t* rdram) {
     // device in hand (hand_words, kBindRowSays).
     // Through the picture, "A OK  B Back", a fixed On, "A Type  B Cancel",
     // the rainbow New and the empty Mods page's second line.
-    constexpr uint32_t StringCount = BaseCount + 315 + ThumbBands + 5;
+    constexpr uint32_t StringCount = BaseCount + 315 + ThumbBands + 31;   // +328, +329: Wide HUD; +330: a mod's notice; +331..+342: the GAME page; +343..+353: the Controls pages' polish
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -2356,6 +2388,78 @@ void stage_menu_strings(uint8_t* rdram) {
             // the Cave), not the name, "VC" or "re-release".
             strip = compose_lines("Off keeps the black Jynx of the cartridge.",
                                   "On, the purple Jynx of the Wii and Switch.");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 328) {
+            // The Graphics page's seventeenth row (patch STR_HUD_LABEL).
+            strip = compose("Wide HUD");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 329) {
+            // No apostrophe in the help face. Said as what it is: a
+            // Widescreen setting.
+            strip = compose_lines("Widescreen only. On: the film counter and",
+                                  "side icons at the wide edges. Off: at 4:3.");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 331) {
+            strip = compose_hdr("Game");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 332) {
+            // The Option list's sixth item (patch STR_GAME_ITEM), where Exit
+            // Game was: the page holds Exit Game as its last row.
+            strip = add_item_dot(compose("Game"));
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 333) {
+            strip = compose_help("The save file, the Snap Station, and Exit Game.");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if ((id >= BaseCount + 334) && (id <= BaseCount + 336)) {
+            static const char* const gameLabels[3] = { "Save File", "Snap Station", "Exit Game" };
+            strip = compose(gameLabels[id - (BaseCount + 334)]);
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 337) {
+            strip = compose_lines("Four files. A new one starts empty.",
+                                  "Takes effect at the next start.");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 338) {
+            strip = compose_lines("The Blockbuster sticker printer, port 4.",
+                                  "On, the Gallery prints. At the next start.");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if ((id >= BaseCount + 339) && (id <= BaseCount + 342)) {
+            static const char* const fileValues[4] = { "< File 1 >", "< File 2 >", "< File 3 >", "< File 4 >" };
+            strip = compose(fileValues[id - (BaseCount + 339)]);
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 343) {
+            // The Controls page's Button Setup row: it opens a page, and its
+            // value column says so, with no chevrons since nothing cycles.
+            strip = compose("Open");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if ((id >= BaseCount + 345) && (id <= BaseCount + 353)) {
+            // The Dead Zone's nine values with their unit: a percent of the
+            // stick's travel. Their own strings, since the shared volume
+            // steps have none.
+            char text[16];
+            std::snprintf(text, sizeof text, "< %d%% >", int(id - (BaseCount + 345)) * 5);
+            strip = compose(text);
             w = strip.width;
             h = strip.height;
         }
@@ -2602,7 +2706,7 @@ void stage_menu_strings(uint8_t* rdram) {
             h = strip.height;
         }
         else if (((id >= BaseCount + 306) && (id <= BaseCount + 308)) || (id == BaseCount + 315 + ThumbBands) ||
-                 (id == BaseCount + 317 + ThumbBands)) {
+                 (id == BaseCount + 317 + ThumbBands) || (id == BaseCount + 344)) {
             // The header's legend in other words (compose_legend): the Mods
             // page's "A Details  B Back" on a mod and "A OK  B Back" on the
             // rows under the mods, a details page's "A Options  B Back" and
@@ -2611,6 +2715,7 @@ void stage_menu_strings(uint8_t* rdram) {
                               : (id == BaseCount + 307) ? compose_legend("Options", "Back")
                               : (id == BaseCount + 308) ? compose_legend("", "Back")
                               : (id == BaseCount + 317 + ThumbBands) ? compose_legend("Type", "Cancel")
+                              : (id == BaseCount + 344) ? compose_legend("Change", "Back")
                               : compose_legend("OK", "Back");
             const int lw = (art.w > 0) ? ((art.w + 63) & ~63) : 0;
             write_u32(DirectoryAddr + 0x8 + id * 8, (lw > 0) ? cursor : 0u);
@@ -2750,7 +2855,9 @@ void stage_menu_strings(uint8_t* rdram) {
             h = strip.height;
         }
         else if (id == BaseCount + 150) {
-            strip = compose("Pad Sticks");
+            // "Stick Swap", Off or On: "Pad Sticks: Normal" never said what
+            // the other choice was.
+            strip = compose("Stick Swap");
             w = strip.width;
             h = strip.height;
         }
@@ -2777,9 +2884,10 @@ void stage_menu_strings(uint8_t* rdram) {
             h = strip.height;
         }
         else if (id == BaseCount + 102) {
-            // The top row picks whose buttons the page sets up; "Set Up:"
-            // says what the row does where "Device" only said what it was.
-            strip = compose("Set Up:");
+            // The top row picks whose buttons the page sets up. "Set Up:" read
+            // as a heading with nothing after it (his screenshot, Oct 10 2026);
+            // "Device" names the thing the row chooses.
+            strip = compose("Device");
             w = strip.width;
             h = strip.height;
         }
@@ -3680,6 +3788,13 @@ static ModsRow g_det_row;          // the mod the page shows
 static size_t g_det_lines = 0;     // and how many lines its text has
 static bool g_det_valid = false;
 static uint64_t g_det_hand = 0;    // what its help was worded for
+// The mod's own line on the page (snap64_set_status): where it starts among
+// the text lines, how many it was wrapped to, the text as the mod gave it
+// and as last composed, its clock filled in.
+static int g_det_live_first = -1;
+static int g_det_live_count = 0;
+static std::string g_det_live_raw;
+static std::string g_det_live_text;
 
 static Strip details_help_strip(const ModsRow& r, size_t lineCount) {
     const int device = input_last_device();
@@ -4319,6 +4434,17 @@ static bool thumb_stage(const ModsRow& r) {
 //   - the help box: what A leads to, and how to see the rest of the text.
 // Returns the text's lines, plus 64 when the status is an error (red), plus
 // 128 when there is a picture. The page's answer is one byte.
+// A mod's own line with its %T filled with the clock a mod reads (the test
+// clock under SNAP_CLOCK too), so a time it names stays right while the
+// page is up.
+static std::string live_line_text(const std::string& raw) {
+    std::string out = raw;
+    for (size_t at; (at = out.find("%T")) != std::string::npos;) {
+        out.replace(at, 2, snap::local_time_text());
+    }
+    return out;
+}
+
 static int details_compose(const ModsRow& r) {
     const bool thumb = thumb_stage(r);
     const int room = DetTextInkWidth - (thumb ? ThumbRoom : 0);
@@ -4336,6 +4462,21 @@ static int details_compose(const ModsRow& r) {
         }
     };
 
+    // The mod's own line, if it set one (snap64_set_status): the first
+    // paragraph of the page, before the description, kept live while the page is up
+    // (poll_mods_bank).
+    g_det_live_first = -1;
+    g_det_live_count = 0;
+    g_det_live_raw = snap::mod_status_line(r.id);
+    if (!face_text(g_det_live_raw, true).empty()) {
+        g_det_live_first = 0;
+        g_det_live_text = live_line_text(g_det_live_raw);
+        add(g_det_live_text);
+        g_det_live_count = int(lines.size()) - g_det_live_first;
+        if (g_det_live_first + g_det_live_count > DetLines) {
+            g_det_live_count = DetLines - g_det_live_first;    // past the page's lines: cut as the text is
+        }
+    }
     // The description, paragraph by paragraph.
     {
         std::string text = r.fullDesc;
@@ -4473,7 +4614,7 @@ static void poll_mods_bank() {
                 printf("[SNAP-MENU] Mods page closed: the pages left %u of the %u bytes of their stack at the least\n",
                        left, size);
                 // The strips the pool refused since boot, and the most it
-                // found in use at a sweep -- it sweeps only when all 64 slots
+                // found in use at a sweep -- it sweeps only when every slot
                 // have been handed out, so no sweep means it never filled
                 // (graphics_menu_patch.c, MBOX_POOL_FAIL and _PEAK).
                 const uint32_t peak = read_u32_mail(MailboxAddr + 0x80);
@@ -4482,8 +4623,8 @@ static void poll_mods_bank() {
                     printf("[SNAP-MENU] the strip pool: %u strips refused; it has not filled, so no sweep has counted it\n",
                            refused);
                 } else {
-                    printf("[SNAP-MENU] the strip pool: %u strips refused; its fullest sweep found %u of its 64 slots in use\n",
-                           refused, peak);
+                    printf("[SNAP-MENU] the strip pool: %u strips refused; its fullest sweep found %u of its %u slots in use\n",
+                           refused, peak, kStripSlots);
                 }
                 fflush(stdout);
             }
@@ -4515,6 +4656,28 @@ static void poll_mods_bank() {
     if (g_det_valid && (g_det_hand != g_hand_now)) {
         g_det_hand = g_hand_now;
         stage_dynamic_at(kDetHelpId, DetHelpAddr, details_help_strip(g_det_row, g_det_lines), ModsHelpChunks, ModsHelpHeight);
+    }
+    // The mod's own line keeps its clock: composed again when its text
+    // changes, into the lines it had.
+    if (g_det_valid && (g_det_live_first >= 0) && (g_det_live_count > 0)) {
+        const std::string now = live_line_text(g_det_live_raw);
+        if (now != g_det_live_text) {
+            g_det_live_text = now;
+            std::string rest = face_text(now, true);
+            for (int i = 0; i < g_det_live_count; i++) {
+                std::string line;
+                if (!rest.empty()) {
+                    const auto split = wrap_split(rest, DetTextInkWidth);
+                    line = split.first;
+                    rest = split.second;
+                    if ((i == g_det_live_count - 1) && !rest.empty()) {
+                        line = fit_with_dots(line + " ...", DetTextInkWidth, help_ink);
+                    }
+                }
+                const uint32_t k = uint32_t(g_det_live_first + i);
+                stage_dynamic_at(kDetLineId + k, DetLinesAddr + k * DetLineBytes, compose_help(line.c_str()), DetChunks, kMenuHlpCellH);
+            }
+        }
     }
     // A mod dropped on the window while the page is up: the list takes it
     // at once (the page reads the new count when the bank turns).
@@ -5178,6 +5341,25 @@ void poll_menu_mailbox(uint8_t* rdram) {
             fflush(stdout);
         }
     }
+    // The sky patch's report, once per course: what it made of the sky.
+    {
+        static uint32_t lastSky = 0;
+        const uint32_t sky = read_u32_mail(MailboxAddr + 0xA8);
+        if (sky != lastSky) {
+            lastSky = sky;
+            if ((sky >> 16) == 0xFFFFu) {
+                static const char* const why[] = { "", "no triangles", "too long", "not a plain drum", "not rings at equal steps" };
+                const uint32_t reason = sky & 0xFFu;
+                printf("[SNAP-SKY] the course's sky is drawn as the cartridge has it: %s" "\n",
+                       (reason < 5) ? why[reason] : "unknown");
+                fflush(stdout);
+            } else if (sky != 0) {
+                printf("[SNAP-SKY] the course's sky: %u triangles in %u rings of %u corners, drawn as %u" "\n",
+                       sky >> 16, (sky >> 8) & 0xFFu, sky & 0xFFu, (sky >> 16) * 16u);
+                fflush(stdout);
+            }
+        }
+    }
     // The title screen's Snap Station item: the patch sets the byte when it
     // is chosen, and port 4 carries the station for the rest of this run.
     if (read_u8_mail(MailboxAddr + 0x3C) != 0) {
@@ -5225,6 +5407,20 @@ void poll_menu_mailbox(uint8_t* rdram) {
         set_master_volume(master);
         set_mute_unfocused(mute);
         apply_game_settings(rdram);
+        settings_mark_dirty();
+    }
+
+    // The GAME bank: the save file and the Snap Station, both for the next
+    // start; the host only keeps them in the file.
+    const uint32_t gameSeq = read_u32_mail(MailboxAddr + 0x600);
+    if (gameSeq != g_last_applied_game_seq) {
+        g_last_applied_game_seq = gameSeq;
+        {
+            std::lock_guard<std::mutex> lock(settings_mutex());
+            Settings& g = settings();
+            g.save_file = std::clamp(int(read_u8_mail(MailboxAddr + 0x604)) + 1, 1, 4);
+            g.snap_station = read_u8_mail(MailboxAddr + 0x605) != 0;
+        }
         settings_mark_dirty();
     }
 
@@ -5340,6 +5536,8 @@ void poll_menu_mailbox(uint8_t* rdram) {
         // is on screen at the next display list.
         s.photo_detail = read_u8_mail(MailboxAddr + 0x16) != 0;
         s.jynx_vc = read_u8_mail(MailboxAddr + 0x17) != 0;
+        // Read by the sprite wrappers on every draw (src/rect_tags.cpp).
+        s.wide_hud = read_u8_mail(MailboxAddr + 0x4D) != 0;
     }
 
     apply_graphics_settings();
@@ -5486,6 +5684,97 @@ void menu_arena_reset(uint8_t* rdram) {
     write_u32(SceneAgeAddr, 0);
 }
 
+// The notice's strip: the text in the help face over a translucent black
+// panel with a few pixels of margin and cut corners, so it reads over any
+// scene. The strip is always the full four blocks, so the sprite made for
+// the first line fits every line after it; the panel is only as wide as the
+// line's ink and sits in the middle of the strip, which the patch centers
+// on the screen, so every line is centered whatever its length.
+static Strip notice_box(const Strip& text) {
+    constexpr int padX = 6;
+    constexpr int padY = 4;
+    constexpr int corner = 3;
+    constexpr uint8_t panel = 176;
+    Strip box;
+    box.width = NoticeChunks * 64;
+    box.height = NoticeHeight;
+    box.intensity.assign(size_t(box.width) * size_t(box.height), 0);
+    box.alpha.assign(size_t(box.width) * size_t(box.height), 0);
+    // The ink's columns: the face's outline counts, so the margin is
+    // measured from the letters' edge, not the cell's.
+    int inkL = text.width;
+    int inkR = -1;
+    for (int y = 0; y < text.height; y++) {
+        for (int x = 0; x < text.width; x++) {
+            if (text.alpha[size_t(y) * size_t(text.width) + size_t(x)] != 0) {
+                inkL = std::min(inkL, x);
+                inkR = std::max(inkR, x);
+            }
+        }
+    }
+    if (inkR < inkL) {
+        return box;
+    }
+    const int panelW = std::min(inkR - inkL + 1 + 2 * padX, box.width);
+    const int panelH = std::min(text.height + 2 * padY, box.height);
+    const int panelX = (box.width - panelW) / 2;
+    const int panelY = (box.height - panelH) / 2;
+    for (int y = 0; y < panelH; y++) {
+        for (int x = 0; x < panelW; x++) {
+            // The three pixels in each corner stay clear: a cut corner.
+            const int cx = (x < corner) ? corner - 1 - x : (x >= panelW - corner) ? x - (panelW - corner) : -1;
+            const int cy = (y < corner) ? corner - 1 - y : (y >= panelH - corner) ? y - (panelH - corner) : -1;
+            if ((cx >= 0) && (cy >= 0) && (cx + cy >= corner)) {
+                continue;
+            }
+            box.alpha[size_t(panelY + y) * size_t(box.width) + size_t(panelX + x)] = panel;
+        }
+    }
+    for (int y = 0; y < text.height; y++) {
+        for (int x = inkL; x <= inkR; x++) {
+            const int bx = panelX + padX + (x - inkL);
+            const int by = panelY + padY + y;
+            if ((bx < 0) || (bx >= box.width) || (by < 0) || (by >= box.height)) {
+                continue;
+            }
+            const size_t from = size_t(y) * size_t(text.width) + size_t(x);
+            const size_t to = size_t(by) * size_t(box.width) + size_t(bx);
+            const int ta = text.alpha[from];
+            if (ta != 0) {
+                // The letter over the panel, as the pages' own help lines
+                // are blended over theirs: the face is white with its edges
+                // in the alpha, so a faint edge pixel must come out a dark
+                // gray, not a white block (taking the larger alpha did that,
+                // and made every letter fat and the P's faint rows bright).
+                const int oa = ta + int(panel) * (255 - ta) / 255;
+                box.intensity[to] = uint8_t(int(text.intensity[from]) * ta / oa);
+                box.alpha[to] = uint8_t(oa);
+            }
+        }
+    }
+    return box;
+}
+
+void menu_notice_set(const std::string& raw) {
+    if ((g_menu_rdram == nullptr) || !g_staged) {
+        return;
+    }
+    const std::string text = face_text(raw, true);
+    if (text.empty()) {
+        write_u32(NoticeTicksAddr, 0);
+        return;
+    }
+    // Cut to 170 pixels of ink: centered, the panel then ends short of the
+    // film counter's canister (at 257 of the 4:3 picture) with room to spare.
+    const Strip strip = notice_box(compose_help(fit_with_dots(text, 170, help_ink).c_str()));
+    stage_dynamic_at(kNoticeId, NoticeAddr, strip, NoticeChunks, NoticeHeight);
+    g_notice_scene = g_scene_overlay_rom.load(std::memory_order_relaxed);
+    write_u32(NoticeSerialAddr, read_u32_mail(NoticeSerialAddr) + 1);
+    write_u32(NoticeTicksAddr, NoticeTicks);
+    printf("[SNAP-MENU] a mod's notice: %s\n", text.c_str());
+    fflush(stdout);
+}
+
 void menu_anywhere_tick(uint8_t* rdram, void* ctxIn) {
     if ((rdram == nullptr) || (ctxIn == nullptr) || !g_staged) {
         return;
@@ -5495,6 +5784,23 @@ void menu_anywhere_tick(uint8_t* rdram, void* ctxIn) {
         g_scene_age++;
     }
     write_u32(SceneAgeAddr, g_scene_age);
+    // What the notice's tick last did (the patch's state word), on change.
+    {
+        static uint32_t lastState = 0;
+        const uint32_t state = read_u32_mail(MailboxAddr + 0x5F8);
+        if (state != lastState) {
+            lastState = state;
+            printf("[SNAP-NOTICE] the tick: %s (ticks %u, serial %u)\n",
+                   (state == 1) ? "made" : (state == 2) ? "shown again" : (state == 3) ? "hidden" : (state == 4) ? "dropped a dead pointer"
+                   : (state == 5) ? "waiting for the HUD" : (state == 6) ? "no strip slot" : (state == 7) ? "no sprite on the object" : "?",
+                   read_u32_mail(NoticeTicksAddr), read_u32_mail(NoticeSerialAddr));
+            fflush(stdout);
+        }
+    }
+    // A mod's notice does not outlive the scene it was sent in.
+    if ((read_u32_mail(NoticeTicksAddr) != 0) && (g_scene_overlay_rom.load(std::memory_order_relaxed) != g_notice_scene)) {
+        write_u32(NoticeTicksAddr, 0);
+    }
     {
         const uint8_t note = read_u8_mail(RunnerNoteAddr);
         if (note != 0) {

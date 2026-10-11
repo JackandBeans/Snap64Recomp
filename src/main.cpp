@@ -176,16 +176,26 @@ static ultramodern::renderer::WindowHandle create_window(void* /*gfx_data*/) {
             windowH = h;
         }
     }
+    // A window the player left maximized opens maximized again: the
+    // windowed way to fill the screen, remembered as fullscreen is
+    // (settings.h). An exact size asked for in the environment wins.
+    uint32_t windowFlags = SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI;
+    // Under gamescope the screen is the window's size whatever it asks
+    // (steam_deck.cpp), so the flag is left out there.
+    if (snap::settings().window_maximized && (getenv("SNAP_WINDOW") == nullptr) && !snap::in_gamescope()) {
+        windowFlags |= SDL_WINDOW_MAXIMIZED;
+    }
+#if defined(__APPLE__)
+    // RT64 draws with Metal on a Mac; the layer is taken from SDL below.
+    windowFlags |= SDL_WINDOW_METAL;
+#else
+    windowFlags |= SDL_WINDOW_VULKAN;
+#endif
     sdl_window = SDL_CreateWindow(
         SNAP_PORT_NAME,
         SDL_WINDOWPOS_CENTERED, SDL_WINDOWPOS_CENTERED,
         windowW, windowH,
-#if defined(__APPLE__)
-        // RT64 draws with Metal on a Mac; the layer is taken from SDL below.
-        SDL_WINDOW_METAL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI
-#else
-        SDL_WINDOW_VULKAN | SDL_WINDOW_RESIZABLE | SDL_WINDOW_ALLOW_HIGHDPI
-#endif
+        windowFlags
     );
 #if defined(__linux__)
     if (sdl_window != nullptr) {
@@ -357,7 +367,7 @@ static void update_gfx(void* /*gfx_data*/) {
 
     // The Snap Station's relaunches come back at the window state the run
     // had. A boot is always windowed (settings.cpp), so the return to
-    // fullscreen goes through the live path the maximize button uses,
+    // fullscreen goes through the live path F11 uses,
     // once the window has been up for a moment. A Steam Deck boots into
     // fullscreen the same way: its panel is the whole screen, and the
     // other recompilations' players filed a windowed boot as a bug. So
@@ -377,10 +387,10 @@ static void update_gfx(void* /*gfx_data*/) {
                 restoreWhy = "restored after the Snap Station's relaunch";
             } else if (snap::is_steam_deck()) {
                 restorePending = true;
-                restoreWhy = "the Steam Deck's default (F11 or the maximize button leaves it)";
+                restoreWhy = "the Steam Deck's default (F11 leaves it)";
             } else if (snap::settings_boot_fullscreen()) {
                 restorePending = true;
-                restoreWhy = "the saved setting (F11 or the maximize button leaves it)";
+                restoreWhy = "the saved setting (F11 leaves it)";
             }
             restoreAt = now + std::chrono::milliseconds(1200);
         }
@@ -390,6 +400,7 @@ static void update_gfx(void* /*gfx_data*/) {
                 std::lock_guard<std::mutex> lock(snap::settings_mutex());
                 snap::settings().fullscreen = true;
             }
+            snap::settings_boot_fullscreen_applied();
             snap::apply_graphics_settings();
             snap_update_window_title();
             SDL_DisplayMode screen{};
@@ -646,20 +657,30 @@ static void update_gfx(void* /*gfx_data*/) {
                 }
                 break;
             case SDL_WINDOWEVENT:
-                // The maximize button is the fullscreen switch: undo the
-                // maximize so the windowed state underneath stays normal,
-                // then enter fullscreen through the same live path the
-                // GRAPHICS page uses. Turning the setting off in that page
-                // (or pressing it again after a menu toggle) returns here.
-                if (event.window.event == SDL_WINDOWEVENT_MAXIMIZED) {
-                    if (sdl_window != nullptr) {
-                        SDL_RestoreWindow(sdl_window);
-                    }
+                // The maximize button maximizes, as any window's does (until
+                // 1.1.3 it was the fullscreen switch; F11 and the GRAPHICS
+                // page are). Whether the window is maximized is remembered
+                // for the next launch. While the window is fullscreen its
+                // size events are the renderer's own style changes, not the
+                // player's, so the memory keeps what it had; leaving
+                // fullscreen then brings the maximized window back.
+                if ((event.window.event == SDL_WINDOWEVENT_MAXIMIZED) ||
+                    (event.window.event == SDL_WINDOWEVENT_RESTORED)) {
+                    const bool maximized = (event.window.event == SDL_WINDOWEVENT_MAXIMIZED) ||
+                        ((sdl_window != nullptr) && ((SDL_GetWindowFlags(sdl_window) & SDL_WINDOW_MAXIMIZED) != 0));
+                    bool changed = false;
                     {
                         std::lock_guard<std::mutex> lock(snap::settings_mutex());
-                        snap::settings().fullscreen = true;
+                        if (!snap::settings().fullscreen && (snap::settings().window_maximized != maximized)) {
+                            snap::settings().window_maximized = maximized;
+                            changed = true;
+                        }
                     }
-                    snap::apply_graphics_settings();
+                    if (changed) {
+                        snap::settings_mark_dirty();
+                        printf("[SNAP] window: %s\n", maximized ? "maximized" : "restored");
+                        fflush(stdout);
+                    }
                 }
                 // The SOUND page's background mute follows these; the mute
                 // itself zero-fills in the audio sink so the queue keeps
@@ -1522,6 +1543,9 @@ int main(int argc, char* argv[]) {
     // (mod_installer.cpp).
     snap::mods_safe_start();
     snap::mods_install_at_start();
+    // The game functions the port intercepts, declared before the mods load
+    // so a hook on one keeps the port's work in it (host_hooks.cpp).
+    snap::register_host_hooked_functions();
     try {
         recomp::start(config);
     }

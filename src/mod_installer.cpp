@@ -4,13 +4,13 @@
  *
  * A mod is a .nrm; a texture pack is a .rtz; and a zip may hold either, which
  * is how Thunderstore packages a mod (a manifest.json, an icon and a README
- * beside the mod itself). Every .nrm, .rtz and native library in a zip is
+ * beside the mod itself). Every .nrm and .rtz in a zip is
  * taken, wherever in the zip it sits; the rest is left. Before a mod is
  * installed its manifest is read: a mod for another game, or one that needs
  * a newer release of the port, is refused with the reason, since the
  * runtime would refuse it at every start with an error box.
  *
- * Mods and their native libraries go to mods/, texture packs to
+ * Mods go to mods/ (a native library in a package is refused and named), texture packs to
  * texture_packs/ (rt64_render_context.cpp loads those at start). The runtime
  * opens mods when the game starts and holds them open, and it cannot rescan
  * the folder while the game runs (scan_mod_folder closes every opened mod,
@@ -84,6 +84,14 @@ std::string lower_extension(const fs::path& p) {
 std::string display(const fs::path& p) {
     const auto name = p.filename().u8string();
     return std::string(name.begin(), name.end());
+}
+
+// An offline-recompiled mod: a .nrm that would have the loader open a native
+// library beside it as the mod's code. Refused, like any native library.
+bool is_offline_mod(const fs::path& p) {
+    std::string name = p.filename().string();
+    for (char& c : name) c = (char) std::tolower((unsigned char) c);
+    return name.size() > 12 && name.compare(name.size() - 12, 12, ".offline.nrm") == 0;
 }
 
 bool is_native_library(const fs::path& p) {
@@ -292,7 +300,14 @@ void take_zip(const fs::path& file, bool duringPlay, Report& report) {
         // Only the entry's own name: a package may keep its mod in a folder.
         const fs::path name = fs::u8path(stat.m_filename).filename();
         const std::string ext = lower_extension(name);
-        if ((ext != ".nrm") && (ext != ".rtz") && !is_native_library(name)) {
+        // A mod is N64 code only: a native library in a package is left in
+        // the zip and named, and the loader refuses a mod that declares one.
+        if (is_native_library(name) || is_offline_mod(name)) {
+            report.refused.push_back(shown + ": " + display(name) +
+                                     ": native code; mods are N64 code only, and the port does not load it");
+            continue;
+        }
+        if ((ext != ".nrm") && (ext != ".rtz")) {
             continue;
         }
         found++;
@@ -339,9 +354,13 @@ void install(const fs::path& file, bool duringPlay, Report& report) {
         take_zip(file, duringPlay, report);
         return;
     }
+    if (is_offline_mod(file)) {
+        report.refused.push_back(shown + ": native code; mods are N64 code only, and the port does not load it");
+        return;
+    }
     if ((ext != ".nrm") && (ext != ".rtz")) {
         report.refused.push_back(shown + (is_native_library(file)
-            ? ": a mod's library alone; drop the mod's zip, which carries the mod with it"
+            ? ": native code; mods are N64 code only, and the port does not load it"
             : ": not a mod (a mod is a .nrm, a texture pack a .rtz, or a .zip holding them)"));
         return;
     }

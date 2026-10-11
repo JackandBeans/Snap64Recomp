@@ -21,16 +21,16 @@ Start `Snap64Recomp.exe`; a shortcut works from anywhere, because the port
 reads and writes the folder the executable is in, whatever the working
 directory (`src/paths.cpp`). It opens a 1280x960 window titled
 `Snap64 Recomp 1.1.2`; `SNAP_WINDOW=WxH` in the environment opens it at
-an exact size instead (at least 320x240). The window's maximize button is the
-fullscreen switch; the in-game Graphics page and F11 do the same, and F11
+an exact size instead (at least 320x240). A window left maximized opens
+maximized again. The in-game Graphics page and F11 switch fullscreen, and F11
 is the way out of fullscreen from anywhere. **A tap of Esc opens the port's
 Options** on any screen (in a course it pauses the ride and opens them at
 once); Enter is the game's Start. **Holding
 Esc for a second and letting go asks whether to quit**; Keep playing is
 the answer to Enter and to Esc, and Quit takes a click or Tab and Enter.
-**Exit Game**, the last row of the game's Options screen, closes the
-program from a pad: A turns its help line into the question, a second A
-closes, B stays. The window's close button and Alt+F4 quit at once, as
+**Exit Game**, the last row of the Game page on the game's Options screen,
+closes the program from a pad: A turns its help into the question, a
+second A closes, B stays. The window's close button and Alt+F4 quit at once, as
 any window's do. On a pad, Select opens the port's Options anywhere and the
 right stick pressed in saves the photo on screen (until 1.0.9 that was
 Select, as on the Wii Virtual Console release).
@@ -277,7 +277,7 @@ The Button Setup row of the Controls page (named as the game names such
 screens: "Z Button Setup") opens a page with a row for each of the game's
 inputs, each row named by its button and what it does ("Z Button: Zoom",
 "C-Up: Look Back", "A Button: Photo"), showing what presses it on the
-device picked at the top ("Set Up: Keyboard", Mouse or Controller; Left
+device picked at the top ("Device: Keyboard", Mouse or Controller; Left
 and Right switch), and the help line says more about what that input does
 in the game. A on a row makes the port listen: the next key, mouse button,
 wheel tick or pad button pressed on that device becomes the row's
@@ -344,7 +344,7 @@ right thumb stays free for A; when both keys are down, slow motion wins.
 Any SDL game controller overrides the keyboard while attached: left stick is
 the control stick, A is A, B or X is B, the left shoulder button is Z, Start
 is Start, the D-pad is the D-pad, the triggers are L and R, and the right stick
-is the C buttons. **Pad Sticks** on the Controls page swaps the two sticks,
+is the C buttons. **Stick Swap** on the Controls page swaps the two sticks,
 so the right one aims and the left works the C buttons (`pad_sticks_swapped`
 in the settings file), and **Dead Zone** is how far the aiming stick moves
 before the game sees it, 15 percent as shipped and up to 40 for a pad whose
@@ -390,9 +390,10 @@ which SDL itself documents, is the second.
 ## In-game pages
 
 
-Options > **Graphics**, in the order the page shows them: Render Scale,
-Super Sampling, Anti-Aliasing, Widescreen, Frame Rate, 2D Detail, Filter,
-Texture Filter, Color Depth, Buffering, Dither, Fullscreen, Overscan Crop,
+Options > **Graphics**, in three groups, in the order the page shows them.
+The display: Render Scale, Super Sampling, Anti-Aliasing, Frame Rate,
+Fullscreen, Buffering, Color Depth. The picture: Widescreen, Wide HUD,
+Overscan Crop, 2D Detail, Filter, Texture Filter, Dither. The fixes:
 Cutscene Fix, Photo Detail, Jynx Recolor. Color Depth and Buffering take
 effect after a restart; everything else applies while the page is open. The
 page's Frame Rate row runs Original, Display, then 60, 90, 120, 144, 165
@@ -407,7 +408,8 @@ Options > **Controls**: Z Button (Hold/Switch) and Control Stick
 list so the list keeps the stock rhythm (Normal, the cartridge's default,
 tilts the camera down when the stick is pushed up; Reverse tilts it up; both
 are kept in the save, as on the cartridge, not in `snapsettings.json`); then
-Button Setup, the row that opens the Button Setup page; Pad Sticks; Dead
+Button Setup, the row that opens the Button Setup page (its value column
+says Open); Stick Swap; Dead
 Zone; Fast Forward (Off, 2x, 3x or 4x: the speed the held key runs the game
 at); Slow Motion (Off, 2x or 4x slower, the same way); Mouse Aim, Mouse
 Speed (25 to 400 percent of the shipped speed), Zoom Speed (the share of
@@ -425,7 +427,7 @@ title, Oak's lab, the map, a course, the Report, the Gallery -- over the
 screen as it stands, held still and dimmed, in the Options screen's own
 dress: the rules above and below the heading, A OK and B Cancel, the help
 box, under the list and under every page. Five rows: Graphics, Sound,
-Controls (with Button Setup), Mods and Exit Game, each the row the title's
+Controls (with Button Setup), Mods and Game, each the row the title's
 screen has (Screen, the cartridge's picture-position page, is main menu code
 and stays on the title's screen). **Esc, Select or Start on the list or on
 any page closes everything and the screen goes on** exactly where it was,
@@ -477,7 +479,9 @@ name and version, who made it, and a sentence on whether it is on ("This
 mod is on.", or "On: Test User needs it."), with the mod's picture beside
 them when its file carries one (`thumb.png` or `thumb.dds`, as in the other
 recompilations). A dark panel under the page keeps its text readable over
-any screen. Under a rule come its whole description,
+any screen. Under a rule come a line of the mod's own when it has one
+(what it is doing now; Island Skies says the hour, the weather and the
+sun's hours there, with the clock kept live), its whole description,
 what it needs and what needs it, four lines at a time, with a scroll bar
 beside them when there is more (Up and Down, the wheel, or a click on the
 bar show the rest). The help box says what A does there. Left and Right,
@@ -531,16 +535,22 @@ from outside) and mods are on, the next start asks whether to turn the
 mods off, so a mod that stops the game can be turned off without
 editing `mods.json`; Options > Mods turns them back on.
 
-Options > **Exit Game**: the list's sixth row, under Mods, in the
-screen's own font and rhythm, and the fifth row of the list the pause menu
-opens in a course. Its help line says what it does; A turns the help line
-into a question, and the second A closes the program the way the window's
-close button does. B, or moving off the row, withdraws the question,
-which names the buttons in your hand: "Press A again to close the game, B
-to stay" on a controller, "Click again to close the game. Right click to
-stay." with a mouse, "Press X again to close the game, Z to stay" on a
-keyboard as shipped. It is the way to quit from a pad, on a Steam Deck in
-particular.
+Options > **Game**: the list's sixth row, under Mods, in the screen's own
+font and rhythm, and the fifth row of the list the pause menu opens in a
+course. Three rows. **Save File**: which of four save files the game
+plays, File 1 (the file the port always had) to File 4, each a file of
+its own under `saves/` that starts empty, so a family can share the
+program; it takes effect at the next start, since the game reads its
+save as it boots. **Snap Station**: the Blockbuster kiosk's sticker
+printer on controller port 4, Off as the console had it; On, the Gallery
+shows its Print button, from the next start. **Exit Game**: A turns the
+help box into a question, and the second A closes the program the way
+the window's close button does. B, or moving off the row, withdraws the
+question, which names the buttons in your hand: "Press A again to close
+the game, B to stay" on a controller, "Click again to close the game.
+Right click to stay." with a mouse, "Press X again to close the game, Z
+to stay" on a keyboard as shipped. It is the way to quit from a pad, on a
+Steam Deck in particular.
 
 ## Hotkeys
 
@@ -677,6 +687,7 @@ the defaults below are that file's.
 | Key | Default | Meaning |
 | --- | --- | --- |
 | `fullscreen` | `false` | saved as set; the window opens windowed and goes fullscreen a moment later when the file says so (a window created fullscreen comes up with broken chrome), and the Snap Station's own relaunches return in the state the print started in |
+| `window_maximized` | `false` | the window was maximized when the port last saw it, and opens maximized; `SNAP_WINDOW=WxH` wins over it |
 | `widescreen` | `false` | RT64 Expand: a true wider field of view in a course, as wide as the window's own shape (16:9, 16:10, 21:9 or wider), not a stretch; the film counter sits against the picture's right edge and the R and Z icons slide out to it; the title, the lab and the other 4:3 screens sit in black bars. Pokémon and effect sprites at the edges are kept ([Known issues](KNOWN-ISSUES.md)) |
 | `msaa` | `0` | 0, 2, 4 or 8 |
 | `fps_mode` | `0` | 0 Original, 1 Display refresh, 2 Manual (`fps_manual_target`) |
@@ -690,11 +701,13 @@ the defaults below are that file's.
 | `intro_fix` | `false` | Cutscene Fix: skips the one frame the console drew from inside the player model at the end of the Beach and River intros |
 | `photo_detail` | `false` | Photo Detail: Off draws Oak's photos and the album at native pixels as the console did; On serves them from the renderer's full-resolution render |
 | `jynx_vc` | `false` | Jynx Recolor, Jynx's face and hands: Off: the cartridge's black; On: the purple of the re-releases, matched to a published Virtual Console screenshot |
+| `save_file` | `1` | Save File on the Game page: 1 plays `saves/pokemonsnap.bin`, 2 to 4 play `saves/pokemonsnap-2.bin` and on, each its own file starting empty (the file appears when the game first saves); read at the next start |
+| `wide_hud` | `true` | Wide HUD: On puts the film counter against the wide picture's right edge and slides the R and Z icons out to it; Off leaves both at the 4:3 picture's edge, as the cartridge has them |
 | `interpolate_camera` | `true` | interpolate the view as well as objects (F4; no row on the Graphics page) |
 | `snap_station` | `false` | keep the Snap Station on port 4 from the title menu on, every start (see [SNAP-STATION.md](SNAP-STATION.md)) |
 | `pad_enabled` | `true` | `false` makes the port ignore every pad: none is opened, and the keyboard and mouse carry on |
 | `pad_layout` | `0` | how a pad's shoulders and triggers are read: `0` decides by the pad's name, `1` the Xbox-style layout the defaults describe, `2` an N64-shaped pad (the Switch Online N64 controller), whose L, R and Z are L, R and Z |
-| `pad_sticks_swapped` | `false` | the right stick aims and the left works the C buttons (Pad Sticks) |
+| `pad_sticks_swapped` | `false` | the right stick aims and the left works the C buttons (Stick Swap) |
 | `pad_deadzone` | `15` | the aiming stick's dead zone in percent of full travel, 0 to 40 in steps of five (Dead Zone) |
 | `fast_forward_speed` | `3` | the speed the held fast-forward key runs the game at: 1 Off, 2, 3 or 4 (Fast Forward) |
 | `slow_motion_speed` | `1` | how much slower the held slow-motion key runs the game: 1 Off, 2 half speed, 4 a quarter (Slow Motion) |
@@ -719,6 +732,11 @@ the defaults below are that file's.
 `render_to_ram` is never read from or written to the file.
 
 Environment variables the executable reads: `SNAP_WINDOW` (window size),
+`SNAP_SKY_DRUM=original` (draws every course's sky as the cartridge does,
+with the lines at its drum's joins, instead of the port's finer drum;
+`=mark` paints the sky picture's two edge columns red, to see the joins),
+`SNAP_CLOCK=HH:MM` (holds the clock a mod reads at that time of day;
+`HH:MMxN` starts there and runs N times as fast),
 `SNAP_STATS` (statistics and the diagnostic keys), `SNAP_MUTE`, `SNAP_RECORD`
 and `SNAP_REPLAY` (input recording and replay), the `SNAP_PCAP_*` family
 (presented-frame capture; `SNAP_PCAP_ATFRAME` keys captures to game frames,

@@ -14,17 +14,25 @@
  * a0 to a3, the rest on the caller's stack, a double or a 64-bit integer in
  * an even-aligned pair of slots. The text goes to the port's log. The
  * collections a mod keeps between calls (recompdata.h) are mod_data_api.cpp.
+ *
+ * snap64_set_status (snap64.h) is the port's own: a mod gives its id and a
+ * line, and the Mods page shows the line on the mod's details page after
+ * the description, with any %T in it filled with the clock a mod reads
+ * (mod_time_api.cpp) while the page is up. An empty line clears it.
  */
 #include <algorithm>
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <mutex>
 #include <string>
+#include <unordered_map>
 
 #include "recomp.h"
 #include "librecomp/overlays.hpp"
 
 #include "mod_api.h"
+#include "settings.h"
 
 namespace {
 
@@ -169,13 +177,59 @@ extern "C" void recomp_printf(uint8_t* rdram, recomp_context* ctx) {
     ctx->r2 = static_cast<int32_t>(out.size());
 }
 
+// The line each mod shows on its details page, by mod id. The game thread
+// writes it; the page reads it as it composes (menu_assets.cpp).
+std::mutex g_status_mutex;
+std::unordered_map<std::string, std::string> g_status_lines;
+
+// void snap64_set_status(const char* mod_id, const char* line)
+void snap64_set_status(uint8_t* rdram, recomp_context* ctx) {
+    const uint32_t idAddr = static_cast<uint32_t>(ctx->r4);
+    const uint32_t lineAddr = static_cast<uint32_t>(ctx->r5);
+    if (idAddr == 0) {
+        return;
+    }
+    const std::string id = guest_string(rdram, idAddr);
+    std::string line = (lineAddr == 0) ? std::string() : guest_string(rdram, lineAddr);
+    if (line.size() > 240) {
+        line.resize(240);     // three lines of the page, more than any line needs
+    }
+    std::lock_guard<std::mutex> lock(g_status_mutex);
+    if (line.empty()) {
+        g_status_lines.erase(id);
+    }
+    else {
+        g_status_lines[id] = line;
+    }
+}
+
+// void snap64_notice(const char* mod_id, const char* line): a line over the
+// course for five seconds (menu_assets.cpp menu_notice_set).
+void snap64_notice(uint8_t* rdram, recomp_context* ctx) {
+    const uint32_t lineAddr = static_cast<uint32_t>(ctx->r5);
+    std::string line = (lineAddr == 0) ? std::string() : guest_string(rdram, lineAddr);
+    if (line.size() > 120) {
+        line.resize(120);
+    }
+    snap::menu_notice_set(line);
+}
+
 } // namespace
 
 namespace snap {
 
+std::string mod_status_line(const std::string& id) {
+    std::lock_guard<std::mutex> lock(g_status_mutex);
+    const auto it = g_status_lines.find(id);
+    return (it == g_status_lines.end()) ? std::string() : it->second;
+}
+
 void register_mod_exports() {
     recomp::overlays::register_base_export("recomp_printf", recomp_printf);
+    recomp::overlays::register_base_export("snap64_set_status", snap64_set_status);
+    recomp::overlays::register_base_export("snap64_notice", snap64_notice);
     register_data_api_exports();
+    register_time_api_exports();
 }
 
 } // namespace snap

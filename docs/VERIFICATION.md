@@ -80,9 +80,10 @@ here should be assumed untried.
   the screen: the host's line for each BGM player gives its own clock at
   the hold and at the release, and the check passes only when they are
   equal.
-  On the 1.1.2 executable built here (SHA-256 beginning `0fc1b702`), run
+  On the 1.1.3 executable built here (SHA-256 beginning `af91ae98`), run
   without diagnostics in the environment, the suite passed 29 of 29 checks
-  in 1151 seconds, and the station's 5 of 5 in 488; the 1.1.1 executable had
+  in 1153 seconds, and the station's 5 of 5 in 489; the 1.1.2 executable had
+  passed 29 of 29 in 1151 and the station's 5 in 488, the 1.1.1 executable had
   passed 29 of 29 in 1149 and the station's 5 in 487, the 1.1.0 executable had
   passed 29 of 29 in 1149 and the station's 5 in 487, the 1.0.9 executable had passed
   28 of 28 in 1154 and the station's 5 in 488, the 1.0.8 executable had passed

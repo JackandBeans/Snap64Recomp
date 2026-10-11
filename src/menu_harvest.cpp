@@ -566,6 +566,9 @@ constexpr SynthGlyph kHeaderSynth[] = {
      * the right side left open the way the lowercase c's is; l is h's
      * stem alone, the full cap height. */
     { 'C', { "........", ".+####+.", ".######+", "##+..+##", "##......", "#+......", "#+......", "##......", "##+..+##", ".######+", ".+####+.", "........" } },
+    /* For the GAME page's heading: m is the stock n's arch twice over, the
+     * middle stem shared, at the n's own rows and weight. */
+    { 'm', { "...........", "...........", "...........", "...........", ".#+##++##+.", ".##+###+##.", ".#...#...#.", ".#+..#+..#.", ".#+..#+..#.", ".#+.+#+.+#.", "...........", "..........." } },
     /* One stroke two texels wide, top to bottom: drawn wider at its ends it
      * read as a bracket ("Detai[s"). */
     { 'l', { "....", "....", "....", ".##.", ".##.", ".##.", ".##.", ".##.", ".##.", ".##.", ".##.", "...." } },

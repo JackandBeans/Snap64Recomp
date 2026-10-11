@@ -20,6 +20,12 @@ namespace snap {
 
 struct Settings {
     bool  fullscreen        = false;
+    // The window was maximized when the port last saw it, and opens
+    // maximized again: the windowed way to fill the screen, remembered as
+    // fullscreen is. The window events in src/main.cpp keep it; a
+    // fullscreen window's own size changes are not the player's and leave
+    // it alone. SNAP_WINDOW=WxH in the environment wins over it.
+    bool  window_maximized  = false;
     bool  widescreen        = false;  // RT64 Expand: a true wider FOV, the window's own shape, not a stretch
     int   msaa              = 0;      // 0, 2, 4, 8
     // 0 = Original (native rate), 1 = Display refresh, 2 = Manual.
@@ -139,6 +145,13 @@ struct Settings {
     // (snapJynxVC) on every config push, so a page edit applies at the next
     // display list.
     bool  jynx_vc           = false;
+    // In a wide picture the film counter sits against the real right edge
+    // and the R and Z icons slide out to it (src/rect_tags.cpp, 1.1.2); the
+    // cartridge keeps both at the 4:3 picture's edge, which in a wide
+    // picture is in mid-air. Off leaves them where the cartridge has them.
+    // Mailbox byte 0x80C0004D, the GRAPHICS page's Wide HUD row (field 16,
+    // past the full bank at +0x08).
+    bool  wide_hud          = true;
     // The Pokemon Snap Station on controller port 4 (snap_station.h): the
     // Blockbuster kiosk's sticker printer, which the retail cartridge knows
     // how to drive. On, the Gallery shows its Print button, and printing
@@ -150,6 +163,13 @@ struct Settings {
     // boot and must not find it then); the title screen's Snap Station item
     // attaches it for one run without this.
     bool  snap_station      = false;
+    // Which save file the game plays: 1 is saves/pokemonsnap.bin, the one
+    // the port always had; 2, 3 and 4 are saves/pokemonsnap-2.bin and on,
+    // each starting empty, so a family can share the program. Read at the
+    // next start only: the game reads its save as it boots, and the file is
+    // swapped through the runtime just before that (src/save_file.cpp).
+    // The GAME page's Save File row sets it.
+    int   save_file         = 1;
     // The mouse (src/input.cpp). While a course runs and the window has
     // focus the cursor is captured and its motion turns the view, added to
     // the game's own yaw and pitch in memory; the mouse's buttons and wheel
@@ -298,13 +318,13 @@ constexpr int kMouseSpeedSteps[11] = { 25, 50, 75, 100, 125, 150, 175, 200, 250,
 
 // Threading. Three threads touch the struct. The main thread -- recomp::start's
 // loop, which pumps SDL events through update_gfx in src/main.cpp -- runs
-// the hotkeys, the window's maximize handler, load_settings at boot and every
+// the hotkeys, the window events (the maximized memory), load_settings at boot and every
 // disk write. The game thread runs poll_menu_mailbox once per tick. RT64's
 // graphics thread reads fields on every display list
 // (src/rt64_render_context.cpp).
 //
 // Every mutation holds settings_mutex(): handle_settings_hotkey,
-// poll_menu_mailbox, load_settings and the maximize handler take it, and
+// poll_menu_mailbox, load_settings and the window events take it, and
 // save_settings copies the struct under it, then serializes and writes the
 // copy with the lock released. Readers go through settings() without the
 // lock. In the language's terms that is a data race; it is tolerated on
@@ -363,6 +383,8 @@ bool handle_settings_hotkey(int scancode);
 // never created fullscreen (load_settings says why); main.cpp restores
 // this through the live path a moment after the window opens.
 bool settings_boot_fullscreen();
+// The restore has set the live field: the file follows the live field from here.
+void settings_boot_fullscreen_applied();
 
 // The in-game GRAPHICS page (patches/src/graphics_menu_patch.c). All three
 // live in src/menu_assets.cpp. stage_menu_assets seeds the settings mailbox
@@ -379,6 +401,9 @@ void poll_menu_mailbox(uint8_t* rdram);
 // own omAddGObj and omCreateProcess with the frame's context. `ctx` is the
 // recomp_context of the update the call is made from.
 void menu_anywhere_tick(uint8_t* rdram, void* ctx);
+// A mod's line over a course for five seconds (snap64_notice, mod_api.cpp):
+// composed in the help face over a dark panel, shown by the HUD's update.
+void menu_notice_set(const std::string& line);
 // The pages' arena cursor back to its start: every scene load, before the
 // scene rebuilds the pools the arena's objects sat in (overlay_hook.cpp).
 void menu_arena_reset(uint8_t* rdram);
@@ -401,6 +426,10 @@ void mods_request_pick();
 bool mods_pick_and_install();
 bool mods_installed_during_play();
 void mods_install_at_start();
+// Declares to the runtime the game functions the port wraps or rewrites, so
+// a mod's hook on one runs from the port's copy and keeps its work
+// (host_hooks.cpp). Before the mods load.
+void register_host_hooked_functions();
 // For the Mods page: the mods installed during play, which load at the next
 // start (its New rows, and the line on a mod whose update waits), and the
 // mod files found at start that this release will not load (its Error rows,
