@@ -199,7 +199,8 @@ every one in full.
   [mod template](https://github.com/JackandBeans/Snap64RecompModTemplate)
   and the game's [symbol files](https://github.com/JackandBeans/Snap64RecompSyms)
   let anyone write a mod ([MODS.md](docs/MODS.md)). No mods or packs ship
-  with the port.
+  with the port; three mods are published in the
+  [mods repository](https://github.com/JackandBeans/Snap64RecompMods).
 
 <a id="the-rule-the-port-follows"></a>
 ## Faithful by default

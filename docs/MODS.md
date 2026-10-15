@@ -17,6 +17,11 @@ anywhere, and prefer ones whose source is published.
 
 ## Installing a mod
 
+Three mods are published in the
+[mods repository](https://github.com/JackandBeans/Snap64RecompMods):
+Unlimited Film, Unlock Everything and Island Skies. Each release there
+carries the `.nrm` and the Thunderstore zip.
+
 Drop the mod on the game window: the `.nrm` itself, or the `.zip` it came
 in. A zip is how Thunderstore packages a mod; take Thunderstore's Manual
 Download, as for the other recompilations, since no mod manager is needed.
