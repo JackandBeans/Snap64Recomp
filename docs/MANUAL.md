@@ -327,8 +327,8 @@ frame interpolation off for the duration, and the sound plays quicker and
 higher, as a tape does. Release the key and everything is back at once. The
 key is the `fast_forward` entry of the `keys` table, changed in the file like
 any other; it has no row on the Button Setup page, which refuses its sources
-as it refuses Back. On an N64-shaped pad, which has no shoulder button of that
-kind, only the key works until the file names another button.
+as it refuses Back. On the Switch Online N64 controller the right trigger is
+C-down, so only the key works until the file names another button.
 
 ### Slow motion
 
@@ -369,7 +369,10 @@ nothing in its pak slot, as a console without a Rumble Pak does. Gyro aim
 needs a pad with a motion sensor: DualShock 4,
 DualSense, Switch Pro, and the Steam Deck. A pad shaped like the N64's -- the
 Switch Online N64 controller, over Bluetooth or USB -- is recognized by its
-name, and its L, R and Z are L, R and Z, its C buttons the C buttons; the
+ids or its name, and its L, R and Z are L, R and Z, its C buttons the C buttons (SDL's
+driver sends those as Y, X, Back and the right trigger, and the port reads
+them as C-up, C-left, C-right and C-down whatever the `keys` table says; the
+Options are on the pause menu there, since Back is C-right); the
 `pad_layout` key forces either layout. The D-pad walks every menu as the
 stick does, since the cartridge never reads it. `pad_enabled: false` in the
 settings file makes the port ignore every pad without unplugging one.
@@ -728,7 +731,7 @@ the defaults below are that file's.
 | `gyro_sensitivity` | `1.0` | multiplies the gyro's natural scale; 0.25 to 4 (Gyro Speed) |
 | `keys` | the table under "Controls" | what presses each input: SDL key names, the mouse names, and `"Pad "` plus SDL's controller button or axis name; one or a list |
 | `graphics_api` | `0` | 0 Direct3D 12, 1 Vulkan (RT64's other backend and the one the Linux build uses; run here on an AMD card through the replays, and an escape hatch if D3D12 fails); restart |
-| `downsample` | `1` | Super Sampling factor |
+| `downsample` | `1` | Super Sampling factor, 1 to 8; held to what the card's memory carries at the screen's size with the anti-aliasing chosen, and the file rewritten when held; a target the card still cannot make ends the run with a message, marks the setting in `snap64.gpu_failed` in the data folder, and the next start holds the factor below it |
 | `resolution_scale` | `0` | 0 follows the window; 1-8 caps the render scale in multiples of 320x240 |
 | `present_filter` | `2` | 0 nearest, 1 linear, 2 RT64's anti-aliased pixel scaling |
 | `upscale_2d` | `1` | 0 original pixels, 1 only content that scales anyway, 2 everything sharp, which can put a line under a logo and a fringe around a keyed sprite (seen on a Steam Deck) |

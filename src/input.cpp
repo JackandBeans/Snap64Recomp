@@ -128,6 +128,7 @@ static SDL_GameController* game_controller = nullptr;   // pad thread only
 struct PadSnapshot {
     bool attached = false;
     bool n64_layout = false;
+    bool nso_n64 = false;       // the Switch Online N64 controller through SDL's driver (g_pad_nso_n64)
     uint32_t buttons = 0;
     int16_t axes[SDL_CONTROLLER_AXIS_MAX] = {};
 };
@@ -177,6 +178,14 @@ enum class SourceKind : uint8_t { Key, MouseButton, WheelUp, WheelDown, PadButto
 // the right stick, which the port has always read as C. Chosen at the
 // pad's opening from its name, or by pad_layout in the settings file.
 static bool g_pad_layout_n64 = false;
+// The Switch Online N64 controller through SDL's own driver (its name is
+// "Nintendo N64 Controller" there; through the mapping table it is the
+// "NSO N64 Controller", with the C buttons as a right stick): it has no
+// right stick, and its C buttons arrive as Y, X, Back and the right
+// trigger. They are the C buttons here, whatever the tables say (issue
+// #26, Succulent-Puppet: C-down ran the fast forward, C-left threw a
+// pester ball, C-right opened the Options).
+static bool g_pad_nso_n64 = false;
 
 // On a Steam Deck whose own controller is attached, the keyboard's Return
 // and Escape are ignored. Launched outside a Steam shortcut while Steam
@@ -317,8 +326,9 @@ const Bindings& defaults() {
         // Not an N64 input: the port's own fast-forward key
         // (src/fast_forward.cpp). Tab is the emulators' key for it; the
         // right shoulder is the one pad button the game leaves free (the
-        // triggers are L and R, the left shoulder Z), and on an N64-shaped
-        // pad, which has no such button, it presses nothing.
+        // triggers are L and R, the left shoulder Z); on an N64-shaped pad
+        // it reads the right trigger, which the Switch Online N64
+        // controller sends for C-down, and there it yields (g_pad_nso_n64).
         {kFastForwardName, {"Tab", "Pad RightShoulder"}},
         // The slow-motion key: held while the right thumb lines up A, so
         // it lives on the left hand -- Space, and the left stick pressed
@@ -677,6 +687,17 @@ void apply_mouse_look(uint8_t* rdram) {
 }
 #undef SNAP_GYRO_DROP
 
+// A source that is one of the Switch Online N64 controller's C buttons as
+// SDL's driver sends them: Y, X, Back, the right trigger (and the right
+// shoulder's name, which reads that trigger under the N64-shaped layout).
+static bool nso_c_source(const Source& src) {
+    if (src.kind == SourceKind::PadButton) {
+        return (src.code == SDL_CONTROLLER_BUTTON_Y) || (src.code == SDL_CONTROLLER_BUTTON_X) ||
+               (src.code == SDL_CONTROLLER_BUTTON_BACK) || (src.code == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);
+    }
+    return (src.kind == SourceKind::PadAxis) && (src.code == SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
+}
+
 bool source_down(const Source& src, const uint8_t* keys, uint32_t held, int64_t t, const PadSnapshot& pad,
                  bool mouse_live = true) {
     if (!mouse_live && ((src.kind == SourceKind::MouseButton) || (src.kind == SourceKind::WheelUp) ||
@@ -698,8 +719,14 @@ bool source_down(const Source& src, const uint8_t* keys, uint32_t held, int64_t 
         case SourceKind::WheelDown:
             return t < g_wheel_down_until.load(std::memory_order_relaxed);
         case SourceKind::PadButton:
+            if (pad.nso_n64 && nso_c_source(src)) {
+                return false;       // the C buttons themselves (input_get)
+            }
             return pad_button_held(pad, src.code);
         case SourceKind::PadAxis:
+            if (pad.nso_n64 && nso_c_source(src)) {
+                return false;
+            }
             return pad_axis_held(pad, src.code);
     }
     return false;
@@ -1209,7 +1236,9 @@ bool capture_event(const SDL_Event& event) {
             // the photo on screen, and Guide is the platform's own; none
             // can be a game button.
             if ((b == SDL_CONTROLLER_BUTTON_BACK) || (b == SDL_CONTROLLER_BUTTON_GUIDE) ||
-                (b == SDL_CONTROLLER_BUTTON_RIGHTSTICK)) {
+                (b == SDL_CONTROLLER_BUTTON_RIGHTSTICK) ||
+                (g_pad_nso_n64 && ((b == SDL_CONTROLLER_BUTTON_Y) || (b == SDL_CONTROLLER_BUTTON_X)))) {
+                // (On the Switch Online N64 controller Y, X and Back are C buttons already.)
                 capture_end_with(CaptureState::RefusedJob, pad_source_name(b));
                 return true;
             }
@@ -1257,6 +1286,10 @@ bool capture_event(const SDL_Event& event) {
                 std::lock_guard<std::mutex> lock(g_capture.mutex);
                 rose = above && !g_capture.triggerAbove[idx];
                 g_capture.triggerAbove[idx] = above;
+            }
+            if (rose && g_pad_nso_n64 && (idx == 1)) {
+                capture_end_with(CaptureState::RefusedJob, "Pad RightShoulder");     // the Switch Online N64 controller's C-down
+                return true;
             }
             if (rose) {
                 capture_end_with(CaptureState::Bound,
@@ -2239,9 +2272,10 @@ void input_update_mouse_capture() {
 // a watch is ignored by SDL.
 static int SDLCALL photo_button_watch(void* /*userdata*/, SDL_Event* event) {
     if (event->type == SDL_CONTROLLERBUTTONDOWN) {
-        if (event->cbutton.button == SDL_CONTROLLER_BUTTON_BACK) {
+        if ((event->cbutton.button == SDL_CONTROLLER_BUTTON_BACK) && !g_pad_nso_n64) {
             // Select: the port's Options, from anywhere; Start while they
-            // are up, which closes them.
+            // are up, which closes them. On the Switch Online N64
+            // controller Back is C-right: the Options are on the pause menu.
             if (menu_pages_open()) {
                 input_tap_start();
             } else {
@@ -2313,12 +2347,26 @@ static void try_open_controller() {
                 printf("[SNAP-Input] Opened game controller: %s (gyro: %s%s%s)\n",
                        SDL_GameControllerName(game_controller), gyro ? "yes" : "none",
                        path ? ", " : "", path ? path : "");
+                // The pad's ids and SDL's mapping line, so a report of a button
+                // that does the wrong thing comes with the facts (issue #26).
+                {
+                    char* mapping = SDL_GameControllerMapping(game_controller);
+                    printf("[SNAP-Input] pad ids %04X:%04X, SDL's mapping: %s\n",
+                           unsigned(SDL_GameControllerGetVendor(game_controller)), unsigned(SDL_GameControllerGetProduct(game_controller)),
+                           (mapping != nullptr) ? mapping : "(none)");
+                    SDL_free(mapping);
+                }
 
                 // The layout: by name unless the settings file decides.
                 {
                     const int layout = settings().pad_layout;
                     const char* name = SDL_GameControllerName(game_controller);
-                    bool n64 = false;
+                    // The Switch Online N64 controller by its ids (Nintendo 057E,
+                    // product 2019), which no driver or SDL renames; the name
+                    // stays as a second way in.
+                    const bool nso_ids = (SDL_GameControllerGetVendor(game_controller) == 0x057E)
+                                         && (SDL_GameControllerGetProduct(game_controller) == 0x2019);
+                    bool n64 = nso_ids;
                     if (layout == 2) {
                         n64 = true;
                     }
@@ -2331,9 +2379,13 @@ static void try_open_controller() {
                         }
                     }
                     g_pad_layout_n64 = n64;
+                    g_pad_nso_n64 = nso_ids || (n64 && (name != nullptr) && (SDL_strcmp(name, "Nintendo N64 Controller") == 0));
                     printf("[SNAP-Input] pad layout: %s%s\n",
                            n64 ? "N64-shaped (its L and R are L and R, its Z is Z)" : "standard (the left shoulder is Z, the triggers are L and R)",
                            (layout == 0) ? ", from the pad's name" : ", from pad_layout");
+                    if (g_pad_nso_n64) {
+                        printf("[SNAP-Input] Switch Online N64 controller: its C buttons are the C buttons (SDL's driver sends them as Y, X, Back and the right trigger)\n");
+                    }
                 }
 
                 const bool deck = is_steam_deck_pad(game_controller);
@@ -2684,6 +2736,7 @@ static void pad_publish() {
     if ((game_controller != nullptr) && SDL_GameControllerGetAttached(game_controller)) {
         s.attached = true;
         s.n64_layout = g_pad_layout_n64;
+        s.nso_n64 = g_pad_nso_n64;
         for (int b = 0; b < SDL_CONTROLLER_BUTTON_MAX; b++) {
             if (SDL_GameControllerGetButton(game_controller, SDL_GameControllerButton(b)) != 0) {
                 s.buttons |= (1u << b);
@@ -2734,7 +2787,18 @@ static void pad_thread_main() {
         desc.type = SDL_JOYSTICK_TYPE_GAMECONTROLLER;
         desc.naxes = SDL_CONTROLLER_AXIS_MAX;
         desc.nbuttons = SDL_CONTROLLER_BUTTON_MAX;
-        desc.name = "Snap64 virtual test pad";
+        // SNAP_VPAD_NAME and SNAP_VPAD_IDS=vvvv:pppp dress the pad as another
+        // (the Switch Online N64 controller: "Nintendo N64 Controller",
+        // 057E:2019), so the suite can exercise what the port does for it.
+        const char* vname = getenv("SNAP_VPAD_NAME");
+        desc.name = ((vname != nullptr) && (*vname != '\0')) ? vname : "Snap64 virtual test pad";
+        if (const char* ids = getenv("SNAP_VPAD_IDS")) {
+            unsigned v = 0, p = 0;
+            if (sscanf(ids, "%x:%x", &v, &p) == 2) {
+                desc.vendor_id = Uint16(v);
+                desc.product_id = Uint16(p);
+            }
+        }
         const int idx = SDL_JoystickAttachVirtualEx(&desc);
         g_vpad = (idx >= 0) ? SDL_JoystickOpen(idx) : nullptr;
         printf("[SNAP-Input] SNAP_VPAD_TEST: virtual pad %s\n",
@@ -3290,6 +3354,15 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
         if (ry >  C_THRESHOLD) btn |= N64_BTN_CD;
         if (rx < -C_THRESHOLD) btn |= N64_BTN_CL;
         if (rx >  C_THRESHOLD) btn |= N64_BTN_CR;
+        // The Switch Online N64 controller through SDL's own driver: no right
+        // stick; its C buttons are Y, X, Back and the right trigger, and are
+        // the C buttons here (g_pad_nso_n64; the tables' sources on them yield).
+        if (pad.nso_n64) {
+            if (snapshot_button(pad, SDL_CONTROLLER_BUTTON_Y)) btn |= N64_BTN_CU;
+            if (snapshot_axis(pad, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 8000) btn |= N64_BTN_CD;
+            if (snapshot_button(pad, SDL_CONTROLLER_BUTTON_X)) btn |= N64_BTN_CL;
+            if (snapshot_button(pad, SDL_CONTROLLER_BUTTON_BACK)) btn |= N64_BTN_CR;
+        }
 
         // The aiming stick → analog
         int16_t lx = snapshot_axis(pad, swapped ? SDL_CONTROLLER_AXIS_RIGHTX : SDL_CONTROLLER_AXIS_LEFTX);

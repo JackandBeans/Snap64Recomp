@@ -10,11 +10,11 @@ them.
 
 ## The title
 
-<a href="screenshots/01o-title-114.png"><img src="screenshots/01o-title-114.png" width="640" alt="The title screen"></a>
+<a href="screenshots/01p-title-115.png"><img src="screenshots/01p-title-115.png" width="640" alt="The title screen"></a>
 
 **The title screen.** The game's own title with the port's "Recomp" wordmark
 under it, the copyright block, and the port's credits line
-(`JackandBeans (Snap64 Recomp) · v1.1.4`) set in the game's own lettering.
+(`JackandBeans (Snap64 Recomp) · v1.1.5`) set in the game's own lettering.
 The same picture from each earlier release, `01-title.png` for 1.0.0 and
 `01b` to `01n` for 1.0.1 to 1.1.3, stays in the folder for that release's
 page.
@@ -100,6 +100,16 @@ asks first, so a chosen file is played at once; and Exit Game, which asks
 once (A again closes the program, B stays) and is how a pad quits. 1.1.3
 had a Snap Station row between Save File and Exit Game, a second switch
 for the title screen's own Snap Station item; 1.1.4 took it out.
+
+
+<a href="screenshots/27-graphics-page-115.png"><img src="screenshots/27-graphics-page-115.png" width="640" alt="The Graphics page, 1.1.5: Super Sampling held to the card"></a>
+
+**The Graphics page, 1.1.5.** The pause menu's Options over a dark course,
+the cursor on Super Sampling. Since 1.1.5 the value is held to what the
+card's memory carries at the screen's size with the anti-aliasing chosen,
+and a render target the card still cannot make ends the run with a
+message instead of a crash. The picture was taken on the playtest
+build.
 
 <a href="screenshots/26-game-page-113.png"><img src="screenshots/26-game-page-113.png" width="640" alt="The Game page as 1.1.3 shipped it: Save File, Snap Station, Exit Game"></a>
 

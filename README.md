@@ -434,7 +434,7 @@ GitHub's virtual Mac, the intro, a Beach ride with its photos scored and a
 mod's hooks have run, natively and under Rosetta 2.
 
 Every release also passes an automated suite before it ships
-(`tools/release_check.py`). On the 1.1.4 executable it passed 29 of 29
+(`tools/release_check.py`). On the 1.1.5 executable it passed 33 of 33
 checks, and the station's 5 of 5. [VERIFICATION.md](docs/VERIFICATION.md) says what
 each check does, what every release reported, and what has only been read
 from the code and not seen.

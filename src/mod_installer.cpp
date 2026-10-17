@@ -494,7 +494,17 @@ static fs::path running_mark() {
     return base_path("snap64.running");
 }
 
+static bool s_unclean_start = false;     // the last session's mark was found at this start
+
+bool session_was_unclean() {
+    return s_unclean_start;
+}
+
 void mods_safe_start() {
+    {
+        std::error_code mark_ec;
+        s_unclean_start = fs::exists(running_mark(), mark_ec);
+    }
     // SNAP_SAFE_START_ANSWER=keep or off answers the question without a box,
     // so a run can exercise it. Otherwise a replay or a scripted drop is a
     // test run, stopped from outside by design: it neither asks nor leaves

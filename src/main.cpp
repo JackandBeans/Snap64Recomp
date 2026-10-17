@@ -827,6 +827,19 @@ static void show_error_box(const char* msg) {
 #endif
 }
 
+void snap::fatal_now(const char* msg) {
+    // SNAP_NO_BOX: the message stays in the log (a headless run, the suite).
+    if (std::getenv("SNAP_NO_BOX") == nullptr) {
+        show_error_box(msg);
+    } else {
+        fprintf(stderr, "[SNAP] ERROR: %s\n", msg);
+    }
+    snap::session_mark_clean();
+    fflush(stdout);
+    fflush(stderr);
+    std::_Exit(3);
+}
+
 static void error_message_box(const char* msg) {
     // The runtime's word that the renderer did not start. It throws next, on
     // the game's thread, where nothing catches it: the process ended by

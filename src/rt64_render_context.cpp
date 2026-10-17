@@ -12,6 +12,7 @@
 #include <cstdio>
 #include <cassert>
 #include <algorithm>
+#include <SDL2/SDL.h>
 
 #include "ultramodern/renderer_context.hpp"
 #include "ultramodern/ultramodern.hpp"
@@ -82,6 +83,7 @@ extern "C" uint32_t snap_run_table_take(uint32_t* entries, int64_t* nanos, uint3
 #include "hle/rt64_present_queue.h"
 
 #include <filesystem>
+#include <fstream>
 
 // ---------------------------------------------------------------------------
 // Static dummy buffers required by RT64 (must persist for the lifetime of app)
@@ -130,6 +132,7 @@ static std::atomic<RT64::Application*> s_live_app{ nullptr };
 // for the window's thread (snap_render_surface_size), when it changed, and
 // whether the Deck warning about it has been given.
 static std::atomic<uint32_t> s_surface_size{ 0 };
+static std::atomic<uint64_t> s_device_memory{ 0 };     // the renderer's device's dedicated memory, once it exists
 static std::chrono::steady_clock::time_point s_surface_since;
 static bool s_surface_warned = false;
 
@@ -304,6 +307,25 @@ public:
         }
 #endif
 
+        // The super sampling is no more than the card's memory carries at the
+        // screen's size with the sample count chosen (issue #28): a saved 8x
+        // with MSAA 8x on a 2560-wide window asked Direct3D for some 40 GB,
+        // got E_OUTOFMEMORY and crashed on the null, at every start. Known
+        // only after the adapter check above has met the adapter.
+        {
+            const int wanted = std::clamp(snap::settings().downsample, 1, 8);
+            const int fitted = snap::fit_super_sampling(wanted, snap::settings().msaa);
+            if (fitted != wanted) {
+                {
+                    std::lock_guard<std::mutex> lock(snap::settings_mutex());
+                    snap::settings().downsample = fitted;
+                }
+                snap::save_settings();
+            }
+            app_->userConfig.downsampleMultiplier = fitted;
+            app_->userConfig.validate();
+        }
+
         // Attempt setup.
         auto result = app_->setup(0);
 
@@ -442,7 +464,22 @@ public:
             default:                        app_->userConfig.refreshRate = RT64::UserConfiguration::RefreshRate::Original; break;
         }
         app_->userConfig.refreshRateTarget = new_config.rr_manual_value;
-        app_->userConfig.downsampleMultiplier = std::clamp(new_config.ds_option, 1, 8);
+        if (app_->device) {
+            // An integrated GPU (the Steam Deck, a laptop's) reports a small
+            // carve-out as its dedicated memory while its targets live in the
+            // system's RAM: its budget is half of that RAM, if more.
+            const auto& description = app_->device->getDescription();
+            uint64_t memory = description.dedicatedVideoMemory;
+            if (description.type == decltype(description.type)::INTEGRATED) {
+                memory = std::max(memory, uint64_t(std::max(SDL_GetSystemRAM(), 0)) << 20 >> 1);
+            }
+            s_device_memory.store(memory, std::memory_order_relaxed);
+        }
+        // Fitted here too: the first configuration pushed at the start carries
+        // the file's own value, read before the start's fit could hold it
+        // (settings.cpp set_graphics_config), and the Graphics page's value
+        // comes through the same way.
+        app_->userConfig.downsampleMultiplier = snap::fit_super_sampling(std::clamp(new_config.ds_option, 1, 8), snap::settings().msaa);
         app_->userConfig.threePointFiltering = snap::settings().three_point_filtering;
 
         // Render scale: zero follows the window as before; a nonzero value
@@ -961,6 +998,152 @@ extern "C" void snap_render_surface_size(uint32_t* w, uint32_t* h) {
     const uint32_t packed = snap::s_surface_size.load(std::memory_order_relaxed);
     *w = packed >> 16;
     *h = packed & 0xFFFFu;
+}
+
+// Super sampling and the sample count multiply the render targets: a 2560 by
+// 1369 surface at 8x with MSAA 8x is 224 million samples a target, and the
+// first target Direct3D cannot make comes back as E_OUTOFMEMORY with a null
+// the renderer then reads (issue #28, KlingeSean: a crash on changing the
+// Graphics page, then no start at all with the setting saved). The
+// multiplier is held to what the card's memory carries, measured on a
+// The mark of a setting that failed anyway: snap64.gpu_failed in the data
+// folder, written by snap_render_target_failed with the multiplier, the
+// sample count and the card's memory it failed on. Read at every fit:
+// on the same card the multiplier stays below the one that failed, at
+// that sample count or more. A new card (another memory figure) starts
+// afresh. (Oct 17 2026: in place of the unclean-session rule, which
+// lowered a saved setting after any kill from outside.)
+namespace {
+struct GpuFailed {
+    int downsample = 0;
+    int msaa = 0;
+    uint64_t memory = 0;
+};
+
+std::filesystem::path gpu_failed_mark() {
+    return snap::base_path("snap64.gpu_failed");
+}
+
+GpuFailed gpu_failed_read() {
+    GpuFailed f;
+    std::ifstream in(gpu_failed_mark());
+    if (in.is_open()) {
+        unsigned long long memory = 0;
+        std::string word;
+        in >> word >> f.downsample >> word >> f.msaa >> word >> memory;
+        f.memory = memory;
+        if (!in || (f.downsample < 1)) {
+            f = GpuFailed();
+        }
+    }
+    return f;
+}
+
+void gpu_failed_write(int downsample, int msaa, uint64_t memory) {
+    std::ofstream out(gpu_failed_mark(), std::ios::trunc);
+    out << "downsample " << downsample << " msaa " << msaa << " memory " << (unsigned long long) memory << "\n";
+}
+} // namespace
+
+// 16 GB card at 2560 by 1369 (Oct 16 2026: 4x with MSAA 8x removed the
+// device; 3x with 8x, 4x with 4x and 6x with none ran): about two and a
+// half targets of (8 + 8 x samples) bytes a pixel against four tenths of
+// the dedicated memory, and no one target over 2.5 GB; and never the
+// multiplier the mark says failed on this card, or above it. The surface
+// is the one in force, or the desktop before there is one; with no
+// memory figure nothing is held. SNAP_VRAM_TEST=<MB> stands in for the
+// card's memory, so the suite can exercise this (release_check.py vram).
+int fit_super_sampling(int wanted, int msaa) {
+    const int ds0 = std::clamp(wanted, 1, 8);
+    const int samples = std::max(1, msaa);
+    uint64_t memory = s_device_memory.load(std::memory_order_relaxed);
+    if (memory == 0) {
+        memory = snap::d3d12_adapter_memory();
+    }
+    if (const char* fake = std::getenv("SNAP_VRAM_TEST")) {
+        const unsigned long long mb = std::strtoull(fake, nullptr, 10);
+        if (mb > 0) {
+            static bool said = false;
+            memory = uint64_t(mb) << 20;
+            if (!said) {
+                said = true;
+                printf("[SNAP-CFG] SNAP_VRAM_TEST: the card answers %llu MB\n", mb);
+            }
+        }
+    }
+    uint32_t w = s_surface_size.load(std::memory_order_relaxed) >> 16;
+    uint32_t h = s_surface_size.load(std::memory_order_relaxed) & 0xFFFFu;
+    if ((w == 0) || (h == 0)) {
+        SDL_DisplayMode mode{};
+        if (SDL_GetDesktopDisplayMode(0, &mode) == 0) {
+            w = uint32_t(std::max(mode.w, 0));
+            h = uint32_t(std::max(mode.h, 0));
+        }
+    }
+    if ((memory == 0) || (w == 0) || (h == 0)) {
+        return ds0;
+    }
+    const uint64_t budget = memory / 10 * 4;
+    const uint64_t one_target = 2500ull << 20;
+    int ds = ds0;
+    const GpuFailed failed = gpu_failed_read();
+    if ((failed.downsample > 1) && (failed.memory == memory) && (samples >= std::max(1, failed.msaa)) && (ds >= failed.downsample)) {
+        ds = failed.downsample - 1;
+        printf("[SNAP-CFG] super sampling %dx with MSAA %dx failed on this card before (snap64.gpu_failed): held to %dx\n",
+               failed.downsample, failed.msaa, ds);
+        fflush(stdout);
+    }
+    uint64_t bytes = 0;
+    for (;;) {
+        const uint64_t pixels = uint64_t(w) * h * uint64_t(ds) * uint64_t(ds);
+        bytes = pixels * (8u + 8u * uint64_t(samples)) * 5 / 2;
+        if (((bytes <= budget) && (pixels * 8u * uint64_t(samples) <= one_target)) || (ds <= 1)) {
+            break;
+        }
+        ds--;
+    }
+    if (ds != ds0) {
+        printf("[SNAP-CFG] super sampling %dx at %ux%u with MSAA %dx would take about %llu MB and the card has %llu MB: held to %dx\n",
+               ds0, w, h, samples, (unsigned long long)(uint64_t(w) * h * uint64_t(ds0) * uint64_t(ds0) * (8u + 8u * uint64_t(samples)) * 5 / 2 >> 20),
+               (unsigned long long)(memory >> 20), ds);
+        fflush(stdout);
+    }
+    return ds;
+}
+
+// A render target the card could not make, from the renderer's worker
+// (lib/rt64 rt64_render_target.cpp; plume gives nothing back for it):
+// the fit's model was wrong for this card. Said in the log and in a box,
+// the setting that failed marked for every later fit, the saved Super
+// Sampling held one below it, and the run ended as a refused start is,
+// not as a crash (issue #28).
+extern "C" void snap_render_target_failed(uint32_t width, uint32_t height, uint32_t samples, const char* what) {
+    int wanted = 1;
+    int msaa = 0;
+    {
+        std::lock_guard<std::mutex> lock(snap::settings_mutex());
+        wanted = std::clamp(snap::settings().downsample, 1, 8);
+        msaa = snap::settings().msaa;
+    }
+    const int held = std::max(1, wanted - 1);
+    uint64_t memory = s_device_memory.load(std::memory_order_relaxed);
+    if (memory == 0) {
+        memory = snap::d3d12_adapter_memory();
+    }
+    char msg[512];
+    snprintf(msg, sizeof(msg),
+             "The card could not make a %s render target of %ux%u with MSAA %ux: Super Sampling %dx is more than its memory carries. "
+             "It is set to %dx now. Start Snap64 Recomp again.",
+             what, width, height, std::max(1u, samples), wanted, held);
+    printf("[SNAP-GPU] %s (memory %llu MB; the setting is marked in snap64.gpu_failed)\n", msg, (unsigned long long)(memory >> 20));
+    fflush(stdout);
+    gpu_failed_write(wanted, msaa, memory);
+    {
+        std::lock_guard<std::mutex> lock(snap::settings_mutex());
+        snap::settings().downsample = held;
+    }
+    snap::save_settings();
+    snap::fatal_now(msg);
 }
 
 extern "C" int snap_render_queue_state(char* buf, size_t cap) {

@@ -121,6 +121,12 @@ int test_model() {
 
 } // namespace
 
+static uint64_t s_adapter_memory = 0;    // the chosen adapter's dedicated video memory
+
+uint64_t d3d12_adapter_memory() {
+    return s_adapter_memory;
+}
+
 bool d3d12_adapter_check(std::string& why) {
     printf("[SNAP-D3D12] Windows build %u\n", windows_build());
 
@@ -176,6 +182,7 @@ bool d3d12_adapter_check(std::string& why) {
     if (!any) {
         return true;
     }
+    s_adapter_memory = chosen.memory;
 
     const int test = test_model();
     if (test != 0) {
@@ -204,6 +211,10 @@ bool d3d12_adapter_check(std::string& why) {
 }
 
 #else
+
+uint64_t d3d12_adapter_memory() {
+    return 0;
+}
 
 bool d3d12_adapter_check(std::string&) {
     return true;

@@ -464,6 +464,13 @@ uint32_t mods_install_generation();
 // mark at a normal end and before a relaunch.
 void mods_safe_start();
 void session_mark_clean();
+// Whether the last session's mark was found at this start: it was stopped
+// from outside or crashed.
+bool session_was_unclean();
+// Says why in the log and in a box, marks the session as ended on
+// purpose, and ends the process from any thread (main.cpp): for a fault
+// the run cannot go on from, said properly rather than crashed on.
+void fatal_now(const char* msg);
 
 // The window's icon from Snap64Recomp-window.png beside the executable
 // (Linux; on Windows the executable's own resource serves). False without
@@ -495,6 +502,13 @@ void write_desktop_entry();
 // text then stands in for the runtime's own line in the error box
 // (renderer_failure_detail, main.cpp). Always true off Windows.
 bool d3d12_adapter_check(std::string& why);
+// The dedicated video memory of the adapter that check chose, in bytes; 0
+// where it is not known (not Windows, or no adapter).
+uint64_t d3d12_adapter_memory();
+// The super sampling the card's memory can carry at the surface in force
+// with this sample count: the wanted multiplier, or a lower one, said in
+// the log when lowered (rt64_render_context.cpp; issue #28).
+int fit_super_sampling(int wanted, int msaa);
 const std::string& renderer_failure_detail();
 
 // The horizontal widening the renderer is applying to the game's

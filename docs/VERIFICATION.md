@@ -80,9 +80,13 @@ here should be assumed untried.
   the screen: the host's line for each BGM player gives its own clock at
   the hold and at the release, and the check passes only when they are
   equal.
-  On the 1.1.4 executable built here (SHA-256 beginning `a4b89657`), run
-  without diagnostics in the environment, the suite passed 29 of 29 checks
-  in 1150 seconds, and the station's 5 of 5 in 491; the 1.1.3 executable had
+  On the 1.1.5 executable built here (SHA-256 beginning `436ed80b`), run
+  without diagnostics in the environment, the suite passed 33 of 33 checks
+  in 1226 seconds (four of them new: the fit of Super Sampling to a faked
+  card, a render target made to fail and the start after it, and the
+  Switch Online N64 controller as a virtual pad), and the station's 5 of 5
+  in 488; the 1.1.4 executable had passed 29 of 29 in 1150 and the station's
+  5 in 491, the 1.1.3 executable had
   passed 29 of 29 in 1153 and the station's 5 in 489, the 1.1.2 executable had
   passed 29 of 29 in 1151 and the station's 5 in 488, the 1.1.1 executable had
   passed 29 of 29 in 1149 and the station's 5 in 487, the 1.1.0 executable had

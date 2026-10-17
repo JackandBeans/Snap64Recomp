@@ -4,7 +4,7 @@
 # Silicon build was proved on; -DCMAKE_OSX_DEPLOYMENT_TARGET on the command
 # line wins over this.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "The oldest macOS the build runs on")
-project(Snap64Recomp VERSION 1.1.4 LANGUAGES C CXX)
+project(Snap64Recomp VERSION 1.1.5 LANGUAGES C CXX)
 if (APPLE)
     # Objective-C for RT64's Apple sources and SDL's Cocoa back end; the
     # port's own sources stay C++ (main.cpp takes the Metal layer through SDL).

@@ -5609,7 +5609,9 @@ void poll_menu_mailbox(uint8_t* rdram) {
         s.present_filter = std::min<int>(read_u8_mail(MailboxAddr + 0xD), 2);
         s.dither_noise = read_u8_mail(MailboxAddr + 0xE) != 0;
         s.fullscreen = read_u8_mail(MailboxAddr + 0xF) != 0;
-        s.downsample = std::clamp(int(read_u8_mail(MailboxAddr + 0x10)) + 1, 1, 8);
+        // Held to what the card's memory carries (fit_super_sampling, issue
+        // #28); the row shows the held value when the page is next opened.
+        s.downsample = fit_super_sampling(std::clamp(int(read_u8_mail(MailboxAddr + 0x10)) + 1, 1, 8), s.msaa);
         s.three_point_filtering = read_u8_mail(MailboxAddr + 0x11) == 0;
         s.color_depth = std::min<int>(read_u8_mail(MailboxAddr + 0x12), 2);
         s.triple_buffering = read_u8_mail(MailboxAddr + 0x13) != 0;

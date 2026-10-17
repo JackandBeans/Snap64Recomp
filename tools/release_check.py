@@ -37,6 +37,15 @@ that a release build can be put through all of them in one go:
               by SNAP_ROM_PICK, copies the dump in byte-identical, copies a
               byte-swapped dump in big-endian order, and a Cancel starts
               nothing and exits
+  vram        Super Sampling held to the card's memory (issue #28): the file
+              asks 8x with MSAA 8x, SNAP_VRAM_TEST says the card has 4096 MB,
+              and the start must hold it, say so and write the held value back
+  gpufail     a render target the card cannot make (SNAP_TARGET_FAIL_TEST):
+              the port says so, marks the setting, holds Super Sampling one
+              below it and ends by itself; the next start holds below the mark
+  nsopad      the Switch Online N64 controller (issue #26): the virtual pad
+              dressed with its name and ids must be told, with every pad's ids
+              and SDL's mapping line in the log
   package     (with --zip, once per archive) a release archive, Windows zip,
               Linux tarball (x86_64 or arm64) or Mac zip: it carries the
               program, the licenses and the documents, its .sha256 sidecar
@@ -610,6 +619,131 @@ def check_station(c, exe_dir):
             mark.unlink()
 
 
+def check_vram(c, exe_dir):
+    """Super Sampling is held to what the card's memory carries (issue #28):
+    the settings file asks 8x with MSAA 8x, SNAP_VRAM_TEST says the card has
+    4096 MB, and the start must hold the multiplier, say so, run on without
+    a lost target, and write the held value back. The file is put back as
+    it was."""
+    if not ensure_replay(exe_dir, 'menu_title.inputs'):
+        c.add('vram', False, 'menu_title.inputs is not beside the executable')
+        return
+    p = exe_dir / 'snapsettings.json'
+    kept = p.read_bytes() if p.is_file() else None
+    try:
+        j = json.loads(kept.decode('utf-8')) if kept else {}
+    except ValueError:
+        j = {}
+    j['downsample'] = 8
+    j['msaa'] = 8
+    p.write_text(json.dumps(j, indent=2), encoding='utf-8')
+    try:
+        out = run_game(exe_dir, {'SNAP_REPLAY': 'menu_title.inputs', 'SNAP_MUTE': '1', 'SNAP_VRAM_TEST': '4096'}, 30)
+        try:
+            after = json.loads(p.read_text(encoding='utf-8')).get('downsample')
+        except (OSError, ValueError):
+            after = None
+    finally:
+        if kept is None:
+            p.unlink(missing_ok=True)
+        else:
+            p.write_bytes(kept)
+    lines = out.splitlines()
+    faked = [l for l in lines if l.startswith('[SNAP-CFG] SNAP_VRAM_TEST: the card answers 4096 MB')]
+    held = [l for l in lines if l.startswith('[SNAP-CFG] super sampling 8x at ') and ': held to ' in l]
+    lost = [l for l in lines if l.startswith('[SNAP-GPU] ') or l.startswith('[SNAP-AV]') or l.startswith('[SNAP-HANG]')]
+    c.add('vram', bool(faked) and bool(held) and not lost and isinstance(after, int) and after < 8,
+          (held[0].split('] ', 1)[1] if held else 'the start never held the multiplier')
+          + ('' if faked else '; SNAP_VRAM_TEST was not taken')
+          + ('; written back as %s' % after)
+          + ('; ' + lost[0] if lost else ''))
+
+
+def check_gpufail(c, exe_dir):
+    """The catch for a render target the card cannot make (issue #28): with
+    SNAP_TARGET_FAIL_TEST the first color target fails as the card would, and
+    the port must say so, write snap64.gpu_failed, set the saved Super
+    Sampling one below the one that failed, and end by itself (exit 3)
+    rather than crash; a second start, asked the failed value again, must
+    hold below the mark. The file and the mark are put back as they were."""
+    if not ensure_replay(exe_dir, 'menu_title.inputs'):
+        c.add('gpufail', False, 'menu_title.inputs is not beside the executable')
+        return
+    p = exe_dir / 'snapsettings.json'
+    mark = exe_dir / 'snap64.gpu_failed'
+    kept = p.read_bytes() if p.is_file() else None
+    kept_mark = mark.read_bytes() if mark.is_file() else None
+    try:
+        j = json.loads(kept.decode('utf-8')) if kept else {}
+    except ValueError:
+        j = {}
+    j['downsample'] = 2
+    j['msaa'] = 0
+    env = dict(os.environ)
+    env.update({'SNAP_REPLAY': 'menu_title.inputs', 'SNAP_MUTE': '1', 'SNAP_NO_BOX': '1'})
+    try:
+        mark.unlink(missing_ok=True)
+        p.write_text(json.dumps(j, indent=2), encoding='utf-8')
+        env1 = dict(env)
+        env1['SNAP_TARGET_FAIL_TEST'] = '1'
+        p1 = subprocess.Popen([str(exe_dir / EXE)], cwd=str(exe_dir), env=env1,
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace')
+        try:
+            out1, _ = p1.communicate(timeout=60)
+            ended = p1.returncode
+        except subprocess.TimeoutExpired:
+            p1.kill()
+            out1, _ = p1.communicate()
+            ended = None
+        marked = mark.read_text(encoding='utf-8').strip() if mark.is_file() else ''
+        try:
+            after = json.loads(p.read_text(encoding='utf-8')).get('downsample')
+        except (OSError, ValueError):
+            after = None
+        said = [l for l in out1.splitlines() if l.startswith('[SNAP-GPU] The card could not make a color render target')]
+        c.add('gpufail', bool(said) and (ended == 3) and marked.startswith('downsample 2 msaa 0 ') and (after == 1),
+              ('said; ' if said else 'never said; ')
+              + ('ended by itself with %s' % ended if ended is not None else 'did NOT end by itself (killed)')
+              + '; mark "%s"' % marked + '; saved %s' % after)
+        # The next start, asked 2x again, holds below the mark.
+        j['downsample'] = 2
+        p.write_text(json.dumps(j, indent=2), encoding='utf-8')
+        out2 = run_game(exe_dir, {'SNAP_REPLAY': 'menu_title.inputs', 'SNAP_MUTE': '1', 'SNAP_NO_BOX': '1'}, 20)
+        held = [l for l in out2.splitlines() if l.startswith('[SNAP-CFG] super sampling 2x with MSAA 0x failed on this card before')]
+        lost = [l for l in out2.splitlines() if l.startswith('[SNAP-GPU] ') or l.startswith('[SNAP-AV]')]
+        c.add('gpufail-next', bool(held) and not lost,
+              (held[0].split('] ', 1)[1] if held else 'the next start did not hold below the mark') + ('; ' + lost[0] if lost else ''))
+    finally:
+        if kept is None:
+            p.unlink(missing_ok=True)
+        else:
+            p.write_bytes(kept)
+        if kept_mark is None:
+            mark.unlink(missing_ok=True)
+        else:
+            mark.write_bytes(kept_mark)
+
+
+def check_nsopad(c, exe_dir):
+    """The Switch Online N64 controller (issue #26): the virtual test pad
+    dressed with its name and ids (SNAP_VPAD_NAME, SNAP_VPAD_IDS) must be told
+    by the port, which wires its C buttons, and every pad's ids and SDL's
+    mapping line must be in the log for the next report."""
+    if not ensure_replay(exe_dir, 'menu_title.inputs'):
+        c.add('nsopad', False, 'menu_title.inputs is not beside the executable')
+        return
+    out = run_game(exe_dir, {'SNAP_REPLAY': 'menu_title.inputs', 'SNAP_MUTE': '1', 'SNAP_VPAD_TEST': 'A',
+                             'SNAP_VPAD_NAME': 'Nintendo N64 Controller', 'SNAP_VPAD_IDS': '057E:2019'}, 25)
+    lines = out.splitlines()
+    attached = [l for l in lines if l.startswith('[SNAP-Input] SNAP_VPAD_TEST: virtual pad attached')]
+    ids = [l for l in lines if l.startswith('[SNAP-Input] pad ids 057E:2019, SDL\'s mapping: ')]
+    told = [l for l in lines if l.startswith('[SNAP-Input] Switch Online N64 controller: its C buttons are the C buttons')]
+    c.add('nsopad', bool(attached) and bool(ids) and bool(told),
+          ('the pad was told by its ids and its C buttons wired' if told else 'the port never told the pad')
+          + ('' if attached else '; no virtual pad')
+          + ('' if ids else '; no ids line'))
+
+
 def check_rompick(c, exe_dir):
     """The first run's ROM chooser (src/rom_picker.cpp), answered by SNAP_ROM_PICK
     so no dialog opens: each case in a fresh data directory with no ROM."""
@@ -778,6 +912,7 @@ def main():
     checks = [('subsystem', check_subsystem), ('stdio', check_stdio), ('attract', check_attract),
               ('stats', check_stats), ('score', check_score), ('settings', check_settings),
               ('speed', check_speed), ('slow', check_slow), ('rompick', check_rompick),
+              ('vram', check_vram), ('gpufail', check_gpufail), ('nsopad', check_nsopad),
               ('menu', check_menu), ('pages', check_pages), ('station', check_station)]
     c = Check()
     t0 = time.time()

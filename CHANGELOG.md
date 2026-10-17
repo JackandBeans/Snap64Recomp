@@ -1,5 +1,36 @@
 # Changelog
 
+## 1.1.5 -- 2026-10-17
+
+* The Switch Online N64 controller's C buttons are the C buttons. SDL's
+  own driver sends them as Y, X, Back and the right trigger, which the
+  binding table read as B (X), the Options (Back) and, under the
+  N64-shaped layout, the fast forward (the right trigger): C-down ran
+  the game fast, C-left threw a pester ball with the flute's call, and
+  C-right opened the Options. The port now reads those four as C-up,
+  C-left, C-right and C-down on that pad, the table's sources on them
+  yield, the Button Setup page refuses them, and the Options are on the
+  pause menu there. The pad is told by its ids (057E:2019) as well as
+  its name, every pad's ids and SDL's mapping line are logged when it
+  opens, and the release suite's `nsopad` check dresses its virtual pad
+  as this one. Reported by Succulent-Puppet, issue #26.
+* Super Sampling is held to what the card's memory carries. At 8x with
+  MSAA 8x on a 2560-wide window the render targets would take some
+  40 GB; Direct3D answered E_OUTOFMEMORY, the renderer read the null it
+  got back and crashed, and with the setting saved the port crashed at
+  every start. The multiplier is now fitted to the screen's size, the
+  sample count and the adapter's dedicated memory, at the start and as
+  the Graphics page applies it, with the fitted value written to the
+  file and said in the log. A target the card still cannot make no
+  longer crashes: the port says so in a box and the log, marks the
+  setting in `snap64.gpu_failed`, sets Super Sampling one below it and
+  ends, and every later start holds below the mark. An integrated GPU's
+  budget is half the system's RAM. `SNAP_VRAM_TEST` stands in for the
+  card's memory, `SNAP_TARGET_FAIL_TEST` makes a target fail as the card
+  would, and the release suite's `vram` and `gpufail` checks run the fit
+  and the catch.
+  Reported by KlingeSean, issue #28.
+
 ## 1.1.4 -- 2026-10-11
 
 * The Controls page's Pointer row no longer shows a mod's option text.
