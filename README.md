@@ -102,7 +102,7 @@ bug report.
 ## Screenshots
 
 <table><tr>
-<td><a href="docs/screenshots/01o-title-114.png"><img src="docs/screenshots/01o-title-114.png" width="400" alt="The title screen"></a></td>
+<td><a href="docs/screenshots/01p-title-115.png"><img src="docs/screenshots/01p-title-115.png" width="400" alt="The title screen"></a></td>
 <td><a href="docs/screenshots/03-course-select.png"><img src="docs/screenshots/03-course-select.png" width="400" alt="Course select"></a></td>
 </tr><tr>
 <td><a href="docs/screenshots/04-beach.png"><img src="docs/screenshots/04-beach.png" width="400" alt="The Beach: Surfing Pikachu"></a></td>
