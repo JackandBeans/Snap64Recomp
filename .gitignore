@@ -2,6 +2,16 @@
 build-win/
 build-linux/
 build-macos/
+build-android*/
+# The Android app's build output and Gradle's own folders (BUILDING.md, step 16).
+android/.gradle/
+android/build/
+android/app/build/
+android/local.properties
+# An Android signing key never enters the tree: the release key stays with its
+# owner and reaches a build through the environment (BUILDING.md, step 16).
+*.jks
+*.keystore
 # The packaging check's fresh build directory (BUILDING.md, step 13).
 build-fresh/
 # RecompModTool, built from the vendored N64Recomp for the mod kit (docs/MODS.md).
@@ -63,3 +73,8 @@ data_dump.toml
 
 # The author's working notes for the coding assistant: local to the machine, never part of a release.
 CLAUDE.md
+
+# Claude Code's folder: its settings, hooks and skills, and the local files
+# the release scripts read. Local to the machine, like CLAUDE.md; never part
+# of a release.
+.claude/

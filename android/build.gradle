@@ -1,0 +1,23 @@
+// The Android app of Snap64 Recomp. The shape is SDL's own android-project
+// (lib/SDL/android-project), whose Java activity hosts the game; the versions
+// here are the ones that project ships with.
+buildscript {
+    repositories {
+        mavenCentral()
+        google()
+    }
+    dependencies {
+        classpath 'com.android.tools.build:gradle:8.1.1'
+    }
+}
+
+allprojects {
+    repositories {
+        mavenCentral()
+        google()
+    }
+}
+
+task clean(type: Delete) {
+    delete rootProject.buildDir
+}

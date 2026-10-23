@@ -1,0 +1,99 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The Android app of Snap64 Recomp: SDL's activity around the port's own
+     library (BUILDING.md, step 16). The package name is in app/build.gradle. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    android:installLocation="auto">
+
+    <!-- What the game can use, none of it required to install. -->
+    <uses-feature android:name="android.hardware.touchscreen" android:required="false" />
+    <uses-feature android:name="android.hardware.bluetooth" android:required="false" />
+    <uses-feature android:name="android.hardware.gamepad" android:required="false" />
+    <uses-feature android:name="android.hardware.usb.host" android:required="false" />
+    <uses-feature android:name="android.hardware.type.pc" android:required="false" />
+
+    <!-- The game folder is Snap64 at the root of the shared storage, which
+         the player fills with any file manager or from a PC over USB: on
+         Android 11 and later that takes all-files access, which the player
+         grants once in the system settings (Snap64Launcher.java); on
+         Android 10 the older storage permission does it. -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <!-- Rumble, through SDL. -->
+    <uses-permission android:name="android.permission.VIBRATE" />
+
+    <application android:label="@string/app_name"
+        android:icon="@mipmap/ic_launcher"
+        android:roundIcon="@mipmap/ic_launcher_round"
+        android:appCategory="game"
+        android:allowBackup="false"
+        android:theme="@style/AppTheme"
+        android:hardwareAccelerated="true"
+        android:requestLegacyExternalStorage="true">
+
+        <!-- SDL reads SDL_ENV.* into the environment before the game starts.
+             With the back button trapped, SDL hands it to the game as the
+             AC_BACK key, which opens the port's quit box (src/main.cpp). -->
+        <meta-data android:name="SDL_ENV.SDL_ANDROID_TRAP_BACK_BUTTON" android:value="1" />
+        <!-- The game stays in landscape. The port's window is resizable, and
+             for a resizable window SDL asks for the player's own rotation,
+             which overrides the game activity's sensorLandscape below. This
+             hint (SDL_HINT_ORIENTATIONS, named for iOS but read on Android
+             too) names the two landscape sides instead. -->
+        <meta-data android:name="SDL_ENV.SDL_IOS_ORIENTATIONS" android:value="LandscapeLeft LandscapeRight" />
+
+        <!-- Android 13's game modes: the phone's game tools may neither draw
+             the game smaller nor change its frame rate, so it plays at the
+             pace and size it is set to (res/xml/game_mode_config.xml). -->
+        <meta-data android:name="android.game_mode_config" android:resource="@xml/game_mode_config" />
+
+        <!-- The first screen: settles the game folder, then starts the game
+             with everything the intent carried. "Open with" from a file
+             manager lands here too, for a mod, a texture pack, a zip holding
+             them, or the ROM. -->
+        <activity android:name=".Snap64Launcher"
+            android:label="@string/app_name"
+            android:theme="@style/LauncherTheme"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.MAIN" />
+                <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:mimeType="application/zip" />
+                <data android:mimeType="application/x-zip-compressed" />
+                <data android:mimeType="application/octet-stream" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" />
+                <data android:scheme="file" />
+                <data android:host="*" />
+                <data android:mimeType="*/*" />
+                <data android:pathPattern=".*\\.nrm" />
+                <data android:pathPattern=".*\\.rtz" />
+                <data android:pathPattern=".*\\.zip" />
+                <data android:pathPattern=".*\\.z64" />
+                <data android:pathPattern=".*\\.v64" />
+                <data android:pathPattern=".*\\.n64" />
+            </intent-filter>
+        </activity>
+
+        <!-- The game. One instance, kept across the launcher's returns;
+             landscape, as a television would show it. -->
+        <activity android:name=".Snap64Activity"
+            android:label="@string/app_name"
+            android:alwaysRetainTaskState="true"
+            android:launchMode="singleInstance"
+            android:screenOrientation="sensorLandscape"
+            android:configChanges="layoutDirection|locale|orientation|uiMode|screenLayout|screenSize|smallestScreenSize|keyboard|keyboardHidden|navigation|density|fontScale"
+            android:preferMinimalPostProcessing="true"
+            android:exported="false" />
+    </application>
+
+</manifest>

@@ -1,0 +1,218 @@
+// The Android app of Snap64 Recomp: SDL's Java activity around the port's
+// own library. Nothing is compiled here. The native libraries come from the
+// port's cross builds (BUILDING.md, step 16: build-android-arm64 and
+// build-android-x86_64 in the port root, libmain.so and libSDL2.so each),
+// the SDL Java sources are read from the vendored tree in place, and the
+// files the port ships beside its executable on a PC become the package's
+// assets, copied into the game folder at the first start
+// (Snap64Activity.java).
+apply plugin: 'com.android.application'
+
+// The port root, the folder above android/.
+def portRoot = rootProject.file('..')
+
+// The version is CMakeLists.txt's, read from its project() line, so it
+// lives in one place; the version code counts the numbers.
+def versionLine = new File(portRoot, 'CMakeLists.txt').readLines().find { it =~ /^project\(Snap64Recomp VERSION / }
+def versionMatch = (versionLine =~ /VERSION ([0-9]+)\.([0-9]+)\.([0-9]+)/)
+if (!versionMatch.find()) {
+    throw new GradleException('CMakeLists.txt: no "project(Snap64Recomp VERSION x.y.z" line to take the version from')
+}
+// A prerelease label (rc1, ...) comes as CMake's does, from outside the
+// tree: -PsnapPrerelease=rc1 or SNAP_VERSION_PRERELEASE, the same letters
+// CMakeLists.txt allows. The native libraries must be built with the same
+// label; the package check compares the two.
+def snapPrerelease = (project.findProperty('snapPrerelease') ?: System.getenv('SNAP_VERSION_PRERELEASE') ?: '').toString()
+if (snapPrerelease && !(snapPrerelease ==~ /[acdeikmnoprstuv0-9.]+/)) {
+    throw new GradleException("prerelease label '${snapPrerelease}': only the letters a c d e i k m n o p r s t u v, digits and dots")
+}
+def snapVersionName = "${versionMatch.group(1)}.${versionMatch.group(2)}.${versionMatch.group(3)}" + (snapPrerelease ? "-${snapPrerelease}" : '')
+def snapVersionCode = versionMatch.group(1).toInteger() * 10000 + versionMatch.group(2).toInteger() * 100 + versionMatch.group(3).toInteger()
+
+// The release key, from the environment only, never from the tree
+// (BUILDING.md, step 16): SNAP64_ANDROID_KEYSTORE is the keystore's path or
+// the file itself in base64 (as a CI secret holds it), with
+// SNAP64_ANDROID_KEYSTORE_PASSWORD and SNAP64_ANDROID_KEY_ALIAS, and
+// SNAP64_ANDROID_KEY_PASSWORD when the key's password is not the store's.
+// The release build is signed only when the three are set; otherwise it is
+// left unsigned, named so, and the debug build keeps the debug key.
+def releaseKeystore = null
+def keystoreValue = System.getenv('SNAP64_ANDROID_KEYSTORE')
+def keystorePassword = System.getenv('SNAP64_ANDROID_KEYSTORE_PASSWORD')
+def keyAliasValue = System.getenv('SNAP64_ANDROID_KEY_ALIAS')
+if (keystoreValue && keystorePassword && keyAliasValue) {
+    def asFile = new File(keystoreValue)
+    if (asFile.isFile()) {
+        releaseKeystore = asFile
+    } else {
+        byte[] bytes
+        try {
+            bytes = keystoreValue.replaceAll(/\s/, '').decodeBase64()
+        } catch (Exception ignored) {
+            bytes = new byte[0]
+        }
+        // A PKCS #12 file starts with a DER sequence, a JKS file with FEEDFEED.
+        def looksLikeKeystore = bytes.length > 4 && ((bytes[0] & 0xFF) == 0x30 ||
+            ((bytes[0] & 0xFF) == 0xFE && (bytes[1] & 0xFF) == 0xED && (bytes[2] & 0xFF) == 0xFE && (bytes[3] & 0xFF) == 0xED))
+        if (!looksLikeKeystore) {
+            throw new GradleException('SNAP64_ANDROID_KEYSTORE is neither a file nor a keystore in base64')
+        }
+        // Outside the tree, removed when this build's JVM ends.
+        releaseKeystore = File.createTempFile('snap64-release-', '.keystore')
+        releaseKeystore.deleteOnExit()
+        releaseKeystore.bytes = bytes
+    }
+}
+def releaseSigned = releaseKeystore != null
+
+// The cross builds, one per ABI the app carries.
+def nativeBuilds = ['arm64-v8a': 'build-android-arm64', 'x86_64': 'build-android-x86_64']
+def stagedJniLibs = new File(buildDir, 'snap/jniLibs')
+def stagedAssets = new File(buildDir, 'snap/assets')
+
+android {
+    namespace 'io.github.jackandbeans.snap64recomp'
+    compileSdk 35
+    // The NDK the cross builds used, named through ANDROID_NDK_HOME: the
+    // plugin strips the native libraries with its llvm-strip when it knows
+    // one (the libraries carry their debug information otherwise, a hundred
+    // megabytes each).
+    if (System.getenv('ANDROID_NDK_HOME')) {
+        ndkPath System.getenv('ANDROID_NDK_HOME')
+    }
+    defaultConfig {
+        applicationId 'io.github.jackandbeans.snap64recomp'
+        minSdk 29
+        targetSdk 35
+        versionCode snapVersionCode
+        versionName snapVersionName
+        ndk {
+            abiFilters 'arm64-v8a', 'x86_64'
+        }
+    }
+    signingConfigs {
+        if (releaseSigned) {
+            release {
+                storeFile releaseKeystore
+                storePassword keystorePassword
+                keyAlias keyAliasValue
+                keyPassword(System.getenv('SNAP64_ANDROID_KEY_PASSWORD') ?: keystorePassword)
+                // Android 10 and later read both schemes; at this minimum
+                // version the plugin writes the v3 block alone, which lets
+                // the key be rotated later without breaking updates.
+                enableV1Signing false
+                enableV2Signing true
+                enableV3Signing true
+            }
+        }
+    }
+    buildTypes {
+        release {
+            minifyEnabled false
+            proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
+            if (releaseSigned) {
+                signingConfig signingConfigs.release
+            }
+        }
+    }
+    // The release APK is named as the other archives are
+    // (Snap64Recomp-<version>-android.apk), or -android-unsigned.apk when no
+    // key was given; the debug one keeps the plugin's own name.
+    applicationVariants.all { variant ->
+        if (variant.buildType.name == 'release') {
+            variant.outputs.all {
+                outputFileName = "Snap64Recomp-${snapVersionName}-android${releaseSigned ? '' : '-unsigned'}.apk"
+            }
+        }
+    }
+    // The native libraries are compressed in the package and unpacked when
+    // it installs. Stored uncompressed, a device with 16 KB memory pages
+    // needs each one at a 16 KB boundary inside the package, and this
+    // plugin version places them at 4 KB: Android 15's 16 KB image refused
+    // to install the app ("Failed to extract native libraries"). The
+    // libraries' own segments are 16 KB-aligned (NDK r28 and later).
+    packaging {
+        jniLibs {
+            useLegacyPackaging = true
+        }
+    }
+    sourceSets {
+        main {
+            // SDL's activity and its helpers, from the vendored tree.
+            java.srcDirs += [new File(portRoot, 'lib/SDL/android-project/app/src/main/java')]
+            jniLibs.srcDirs = [stagedJniLibs]
+            assets.srcDirs = [stagedAssets]
+        }
+    }
+    lint {
+        abortOnError false
+    }
+}
+
+// libmain.so and libSDL2.so of each cross build, under the ABI's folder;
+// the plugin strips them when it packages them.
+tasks.register('stageNativeLibs', Copy) {
+    description 'Takes the native libraries from the port\'s Android cross builds'
+    nativeBuilds.each { abi, dir ->
+        def main = new File(portRoot, "${dir}/libmain.so")
+        def sdl = new File(portRoot, "${dir}/lib/SDL/libSDL2.so")
+        doFirst {
+            [main, sdl].each {
+                if (!it.exists()) {
+                    throw new GradleException("${it} is missing: run the ${abi} cross build first (BUILDING.md, step 16)")
+                }
+            }
+        }
+        from(main) { into abi }
+        from(sdl) { into abi }
+    }
+    into stagedJniLibs
+}
+
+// The files the port ships beside its executable (CMakeLists.txt, the
+// install rules), as assets with the same relative paths, under one folder
+// of their own, snap64/: the activity copies that folder into the game
+// folder, and the root of an app's assets also lists the system's own
+// (images, webkit, geoid_map), which it copied too.
+tasks.register('stageAssets', Copy) {
+    description 'Takes the files the port ships beside its executable as the package\'s assets'
+    from(new File(portRoot, 'menu_text')) {
+        include 'recomp_logo.png', 'pointer.png', 'pointer_flash.png'
+        into 'menu_text'
+    }
+    from(new File(portRoot, 'shaders/rt64-seen-shaders.bin')) { into 'cache' }
+    from(new File(portRoot, 'assets/gamecontrollerdb.txt'))
+    from(new File(portRoot, 'mods/README.md')) { into 'mods' }
+    from(new File(portRoot, 'texture_packs/README.txt')) { into 'texture_packs' }
+    // The port's license and notice, and the licenses of what the library
+    // carries, as the Linux archive has them (the shader compiler's are the
+    // Windows archive's alone).
+    from(new File(portRoot, 'LICENSE'))
+    from(new File(portRoot, 'NOTICE.md'))
+    from(new File(portRoot, 'licenses')) {
+        include 'nlohmann-json.txt', 'roboto.txt', 'SDL_GameControllerDB.txt'
+        into 'licenses'
+    }
+    into new File(stagedAssets, 'snap64')
+}
+
+preBuild.dependsOn 'stageNativeLibs', 'stageAssets'
+
+// The checksum beside the release APK, as CPack writes one beside the other
+// archives: "<sha256>  <name>" on one line ending in LF.
+tasks.matching { it.name == 'assembleRelease' }.configureEach {
+    doLast {
+        def dir = new File(buildDir, 'outputs/apk/release')
+        (dir.listFiles() ?: []).findAll { it.name.endsWith('.apk') }.each { apk ->
+            def md = java.security.MessageDigest.getInstance('SHA-256')
+            apk.withInputStream { s ->
+                byte[] buf = new byte[1 << 16]
+                int n
+                while ((n = s.read(buf)) > 0) {
+                    md.update(buf, 0, n)
+                }
+            }
+            new File(dir, apk.name + '.sha256').setText(md.digest().encodeHex().toString() + '  ' + apk.name + '\n', 'UTF-8')
+        }
+    }
+}

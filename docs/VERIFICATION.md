@@ -18,8 +18,15 @@ here should be assumed untried.
   macOS build is made and run on GitHub's virtual Mac on every release
   candidate (`BUILDING.md`, step 15): there it boots to the intro, plays the
   Beach with its photos scored and loads a mod, natively and under Rosetta
-  2; no physical Mac has run it. A report from any machine not on that list
-  is welcome, good or bad.
+  2; no physical Mac has run it. Since 1.1.6 an Android app, a beta, is
+  built from the same tree (`BUILDING.md`, step 16): it has run on one
+  phone, a Samsung Galaxy S25 Ultra (Snapdragon 8 Elite, Adreno 830,
+  Android 15) in Samsung's Remote Test Lab, where the boot, a mod, the
+  scoring ride, the menus and the settings passed, and on Google's
+  emulator, where those and the touch controls, the return from Home and a
+  pad made in software passed; no real pad, no other GPU and no Android
+  before 15 has run it ([ANDROID.md](ANDROID.md)). A report from any
+  machine not on that list is welcome, good or bad.
 * **Buildable from a clean checkout, in two steps beyond `git clone`.**
   `python tools/fetch_deps.py` checks out the vendored trees, git submodules
   at recorded commits (RT64, the runtime, plume and N64Recomp on Snap64
@@ -30,14 +37,16 @@ here should be assumed untried.
 * No installer. The Windows and Linux archives are the ZIP and tarball that
   `cpack` writes here (`BUILDING.md`, steps 13 and 14), after the headless
   suite in `tools/release_check.py` has passed on them ("What has been
-  verified"). GitHub's machines build too: the Windows and Linux archives on
-  every push and pull request (`.github/workflows/build.yml`, kept as
+  verified"). GitHub's machines build too: the Windows and Linux archives
+  and the Android APK on every push and pull request (`.github/workflows/build.yml`, kept as
   artifacts), the macOS bundle on request (`macos.yml`), and the
   documentation's links on every push. From the release after 1.1.0 the
   published archives are GitHub's: `release.yml` builds all three and signs
   each with GitHub's build provenance, and the suite runs on those files
-  here before they are published (`BUILDING.md`, "To cut a release").
-* Version `1.1.2`, typed once in `CMakeLists.txt` and shown in the title
+  here before they are published (`BUILDING.md`, "To cut a release"). The
+  Android APK is signed with the release key here, so it carries no GitHub
+  build record.
+* Version `1.1.6`, typed once in `CMakeLists.txt` and shown in the title
   bar, the log banner, the credits line, the executable's file properties and
   the ZIP's name. `CHANGELOG.md` says what each release changed.
 * Licensed under the GPLv3 (`LICENSE`); `NOTICE.md` lists every third-party
@@ -80,12 +89,11 @@ here should be assumed untried.
   the screen: the host's line for each BGM player gives its own clock at
   the hold and at the release, and the check passes only when they are
   equal.
-  On the 1.1.5 executable built here (SHA-256 beginning `436ed80b`), run
+  On the 1.1.6 executable built here (SHA-256 beginning `08dcfb17`), run
   without diagnostics in the environment, the suite passed 33 of 33 checks
-  in 1226 seconds (four of them new: the fit of Super Sampling to a faked
-  card, a render target made to fail and the start after it, and the
-  Switch Online N64 controller as a virtual pad), and the station's 5 of 5
-  in 488; the 1.1.4 executable had passed 29 of 29 in 1150 and the station's
+  in 1227 seconds, and the station's 5 of 5
+  in 488; the 1.1.5 executable had passed 33 of 33 in 1226 and the station's
+  5 in 488, the 1.1.4 executable had passed 29 of 29 in 1150 and the station's
   5 in 491, the 1.1.3 executable had
   passed 29 of 29 in 1153 and the station's 5 in 489, the 1.1.2 executable had
   passed 29 of 29 in 1151 and the station's 5 in 488, the 1.1.1 executable had
@@ -138,10 +146,10 @@ here should be assumed untried.
   a frame captured at the title and one in the course): in a 1920x1080 window the course picture spanned 1918 of 1920 columns (1.78, the window's shape), in a 1280x800 window all 1280 (1.60), and in a 2560x1080 window all 2560 (2.37), with the 2x super-sampling the settings carry and again without it; the title kept its 4:3 bars in every window (1440 of 2560 columns at 21:9). The pictures were screenshots of the window at the 60-second mark of the Beach replay, measured by their lit columns. The cull patch's widened bound changed no verdict in those first 60 seconds, which have no Pokémon near the wide edges; its 21:9 proof is the full evaluation ride of 2026-09-08.
   No other machine's build or run is recorded in this repository. Anything
   not listed here should be assumed untried.
-* The photo export (P, the controller's Back button, `photos/`) is checked
-  by `SNAP_PHOTO_AUTOEXPORT` on an input replay that reaches Oak's check,
-  not by hand: saving from the keyboard and from the controller has not been
-  tried.
+* The photo export (P, or the controller's right stick pressed in, saving
+  to `photos/`) is checked by `SNAP_PHOTO_AUTOEXPORT` on an input replay
+  that reaches Oak's check, not by hand: saving from the keyboard and from
+  the controller has not been tried.
 * The recompiled game is generated from a specific decompilation build; the
   chain of tools and inputs is spelled out in [BUILDING.md](../BUILDING.md), including one
   stale input on my machine that must be regenerated before the

@@ -4,7 +4,7 @@
 # Silicon build was proved on; -DCMAKE_OSX_DEPLOYMENT_TARGET on the command
 # line wins over this.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "The oldest macOS the build runs on")
-project(Snap64Recomp VERSION 1.1.5 LANGUAGES C CXX)
+project(Snap64Recomp VERSION 1.1.6 LANGUAGES C CXX)
 if (APPLE)
     # Objective-C for RT64's Apple sources and SDL's Cocoa back end; the
     # port's own sources stay C++ (main.cpp takes the Metal layer through SDL).
@@ -76,9 +76,10 @@ message(STATUS "Build type: ${CMAKE_BUILD_TYPE}")
 # =============================================================================
 # Find dependencies
 # =============================================================================
-# SDL2: built from the vendored tree on Windows and macOS, the system's on
-# Linux. SNAP_SDL_TARGET is what the port links; rt64 links SDL2_LIBRARIES.
-if (WIN32 OR APPLE)
+# SDL2: built from the vendored tree on Windows, macOS and Android, the
+# system's on Linux. SNAP_SDL_TARGET is what the port links; rt64 links
+# SDL2_LIBRARIES.
+if (WIN32 OR APPLE OR ANDROID)
     set(SDL_TEST OFF CACHE BOOL "" FORCE)
     set(SDL2_DISABLE_INSTALL ON CACHE BOOL "" FORCE)
     if (APPLE)
@@ -87,6 +88,13 @@ if (WIN32 OR APPLE)
         # and GameController frameworks come with the target.
         set(SDL_SHARED OFF CACHE BOOL "" FORCE)
         set(SDL_STATIC ON CACHE BOOL "" FORCE)
+    elseif (ANDROID)
+        # Shared, libSDL2.so: SDL's own activity loads "SDL2" and then the
+        # game's library, "main", by name (lib/SDL/android-project,
+        # SDLActivity.getLibraries) and calls the SDL_main inside it. HIDAPI
+        # stays SDL's Android default, through its Java side.
+        set(SDL_SHARED ON CACHE BOOL "" FORCE)
+        set(SDL_STATIC OFF CACHE BOOL "" FORCE)
     endif()
     add_subdirectory(lib/SDL EXCLUDE_FROM_ALL)
     set(SDL2_INCLUDE_DIRS "${CMAKE_CURRENT_SOURCE_DIR}/lib/SDL/include")
@@ -224,12 +232,30 @@ set(SNAP_ASPMAIN_CPP "${SNAP_RSP_DIR}/aspMain.cpp")
 file(TO_CMAKE_PATH "${SNAP_ROM}" SNAP_ROM_CMAKE)
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/rsp/aspMain.us.toml.in"
                "${SNAP_RSP_DIR}/aspMain.us.toml" @ONLY)
-add_custom_command(
-    OUTPUT "${SNAP_ASPMAIN_CPP}"
-    COMMAND RSPRecomp "${SNAP_RSP_DIR}/aspMain.us.toml"
-    DEPENDS RSPRecomp "${SNAP_RSP_DIR}/aspMain.us.toml" "${SNAP_ROM}"
-    COMMENT "Recompiling the aspMain audio microcode from ${SNAP_ROM}"
-    VERBATIM)
+# A cross build (Android) cannot run the RSPRecomp it builds: it takes the
+# aspMain.cpp a native build of this tree generated from the same ROM
+# (build-linux's, say), named here, and compiles a copy of it in the same
+# place.
+set(SNAP_ASPMAIN_PREBUILT "" CACHE FILEPATH
+    "A host-generated rsp/aspMain.cpp to compile instead of running RSPRecomp (required when cross-compiling)")
+if (SNAP_ASPMAIN_PREBUILT)
+    if (NOT EXISTS "${SNAP_ASPMAIN_PREBUILT}")
+        message(FATAL_ERROR "SNAP_ASPMAIN_PREBUILT=${SNAP_ASPMAIN_PREBUILT} does not exist")
+    endif()
+    configure_file("${SNAP_ASPMAIN_PREBUILT}" "${SNAP_ASPMAIN_CPP}" COPYONLY)
+    message(STATUS "RSP audio microcode: the prebuilt ${SNAP_ASPMAIN_PREBUILT}")
+elseif (CMAKE_CROSSCOMPILING)
+    message(FATAL_ERROR
+        "This is a cross build, which cannot run RSPRecomp to recompile the audio microcode: pass "
+        "-DSNAP_ASPMAIN_PREBUILT=<the rsp/aspMain.cpp of a native build of this tree>.")
+else()
+    add_custom_command(
+        OUTPUT "${SNAP_ASPMAIN_CPP}"
+        COMMAND RSPRecomp "${SNAP_RSP_DIR}/aspMain.us.toml"
+        DEPENDS RSPRecomp "${SNAP_RSP_DIR}/aspMain.us.toml" "${SNAP_ROM}"
+        COMMENT "Recompiling the aspMain audio microcode from ${SNAP_ROM}"
+        VERBATIM)
+endif()
 
 # =============================================================================
 # Game executable
@@ -301,6 +327,8 @@ set(SNAP_SOURCES
     src/rsp_microcode.cpp
     src/audio.cpp
     src/input.cpp
+    src/touch_controls.cpp
+    src/android_thermal.cpp
     src/os_stubs.cpp
     src/overlay_hook.cpp
     src/matrix_tags.cpp
@@ -368,8 +396,21 @@ if (APPLE)
     # The Metal layer's size left to the renderer (src/macos_support.mm).
     list(APPEND SNAP_SOURCES src/macos_support.mm)
 endif()
+if (ANDROID)
+    # What the port asks Android's own side for, through SDL's activity
+    # (android/): the document picker and the system log (src/android.cpp).
+    list(APPEND SNAP_SOURCES src/android.cpp)
+endif()
 
-add_executable(Snap64Recomp ${SNAP_SOURCES})
+if (ANDROID)
+    # On Android the game is a shared library, libmain.so, that SDL's own
+    # activity loads after libSDL2.so and enters through SDL_main, which
+    # SDL_main.h renames main() to there and exports.
+    add_library(Snap64Recomp SHARED ${SNAP_SOURCES})
+    set_target_properties(Snap64Recomp PROPERTIES OUTPUT_NAME "main")
+else()
+    add_executable(Snap64Recomp ${SNAP_SOURCES})
+endif()
 
 target_include_directories(Snap64Recomp PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -474,32 +515,42 @@ endif()
 
 if (BUILD_RT64)
     target_link_libraries(Snap64Recomp PRIVATE rt64)
-    # The first run's file chooser (src/rom_picker.cpp) is RT64's own copy of
-    # nativefiledialog-extended, already built for RT64's use.
-    target_link_libraries(Snap64Recomp PRIVATE nfd)
-    target_include_directories(Snap64Recomp PRIVATE
-        "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/nativefiledialog-extended/src/include")
+    if (NOT ANDROID)
+        # The first run's file chooser (src/rom_picker.cpp) is RT64's own copy
+        # of nativefiledialog-extended, already built for RT64's use. Not on
+        # Android, where the library has no backend: the chooser is refused
+        # there (rom_picker.cpp, mod_installer.cpp).
+        target_link_libraries(Snap64Recomp PRIVATE nfd)
+        target_include_directories(Snap64Recomp PRIVATE
+            "${CMAKE_CURRENT_SOURCE_DIR}/lib/rt64/src/contrib/nativefiledialog-extended/src/include")
+    endif()
     # The slot map the mod data API keeps its collections in (lib/SlotMap).
     target_include_directories(Snap64Recomp PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/lib/SlotMap")
 endif()
 
 # Platform-specific link flags
-if (UNIX AND NOT APPLE)
+if (UNIX AND NOT APPLE AND NOT ANDROID)
     target_link_libraries(Snap64Recomp PRIVATE
         pthread
         dl
     )
+endif()
+if (ANDROID)
+    # bionic has the threads; dlopen (librecomp, a mod's native library) is
+    # libdl's, and the system log (src/android.cpp) liblog's.
+    target_link_libraries(Snap64Recomp PRIVATE dl log)
 endif()
 
 # Compiler warnings for game code
 if (NOT MSVC)
     target_compile_options(Snap64Recomp PRIVATE -fno-strict-aliasing -Wall -Wextra -Wno-unused-parameter)
 endif()
-if (UNIX AND NOT APPLE)
+if (UNIX AND NOT APPLE AND NOT ANDROID)
     # The C++ runtime inside the binary, as the other N64 recompilations
     # ship it: the tarball then runs on a SteamOS whose libstdc++ is older
     # or newer than the build machine's. glibc stays the system's; the
-    # build machine's version is the floor (BUILDING.md, step 14).
+    # build machine's version is the floor (BUILDING.md, step 14). An
+    # Android build's C++ runtime is the NDK's choice (ANDROID_STL).
     target_link_options(Snap64Recomp PRIVATE -static-libstdc++ -static-libgcc)
 endif()
 
@@ -537,7 +588,9 @@ if (WIN32)
             "$<TARGET_FILE_DIR:Snap64Recomp>/cache/rt64-seen-shaders.bin"
         COMMENT "Placing the runtime DLLs, menu_text/ and the seen-shader list next to Snap64Recomp.exe"
         VERBATIM)
-else()
+elseif (NOT ANDROID)
+    # (On Android nothing sits beside a library: the app shell carries these
+    # files as the package's assets.)
     # Linux and macOS: no runtime libraries of the port's own (SDL2 is the
     # system's on Linux and inside the executable on macOS, and off Windows
     # RT64 needs no shader compiler at run time); the badge and the
@@ -587,6 +640,8 @@ endif()
 # =============================================================================
 # Installation and packaging: one flat, portable folder (README "Where things live")
 # =============================================================================
+# Not on Android, whose package is the app's, made by the app shell.
+if (NOT ANDROID)
 # The package is the Windows one (cpack -C Release in the build directory
 # writes Snap64Recomp-<version>-win64.zip); the license list below names the
 # trees the Windows build compiles.
@@ -742,6 +797,7 @@ set(CPACK_PACKAGE_CHECKSUM SHA256)
 set(CPACK_INCLUDE_TOPLEVEL_DIRECTORY ON)
 set(CPACK_SOURCE_GENERATOR "")
 include(CPack)
+endif()
 
 # =============================================================================
 # Summary

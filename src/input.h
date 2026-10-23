@@ -176,6 +176,10 @@ bool input_pad_attached();
 // hand_words).
 int input_last_device();
 
+// True while the input trace is on: SNAP_INPUT_TRACE=1, or the Steam Deck's
+// own pad attached. The presses and the help lines' repaints are logged.
+bool input_trace_on();
+
 // True while the attached pad is shaped like the N64's: its shoulders read as
 // Z and ZR, not as bumpers (input_bind_display names them so).
 bool input_pad_n64_layout();

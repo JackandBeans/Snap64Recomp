@@ -148,10 +148,11 @@ struct Settings {
     // In a wide picture the film counter sits against the real right edge
     // and the R and Z icons slide out to it (src/rect_tags.cpp, 1.1.2); the
     // cartridge keeps both at the 4:3 picture's edge, which in a wide
-    // picture is in mid-air. Off leaves them where the cartridge has them.
+    // picture is in mid-air. Off leaves them where the cartridge has them,
+    // and off is the default, as every enhancement is.
     // Mailbox byte 0x80C0004D, the GRAPHICS page's Wide HUD row (field 16,
     // past the full bank at +0x08).
-    bool  wide_hud          = true;
+    bool  wide_hud          = false;
     // The Pokemon Snap Station on controller port 4 (snap_station.h): the
     // Blockbuster kiosk's sticker printer, which the retail cartridge knows
     // how to drive. On, the Gallery shows its Print button, and printing
@@ -189,10 +190,13 @@ struct Settings {
     // never runs the Rumble Pak's motor in play (its only motor calls are in
     // the reset handler), so there is nothing to set.
     bool  pad_enabled       = true;
-    // How the pad's shoulders and triggers are read: 0 decides by the pad's
-    // name, 1 is the Xbox-style layout the defaults describe, 2 is a pad
-    // shaped like the N64's (the Switch Online N64 controller), whose L and
-    // R arrive as SDL's shoulders and whose Z arrives as the left trigger.
+    // How the pad's shoulders and triggers are read: 0 Auto, decided by the
+    // pad's ids and then its name, 1 Standard, the Xbox-style layout the
+    // defaults describe, 2 N64, a pad shaped like the N64's (the Switch
+    // Online N64 controller), whose L and R arrive as SDL's shoulders and
+    // whose Z arrives as the left trigger. The Controls page's Pad Preset
+    // row (mailbox byte 0x80C0006F) and the file both set it; the pad
+    // thread applies a change at once (input.cpp, decide_pad_layout).
     int   pad_layout        = 0;
     // The pad's two sticks as the game reads them. False: the left stick is
     // the Control Stick and the right one works the C buttons, the mapping
@@ -245,6 +249,13 @@ struct Settings {
     int   gyro_aim          = 0;
     // Multiplies the natural scale. Bounded to 0.25 .. 4 where read.
     float gyro_sensitivity  = 1.0f;
+    // Android's touch controls (src/touch_controls.cpp): 0 automatic (shown
+    // until a pad or a keyboard is used, and again at the next touch), 1
+    // always shown, 2 never. Their size and how opaque they are, in percent
+    // (50 .. 150 and 20 .. 100 where read). Only in the file for now.
+    int   touch_controls    = 0;
+    int   touch_size        = 100;
+    int   touch_opacity     = 60;
     // Interpolate the view and projection as well as object transforms.
     //
     // On, and it has to be: this game's camera lives in the projection stack,
@@ -502,6 +513,12 @@ void write_desktop_entry();
 // text then stands in for the runtime's own line in the error box
 // (renderer_failure_detail, main.cpp). Always true off Windows.
 bool d3d12_adapter_check(std::string& why);
+// Android only (src/gpu_check.cpp): names every Vulkan device in the log
+// with its Vulkan version and driver, and says whether the one the renderer
+// will take offers Vulkan 1.2 and a swap chain. False with the reason for
+// the player in `why`, as above (SNAP_VK_TEST=1.1 fakes the answer).
+// Always true elsewhere.
+bool vulkan_device_check(std::string& why);
 // The dedicated video memory of the adapter that check chose, in bytes; 0
 // where it is not known (not Windows, or no adapter).
 uint64_t d3d12_adapter_memory();

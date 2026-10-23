@@ -192,7 +192,8 @@ port` marks most changed sites (grep for it), but not all of them.
 ### N64ModernRuntime
 
 The fork's `snap64` is upstream commit `cdf5abb` (2026-08-30) with the port's
-changes in one commit, eighteen files. Every changed file carries a `Pokemon
+changes on top: one commit of eighteen files, then later commits (for mods,
+Android and ARM64). Every changed file carries a `Pokemon
 Snap port` marker. The 2026-09-16 update to `cdf5abb` was made from a copy
 whose base had never been recorded (it matched the tree of `03c3bd8`,
 2026-05-17; three files conflicted).
@@ -254,6 +255,26 @@ whose base had never been recorded (it matched the tree of `03c3bd8`,
   through the config's own `add_option_hidden_dependency` and
   `add_option_disable_dependency`. Upstream's `main` has the same code
   (checked 2026-09-26, the file last changed there in `589bbf0`).
+* `librecomp/src/mods.cpp`, for Android (2026-10-19): `unprotect` asks for
+  a page that is readable, writable and executable at once, and `protect`
+  leaves it so, under `__ANDROID__` only. The game's code there is a page
+  of the app's own library, a mapping of a file, and Android's app policy
+  (SELinux, `execmod`) refuses to make such a page executable again once it
+  has been written; a page that never stops being executable is written
+  through an ordinary copy-on-write. Proved on 2026-10-21: Snap64RecompMods'
+  `zz_hooktest` ran its hooks on Google's emulator and on an arm64 phone,
+  with no SELinux denial in the system log.
+* `librecomp/src/mods.cpp`, for ARM64 (2026-10-21): `patch_func` and
+  `unpatch_func` synchronize the instruction cache over the bytes they
+  write (`__builtin___clear_cache`) on ARM64 (macOS, Linux and Android); x86
+  is unchanged.
+* `ultramodern/src/events.cpp`, `ultramodern/src/timer.cpp` and their
+  header (2026-10-21): `set_retraces_held` stops the VI retraces, so the
+  game's frame loop and audio wait where they are, and starts them again
+  with no burst; `set_clock_held` stops the console's counter the way a
+  speed change rebases it, so `osGetCount`, `osGetTime` and the OS timers do
+  not jump ahead. The port holds both while the Android app is away
+  (`src/main.cpp`); no other platform calls them.
 
 ### N64Recomp
 
@@ -345,6 +366,23 @@ it is modified), `src/shared/rt64_other_mode.h` and
 counterpart). The marked files also contain the two hand back-ports named
 above (#259, #262).
 
+**The Android cross build (2026-10-19)** changes three of those files
+again, every change gated so the Windows, Linux and macOS builds are what
+they were: `CMakeLists.txt` chooses the shader compiler (dxc) by the host
+system rather than the target (`CMAKE_HOST_WIN32`, `CMAKE_HOST_APPLE`,
+`CMAKE_HOST_SYSTEM_PROCESSOR`), takes `file_to_c` from the cache variable
+`RT64_FILE_TO_C_HOST` instead of building it when `CMAKE_CROSSCOMPILING`
+(the shader commands run and depend on `RT64_FILE_TO_C`, which is the
+target `file_to_c` in a native build), leaves out nativefiledialog-extended,
+`texture_hasher` and `texture_packer` under `ANDROID`, accepts the port's
+shared `SDL2` target there as it accepts the static one on macOS, and takes
+the SDL window path (`PLUME_SDL_VULKAN_ENABLED`, `RT64_SDL_WINDOW_VULKAN`)
+for a system name of `Android` as for `Linux`, linking SDL on Android when
+that path is on; `src/hle/rt64_application_window.cpp` takes its SDL
+branches on Android when `RT64_SDL_WINDOW_VULKAN` is defined, where
+upstream's Android arms `static_assert`; `src/gui/rt64_file_dialog.cpp`
+does nothing on Android (empty paths; the library has no backend there).
+
 ### plume
 
 Five files differ from plume `d890ac8` (the commit rt64 `4337374` pins;
@@ -385,6 +423,20 @@ repository, the directory around them ignored):
 The `.cpp` does not compile against pristine plume headers, so the headers
 are in the same commit (until 2026-09-02 they were not tracked at all, and
 the only copy of their changes was my working tree).
+
+For the Android cross build (2026-10-19), four files differ further, on the
+fork's `snap64`: `CMakeLists.txt` offers `PLUME_SDL_VULKAN_ENABLED` for a
+system name of `Android` as for `Linux`, and `plume_render_interface_types.h`,
+`plume_vulkan.h` and `plume_vulkan.cpp` take their Android arms (the
+`ANativeWindow` type and header, `VK_USE_PLATFORM_ANDROID_KHR`, the
+required surface extension, `vkCreateAndroidSurfaceKHR` and the window
+size) only when the SDL integration is off, so that on Android with SDL the
+backend is what it is on Linux with SDL: the window is an `SDL_Window*`
+and SDL makes the surface. On 2026-10-21 `plume_vulkan.cpp` and
+`plume_vulkan.h` took one more change: Android destroys the window's
+surface when the app goes to the background, so on a lost surface the swap
+chain's creation makes the surface again from the window SDL holds, and
+waits while the app is away. Nothing else in plume knows Android.
 
 The file that used to document the null guard
 (`lib/rt64/src/contrib/PLUME_PATCHES.md`, in the old ignored directory) is

@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!-- The game's screen: no title bar, the whole display (SDL's own theme). -->
+    <style name="AppTheme" parent="android:Theme.NoTitleBar.Fullscreen">
+    </style>
+    <!-- The launcher, which shows nothing of its own but a dialog. -->
+    <style name="LauncherTheme" parent="android:Theme.Material.NoActionBar">
+        <item name="android:windowBackground">@android:color/black</item>
+    </style>
+</resources>

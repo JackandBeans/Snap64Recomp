@@ -1,5 +1,7 @@
 # The release's archives, made on GitHub's machines: the Windows zip, the
-# Linux tarballs (x86_64 and ARM64), the Flatpak and the Mac zip of one
+# Linux tarballs (x86_64 and ARM64), the Flatpak, the Android APK (signed
+# with the release key when its secrets are set; otherwise unsigned, and
+# signed on the release machine before it is published) and the Mac zip of one
 # commit, each signed with GitHub's build provenance, a statement of the commit and workflow that made it that anyone
 # can check:
 #
@@ -7,7 +9,7 @@
 #
 # It calls build.yml and macos.yml with attest set, so the release is built
 # exactly as every push is, and the Mac's checks run as they always do. Then
-# one job gathers the five archives, runs the release suite's package checks
+# one job gathers the six archives, runs the release suite's package checks
 # over all of them together, verifies each attestation as a downloader would,
 # and keeps them as one artifact with their checksums in the run's summary.
 # Nothing here publishes: the release suite runs on these files on the
@@ -34,7 +36,7 @@ permissions:
 
 jobs:
   windows-linux:
-    name: Windows and Linux
+    name: Windows, Linux and Android
     uses: ./.github/workflows/build.yml
     with:
       attest: true
@@ -76,17 +78,21 @@ jobs:
           path: dist
           merge-multiple: true
 
-      - name: The package checks, all five
+      - name: The package checks, all six
+        # An APK built without the release key's secrets passes unsigned,
+        # under its unsigned name only (tools/release/sign_apk.sh signs it).
         run: |
           ls -l dist
-          set -- $(for f in dist/*.zip dist/*.tar.gz dist/*.flatpak; do printf -- '--zip %s ' "$f"; done)
-          python3 tools/release_check.py --only package "$@"
+          allow=""
+          if ls dist/*-android-unsigned.apk > /dev/null 2>&1; then allow="--unsigned-apk"; fi
+          set -- $(for f in dist/*.zip dist/*.tar.gz dist/*.flatpak dist/*.apk; do printf -- '--zip %s ' "$f"; done)
+          python3 tools/release_check.py --only package $allow "$@"
 
       - name: The attestations, as a downloader checks them
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          for f in dist/*.zip dist/*.tar.gz dist/*.flatpak; do
+          for f in dist/*.zip dist/*.tar.gz dist/*.flatpak dist/*.apk; do
             gh attestation verify "$f" --repo "$GITHUB_REPOSITORY" --deny-self-hosted-runners > /dev/null
             echo "verified: $(basename "$f")"
           done
@@ -100,7 +106,7 @@ jobs:
             echo
             echo "| File | Bytes | SHA-256 |"
             echo "| --- | ---: | --- |"
-            for f in dist/*.zip dist/*.tar.gz dist/*.flatpak; do
+            for f in dist/*.zip dist/*.tar.gz dist/*.flatpak dist/*.apk; do
               echo "| \`$(basename "$f")\` | $(stat -c %s "$f") | \`$(sha256sum "$f" | cut -c1-64)\` |"
             done
           } >> "$GITHUB_STEP_SUMMARY"

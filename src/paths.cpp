@@ -11,6 +11,10 @@
 #if defined(__linux__)
 #include <unistd.h>
 #endif
+#if defined(__ANDROID__)
+#include <SDL2/SDL_error.h>
+#include <SDL2/SDL_system.h>
+#endif
 
 #include <SDL2/SDL_stdinc.h>
 #include <SDL2/SDL_filesystem.h>
@@ -50,7 +54,23 @@ const std::filesystem::path& base_dir() {
             return result;
         }
 #endif
-#if defined(__linux__)
+#if defined(__ANDROID__)
+        // On Android the game folder is Snap64 at the root of the shared
+        // storage, which the app's launcher names through SNAP_DATA_DIR
+        // (above) once the player has granted all-files access (android/,
+        // Snap64Launcher.java). Without that, the app's own folder on the
+        // shared storage, Android/data/<package>/files, which SDL asks the
+        // activity for and which needs no permission. (SDL_GetBasePath is
+        // not supported on Android: the fallback below would be "/".)
+        if (const char* external = SDL_AndroidGetExternalStoragePath()) {
+            result = std::filesystem::path(external);
+            std::error_code ec;
+            std::filesystem::create_directories(result, ec);
+            return result / "";
+        }
+        fprintf(stderr, "[SNAP] SDL_AndroidGetExternalStoragePath failed (%s); files resolve against the working directory" "\n",
+                SDL_GetError());
+#elif defined(__linux__)
         // Otherwise the executable's own folder when it can be written,
         // which is the unpacked tarball; when it cannot (a read-only mount,
         // a system directory), the XDG config home, as the other N64
@@ -101,9 +121,15 @@ std::filesystem::path base_path(std::string_view rel) {
 
 const std::filesystem::path& exe_dir() {
     static const std::filesystem::path dir = [] {
-        std::filesystem::path result;
         // The executable's folder; for a macOS bundle, its Contents/Resources,
         // which is where tools/macos_bundle.py puts the shipped files.
+#if defined(__ANDROID__)
+        // On Android the same folder as base_dir(): the activity copies the
+        // shipped files there from the package's assets when they are
+        // missing (Snap64Activity.java).
+        return base_dir();
+#else
+        std::filesystem::path result;
         if (char* base = SDL_GetBasePath()) {
             result = std::filesystem::path(
                 std::u8string(reinterpret_cast<const char8_t*>(base)));
@@ -115,6 +141,7 @@ const std::filesystem::path& exe_dir() {
             result = std::filesystem::current_path(ec);
         }
         return result;
+#endif
     }();
     return dir;
 }

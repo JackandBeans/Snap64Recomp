@@ -1,0 +1,31 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- The port icon's own purple, top to bottom, carried to the edges of the
+     108 dp adaptive icon canvas (the art itself is ic_launcher_foreground). -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:aapt="http://schemas.android.com/aapt"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path android:pathData="M0,0h108v108h-108z">
+        <aapt:attr name="android:fillColor">
+            <gradient
+                android:type="linear"
+                android:startX="54"
+                android:startY="0"
+                android:endX="54"
+                android:endY="108">
+                <item android:offset="0.0000" android:color="#FF715EA8" />
+                <item android:offset="0.1111" android:color="#FF6C59A1" />
+                <item android:offset="0.2222" android:color="#FF67559A" />
+                <item android:offset="0.3333" android:color="#FF625093" />
+                <item android:offset="0.4444" android:color="#FF5D4C8C" />
+                <item android:offset="0.5556" android:color="#FF574785" />
+                <item android:offset="0.6667" android:color="#FF52437F" />
+                <item android:offset="0.7778" android:color="#FF4D3E78" />
+                <item android:offset="0.8889" android:color="#FF483A71" />
+                <item android:offset="1.0000" android:color="#FF43356A" />
+            </gradient>
+        </aapt:attr>
+    </path>
+</vector>

@@ -1925,6 +1925,8 @@ static void write_setting_bytes(const Settings &s) {
     write_u8(MailboxAddr + 0x6D, uint8_t((s.slow_motion_speed >= 4) ? 2 : ((s.slow_motion_speed >= 2) ? 1 : 0)));
     // Pointer: 0 the system's, 1 the port's own (Camera).
     write_u8(MailboxAddr + 0x6E, s.custom_pointer ? 1 : 0);
+    // Pad Preset: pad_layout, 0 Auto, 1 Standard, 2 N64.
+    write_u8(MailboxAddr + 0x6F, uint8_t(std::clamp(s.pad_layout, 0, 2)));
 }
 
 void seed_mailbox() {
@@ -2188,6 +2190,10 @@ void stage_menu_strings(uint8_t* rdram) {
     // which is 30): its label, its values System and Camera, its description.
     static const char* const ptrDesc[2] = { "Camera is a lens that snaps shut on a", "click. System is the normal arrow." };
     static const char* const sticksDesc[2] = { "Normal aims with the left stick, the", "right does the C buttons. Swapped flips." };
+    // The CONTROLS page's Pad Preset row (ids BaseCount+358..+361): its
+    // label, its values Standard and N64 (Auto is the Graphics page's), its
+    // description.
+    static const char* const presetDesc[2] = { "How the shoulder buttons are read. Auto", "picks N64 for pads shaped like the N64." };
     static const char* const gyroDescs[2][2] = {
         { "Turn the pad to look around a course, on",  "pads with a gyro. Zoomed aims zoomed in." },
         { "How far turning the pad turns the camera.", "Lower is slower, higher is faster." },
@@ -2258,7 +2264,7 @@ void stage_menu_strings(uint8_t* rdram) {
     // device in hand (hand_words, kBindRowSays).
     // Through the picture, "A OK  B Back", a fixed On, "A Type  B Cancel",
     // the rainbow New and the empty Mods page's second line.
-    constexpr uint32_t StringCount = BaseCount + 315 + ThumbBands + 35;   // +328, +329: Wide HUD; +330: a mod's notice; +331..+342: the GAME page; +343..+353: the Controls pages' polish; +354..+357: the Pointer row, moved out of the options bank
+    constexpr uint32_t StringCount = BaseCount + 315 + ThumbBands + 39;   // +328, +329: Wide HUD; +330: a mod's notice; +331..+342: the GAME page; +343..+353: the Controls pages' polish; +354..+357: the Pointer row, moved out of the options bank; +358..+361: the Pad Preset row
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -2592,6 +2598,21 @@ void stage_menu_strings(uint8_t* rdram) {
         }
         else if (id == BaseCount + 357) {
             strip = compose_lines(ptrDesc[0], ptrDesc[1]);
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 358) {
+            strip = compose("Pad Preset");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if ((id == BaseCount + 359) || (id == BaseCount + 360)) {
+            strip = compose((id == BaseCount + 359) ? "< Standard >" : "< N64 >");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == BaseCount + 361) {
+            strip = compose_lines(presetDesc[0], presetDesc[1]);
             w = strip.width;
             h = strip.height;
         }
@@ -3850,6 +3871,14 @@ static void refresh_hand_lines() {
     }
     g_hand_sig = g_hand_now;
     const int device = input_last_device();
+    static int traced = 0;
+    if ((traced < 100) && input_trace_on()) {
+        traced++;
+        printf("[SNAP-MENU] trace %u ms: the help lines repainted for the %s (N64 layout %d, key table %u)\n",
+               unsigned(SDL_GetTicks()), (device == kBindPad) ? "pad" : (device == kBindMouse) ? "mouse" : "keyboard",
+               input_pad_n64_layout() ? 1 : 0, unsigned(input_bindings_generation()));
+        fflush(stdout);
+    }
     for (const auto& line : g_hand_addr) {
         const bool value = (line.first == 343);   // the Button Setup row's value: its own slot, in the rows' face
         stage_dynamic_at(kStringBaseCount + line.first, line.second, hand_strip(line.first, device),
@@ -5569,6 +5598,15 @@ void poll_menu_mailbox(uint8_t* rdram) {
                 c.custom_pointer = camera;
                 pointer_enable(camera);
                 printf("[SNAP-CFG] pointer: %s\n", camera ? "the port's own (Camera)" : "the system's");
+                fflush(stdout);
+            }
+            // The pad thread sees the change and decides the layout again
+            // (input.cpp, decide_pad_layout).
+            const int preset = std::min<int>(read_u8_mail(MailboxAddr + 0x6F), 2);
+            if (preset != c.pad_layout) {
+                c.pad_layout = preset;
+                printf("[SNAP-CFG] pad preset: %s\n",
+                       (preset == 1) ? "Standard" : (preset == 2) ? "N64" : "Auto (by the pad's ids, then its name)");
                 fflush(stdout);
             }
         }

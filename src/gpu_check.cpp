@@ -18,7 +18,15 @@
 
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <string>
+#include <vector>
+
+#if defined(__ANDROID__)
+#define VK_NO_PROTOTYPES
+#include <vulkan/vulkan.h>
+#include <dlfcn.h>
+#endif
 
 #if defined(_WIN32)
 #ifndef WIN32_LEAN_AND_MEAN
@@ -217,6 +225,177 @@ uint64_t d3d12_adapter_memory() {
 }
 
 bool d3d12_adapter_check(std::string&) {
+    return true;
+}
+
+#endif
+
+#if defined(__ANDROID__)
+
+// Android's counterpart: a phone's GPU is reached through Vulkan alone, and
+// plume makes a Vulkan 1.2 instance and device (plume_vulkan.cpp, its
+// appInfo.apiVersion and the memory allocator it sets up for 1.2) with the
+// swap chain extension. A device below that would fail inside the renderer
+// with nothing said; it is named in the log, as every device is, and
+// refused with a message instead.
+namespace {
+
+constexpr uint32_t kNeededVulkan = VK_MAKE_API_VERSION(0, 1, 2, 0);
+
+struct VulkanSeen {
+    std::string name;
+    uint32_t api = 0;
+    uint32_t driver = 0;
+    uint32_t vendor = 0;
+    uint32_t type = 0;
+    bool swapchain = false;
+};
+
+std::string version_text(uint32_t v) {
+    char text[32];
+    snprintf(text, sizeof(text), "%u.%u.%u", VK_API_VERSION_MAJOR(v), VK_API_VERSION_MINOR(v), VK_API_VERSION_PATCH(v));
+    return text;
+}
+
+// SNAP_VK_TEST=1.1 has the chosen device answer that Vulkan version, to see
+// the refusal on a phone whose GPU gives no cause for it.
+uint32_t test_version() {
+    const char* text = std::getenv("SNAP_VK_TEST");
+    if ((text == nullptr) || (text[0] < '0') || (text[0] > '9') || (text[1] != '.') || (text[2] < '0') || (text[2] > '9')) {
+        return 0;
+    }
+    return VK_MAKE_API_VERSION(0, uint32_t(text[0] - '0'), uint32_t(text[2] - '0'), 0);
+}
+
+const char* type_name(uint32_t type) {
+    switch (type) {
+        case VK_PHYSICAL_DEVICE_TYPE_INTEGRATED_GPU: return "integrated";
+        case VK_PHYSICAL_DEVICE_TYPE_DISCRETE_GPU: return "discrete";
+        case VK_PHYSICAL_DEVICE_TYPE_VIRTUAL_GPU: return "virtual";
+        case VK_PHYSICAL_DEVICE_TYPE_CPU: return "CPU";
+        default: return "other";
+    }
+}
+
+bool refuse(std::string& why, const std::string& text, const std::string& logged) {
+    s_failure_detail = text;
+    why = s_failure_detail;
+    printf("[SNAP-VK] refused: %s\n", logged.c_str());
+    fflush(stdout);
+    return false;
+}
+
+} // namespace
+
+bool vulkan_device_check(std::string& why) {
+    void* lib = dlopen("libvulkan.so", RTLD_NOW | RTLD_LOCAL);
+    const auto gipa = (lib != nullptr) ? reinterpret_cast<PFN_vkGetInstanceProcAddr>(dlsym(lib, "vkGetInstanceProcAddr")) : nullptr;
+    const auto create = (gipa != nullptr) ? reinterpret_cast<PFN_vkCreateInstance>(gipa(nullptr, "vkCreateInstance")) : nullptr;
+    const std::string none = "This device has no Vulkan driver, and " SNAP_PORT_NAME " draws with Vulkan alone.";
+    if (create == nullptr) {
+        return refuse(why, none, "no Vulkan driver (libvulkan.so or vkCreateInstance missing)");
+    }
+    // The 1.0 instance any driver takes: each device's own version is what
+    // is asked below.
+    VkApplicationInfo app = {};
+    app.sType = VK_STRUCTURE_TYPE_APPLICATION_INFO;
+    app.pApplicationName = SNAP_PORT_NAME;
+    app.apiVersion = VK_API_VERSION_1_0;
+    VkInstanceCreateInfo info = {};
+    info.sType = VK_STRUCTURE_TYPE_INSTANCE_CREATE_INFO;
+    info.pApplicationInfo = &app;
+    VkInstance instance = VK_NULL_HANDLE;
+    const VkResult made = create(&info, nullptr, &instance);
+    if (made != VK_SUCCESS) {
+        char logged[64];
+        snprintf(logged, sizeof(logged), "vkCreateInstance answered %d", int(made));
+        return refuse(why, none, logged);
+    }
+    const auto destroy = reinterpret_cast<PFN_vkDestroyInstance>(gipa(instance, "vkDestroyInstance"));
+    const auto enumerate = reinterpret_cast<PFN_vkEnumeratePhysicalDevices>(gipa(instance, "vkEnumeratePhysicalDevices"));
+    const auto properties = reinterpret_cast<PFN_vkGetPhysicalDeviceProperties>(gipa(instance, "vkGetPhysicalDeviceProperties"));
+    const auto extensions = reinterpret_cast<PFN_vkEnumerateDeviceExtensionProperties>(
+        gipa(instance, "vkEnumerateDeviceExtensionProperties"));
+    uint32_t count = 0;
+    if ((enumerate != nullptr) && (properties != nullptr) && (extensions != nullptr)) {
+        enumerate(instance, &count, nullptr);
+    }
+    std::vector<VkPhysicalDevice> devices(count);
+    if (count > 0) {
+        enumerate(instance, &count, devices.data());
+    }
+    // plume takes the device whose type scores highest (discrete, then
+    // integrated, virtual, CPU, other), the first of two that tie.
+    static const int score[] = {0, 3, 4, 2, 1};
+    VulkanSeen chosen;
+    int chosenScore = -1;
+    for (VkPhysicalDevice device : devices) {
+        VkPhysicalDeviceProperties p = {};
+        properties(device, &p);
+        VulkanSeen seen;
+        seen.name = p.deviceName;
+        seen.api = p.apiVersion;
+        seen.driver = p.driverVersion;
+        seen.vendor = p.vendorID;
+        seen.type = uint32_t(p.deviceType);
+        uint32_t n = 0;
+        extensions(device, nullptr, &n, nullptr);
+        std::vector<VkExtensionProperties> list(n);
+        if (n > 0) {
+            extensions(device, nullptr, &n, list.data());
+        }
+        for (const VkExtensionProperties& e : list) {
+            if (std::strcmp(e.extensionName, VK_KHR_SWAPCHAIN_EXTENSION_NAME) == 0) {
+                seen.swapchain = true;
+            }
+        }
+        printf("[SNAP-VK] device: %s, %s, Vulkan %s, driver 0x%08X, vendor 0x%04X, swap chain %s\n",
+               seen.name.c_str(), type_name(seen.type), version_text(seen.api).c_str(), seen.driver, seen.vendor,
+               seen.swapchain ? "yes" : "no");
+        const int s = (seen.type <= 4) ? score[seen.type] : -1;
+        if (s > chosenScore) {
+            chosen = seen;
+            chosenScore = s;
+        }
+    }
+    if (destroy != nullptr) {
+        destroy(instance, nullptr);
+    }
+    fflush(stdout);
+    if (chosenScore < 0) {
+        return refuse(why, none, "no Vulkan device");
+    }
+    const uint32_t test = test_version();
+    if (test != 0) {
+        chosen.api = test;
+        printf("[SNAP-VK] SNAP_VK_TEST: %s answers Vulkan %s\n", chosen.name.c_str(), version_text(test).c_str());
+    }
+    if ((chosen.api >= kNeededVulkan) && chosen.swapchain) {
+        return true;
+    }
+    char text[640];
+    char logged[320];
+    if (chosen.api < kNeededVulkan) {
+        snprintf(text, sizeof(text),
+                 "This device's graphics driver is too old for " SNAP_PORT_NAME ".\n\n"
+                 "%s offers Vulkan %u.%u. The port needs Vulkan 1.2.\n\n"
+                 "A system update for the device may bring a newer driver.",
+                 chosen.name.c_str(), VK_API_VERSION_MAJOR(chosen.api), VK_API_VERSION_MINOR(chosen.api));
+        snprintf(logged, sizeof(logged), "%s offers Vulkan %s and the renderer needs 1.2",
+                 chosen.name.c_str(), version_text(chosen.api).c_str());
+    } else {
+        snprintf(text, sizeof(text),
+                 "This device's graphics driver cannot show " SNAP_PORT_NAME "'s picture.\n\n"
+                 "%s has no swap chain (VK_KHR_swapchain).",
+                 chosen.name.c_str());
+        snprintf(logged, sizeof(logged), "%s has no VK_KHR_swapchain", chosen.name.c_str());
+    }
+    return refuse(why, text, logged);
+}
+
+#else
+
+bool vulkan_device_check(std::string&) {
     return true;
 }
 

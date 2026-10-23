@@ -183,6 +183,9 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         s.mouse_zoom_speed   = std::clamp(j.value("mouse_zoom_speed", s.mouse_zoom_speed), 0.25f, 1.0f);
         s.gyro_aim           = std::clamp(j.value("gyro_aim", s.gyro_aim), 0, 2);
         s.gyro_sensitivity   = std::clamp(j.value("gyro_sensitivity", s.gyro_sensitivity), 0.25f, 4.0f);
+        s.touch_controls     = std::clamp(j.value("touch_controls", s.touch_controls), 0, 2);
+        s.touch_size         = std::clamp(j.value("touch_size", s.touch_size), 50, 150);
+        s.touch_opacity      = std::clamp(j.value("touch_opacity", s.touch_opacity), 20, 100);
         // The binding table: "keys" maps an input's name to a key or mouse
         // name, or to a list of them. Handed to input.cpp whole; it reports
         // and skips what it cannot resolve (input.h).
@@ -401,6 +404,9 @@ bool save_settings() {
         {"mouse_zoom_speed",      copy.mouse_zoom_speed},
         {"gyro_aim",              copy.gyro_aim},
         {"gyro_sensitivity",      copy.gyro_sensitivity},
+        {"touch_controls",        copy.touch_controls},
+        {"touch_size",            copy.touch_size},
+        {"touch_opacity",         copy.touch_opacity},
         {"keys",                  keys},
         {"keys_help",             keys_help},
     };

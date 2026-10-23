@@ -46,7 +46,11 @@
 #include "version.h"
 
 #include <SDL.h>
+#if defined(__ANDROID__)
+#include "android.h"
+#else
 #include <nfd.h>
+#endif
 
 namespace snap {
 
@@ -603,6 +607,14 @@ bool mods_pick_and_install() {
             from = semi + 1;
         }
     } else {
+#if defined(__ANDROID__)
+        // The system's document picker, one file at a time (android.cpp): a
+        // copy in the app's cache, removed once installed.
+        const std::string picked = android_pick_document();
+        if (!picked.empty()) {
+            files.push_back(picked);
+        }
+#else
         if (NFD_Init() != NFD_OKAY) {
             const char* err = NFD_GetError();
             printf("[SNAP-MODS] the file picker could not start: %s\n", err ? err : "no reason given");
@@ -628,11 +640,18 @@ bool mods_pick_and_install() {
             printf("[SNAP-MODS] the file picker failed: %s\n", err ? err : "no reason given");
         }
         NFD_Quit();
+#endif
     }
     printf("[SNAP-MODS] the Mods page's Install row: %zu file%s chosen\n", files.size(), (files.size() == 1) ? "" : "s");
     fflush(stdout);
     for (const std::string& f : files) {
         mods_drop_file(f.c_str());
+#if defined(__ANDROID__)
+        if (getenv("SNAP_PICK_TEST") == nullptr) {
+            std::error_code ec;
+            fs::remove(fs::u8path(f), ec);
+        }
+#endif
     }
     return !files.empty();
 }

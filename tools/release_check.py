@@ -54,7 +54,13 @@ that a release build can be put through all of them in one go:
               in, and on Windows dxil.dll is the redistributable v1.7.2308
               file. A Flatpak bundle (.flatpak) is a sealed OSTree file, so
               only its header (the app's id and runtime) and its sidecar are
-              checked here; the workflow that makes it installs and starts it. With --only package no
+              checked here; the workflow that makes it installs and starts it.
+              An Android APK (.apk) must carry both ABIs' libraries, 16 KB-
+              aligned and for the right machine, the assets and the licenses;
+              its manifest names the package, the version in the file's name
+              (the libraries say the same version) and no debuggable app; it
+              holds no ROM and no build machine's folders, and it is signed,
+              but not with the Android debug key. With --only package no
               executable folder is needed.
     station     (only with --only station: it takes eight minutes and rewrites the
               save) the Snap Station print: the station replay plays a
@@ -810,11 +816,177 @@ PACKAGE_NEEDS = {
 }
 PROGRAM = {'windows': EXE, 'linux': 'Snap64Recomp', 'macos': 'Snap64Recomp.app/Contents/MacOS/Snap64Recomp'}
 
+# The Android APK (android/app/build.gradle) has no top folder: the two ABIs'
+# libraries, and under assets/snap64/ the files the activity copies into the
+# game folder, the licenses the Linux archive carries among them.
+ANDROID_PACKAGE = 'io.github.jackandbeans.snap64recomp'
+ANDROID_ABIS = {'arm64-v8a': 0xB7, 'x86_64': 0x3E}
+ANDROID_NEEDS = (['AndroidManifest.xml', 'classes.dex'] +
+                 ['lib/%s/%s' % (abi, so) for abi in ANDROID_ABIS for so in ('libmain.so', 'libSDL2.so')] +
+                 ['assets/snap64/' + n for n in ('gamecontrollerdb.txt', 'cache/rt64-seen-shaders.bin',
+                                          'menu_text/recomp_logo.png', 'menu_text/pointer.png',
+                                          'menu_text/pointer_flash.png', 'mods/README.md', 'texture_packs/README.txt',
+                                          'LICENSE', 'NOTICE.md', 'licenses/nlohmann-json.txt', 'licenses/roboto.txt',
+                                          'licenses/SDL_GameControllerDB.txt')])
+# The first four bytes of an N64 dump in each byte order (z64, v64, n64).
+ROM_MAGIC = (b'\x80\x37\x12\x40', b'\x37\x80\x40\x12', b'\x40\x12\x37\x80')
+# --unsigned-apk: an APK built without the release key passes unsigned.
+UNSIGNED_APK_OK = False
+
+
+def read_axml(blob):
+    """Android's binary XML (a compiled AndroidManifest.xml) as a list of
+    (element, {attribute: value}), the values strings, ints or bools."""
+    if len(blob) < 8 or struct.unpack_from('<H', blob, 0)[0] != 0x0003:
+        return []
+    strings, elements = [], []
+    off = struct.unpack_from('<H', blob, 2)[0]
+    while off + 8 <= len(blob):
+        ctype, hsize, csize = struct.unpack_from('<HHI', blob, off)
+        if csize < 8:
+            break
+        if ctype == 0x0001:    # the string pool
+            count, _, flags, str_start, _ = struct.unpack_from('<IIIII', blob, off + 8)
+            base = off + str_start
+            for o in struct.unpack_from('<%dI' % count, blob, off + hsize):
+                p = base + o
+                if flags & 0x100:    # UTF-8: the length in characters, then in bytes
+                    p += 2 if blob[p] & 0x80 else 1
+                    n = blob[p]
+                    p += 1
+                    if n & 0x80:
+                        n = ((n & 0x7F) << 8) | blob[p]
+                        p += 1
+                    strings.append(blob[p:p + n].decode('utf-8', 'replace'))
+                else:                # UTF-16: the length in code units
+                    n = struct.unpack_from('<H', blob, p)[0]
+                    p += 2
+                    if n & 0x8000:
+                        n = ((n & 0x7FFF) << 16) | struct.unpack_from('<H', blob, p)[0]
+                        p += 2
+                    strings.append(blob[p:p + 2 * n].decode('utf-16-le', 'replace'))
+        elif ctype == 0x0102:  # an element's start
+            _, name, attr_start, attr_size, attr_count = struct.unpack_from('<IIHHH', blob, off + hsize)
+            attrs = {}
+            for i in range(attr_count):
+                a = off + hsize + attr_start + i * attr_size
+                _, aname, raw, _, _, dtype, data = struct.unpack_from('<IIIHBBI', blob, a)
+                key = strings[aname] if aname < len(strings) else '#%d' % aname
+                if dtype == 0x03:
+                    attrs[key] = strings[data] if data < len(strings) else ''
+                elif dtype == 0x12:
+                    attrs[key] = data != 0
+                elif dtype in (0x10, 0x11):
+                    attrs[key] = data
+                else:
+                    attrs[key] = strings[raw] if raw < len(strings) else data
+            elements.append((strings[name] if name < len(strings) else '#%d' % name, attrs))
+        off += csize
+    return elements
+
+
+def elf_load_aligns(blob):
+    """(e_machine, [p_align of every PT_LOAD]) of a 64-bit little-endian ELF, or (0, [])."""
+    if len(blob) < 64 or blob[:4] != b'\x7fELF' or blob[4] != 2:
+        return 0, []
+    machine = struct.unpack_from('<H', blob, 18)[0]
+    phoff, = struct.unpack_from('<Q', blob, 32)
+    phentsize, phnum = struct.unpack_from('<HH', blob, 54)
+    aligns = []
+    for i in range(phnum):
+        p_type, = struct.unpack_from('<I', blob, phoff + i * phentsize)
+        if p_type == 1:
+            aligns.append(struct.unpack_from('<Q', blob, phoff + i * phentsize + 48)[0])
+    return machine, aligns
+
+
+def apk_signing_block(raw):
+    """The APK Signing Block (the v2 and v3 schemes' signatures, just before the
+    zip's central directory), or b'' when the package is not signed so."""
+    eocd = raw.rfind(b'PK\x05\x06')
+    if eocd < 0:
+        return b''
+    cd_offset, = struct.unpack_from('<I', raw, eocd + 16)
+    if cd_offset < 24 or raw[cd_offset - 16:cd_offset] != b'APK Sig Block 42':
+        return b''
+    size, = struct.unpack_from('<Q', raw, cd_offset - 24)
+    return raw[max(0, cd_offset - size - 8):cd_offset]
+
+
+def check_apk(c, apk_path, files):
+    names = set(files)
+    missing = [n for n in ANDROID_NEEDS if n not in names]
+    c.add('package', not missing, '%s (android): %d files%s' % (apk_path.name, len(names),
+                                                               (', missing ' + ', '.join(missing)) if missing else ''))
+    for abi, want in ANDROID_ABIS.items():
+        for so in ('libmain.so', 'libSDL2.so'):
+            machine, aligns = elf_load_aligns(files.get('lib/%s/%s' % (abi, so), b''))
+            ok = machine == want and bool(aligns) and min(aligns) >= 0x4000
+            c.add('package', ok, 'lib/%s/%s: %s, LOAD segments aligned to %s' % (
+                abi, so, {0x3E: 'x86_64', 0xB7: 'arm64'}.get(machine, 'machine 0x%X' % machine),
+                ', '.join(sorted({'%d KB' % (a // 1024) for a in aligns})) or 'nothing'))
+    roms = [n for n, blob in files.items() if blob[:4] in ROM_MAGIC]
+    c.add('package', not roms, 'no ROM in the package' if not roms else 'a ROM in the package: ' + ', '.join(roms))
+    # The manifest: the package, the version the file's name says, not debuggable.
+    tree = read_axml(files.get('AndroidManifest.xml', b''))
+    manifest = next((a for e, a in tree if e == 'manifest'), {})
+    application = next((a for e, a in tree if e == 'application'), {})
+    sdk = next((a for e, a in tree if e == 'uses-sdk'), {})
+    m = re.match(r'Snap64Recomp-(\d+)\.(\d+)\.(\d+)((?:-[a-z0-9.]+)?)-android(?:-unsigned)?\.apk$', apk_path.name)
+    want_name = '%s.%s.%s%s' % m.groups() if m else None
+    want_code = int(m.group(1)) * 10000 + int(m.group(2)) * 100 + int(m.group(3)) if m else None
+    c.add('package', manifest.get('package') == ANDROID_PACKAGE and manifest.get('versionName') == want_name
+          and manifest.get('versionCode') == want_code,
+          'manifest: %s %s (code %s), Android API %s to %s; the file name says %s' % (
+              manifest.get('package'), manifest.get('versionName'), manifest.get('versionCode'),
+              sdk.get('minSdkVersion'), sdk.get('targetSdkVersion'), want_name or 'no version'))
+    c.add('package', application.get('debuggable') is not True,
+          'the app is %s' % ('not debuggable' if application.get('debuggable') is not True else 'DEBUGGABLE (a debug build)'))
+    banner = ('Snap64 Recomp %s (JackandBeans)' % want_name).encode()
+    says = [abi for abi in ANDROID_ABIS if banner in files.get('lib/%s/libmain.so' % abi, b'')]
+    c.add('package', len(says) == len(ANDROID_ABIS),
+          'both libraries say "%s"' % banner.decode() if len(says) == len(ANDROID_ABIS) else
+          'the libraries do not say "%s" (only %s): built for another version' % (banner.decode(), ', '.join(says) or 'none'))
+    # Signed (the v2 or v3 scheme's block), and not with the debug key, whose
+    # certificate names "Android Debug".
+    # A build without the release key (a push's, before the key's secrets
+    # exist) is let through unsigned with --unsigned-apk, and says so; its
+    # name says so too (-android-unsigned.apk), so it cannot pass for one.
+    block = apk_signing_block(apk_path.read_bytes())
+    debug = b'Android Debug' in block
+    unsigned_ok = UNSIGNED_APK_OK and not block and apk_path.name.endswith('-android-unsigned.apk')
+    c.add('package', (bool(block) and not debug) or unsigned_ok,
+          ('signed' + (' with the ANDROID DEBUG KEY (a release must not be)' if debug else '')) if block else
+          'not signed, as its name says (--unsigned-apk: a build without the release key)' if unsigned_ok else
+          'NOT signed: a release APK is signed with the release key (BUILDING.md, step 16)')
+
+
+def check_build_paths(c, files):
+    # Nothing from a build machine's file system may be in the archive.
+    leaked = {}
+    for n, blob in files.items():
+        hits = [m.start() for m in BUILD_PATHS.finditer(blob)]
+        if hits:
+            # Each path whole (to the next NUL or line end), so a failure says what
+            # left it there: a source name, an object file, a shader library...
+            paths = sorted({blob[h:h + 200].split(b'\x00')[0].split(b'\n')[0].decode('latin-1') for h in hits})
+            kinds = sorted({p.rsplit('/', 1)[-1].split('.', 1)[-1] if '.' in p.rsplit('/', 1)[-1] else '(no extension)' for p in paths})
+            leaked[n] = (len(hits), len(paths), kinds, paths[:6])
+    c.add('package', not leaked, 'no build machine paths in the archive' if not leaked else
+          'build machine paths in: ' + '; '.join('%s (%d, %d distinct, ending %s)' % (n, k, d, ', '.join(kinds))
+                                                 for n, (k, d, kinds, ex) in sorted(leaked.items())))
+    for n, (k, d, kinds, ex) in sorted(leaked.items()):
+        for e in ex:
+            print('      %s' % e)
+
 
 def read_archive(path):
     """(kind, {member name: bytes}) for a release archive; directories are left out."""
     if path.name.endswith('.flatpak'):
         return 'flatpak', {}
+    if path.name.endswith('.apk'):
+        with zipfile.ZipFile(path) as z:
+            return 'android', {n: z.read(n) for n in z.namelist() if not n.endswith('/')}
     if path.name.endswith('.tar.gz'):
         with tarfile.open(path) as t:
             return 'linux', {m.name: t.extractfile(m).read() for m in t.getmembers() if m.isfile()}
@@ -826,7 +998,9 @@ def read_archive(path):
 def check_sidecar(c, zip_path):
     # The checksum CPack (or the bundle script) writes beside the archive must match it.
     sidecar = zip_path.with_name(zip_path.name + '.sha256')
-    if sidecar.is_file():
+    if sidecar.is_file() and not sidecar.read_text(encoding='utf-8', errors='replace').split():
+        c.add('package', False, '.sha256 sidecar is EMPTY')
+    elif sidecar.is_file():
         stated = sidecar.read_text(encoding='utf-8', errors='replace').split()[0].lower()
         actual = hashlib.sha256(zip_path.read_bytes()).hexdigest()
         c.add('package', stated == actual, '.sha256 sidecar %s' % ('matches the archive' if stated == actual else 'does NOT match the archive'))
@@ -851,28 +1025,18 @@ def check_package(c, zip_path):
                                              else 'does NOT name ' + ' or '.join(n for n, ok in (('the app', app), ('the runtime', runtime)) if not ok)))
         check_sidecar(c, zip_path)
         return
+    if kind == 'android':
+        check_apk(c, zip_path, files)
+        check_sidecar(c, zip_path)
+        check_build_paths(c, files)
+        return
     top = sorted(files)[0].split('/')[0]
     names = set(files)
     missing = [n for n in PACKAGE_NEEDS[kind] if (top + '/' + n) not in names]
     c.add('package', not missing, '%s (%s): %d files%s' % (zip_path.name, kind, len(names),
                                                           (', missing ' + ', '.join(missing)) if missing else ''))
     check_sidecar(c, zip_path)
-    # Nothing from a build machine's file system may be in the archive.
-    leaked = {}
-    for n, blob in files.items():
-        hits = [m.start() for m in BUILD_PATHS.finditer(blob)]
-        if hits:
-            # Each path whole (to the next NUL or line end), so a failure says what
-            # left it there: a source name, an object file, a shader library...
-            paths = sorted({blob[h:h + 200].split(b'\x00')[0].split(b'\n')[0].decode('latin-1') for h in hits})
-            kinds = sorted({p.rsplit('/', 1)[-1].split('.', 1)[-1] if '.' in p.rsplit('/', 1)[-1] else '(no extension)' for p in paths})
-            leaked[n] = (len(hits), len(paths), kinds, paths[:6])
-    c.add('package', not leaked, 'no build machine paths in the archive' if not leaked else
-          'build machine paths in: ' + '; '.join('%s (%d, %d distinct, ending %s)' % (n, k, d, ', '.join(kinds))
-                                                 for n, (k, d, kinds, ex) in sorted(leaked.items())))
-    for n, (k, d, kinds, ex) in sorted(leaked.items()):
-        for e in ex:
-            print('      %s' % e)
+    check_build_paths(c, files)
     program = files.get(top + '/' + PROGRAM[kind], b'')
     if kind == 'windows':
         # The executable must not need the Visual C++ Redistributable.
@@ -898,9 +1062,13 @@ def check_package(c, zip_path):
 def main():
     ap = argparse.ArgumentParser(description=__doc__.split('\n\n')[0])
     ap.add_argument('exe_dir', nargs='?', help='directory holding %s, the ROM and the replays (not needed for --only package)' % EXE)
-    ap.add_argument('--zip', '--archive', action='append', default=[], help='release archive to check (repeatable)')
+    ap.add_argument('--zip', '--archive', action='append', default=[], help='release archive or Android APK to check (repeatable)')
     ap.add_argument('--only', action='append', default=[], help='run only these checks (repeatable)')
+    ap.add_argument('--unsigned-apk', action='store_true',
+                    help='an APK built without the release key (named -android-unsigned.apk) passes unsigned')
     args = ap.parse_args()
+    global UNSIGNED_APK_OK
+    UNSIGNED_APK_OK = args.unsigned_apk
     package_only = args.only == ['package'] or (args.only and set(args.only) == {'package'})
     exe_dir = pathlib.Path(args.exe_dir).resolve() if args.exe_dir else None
     if not package_only and (exe_dir is None or not (exe_dir / EXE).is_file()):

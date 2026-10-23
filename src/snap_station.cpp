@@ -407,6 +407,11 @@ bool relaunch_self(const char* why) {
     freopen_s(&sink, "NUL", "w", stderr);
     ultramodern::quit();
     return true;
+#elif defined(__ANDROID__)
+    // An app cannot replace its own process image (the activity owns it):
+    // said in the log, and the kiosk's resets wait for the app shell.
+    say("the relaunch is not available on Android (%s)", why);
+    return false;
 #elif defined(__linux__) || defined(__APPLE__)
     // The same boot the Windows path starts: this executable, no arguments,
     // in the data directory, with the run's own diagnostics out of its
@@ -528,7 +533,13 @@ void schedule_relaunch(const char* mode, const char* why, int delayMs, bool sett
     }).detach();
 }
 
-#if defined(__linux__) || defined(__APPLE__)
+#if defined(__ANDROID__)
+// The kiosk handed the player the sheet; there is no desktop to open its
+// folder on, so the log line carries the path.
+void open_folder(const std::string& utf8) {
+    say("the printed sheet is in %s", utf8.c_str());
+}
+#elif defined(__linux__) || defined(__APPLE__)
 // The kiosk handed the player the sheet; the port opens its folder as the
 // normal boot after a print gets under way. xdg-open is the desktop's own
 // opener (open, on macOS); in Steam's gaming mode there is no file manager

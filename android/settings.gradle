@@ -1,0 +1,2 @@
+// The Android app of Snap64 Recomp: one module, app/ (BUILDING.md, step 16).
+include ':app'

@@ -1,5 +1,231 @@
 # Changelog
 
+## 1.1.6 -- 2026-10-23
+
+* Android, as a beta. Snap64 Recomp runs on Android 10 and newer as an
+  app, `Snap64Recomp-<version>-android.apk` on the release page, for arm64
+  phones and handhelds (with an x86_64 build for Android's emulator). It
+  is signed with the project's own release key on the release machine, so
+  later versions install over it; unlike the other archives it carries no
+  GitHub build record, and its `.sha256` is the check. It
+  is the same port: the recompiled game, drawn by RT64 through Vulkan, the
+  same Options pages and the same mods. Its game folder is Internal
+  storage > Snap64; the ROM goes there or is picked with the system's file
+  picker, and a mod opened with the app from a file manager is installed.
+  It has run on one phone, a Samsung Galaxy S25 Ultra (Snapdragon 8 Elite,
+  Adreno 830, Android 15) in Samsung's Remote Test Lab, and on Google's
+  emulator. No real pad, no other GPU and no Android before 15 has run it
+  yet; [docs/ANDROID.md](docs/ANDROID.md) has the steps and what was run
+  where. What the port had to learn on the way:
+  - Android takes the window's surface away when the app leaves the
+    screen. The swap chain then failed (`VK_ERROR_SURFACE_LOST_KHR`) and
+    none of five returns showed a picture. plume now makes the surface
+    again from SDL's window, and the game waits while the app is away: the
+    runtime holds the VI retraces and the console's clock (`lib/rt64`,
+    `lib/N64ModernRuntime`). Away 14 s, the game's clock had moved 14 s;
+    it moves none now.
+  - Touch controls, for a phone with no pad: the N64's buttons in the bars
+    beside the picture, a drag that aims, and taps on the menus. A quick
+    tap is held until the game has read it: before that, 2 of 20 quick
+    taps reached the game, now all 20 do. The buttons hide while a pad or
+    keyboard is used, stay clear of Android's Back gesture and a camera
+    cutout, and have settings in `snapsettings.json` only, no Options rows
+    yet. They have run on the emulator only: the lab phone ran the build
+    from before them.
+  - Z was a button to hold, with A under it on the same side: one thumb
+    could not hold Z and press A while the other aimed. A tap on Z now
+    holds it and the next tap lets go, and Z is drawn lit while it is
+    held; a longer press is a hold, as on the N64, and Z zooms only while
+    it is down. With the game's own Z Button set to Switch, the game
+    toggles the zoom at each press, so there Z stays a plain button.
+  - The dash runs only while R is down (the game's updateDashEngine), and
+    on a phone R shares the thumb with A. R now works as Z does: a tap
+    starts the dash and the next stops it, drawn lit between, and a hold
+    dashes only while held.
+  - Every finger on the picture aimed: a second thumb crossing it to reach
+    a button turned the view, and a resting thumb's small moves added to
+    the aim. Now the first finger that moves aims, until it lifts. A
+    finger resting on the picture never takes the aim, and while one
+    finger aims, another does not turn the view.
+  - A press gave no feel. A press and a release on the buttons now ask
+    for the phone's own key feedback, when its Touch feedback is on. On
+    the emulator, Android's vibrator service records each one as touch
+    feedback; no hand has felt it yet. The moment the game takes a photo
+    (its own count of the ride's photos rises) asks for a firmer one; an
+    A that takes no photo is a plain click.
+  - At a small `touch_size` a button's touch square shrank with its
+    circle. Each now takes touches over at least 48 dp, and where two
+    squares overlap the nearer button takes the touch: at size 50, C-Right's
+    square covers C-Up's center, and a tap there is C-Up's.
+  - The first course after the app is installed shows one line over the
+    picture for five seconds: how to aim, zoom and take a photo. It waits
+    for a ride: the title's attract demo is a course too.
+  - With Widescreen and Wide HUD on, R stood over the film counter in the
+    wide picture's top corner. While the touch controls are shown, the
+    counter now keeps the cartridge's place; with a pad or a keyboard in
+    use, Wide HUD moves it to the corner as before. Checked on the
+    emulator.
+  - Gyro Aim reads the phone's own gyroscope when no pad with a gyro is
+    in use: turn the phone and the view turns, as a pad's gyro turns it
+    on a PC, with Gyro Speed and Camera Tilt. With Gyro Aim off the app
+    reads no sensor. Checked on the emulator's virtual sensors, the phone
+    held upright: a turn to the left and a raise each turned the view as
+    far as the readings said, and a still phone turned nothing. No hand
+    has tried it on a phone yet.
+  - With Z held by a tap, a key or pad press hides the buttons and lets Z
+    go. The overlay counted every change of its buttons as a touch, so
+    that release would have shown the buttons again (read from the code).
+    Only a press counts as a touch now.
+  - SDL lists a phone's accelerometer as a joystick, and the port named it
+    in the log at every poll: 36,207 lines in one phone's log. The hint
+    that lists it is off on Android.
+  - A change of display size ended SDL's game thread and the game with it
+    (a change of font size does the same by Android's rules). The app now
+    handles both itself.
+  - The first start copied Android's own asset folders (`images`,
+    `webkit`, `geoid_map`) into the game folder with the port's files. The
+    port's files now have an asset folder of their own.
+  - A device whose GPU offers less than Vulkan 1.2, or no swap chain, is
+    refused at the start with a dialog that names it and says why; the
+    renderer asks for 1.2, and such a device would fail inside it with
+    nothing said. Every Vulkan device is named in the log (`[SNAP-VK]`).
+    Run on the emulator with its device made to answer 1.1; the case
+    with no swap chain is read from the code.
+  - The launcher icon is adaptive, made from the port's own icon
+    (`tools/make_android_icon.py`), with a layer for themed icons.
+  Found and fixed while making the app on Google's emulator and Samsung's
+  test lab, Oct 19 to 22 2026.
+* A pad with sticks is used over a device that has none, on every
+  platform. SDL maps the Android emulator's keyboard as a pad with A, B,
+  Start and a D-pad; the port opened the first pad it found and kept it,
+  so a pad attached later was never used. An open pad with no stick
+  now gives way to one with a stick when one is attached, and at the start
+  a pad with sticks is opened first. Two pads with sticks behave as
+  before: the first one found is the pad. A joystick SDL cannot map is
+  named in the log once, not at every poll. Found on Google's Android
+  emulator on Oct 22 2026 with a pad made in software, and run there; on
+  Windows, Linux and macOS it is the same code, read, not run.
+* A fatal error at the start shows its box before the program ends. On
+  Linux, macOS and Android a box raised by a thread other than the main
+  one waits for the main loop, which shows it at its next pass; the
+  renderer's refusal comes from its own thread just after that waiting
+  began, and the program ended with the box still queued. A fatal box is
+  now shown at once, and a box SDL cannot show says why in the log. Seen
+  on Android's emulator on Oct 22 2026, where the refusal ended the app
+  150 ms after its log line with no dialog, and shows its dialog now. On
+  Linux, under WSL, a start with no Vulkan driver now asks SDL for the box
+  at once (WSL has no dialog program to draw it, which the new log line
+  says); a box on a Linux desktop has not been seen, and macOS is read
+  from the code, not run.
+* The River intro's splash reaches the wide picture's edges under
+  Widescreen. A course's intro is drawn inside the camera's starting
+  frame, 14..304 by 12..232 of the 320 by 240 screen, and the game opens
+  it to the whole screen only as the intro ends. The renderer stretches
+  that frame across the wide picture for the scene, but it opened a 2D
+  rectangle's scissor to the wide picture only when the scissor was the
+  whole 320, so the splash's drops, the effect drawer's rectangles (their
+  own on-screen test has been widened since 1.0.1), were cut at the frame
+  on the 4:3 picture while the scene ran to the wide edges: in a 2560x1440
+  screenshot the drops stopped at columns 404 and 2144, where 14 and 304
+  land at the 4:3 scale, and the scene's border stood at 112 and 2431. A
+  rectangle's scissor that spans the frame's own picture now stretches
+  with it (`lib/rt64`, `rt64_framebuffer_renderer.cpp`). Measured on the
+  Beach tape sent to the River at 16:9: over the 44 captured frames of the
+  splash, the water beside the 4:3 picture held no drop before and 3,414
+  drop pixels after, up to 462 in a frame, and the scene's border stayed
+  where it was. The viewfinder's crop keeps its place, since its frames
+  paint the black bands to the wide edges, and a 4:3 picture is untouched,
+  the scale there being 1 on both paths (read, not run). Found by
+  JackandBeans on Oct 18 2026.
+* Wide HUD starts off, as every enhancement does. It moves the film
+  counter and the R and Z icons out to the edge of a wide picture, and it
+  acts only with Widescreen on, which starts off; so a fresh install
+  already showed the cartridge's HUD, but the default said otherwise. A
+  settings file that already has the row keeps its value
+  (`src/settings.cpp`); the Graphics page's Wide HUD row turns it off.
+* The docs are in line with the code. The README's download step, its
+  `cpack` line and the credits line it quotes name 1.1.6, as does
+  `docs/VERIFICATION.md`, which also names the pad's photo button as the
+  right stick pressed in, where 1.0.9 moved it from Back.
+* On a Steam Deck in Desktop Mode, Select no longer runs the fast
+  forward as it opens the Options. Steam's desktop layout sends Tab for
+  Select, Space for Y and Left Shift for the upper left paddle, besides
+  the Enter and Escape the port already ignored for A and B; while the
+  Deck's own controller is attached the port ignores those too, and the
+  pad's buttons do the jobs (the right bumper is the fast forward, the
+  left stick's click the slow motion, the left bumper Z). Found by
+  JackandBeans on Oct 20 2026 on a Steam Deck, in the 1.1.5 Flatpak. Run
+  on his Deck in Desktop Mode on Oct 22 2026: the Options open and the
+  ride keeps its pace.
+* On a Steam Deck in Desktop Mode, the Controls page's "Press A" no
+  longer turns into "Press X" for an instant while the D-pad scrolls the
+  page. The help lines name the buttons of the device pressed last, and
+  Steam's desktop layout sends keys along with the Deck's own buttons and
+  D-pad; the port took them for a keyboard and named the keyboard's key
+  for A, which is X. While the Deck's own controller is attached, no key
+  or mouse press changes the device the help lines name: keys and the
+  mouse still work, and the lines keep the pad's buttons
+  (`src/input.cpp`). The log then traces the first 300 presses and the
+  help lines' repaints (`[SNAP-Input] trace`, `[SNAP-MENU] trace`), and
+  `SNAP_INPUT_TRACE=1` turns the trace on anywhere. Found by JackandBeans
+  on Oct 22 2026 on a Steam Deck, in the 1.1.6 test build. Run on his
+  Deck in Desktop Mode on Oct 22 2026: "Press A" stays while the page
+  scrolls.
+* On a Steam Deck in Desktop Mode, R2 and L2 no longer reach the game as
+  A and Z through the mouse. Steam's desktop layout clicks the mouse for
+  the triggers, the left button for R2 and the right one for L2 (the
+  Deck's trace showed a left click 12 ms after R2), and the port reads
+  those buttons as A and Z, and out of a course as the menus' click and
+  Back. While the Deck's own controller is attached, a mouse press that
+  comes with its trigger past an eighth of its travel reaches nothing,
+  nor does its release; a click with no trigger held works as before
+  (`src/input.cpp`). `SNAP_DEVICE_TEST` can now also push a mouse button
+  and hold a trigger on the virtual pad. Found in JackandBeans's Deck log
+  on Oct 22 2026, in the 1.1.6 test build. Run on his Deck in Desktop Mode
+  on Oct 23 2026: the log drops each of Steam's eight trigger clicks, 6 to
+  18 ms after its trigger, and no A or Z came with R2 or L2.
+* The log says which window system the window is on and whether presents
+  are synced to the display, so a Flatpak or Steam Deck report shows its
+  route: `[SNAP] window system: x11` or `wayland` after the window is
+  made on Linux, and the `[SNAP-VSYNC]` line in every log, once at the
+  first present and on each change, where it printed only with the stats
+  on. After issue #30. Seen on Oct 22 2026: `x11` under WSL, and the
+  present line without the stats on Windows and Linux.
+* The Switch Online N64 controller's R works again. 1.1.5 set the pad's C
+  buttons free by making the binding table's sources on them yield, and
+  counted the right trigger's name among them. Under the N64-shaped
+  layout, which that pad always has, that name reads the pad's own R, so
+  R, the Dash, did nothing, as shipped and when bound again on the Button
+  Setup page. It is the part a source reads that yields now, not its
+  name. Reported by Succulent-Puppet, issue #26. Fixed without that pad at
+  hand: read from SDL's driver and the code; the suite's virtual pad with
+  its name and ids proves the pad is told and its C buttons wired.
+* A Pad Preset row on the Controls page, under Button Setup: Auto,
+  Standard or N64, how the pad's shoulder buttons are read, in force at
+  once. It is the settings file's `pad_layout`, which had no row. Auto is
+  the pick the port always made by the pad's name, and now by its ids
+  first: the 8BitDo 64 and the M64 Pro are mapped as N64 pads in the list
+  the port ships, but neither name says N64, so they had the standard
+  layout, which reads their L as Z and their R as the fast forward (read
+  from the list; neither pad has been tried here). Standard now forces the
+  standard layout on the Switch Online N64 controller too, as the manual
+  says; that pad's C buttons stay the C buttons under either. Asked for by
+  JackandBeans on Oct 20 2026. Seen on Android's emulator on Oct 22 2026,
+  driven by a pad made in software: Auto, Standard and N64 each fit the
+  row, and each was in force at once (the log's pad layout line).
+* N64-shaped pads, where the layout missed them. A pad with no right
+  stick to press in saves the photo with its Capture or Share button,
+  which is the Switch Online N64 controller's Capture. That pad's ZR is
+  the fast forward; SDL's driver sends it as the left stick pressed in, so
+  it ran slow motion and the fast forward had no button there. Through the
+  shipped list instead of SDL's driver its C buttons are a right stick and
+  its ZR the right trigger, and it is read as any N64 pad. A pad whose
+  mapping has a right trigger but no right shoulder has its R read from
+  the trigger (the Mayflash N64 Adapter 0079:1879, whose R ran the fast
+  forward). On the Button Setup page a trigger press that would bind the
+  fast forward's button is refused, as a button press was. Read from SDL's
+  and Linux's drivers and the list; no pad has been tried here.
+
 ## 1.1.5 -- 2026-10-17
 
 * The Switch Online N64 controller's C buttons are the C buttons. SDL's

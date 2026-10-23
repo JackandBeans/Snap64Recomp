@@ -38,6 +38,9 @@
 #include "recomp.h"
 #include "hle/rt64_snap_diag.h"
 #include "settings.h"
+#if defined(__ANDROID__)
+#include "touch_controls.h"
+#endif
 
 extern "C" {
 #include "funcs.h"
@@ -380,6 +383,14 @@ static int32_t snap_wide_shift(uint8_t* rdram, uint32_t sprite) {
     const uint32_t film = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)snap::FilmCounterObject));
     if (snap::valid_ram_address(film) &&
         (static_cast<uint32_t>(MEM_W(snap::SObjOwner, (gpr)(int32_t)(sprite - snap::SObjFromSprite))) == film)) {
+#if defined(__ANDROID__)
+        // Android's touch controls stand R in the wide picture's top corner,
+        // over the counter there: while they are on the screen the counter
+        // keeps the cartridge's place (src/touch_controls.cpp).
+        if (snap::touch_controls_shown()) {
+            return 0;
+        }
+#endif
         int32_t inset = 320 - static_cast<int32_t>(MEM_W(0, (gpr)(int32_t)snap::ViewBorderXmax));
         inset = (inset < 0) ? 0 : ((inset > snap::ViewFullInset) ? snap::ViewFullInset : inset);
         return (margin * (snap::ViewFullInset - inset)) / snap::ViewFullInset;

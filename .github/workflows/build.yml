@@ -1,4 +1,4 @@
-# The Windows and Linux builds, made on GitHub's machines from a clean
+# The Windows, Linux and Android builds, made on GitHub's machines from a clean
 # checkout: what the other N64 recompilation projects run on every push, and
 # what a pull request's reviewer wants without asking. The build needs the
 # inputs the ROM produces, which no public tree may hold (BUILDING.md, "What
@@ -8,7 +8,8 @@
 # builds nothing here; its jobs are skipped, not failed.
 #
 # What it makes: the archives a release ships, cpack's ZIP for Windows, its
-# tarballs for Linux on x86_64 and on ARM64, and the Flatpak, with their
+# tarballs for Linux on x86_64 and on ARM64, the Flatpak, and Gradle's
+# Android APK (signed when the release key's secrets exist), with their
 # .sha256 sidecars, kept as artifacts and, on a pull request, linked from a
 # comment. What it proves: that the tree configures, compiles and packages
 # on a machine that is not mine, with Visual Studio 2022 on Windows and
@@ -364,9 +365,120 @@ jobs:
             build-flatpak-out/*.flatpak.sha256
           if-no-files-found: error
 
+  android:
+    name: Android arm64 and x86_64
+    runs-on: ubuntu-24.04
+    timeout-minutes: 180
+    if: github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository
+    permissions:
+      contents: read
+      id-token: write
+      attestations: write
+    env:
+      CCACHE_DIR: ${{ github.workspace }}/.ccache
+      # The NDK the app was first built and checked with (BUILDING.md, step 16).
+      NDK_VERSION: 30.0.16248370
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: The toolchain
+        # The Linux build's packages, for the two host tools a cross build
+        # cannot run (BUILDING.md, step 14), and from the runner's Android
+        # SDK the NDK, platform 35 and build-tools 35.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y build-essential cmake ninja-build libsdl2-dev libgtk-3-dev libvulkan-dev ccache
+          yes | "$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager" --install "ndk;$NDK_VERSION" "platforms;android-35" "build-tools;35.0.0" > /dev/null
+          echo "ANDROID_NDK_HOME=$ANDROID_HOME/ndk/$NDK_VERSION" >> "$GITHUB_ENV"
+          java -version 2>&1 | head -1
+          cmake --version | head -1
+
+      - name: The compiler cache
+        uses: actions/cache/restore@v4
+        with:
+          path: .ccache
+          key: android-ccache-${{ github.run_id }}
+          restore-keys: android-ccache-
+
+      - name: The vendored trees
+        run: python3 tools/fetch_deps.py
+
+      - name: The inputs the ROM produces
+        env:
+          TOKEN: ${{ secrets.SNAP64_INPUTS_TOKEN }}
+          OWNER: ${{ github.repository_owner }}
+        run: |
+          if [ -z "$TOKEN" ]; then
+            echo "::error::SNAP64_INPUTS_TOKEN is not set; the build needs the private inputs repository (BUILDING.md, step 15)"
+            exit 1
+          fi
+          git clone --depth 1 "https://${OWNER}:${TOKEN}@github.com/${SNAP_INPUTS_REPO}.git" "$RUNNER_TEMP/inputs"
+          python3 tools/ci_inputs.py --check "$RUNNER_TEMP/inputs"
+          cp -R "$RUNNER_TEMP/inputs/RecompiledFuncs" "$RUNNER_TEMP/inputs/RecompiledPatches" .
+          mkdir -p patches/build
+          cp "$RUNNER_TEMP/inputs/patches/build/patches.bin" patches/build/
+          cp "$RUNNER_TEMP/inputs/pokemonsnap.z64" .
+          python3 tools/hook_funcs.py
+
+      - name: Build
+        # tools/android/build.sh: the host tools, both libraries, the release
+        # APK, signed with the release key when its three secrets are set and
+        # otherwise built unsigned and named so. A release's unsigned APK is
+        # signed on the release machine (tools/release/sign_apk.sh).
+        env:
+          SNAP_VERSION_PRERELEASE: ${{ inputs.prerelease }}
+          SNAP_LAUNCHER: ccache
+          SNAP64_ANDROID_KEYSTORE: ${{ secrets.SNAP64_ANDROID_KEYSTORE }}
+          SNAP64_ANDROID_KEYSTORE_PASSWORD: ${{ secrets.SNAP64_ANDROID_KEYSTORE_PASSWORD }}
+          SNAP64_ANDROID_KEY_ALIAS: ${{ secrets.SNAP64_ANDROID_KEY_ALIAS }}
+          ATTEST: ${{ inputs.attest }}
+        run: |
+          case "$SNAP_VERSION_PRERELEASE" in *[!acdeikmnoprstuv0-9.]*) echo "::error::a prerelease label uses only the letters a c d e i k m n o p r s t u v, digits and dots (rc1, pre2): what the title screen's credits face can draw"; exit 1;; esac
+          if [ "$ATTEST" = "true" ] && { [ -z "$SNAP64_ANDROID_KEYSTORE" ] || [ -z "$SNAP64_ANDROID_KEYSTORE_PASSWORD" ] || [ -z "$SNAP64_ANDROID_KEY_ALIAS" ]; }; then
+            echo "::notice::no release key's secrets: the APK is built unsigned, and the release machine signs it (tools/release/sign_apk.sh, BUILDING.md step 16)"
+          fi
+          bash tools/android/build.sh
+
+      - name: The compiler cache, kept
+        if: always()
+        uses: actions/cache/save@v4
+        with:
+          path: .ccache
+          key: android-ccache-${{ github.run_id }}
+
+      - name: What Gradle made
+        # The release suite's package checks; an unsigned APK passes only
+        # where no key was given, and only under its unsigned name.
+        env:
+          KEYED: ${{ secrets.SNAP64_ANDROID_KEYSTORE != '' }}
+        run: |
+          if [ "$KEYED" = "true" ]; then allow=""; else allow="--unsigned-apk"; fi
+          python3 tools/release_check.py --only package $allow --zip android/app/build/outputs/apk/release/Snap64Recomp-*-android*.apk
+
+      - name: Build provenance
+        # Of the APK as built here, signed or not: a signature added on the
+        # release machine comes after it.
+        if: inputs.attest
+        uses: actions/attest@v4
+        with:
+          subject-path: android/app/build/outputs/apk/release/Snap64Recomp-*-android*.apk
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Snap64Recomp-android
+          path: |
+            android/app/build/outputs/apk/release/Snap64Recomp-*-android*.apk
+            android/app/build/outputs/apk/release/Snap64Recomp-*-android*.apk.sha256
+          if-no-files-found: error
+
   links:
     name: The builds, linked from the pull request
-    needs: [windows, linux, flatpak]
+    needs: [windows, linux, flatpak, android]
     if: always() && github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-24.04
     permissions:

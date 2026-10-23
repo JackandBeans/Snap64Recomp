@@ -258,7 +258,8 @@ the port are the ones SDL
 reads it from: DualSense, DualShock 4, Switch Pro and Joy-Cons, over USB
 or Bluetooth, and the Steam Deck's own controls when Steam's controller
 layer is not in between (see [STEAM-DECK.md](STEAM-DECK.md)); an Xbox pad has no
-gyro. The log says at start-up whether the pad it opened has one
+gyro. On Android, with no such pad, the phone's own gyroscope is read
+instead ([ANDROID.md](ANDROID.md#gyro-aim)). The log says at start-up whether the pad it opened has one
 (`[SNAP-Input] Opened game controller: ... (gyro: yes)`), and once the gyro
 is on, whether its readings carry any turning. On a Steam Deck the port
 also switches the controller's motion sensor on itself: Steam's client
@@ -352,7 +353,8 @@ stick drifts at rest (`pad_deadzone`); it is radial, and the travel past it
 is rescaled so the first movement the game sees is the smallest. The Back button (Select, View or Share on most pads) is not
 an N64 button: it opens the port's Options on any screen, as Esc does on
 the keyboard, and the right stick pressed in saves the photo on screen, as
-P does (see "Photos"; until 1.0.9 that was the Back button). The eight buttons -- A, B, Z, Start, the D-pad's four, L and R --
+P does (see "Photos"; until 1.0.9 that was the Back button), or on a pad with
+no right stick to press in, its Capture or Share button. The eight buttons -- A, B, Z, Start, the D-pad's four, L and R --
 are each a row of the Button Setup page and of the settings file's `keys`
 table and can be moved; the two sticks can only be swapped, and the Back
 button keeps its job.
@@ -372,8 +374,21 @@ Switch Online N64 controller, over Bluetooth or USB -- is recognized by its
 ids or its name, and its L, R and Z are L, R and Z, its C buttons the C buttons (SDL's
 driver sends those as Y, X, Back and the right trigger, and the port reads
 them as C-up, C-left, C-right and C-down whatever the `keys` table says; the
-Options are on the pause menu there, since Back is C-right); the
-`pad_layout` key forces either layout. The D-pad walks every menu as the
+Options are on the pause menu there, since Back is C-right; through the
+shipped list instead of SDL's driver they come as a right stick, which is
+the C buttons anyway). As shipped its ZR is the fast forward, and its Capture button
+saves the photo, since it has no right stick to press in. So is any pad
+whose name says N64, and the 8BitDo 64 and the M64 Pro by their ids: the
+mapping list the port ships maps those two as it maps the N64 pads, though
+neither name says N64 (read from the list; neither pad has been tried
+here). On those the right trigger, where the pad has one, is the fast
+forward, and a pad whose mapping has a right trigger but no right shoulder
+has its R read from the trigger (the Mayflash N64 Adapter 0079:1879 in the
+list). The Controls page's **Pad Preset** row sets the layout by hand, in
+force at once: Auto, as shipped, is the recognition above; Standard reads
+the left shoulder as Z and the triggers as L and R; N64 reads the shoulders
+as L and R and the left trigger as Z (`pad_layout` in the settings file).
+The D-pad walks every menu as the
 stick does, since the cartridge never reads it. `pad_enabled: false` in the
 settings file makes the port ignore every pad without unplugging one.
 
@@ -590,13 +605,14 @@ investigating the renderer and are not features.
 | [ / ] | Mouse Speed down / up, through the Controls page's steps |
 | P | Save the photo on screen as a PNG in `photos/` (see "Photos") |
 | Esc | Tap: the port's Options, on any screen (Esc, Select or Start closes them). Held a second and released: the quit question |
-| Tab (held) | Fast forward, at the Controls page's Fast Forward speed; the `fast_forward` entry of `keys` moves it, and names a pad button too (the right shoulder as shipped) |
+| Tab (held) | Fast forward, at the Controls page's Fast Forward speed; the `fast_forward` entry of `keys` moves it, and names a pad button too (the right shoulder as shipped; ZR on a pad shaped like the N64's) |
 | Space (held) | Slow motion, at the Controls page's Slow Motion speed, Off as shipped; the `slow_motion` entry of `keys` moves it (the left stick pressed in, on a pad) |
 
 ## Photos
 
 
-**P**, or the pad's **right stick pressed in**, saves the photo on screen as a PNG:
+**P**, or the pad's **right stick pressed in** (its Capture or Share button, on a
+pad with no right stick to press in), saves the photo on screen as a PNG:
 the photo at the game's own resolution, pixel for pixel, with no scaling, no
 frame and no text over it. Files go to `photos/` next to the executable, named
 `snap_YYYYMMDD_HHMMSS_<course>_NN.png` (the course is left out if the game's
@@ -713,11 +729,11 @@ the defaults below are that file's.
 | `photo_detail` | `false` | Photo Detail: Off draws Oak's photos and the album at native pixels as the console did; On serves them from the renderer's full-resolution render |
 | `jynx_vc` | `false` | Jynx Recolor, Jynx's face and hands: Off: the cartridge's black; On: the purple of the re-releases, matched to a published Virtual Console screenshot |
 | `save_file` | `1` | Save File on the Game page: 1 plays `saves/pokemonsnap.bin`, 2 to 4 play `saves/pokemonsnap-2.bin` and on, each its own file starting empty (the file appears when the game first saves); read at the next start |
-| `wide_hud` | `true` | Wide HUD: On puts the film counter against the wide picture's right edge and slides the R and Z icons out to it; Off leaves both at the 4:3 picture's edge, as the cartridge has them |
+| `wide_hud` | `false` | Wide HUD: On puts the film counter against the wide picture's right edge and slides the R and Z icons out to it; Off leaves both at the 4:3 picture's edge, as the cartridge has them |
 | `interpolate_camera` | `true` | interpolate the view as well as objects (F4; no row on the Graphics page) |
 | `snap_station` | `false` | keep the Snap Station on port 4 from the title menu on, every start (see [SNAP-STATION.md](SNAP-STATION.md)) |
 | `pad_enabled` | `true` | `false` makes the port ignore every pad: none is opened, and the keyboard and mouse carry on |
-| `pad_layout` | `0` | how a pad's shoulders and triggers are read: `0` decides by the pad's name, `1` the Xbox-style layout the defaults describe, `2` an N64-shaped pad (the Switch Online N64 controller), whose L, R and Z are L, R and Z |
+| `pad_layout` | `0` | how a pad's shoulders and triggers are read (Pad Preset): `0` Auto, by the pad's ids and then its name, `1` Standard, the Xbox-style layout the defaults describe, `2` N64, a pad shaped like the N64's (the Switch Online N64 controller), whose L, R and Z are L, R and Z |
 | `pad_sticks_swapped` | `false` | the right stick aims and the left works the C buttons (Stick Swap) |
 | `pad_deadzone` | `15` | the aiming stick's dead zone in percent of full travel, 0 to 40 in steps of five (Dead Zone) |
 | `fast_forward_speed` | `3` | the speed the held fast-forward key runs the game at: 1 Off, 2, 3 or 4 (Fast Forward) |

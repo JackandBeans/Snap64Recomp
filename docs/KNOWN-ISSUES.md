@@ -85,3 +85,14 @@ there. The lab backdrop's leftmost pixel column and top row are pale in the
 picture itself. The console drew the same pixels; they were checked against
 the picture as the game holds it in memory. Overscan Crop (F2) is the
 television's view.
+
+## Android is a beta
+
+The Android app has run on one phone, a Samsung Galaxy S25 Ultra (Snapdragon
+8 Elite) in Samsung's test lab, and on Google's emulator. No real pad, no
+other GPU and no Android before 15 has run it, nobody has played it by
+hand on a real screen, and its sound has not been heard by a person. The
+touch controls have no Options rows yet; three keys in `snapsettings.json`
+set them. The Snap Station's print is not there on Android: on a PC the
+port restarts itself twice for it, and an Android app cannot (read from the
+code). [ANDROID.md](ANDROID.md) lists what ran where.

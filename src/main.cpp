@@ -38,6 +38,7 @@
 #include "rt64_render_context.h"
 #include "rsp_microcode.h"
 #include "audio.h"
+#include "android_thermal.h"
 #include "input.h"
 #include "settings.h"
 #include "version.h"
@@ -47,6 +48,9 @@
 #include "snap_station.h"
 #include "steam_deck.h"
 #include "mod_api.h"
+#if defined(__ANDROID__)
+#include "android.h"
+#endif
 namespace snap { extern uint8_t* g_rdram; }
 // The stall report's three sources (update_gfx): the game's logic-step
 // count (frame_cost.cpp), the renderer's queues (rt64_render_context.cpp)
@@ -115,6 +119,50 @@ static void snap_update_window_title();
 static int s_gamescope_ask_w = 0;
 static int s_gamescope_ask_h = 0;
 
+#if defined(__ANDROID__)
+// The app's pause and return, as Android tells SDL of them on its own thread.
+// An event watch sees them at once; the event loop would only see them after
+// the return, since SDL holds it while the app is away. Away, the game waits
+// (no VI retraces: its frame loop and its audio stop where they are) and the
+// renderer has no window; back, the game goes on and the renderer makes its
+// surface again (plume, VulkanSwapChain::recreateSurface).
+extern "C" uint32_t osGetCount();
+
+static int SDLCALL snap_android_lifecycle(void* /*userdata*/, SDL_Event* event) {
+    // How long the app was away, and how far the game's own clock (the
+    // console's counter, 46875 counts a millisecond) moved meanwhile.
+    static std::chrono::steady_clock::time_point awayAt;
+    static uint32_t awayCount = 0;
+    switch (event->type) {
+        case SDL_APP_WILLENTERBACKGROUND:
+            ultramodern::set_retraces_held(true);
+            ultramodern::set_clock_held(true);
+            awayAt = std::chrono::steady_clock::now();
+            awayCount = osGetCount();
+            printf("[SNAP-LIFE] the app goes to the background: the game waits\n");
+            fflush(stdout);
+            break;
+        case SDL_APP_DIDENTERFOREGROUND: {
+            const double away = std::chrono::duration<double>(std::chrono::steady_clock::now() - awayAt).count();
+            const double moved = double(uint32_t(osGetCount() - awayCount)) / 46875000.0;
+            ultramodern::set_clock_held(false);
+            ultramodern::set_retraces_held(false);
+            printf("[SNAP-LIFE] the app is back: the game goes on (away %.1f s; the game's clock moved %.1f s; "
+                   "%zu frames of sound still queued)\n", away, moved, snap::audio_get_frames_remaining());
+            fflush(stdout);
+            break;
+        }
+        case SDL_APP_LOWMEMORY:
+            printf("[SNAP-LIFE] the system says it is low on memory\n");
+            fflush(stdout);
+            break;
+        default:
+            break;
+    }
+    return 0;
+}
+#endif
+
 static void* create_gfx() {
 #if defined(__linux__)
     // The port has no text field. SDL starts text input for every program,
@@ -143,6 +191,12 @@ static void* create_gfx() {
     // the game. Off, SDL_PumpEvents leaves the joystick state alone and the
     // pad thread's SDL_GameControllerUpdate is the only thing that touches it.
     SDL_SetHint(SDL_HINT_AUTO_UPDATE_JOYSTICKS, "0");
+#if defined(__ANDROID__)
+    // SDL lists the phone's accelerometer as a joystick unless told not to:
+    // it has no controller mapping, so it is never a pad, and while no pad
+    // is open the pad thread named it on every poll.
+    SDL_SetHint(SDL_HINT_ACCELEROMETER_AS_JOYSTICK, "0");
+#endif
 #if defined(__APPLE__)
     // On macOS the controller subsystem is not started here: SDL's IOKit
     // driver binds its device matching to the run loop of the thread that
@@ -160,6 +214,10 @@ static void* create_gfx() {
         fflush(stderr);
         std::exit(1);
     }
+#if defined(__ANDROID__)
+    SDL_AddEventWatch(snap_android_lifecycle, nullptr);
+    snap::android_thermal_start();
+#endif
     return nullptr; // gfx_data not used
 }
 
@@ -205,10 +263,12 @@ static ultramodern::renderer::WindowHandle create_window(void* /*gfx_data*/) {
     if (sdl_window != nullptr) {
         snap::install_pointer(sdl_window);
     }
-#if defined(__linux__)
+#if defined(__linux__) && !defined(__ANDROID__)
     // The icon a Windows executable carries as a resource; a Linux binary
     // has none, so it comes from the file beside it. (A macOS bundle's icon
-    // is its own .icns, and the launcher is the bundle itself.)
+    // is its own .icns, and the launcher is the bundle itself; an Android
+    // app's are the package's. Android defines __linux__ too, so what is a
+    // Linux desktop's alone is kept off it here and below.)
     if ((sdl_window != nullptr) && !snap::set_window_icon(sdl_window)) {
         printf("[SNAP] window icon: Snap64Recomp-window.png not found beside the executable" "\n");
     }
@@ -251,7 +311,16 @@ static ultramodern::renderer::WindowHandle create_window(void* /*gfx_data*/) {
     }
     return wh;
 #else
-#if defined(__linux__)
+#if defined(__linux__) && !defined(__ANDROID__)
+    // The window system SDL made the window on, x11 or wayland. A Flatpak
+    // in a Wayland session gets no X11 socket (linux/flatpak, fallback-x11)
+    // and presents through a route the tarball on the same machine does not
+    // take, and nothing else in the log told the two apart (issue #30).
+    if (sdl_window != nullptr) {
+        const char* videoDriver = SDL_GetCurrentVideoDriver();
+        printf("[SNAP] window system: %s\n", (videoDriver != nullptr) ? videoDriver : "unknown");
+        fflush(stdout);
+    }
     // A Steam Deck in Gaming Mode: gamescope sizes this window's screen to
     // what Steam configured for the shortcut -- 1280x720 for a non-Steam
     // one until the player finds the setting -- and letterboxes the port
@@ -388,6 +457,15 @@ static void update_gfx(void* /*gfx_data*/) {
             } else if (snap::is_steam_deck()) {
                 restorePending = true;
                 restoreWhy = "the Steam Deck's default (F11 leaves it)";
+#if defined(__ANDROID__)
+            } else if (true) {
+                // An Android screen is a handheld's too, and only a
+                // fullscreen window hides the system's status and
+                // navigation bars, which otherwise cover the picture's top
+                // and bottom rows.
+                restorePending = true;
+                restoreWhy = "Android's default, the system bars hidden (the Fullscreen row leaves it)";
+#endif
             } else if (snap::settings_boot_fullscreen()) {
                 restorePending = true;
                 restoreWhy = "the saved setting (F11 leaves it)";
@@ -567,6 +645,28 @@ static void update_gfx(void* /*gfx_data*/) {
             dropTest = nullptr;
         }
     }
+    // SNAP_OPEN_FILE=<file>: the file the app was opened with ("open with"
+    // on Android, where the launcher copies it and names it here;
+    // android/app/src/main/java/.../Snap64Launcher.java), dropped on the
+    // window at the first frame as a real drop, so the installer and its
+    // box treat it as one.
+    {
+        static const char* openFile = getenv("SNAP_OPEN_FILE");
+        if (openFile != nullptr) {
+            SDL_Event e{};
+            e.type = SDL_DROPBEGIN;
+            SDL_PushEvent(&e);
+            SDL_Event f{};
+            f.type = SDL_DROPFILE;
+            f.drop.file = SDL_strdup(openFile);
+            SDL_PushEvent(&f);
+            e.type = SDL_DROPCOMPLETE;
+            SDL_PushEvent(&e);
+            printf("[SNAP-MODS] SNAP_OPEN_FILE: dropped %s\n", openFile);
+            fflush(stdout);
+            openFile = nullptr;
+        }
+    }
 
     SDL_Event event;
     while (SDL_PollEvent(&event)) {
@@ -620,6 +720,15 @@ static void update_gfx(void* /*gfx_data*/) {
                 }
                 break;
             case SDL_KEYUP:
+#if defined(__ANDROID__)
+                // The phone's Back button, which SDL hands over as this key
+                // (the manifest's SDL_ANDROID_TRAP_BACK_BUTTON): the quit
+                // box, as a held Escape is on a PC.
+                if (event.key.keysym.scancode == SDL_SCANCODE_AC_BACK) {
+                    snap_confirm_quit();
+                    break;
+                }
+#endif
                 if ((event.key.keysym.scancode == SDL_SCANCODE_ESCAPE) && !snap::input_deck_keys_ignored()) {
                     escHeld = false;
                     if (escArmed) {
@@ -777,17 +886,24 @@ void snap_show_deferred_message_boxes() {
     }
 }
 
-static void show_error_box(const char* msg) {
+static void show_error_box(const char* msg, bool fatal = false) {
     fprintf(stderr, "[SNAP] ERROR: %s\n", msg);
     fflush(stderr);
     // Linux only. The hazard is SDL's fork-based message box there; Windows
     // shows MessageBoxW straight from any thread and has done since 1.0.0, so
     // deferring it there would only delay a dialog, or lose it if the game is
     // already wedged, for no gain.
+    //
+    // A fatal message is never deferred: the process ends right after it, so
+    // a queued one was never shown. The renderer's refusal at start comes
+    // from its own thread after the main loop's first pass has turned the
+    // deferral on, and it was lost that way (seen on Android, whose Linux
+    // branch this is; by the code, a Linux or Mac start that could not make
+    // its renderer would lose it the same way).
 #if defined(__linux__) || defined(__APPLE__)
     // (On macOS SDL shows the box on the main thread through dispatch_sync,
     // which waits on a main thread that may be the one blocked: same rule.)
-    if ((s_main_thread_id != 0) && (SDL_ThreadID() != s_main_thread_id) &&
+    if (!fatal && (s_main_thread_id != 0) && (SDL_ThreadID() != s_main_thread_id) &&
         s_defer_boxes.load(std::memory_order_relaxed)) {
         // Repeats say nothing new -- a failing save fails for a reason that
         // belongs to the directory, not to the write -- so one box per
@@ -806,7 +922,10 @@ static void show_error_box(const char* msg) {
     }
 #endif
     if (sdl_window) {
-        SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, SNAP_PORT_NAME " - Error", msg, sdl_window);
+        if (SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, SNAP_PORT_NAME " - Error", msg, sdl_window) != 0) {
+            fprintf(stderr, "[SNAP] the error box could not be shown: %s\n", SDL_GetError());
+            fflush(stderr);
+        }
         return;
     }
 #if defined(_WIN32)
@@ -823,14 +942,17 @@ static void show_error_box(const char* msg) {
     // SDL shows a parentless box on Linux through the desktop's own dialog
     // (or zenity/kdialog); with no display at all it fails and the line
     // above on stderr is what remains.
-    SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, SNAP_PORT_NAME " - Error", msg, nullptr);
+    if (SDL_ShowSimpleMessageBox(SDL_MESSAGEBOX_ERROR, SNAP_PORT_NAME " - Error", msg, nullptr) != 0) {
+        fprintf(stderr, "[SNAP] the error box could not be shown: %s\n", SDL_GetError());
+        fflush(stderr);
+    }
 #endif
 }
 
 void snap::fatal_now(const char* msg) {
     // SNAP_NO_BOX: the message stays in the log (a headless run, the suite).
     if (std::getenv("SNAP_NO_BOX") == nullptr) {
-        show_error_box(msg);
+        show_error_box(msg, true);
     } else {
         fprintf(stderr, "[SNAP] ERROR: %s\n", msg);
     }
@@ -853,7 +975,7 @@ static void error_message_box(const char* msg) {
         refused = snap::renderer_failure_detail();
         msg = refused.c_str();
     }
-    show_error_box(msg);
+    show_error_box(msg, startup);
     if (startup) {
         // Said; the port ends here, as a start that was refused and not as
         // a session that crashed.
@@ -1219,6 +1341,15 @@ static void snap_bind_stdio() {
         }
     }
 
+#if defined(__ANDROID__)
+    // An app's stdout goes nowhere, so the echo is a pipe to the system log
+    // (android.cpp): snap64.log stays the log, and logcat shows its lines.
+    if (echo < 0) {
+        echo = snap::android_logcat_pipe();
+        echoIsPipe = (echo >= 0);
+    }
+#endif
+
     // The relaunched image finds fd 1 already on the log: no rotation, the
     // session's log goes on in the same file.
     struct stat outSt{};
@@ -1231,9 +1362,21 @@ static void snap_bind_stdio() {
         if (freopen(log.c_str(), "a", stdout) == nullptr) {
             // Nowhere to write the log (the data directory cannot be
             // written): stdout stays what it was.
+#if defined(__ANDROID__)
+            // On Android "what it was" is nowhere: both streams go to the
+            // system log alone, so the run is never silent.
+            if (echo >= 0) {
+                dup2(echo, STDOUT_FILENO);
+                dup2(echo, STDERR_FILENO);
+                setvbuf(stdout, nullptr, _IONBF, 0);
+                setvbuf(stderr, nullptr, _IONBF, 0);
+                fprintf(stderr, "[SNAP] %s could not be opened; the log is the system log alone" "\n", log.c_str());
+            }
+#else
             if (echo > STDERR_FILENO) {
                 close(echo);
             }
+#endif
             return;
         }
         freopen(log.c_str(), "a", stderr);
@@ -1276,7 +1419,16 @@ static void snap_bind_stdio() {
 // starts the next copy while this one is still quitting; a holder still up
 // after the wait is a real second copy.
 static bool snap_take_instance_lock(std::string& note) {
+#if defined(__ANDROID__)
+    // Android's shared storage, where the game folder is, refuses file locks
+    // (flock answers ENOSYS there): the lock is kept in the app's own
+    // internal storage instead, which is one folder for every copy of the app.
+    const char* internal = SDL_AndroidGetInternalStoragePath();
+    const std::filesystem::path lock = (internal != nullptr) ? std::filesystem::path(internal) / "snap64.lock"
+                                                             : snap::base_path("snap64.lock");
+#else
     const std::filesystem::path lock = snap::base_path("snap64.lock");
+#endif
     int fd = open(lock.c_str(), O_RDWR | O_CREAT | O_CLOEXEC, 0644);
     if (fd < 0) {
         return true;   // nowhere to lock (a read-only directory): run anyway
@@ -1320,7 +1472,7 @@ static bool snap_take_instance_lock(std::string& note) {
 }
 #endif
 
-#if defined(__linux__)
+#if defined(__linux__) && !defined(__ANDROID__)
 // On a Steam Deck the Mesa driver (RADV) drops one triangle of a course's
 // sky dome at the ride's first frames in Widescreen: a chunk at the top-left
 // showing the previous picture, black bands and all, until the next camera
@@ -1371,7 +1523,16 @@ int main(int argc, char* argv[]) {
         fputs(lock_note.c_str(), stdout);
         fflush(stdout);
     }
-#if defined(__linux__)
+#if defined(__ANDROID__)
+    // An app starts in "/", which nothing can write: the game folder becomes
+    // the working directory, as a PC run's is, so the frame captures and
+    // every other relative path land there.
+    if (chdir(snap::base_dir().c_str()) != 0) {
+        printf("[SNAP] could not enter %s (errno %d); relative paths stay in /" "\n",
+               snap::base_dir().c_str(), errno);
+    }
+#endif
+#if defined(__linux__) && !defined(__ANDROID__)
     snap_radv_debug_nonggc();
 #endif
     if (snap::base_dir() != snap::exe_dir()) {

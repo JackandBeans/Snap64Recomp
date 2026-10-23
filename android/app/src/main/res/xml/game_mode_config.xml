@@ -1,0 +1,10 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Android 13's game modes (AndroidManifest.xml). The port has no
+     performance or battery mode of its own, so it claims neither, and the
+     phone's game tools may not scale the picture down or change the frame
+     rate: the game plays as it is set to. -->
+<game-mode-config xmlns:android="http://schemas.android.com/apk/res/android"
+    android:supportsBatteryGameMode="false"
+    android:supportsPerformanceGameMode="false"
+    android:allowGameDownscaling="false"
+    android:allowGameFpsOverride="false" />

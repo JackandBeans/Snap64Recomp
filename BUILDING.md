@@ -22,7 +22,11 @@ been built and started under WSL and not yet run on real Linux hardware;
 [step 15](#15-macos-build-githubs-mac) is the macOS one, which carries the
 glue a community Apple Silicon build proved and is built by a workflow on
 GitHub's Mac, because I have no Mac: no build of this tree has run on one
-yet.
+yet; [step 16](#16-android-cross-build-experimental) is the Android one,
+an app built around the port as an Android library, which has run on
+Google's emulator and on one phone, a Galaxy S25 Ultra in Samsung's Remote
+Test Lab (2026-10-21), and has met no real pad yet (only one made in
+software on the emulator).
 
 ## Prerequisites
 
@@ -30,6 +34,14 @@ yet.
 
 * Visual Studio 2019 with the C++ workload (the recorded build used MSVC
   19.29.30159 through the `Visual Studio 16 2019` generator, platform `x64`).
+  The suite's speed check, the scoring tape at 3x against a run at 1x, is
+  not always repeatable on the release machine (2026-10-22): the 3x run
+  matched a 1x reference 3 times in 11 with an SDL2.dll built by VS 2019,
+  and 14 times in 14 with GitHub's or one built there by VS 2022 (MSVC
+  14.44); a 1x run with the photos exported drifted from that reference in
+  2 of 4 runs, whichever SDL2.dll, and a VS 2022 build failed the check in
+  the suite too. Why the tape drifts is not known; a failed speed check is
+  rerun alone.
 * CMake 3.20 or newer (the recorded build used 4.4.2).
 * Python 3 (any recent version). The build-pipeline scripts (`fetch_deps`,
   `gen_reference_syms`, `gen_overlays`, `hook_funcs`) use only the standard
@@ -371,21 +383,41 @@ GitHub's, not this machine's):
    working copy>`, and push that repository (step 15).
 3. Put the release tree on `macos-build` as one commit on top of `main`
    (`git commit-tree <tree> -p origin/main`, then push it there), and run
-   `gh workflow run release.yml --ref macos-build`. GitHub builds the three
+   `gh workflow run release.yml --ref macos-build`. GitHub builds the
    archives, signs each with its build provenance, runs the Mac's checks
-   and the package checks over all three, verifies each signature, and
+   and the package checks over all of them, verifies each signature, and
    keeps them as the run's artifact `release-archives`, their checksums in
-   the run's summary.
+   the run's summary. The Android APK among them is signed with the release
+   key (step 16) when the repository's three secrets `SNAP64_ANDROID_KEYSTORE`
+   (the keystore in base64), `SNAP64_ANDROID_KEYSTORE_PASSWORD` and
+   `SNAP64_ANDROID_KEY_ALIAS` exist; without them it comes unsigned, as
+   `Snap64Recomp-<version>-android-unsigned.apk`, and step 4 signs it.
 4. `gh run download <run> -n release-archives`, unpack the Windows zip, put
    the ROM and `build-win/Release/saves` beside the executable, and run
    `python tools/release_check.py <that folder>` and `--only station` on it.
+   An unsigned APK is signed here first, under WSL or on Linux:
+   `tools/release/sign_apk.sh <it> <keystore>` asks for the key's password,
+   signs with the v2 and v3 schemes, verifies, writes
+   `Snap64Recomp-<version>-android.apk` with its sidecar and runs the
+   package check. The signature comes after GitHub's build provenance, so
+   `gh attestation verify` holds for the unsigned file, not for the signed
+   one. When no one is at the release machine to type the password, the
+   release's APK can instead be the release machine's own build of the same
+   commit, signed beforehand with the same key and checked the same way;
+   the page says the same of either: signed on the release machine, no
+   GitHub build record. The APK from the same files goes through `tools/android_check.py` on the
+   emulator (every stage, the pad stage with `--uipad`; step 16) and
+   `tools/android/paths_check.py` (the Android-only paths, by touch), and,
+   when a test lab's phone can be had, through every stage the phone allows
+   there; the release page says which ran.
 5. Fast-forward `main` to the candidate commit, `git tag -a v<version>` on
    it, push both, and publish those same files with their `.sha256`
    sidecars.
 
 Anyone can check a published file with `gh attestation verify <file> --repo
 JackandBeans/Snap64Recomp`: it names the commit and the workflow that made
-it. A build that must not pass for the release takes a prerelease label
+it. An APK signed on the release machine (step 4) is the exception: its
+signature changed the file after GitHub built it. A build that must not pass for the release takes a prerelease label
 (`-f prerelease=rc1`), and every surface then says `<version>-rc1`. The
 label is drawn on the title screen in the credits face, so it uses only the
 characters that face has: every digit, dots, and of the lower-case letters
@@ -701,6 +733,431 @@ take macOS's time-constraint scheduling policy and wait with
 `mach_wait_until`, measured at 0.04 ms). No physical Mac has run the
 build.
 
+### 16. Android cross build (experimental)
+
+The whole port links as an Android shared library from this tree with the
+NDK, for arm64-v8a (devices) and x86_64 (the emulator): `libmain.so`, which
+SDL's own activity loads after `libSDL2.so` and enters through `SDL_main`
+(`SDL_main.h` renames `main()` to it there and exports it; the Windows build
+is entered the same way through SDL2main, a Linux binary keeps its `main`).
+The app around the library is described under **The app** below, and what
+has run where, with dates, under **What has run where** at the end of this
+step. The link was first recorded on 2026-10-19 under WSL (Ubuntu 24.04) with Android NDK r30
+(30.0.16248370, its Clang 21.0.0) unpacked under the home folder, CMake 3.28
+and Ninja, in the same copy of the port root on the Linux filesystem as
+step 14, whose `build-linux` supplies the two programs a cross build cannot
+run. In that copy:
+
+    NDK=$HOME/android-ndk-r30
+    cmake -S . -B build-android-arm64 -G Ninja -DCMAKE_TOOLCHAIN_FILE=$NDK/build/cmake/android.toolchain.cmake -DANDROID_ABI=arm64-v8a -DANDROID_PLATFORM=android-29 -DANDROID_STL=c++_static -DCMAKE_BUILD_TYPE=Release -DSNAP_ROM=/path/to/pokemonsnap.z64 -DSNAP_ASPMAIN_PREBUILT=$PWD/build-linux/rsp/aspMain.cpp -DRT64_FILE_TO_C_HOST=$PWD/build-linux/lib/rt64/src/tools/file_to_c/file_to_c
+    cmake --build build-android-arm64 --target Snap64Recomp -j"$(nproc)"
+
+and the same with `-DANDROID_ABI=x86_64` in `build-android-x86_64`. The
+two variables are required when cross-compiling, because the build cannot
+run the `RSPRecomp` and `file_to_c` it makes: `SNAP_ASPMAIN_PREBUILT` names
+the `rsp/aspMain.cpp` a native build of this tree generated from the same
+ROM (step 9) and `RT64_FILE_TO_C_HOST` that build's `file_to_c`
+(`lib/rt64/CMakeLists.txt`, which also chooses the shader compiler, dxc, by
+the host system now). API 29 (Android 10) is the floor chosen for now:
+plume asks for a Vulkan 1.2 instance, which is that era's anyway;
+`c++_static` is the NDK's static C++ runtime inside each library. Both are
+one `-D` to change.
+
+What differs from the Linux build, all in `if (ANDROID)` and
+`#if defined(__ANDROID__)` branches of the same files (Android defines
+`__linux__` too, so what is a Linux desktop's alone now sits under
+`__linux__ && !__ANDROID__`):
+
+* SDL2 is built from the vendored tree as a shared library, and the game
+  target is a shared library named `main`; no `-static-libstdc++`, no
+  `pthread` (bionic has it), `dl` for `dlopen`. Nothing is placed beside the
+  library, and there is no install tree and no cpack: those files become
+  the package's assets.
+* RT64: no nativefiledialog-extended, `texture_hasher` or `texture_packer`;
+  the SDL window path (`RT64_SDL_WINDOW_VULKAN`, plume's
+  `PLUME_SDL_VULKAN_ENABLED`) holds for a system name of Android as for
+  Linux, and plume's own Android arms (a native window,
+  `vkCreateAndroidSurfaceKHR`) step aside for it; zstd's dictionary builder,
+  which nothing uses, is left out (it calls `qsort_r`, which bionic lacks at
+  API 29). VENDORING.md lists the files.
+* `src/paths.cpp`: the data directory and the shipped files' folder are the
+  one game folder the app's launcher names through `SNAP_DATA_DIR` (Snap64
+  at the root of the shared storage, below); without it, the app's own
+  folder on the shared storage (`SDL_AndroidGetExternalStoragePath`), which
+  needs no permission. `SDL_GetBasePath` is not supported on Android.
+* `src/rom_picker.cpp`, `src/mod_installer.cpp`: the file chooser is the
+  system's document picker, reached through the activity
+  (`src/android.cpp`); the picked document arrives as a copy in the app's
+  cache, which is removed once examined. `SNAP_ROM_PICK` and
+  `SNAP_PICK_TEST` work as on every platform.
+* `src/snap_station.cpp`: the relaunch is logged as unavailable (an app
+  cannot replace its own process image), and the sheet's folder is not
+  opened.
+* `src/steam_deck.cpp`, `src/main.cpp`: no Deck, gamescope, X11, RADV, icon
+  or desktop entry. The game starts fullscreen with the system bars hidden.
+  The log is the Linux one, in the game folder; the single-instance lock
+  is `snap64.lock` in the app's internal storage
+  (`SDL_AndroidGetInternalStoragePath`), because the shared storage refuses
+  file locks.
+* `src/touch_controls.cpp` with `Snap64TouchOverlay.java`: the touch
+  controls, nine buttons in the bars beside the 4:3 picture (A, B and Start
+  always; Z, R and the four C buttons in a course), colored like the N64
+  pad. In a course a drag aims through the mouse's path; outside a course,
+  and on a menu that takes the mouse, a tap is a click. Each press is held
+  until the game has read it, so quick taps all arrive. With
+  `touch_controls` at 0 (automatic) the buttons hide when a pad or a
+  keyboard is used and come back at the next touch; 1 shows them always, 2
+  never. `touch_size` (50 to 150 percent) and `touch_opacity` (20 to 100)
+  are in `snapsettings.json` only: there are no Options rows for them yet.
+  The buttons keep clear of the system's back gesture and of a camera
+  cutout.
+* Leaving the screen (Home, the recent apps, the screen turned off): the
+  runtime holds the VI retraces and the console's clock while the app is
+  away (`lib/N64ModernRuntime`, ultramodern), so the game waits and its time
+  does not jump; plume makes the Vulkan surface again from SDL's new window
+  on return (`lib/rt64/src/contrib/plume`). A touch button held as the app
+  leaves is let go.
+* `src/gpu_check.cpp`, the Android half of the PC's adapter check: before
+  the renderer is made, every Vulkan device is named in the log
+  (`[SNAP-VK] device: <name>, <type>, Vulkan <version>, driver <number>,
+  vendor <id>, swap chain yes or no`), and the one plume will take is
+  refused, with a dialog saying why, when it offers less than Vulkan 1.2
+  or no swap chain; plume makes a 1.2 instance and device, and such a
+  device would otherwise fail inside the renderer with nothing said.
+  `SNAP_VK_TEST=1.1` has the device answer 1.1, to see the refusal on a
+  device that would pass. A fatal box is never put off to the main loop's
+  next pass (`src/main.cpp`, on every platform): the renderer's refusal
+  came from its own thread after that pass had begun deferring boxes, and
+  the process ended with the box still queued.
+* `src/android_thermal.cpp`: a `[SNAP-THERMAL]` line in the log every
+  minute and at each change of Android's thermal status, with the headroom
+  Android forecasts ten seconds ahead (the status from Android 11, the
+  headroom from 12; both are looked up at run time).
+* `src/main.cpp`: SDL's hint that lists the accelerometer as a joystick is
+  off, so a phone's accelerometer is never taken for a pad (it had filled a
+  phone's log with a line per poll).
+* `src/input.cpp`, on every platform: an open pad with no stick gives way
+  to one with a stick when the list of joysticks changes, and among the
+  pads attached at the start one with a stick is opened first. SDL maps
+  the Android emulator's own keyboard (`qwerty2`) as a pad with A, B,
+  Start and a D-pad; it was opened first and kept, so a real pad attached
+  later was never used. A joystick SDL cannot map is named in the log once,
+  not at every poll of the pad thread.
+* `lib/N64ModernRuntime/librecomp/src/mods.cpp`: a mod's patch of a game
+  function asks for a page that is readable, writable and executable at
+  once (VENDORING.md says why), and on ARM64 the instruction cache is
+  synchronized after every patch is written or removed
+  (`__builtin___clear_cache`). Proved on 2026-10-21 by
+  Snap64RecompMods' `zz_hooktest`, on the emulator and on the arm64 phone.
+
+Recorded on 2026-10-19, from the tree at this commit: both links
+succeed. arm64-v8a: `libmain.so` of 106,938,192 bytes as built (the NDK
+compiles everything with debug information; 11,405,184 after
+`llvm-strip --strip-unneeded`), an `ELF64` `AArch64` shared object that
+exports `SDL_main` (`llvm-nm -D`) and needs `libdl.so`, `libSDL2.so`,
+`libm.so` and `libc.so`, beside a `libSDL2.so` of 5,959,688 bytes. x86_64:
+`libmain.so` of 101,770,088 bytes (12,096,232 stripped) and `libSDL2.so` of
+6,278,816, the same symbol and the same four libraries. The compiler's
+warnings (92 and 75) are all in files every platform compiles (the RSP
+vector header, stb, sse2neon, the deprecated codecvt, miniz), none in the
+Android branches. Afterward `build-linux` reconfigured and relinked its
+`Snap64Recomp` from the same tree, the proof the Linux build is untouched;
+the Windows build was not rebuilt for this.
+
+**The app.** `android/` is the Android project: SDL's own `android-project`
+reshaped for the port, with the versions that tree ships (Gradle 8.1.1 and
+the Android Gradle plugin 8.1.1, on a JDK 17). It compiles nothing of the
+port: `android/app/build.gradle` takes `libmain.so` and `libSDL2.so` from
+the two cross builds above (and stops with a message when a build is
+missing), reads SDL's Java activity from `lib/SDL/android-project` in place,
+stages the files the port ships beside its executable (`menu_text/`, the
+seen-shader list, `gamecontrollerdb.txt`, the two README files, and since
+2026-10-22 `LICENSE`, `NOTICE.md` and the three licenses the Linux archive
+carries) as the package's assets, in a folder of their own, `snap64/` (the
+root of an app's assets also lists Android's own folders, `images`,
+`webkit` and `geoid_map`, which the first start used to copy into the game
+folder with them), and takes the version from `CMakeLists.txt`. The port's
+own Java is three classes in
+`android/app/src/main/java/io/github/jackandbeans/snap64recomp/`:
+
+* `Snap64Launcher`, the first screen. It settles the game folder: Snap64 at
+  the root of the shared storage (Internal storage > Snap64 in a file
+  manager, the folder a PC shows over USB), the one folder holding the ROM,
+  the settings, the saves, `mods/`, `texture_packs/`, the photos and
+  `snap64.log`, as the port's own folder does on a PC. That takes all-files
+  access on Android 11 and later, which only the player can grant, in the
+  system settings; the launcher asks once and sends the player there, and
+  without the access the game folder is the app's own,
+  `Android/data/io.github.jackandbeans.snap64recomp/files`, which needs
+  none. A document the app was opened with (a mod, a texture pack, a zip
+  holding them, the ROM: the manifest's "open with" filters) is copied
+  into the app's cache, since the permission to read it ends with the
+  launcher, and every intent extra is forwarded.
+* `Snap64Activity`, SDL's activity. It hands the folder and the extras to
+  the native side as environment variables before the game starts
+  (`SNAP_DATA_DIR`, the port's own switch; and whatever adb passed, with
+  the same `SNAP_*` names as on a PC), copies the shipped files from the
+  assets into the game folder when they are missing, and shows the system's
+  document picker when the native ROM chooser or the Mods page's Install
+  row asks for one through JNI (`src/android.cpp`, which also feeds the
+  log's lines to logcat under the tag `Snap64`). The Back button reaches
+  the game as the `AC_BACK` key and opens the quit box; the file the app was
+  opened with is dropped on the window at the first frame (`SNAP_OPEN_FILE`,
+  `src/main.cpp`), which installs it as a drop does on a PC. As the app
+  leaves the screen it lets go of any touch button still held. (The game's
+  own wait while the app is away is SDL's app events, read by an event
+  filter in `src/main.cpp`.)
+* `Snap64TouchOverlay`, the touch controls' buttons, one small view each
+  over SDL's surface, so a touch anywhere else still reaches the game: in
+  the black bars beside the 4:3 picture on a wide screen, over its edges on
+  a narrower one. The native side (`src/touch_controls.cpp`) says every
+  tenth of a second whether they show, whether a course runs, and their
+  size and opacity; the overlay sends it the buttons held at every change.
+  Each visible button asks the system to keep its back gesture off that
+  spot.
+
+The manifest keeps the game in landscape (SDL's orientation hint names the
+two landscape sides, because SDL asks for the player's own rotation for a
+resizable window), lists the configuration changes the game handles itself
+(a change of display size or font size included, which would otherwise end
+SDL's game thread), and marks the app as a game: `res/xml/game_mode_config.xml`
+lets the phone's game tools neither draw the game smaller nor change its
+frame rate, and offers no battery or performance mode, because the port has
+none. The launcher icon is adaptive: `tools/make_android_icon.py` makes its
+layers from the port's own icon (`src/snap64.icns`, unchanged), with a
+lettering layer for themed icons.
+
+The build, with the SDK under the home folder (a JDK 17, the command-line
+tools, platform 35, build-tools 35.0.0 and platform-tools), from the
+port root:
+
+    export JAVA_HOME=/path/to/jdk-17 ANDROID_HOME=/path/to/android-sdk ANDROID_NDK_HOME=/path/to/android-ndk-r30
+    cd android && ./gradlew assembleDebug
+
+writes `android/app/build/outputs/apk/debug/app-debug.apk`, signed with
+the debug key, carrying both ABIs. `ANDROID_NDK_HOME` names the NDK of the
+cross builds to the plugin, which strips the libraries with its
+`llvm-strip`; without it they go in with their debug information, a
+hundred megabytes each. adb drives it the way the suite drives a
+PC build: `adb shell appops set io.github.jackandbeans.snap64recomp
+MANAGE_EXTERNAL_STORAGE allow` once (the access without the screen), then
+`adb shell am start -n io.github.jackandbeans.snap64recomp/.Snap64Launcher
+-e SNAP_DATA_DIR /sdcard/Snap64 -e SNAP_REPLAY /sdcard/Snap64/beach.inputs`
+and so on; the log is `snap64.log` in the game folder, and `adb logcat -s
+Snap64` shows its lines as they are written.
+
+The release build is `./gradlew assembleRelease`, which writes
+`android/app/build/outputs/apk/release/Snap64Recomp-<version>-android.apk`
+and its `.sha256` sidecar (`<sha256>  <name>`, one line ending in LF), as
+CPack names the other archives. The version is `CMakeLists.txt`'s, with a
+prerelease label from `-PsnapPrerelease=rc1` or `SNAP_VERSION_PRERELEASE`
+(the cross builds must be configured with the same label). It is signed only
+when the environment names the release key; the key never enters the tree
+(`*.jks` and `*.keystore` are ignored):
+
+* `SNAP64_ANDROID_KEYSTORE`: the keystore file's path, or the file itself
+  in base64 (as a CI secret holds it; the build writes it to a temporary
+  file outside the tree, removed when Gradle's JVM ends);
+* `SNAP64_ANDROID_KEYSTORE_PASSWORD` and `SNAP64_ANDROID_KEY_ALIAS`;
+* `SNAP64_ANDROID_KEY_PASSWORD`, only when the key's password is not the
+  store's.
+
+Without the three, the release APK is built unsigned and named
+`Snap64Recomp-<version>-android-unsigned.apk`, which Android will not
+install. `app/build.gradle` asks for the v2 and v3 schemes; at this
+minimum version the plugin signs with v3 alone (`apksigner verify`), which
+every Android from 9 on reads, and v3 lets the key be rotated later
+without breaking updates. The key is made once, with the JDK's `keytool`, and kept
+by its owner with a copy away from the build machine:
+
+    keytool -genkeypair -v -keystore snap64-release.jks -alias snap64 -keyalg RSA -keysize 4096 -validity 36500
+
+Every later APK must be signed with the same key: Android installs an
+update only over an app signed with the same certificate, so a lost key
+means every player uninstalls to update. `python tools/release_check.py
+--only package --zip <apk>` checks a release APK: both ABIs' libraries,
+16 KB-aligned and for the right machine; the assets and the licenses; the
+manifest's package, version (the file's name and the libraries say the
+same) and no debuggable app; no ROM; no build machine's paths; the sidecar;
+and a signature that is not the Android debug key's.
+
+Recorded on 2026-10-22, from the tree at this commit, under WSL: the debug
+APK (11,697,873 bytes) and the unsigned release APK (10,612,051 bytes);
+then the release APK signed with a throwaway key made for the test and
+deleted after, given once as a path and once in base64 (10,620,243 bytes
+each, `apksigner verify`: verifies, scheme v3, the throwaway certificate;
+no temporary copy of the key left behind). A value that is neither a file
+nor a keystore stops the build with a message, and so does a label with a
+capital letter; `-PsnapPrerelease=rc1` names the APK
+`Snap64Recomp-1.1.6-rc1-android-unsigned.apk`. The package check passed
+every check on the signed APK and failed only "NOT signed" on the unsigned
+one; on copies made to fail, it failed the debug APK as debuggable and
+debug-signed, an APK under another version's name on the manifest and the
+libraries' version, and one with an N64 header added inside on the ROM
+(and on its broken signature). The signed release APK, installed on the
+emulator in place of the debug one, passed the boot, mod, settings and
+rompick stages, 17 of 17.
+
+`tools/android/build.sh` makes the whole app from a prepared port root
+(the vendored trees fetched, the inputs the ROM produces in place): a
+native build of the two host tools alone (`file_to_c` and the audio
+microcode's `rsp/aspMain.cpp`) in `build-android-host`, the two cross
+builds, and the release APK. It takes the variables above, plus
+`SNAP_VERSION_PRERELEASE`, and `SNAP_LAUNCHER=ccache` for a compiler
+cache. `.github/workflows/build.yml`'s Android job runs it on GitHub's
+Ubuntu runner with NDK 30.0.16248370 from the runner's `sdkmanager`, then
+the package check (with `--unsigned-apk` when the key's secrets do not
+exist), the build provenance for a release, and the APK and its sidecar as
+the artifact `Snap64Recomp-android`. Without the three secrets a release's
+APK is built unsigned as well, and the release machine signs it with
+`tools/release/sign_apk.sh` ("To cut a release", step 4).
+
+Recorded on 2026-10-22, as far as this machine can: the job's commands
+from a fresh clone of the branch under WSL, with two stand-ins, since
+GitHub does not have the forks' Android commits yet and the private inputs
+are cloned with a secret: the vendored trees copied in, and the inputs laid
+out from the same generated code with `tools/ci_inputs.py`. From the
+inputs' check (`--check`: "the inputs belong to this tree") on, every
+command was the job's. The script built the host tools, both libraries and
+the APK in 292 s (32 cores, no compiler cache), and the unsigned APK
+passed the package check, 14 of 14 with `--unsigned-apk`, no build
+machine's path in it. The fresh clone found two faults the long-lived copy
+had hidden: a Windows checkout gave `android/gradlew` CRLF line endings,
+which stopped Gradle under WSL (now LF by `.gitattributes`), and git held
+it without its execute bit, which stopped the script on Linux (now
+executable). The job itself runs for the first time on GitHub's machines.
+
+Recorded on 2026-10-19: the debug APK built from this tree (`BUILD
+SUCCESSFUL`; the plugin fetched its own build-tools 33.0.1 beside the 35.0.0
+installed, under the license accepted once). `app-debug.apk` of 26,611,382
+bytes, version 1.1.6 (code 10106), API 29 to 35, native code arm64-v8a
+and x86_64 with the libraries stripped (`libmain.so` 11,411,072 and
+12,102,968 bytes, `libSDL2.so` 1,291,856 and 1,415,376), the seven
+assets, `Snap64Launcher` as the launchable activity.
+
+**The first run, 2026-10-20**, on Google's x86_64 emulator (37.2.12, the
+Android 15 Google APIs image, a pixel_6 profile, no window, the host's
+GPU through the emulator's gfxstream), driven by adb the way above: the
+Mac smoke's boot stage (`SNAP_MUTE`, `SNAP_ROM_PICK=cancel`,
+`SNAP_PCAP_ATFRAME=300,900,1500`, `SNAP_PCAP_BURST=1`, `SNAP_STATS=1` as
+intent extras, `SNAP_DATA_DIR=/sdcard/Snap64` with the ROM pushed there).
+snap64.log in that folder: the version line, "data directory:
+/sdcard/Snap64/", the ROM accepted, "graphics API: Vulkan", "Device Name:
+AMD Radeon RX 9060 XT", the display paced at 60 Hz, "surface is
+1080x2400", the game's own ticks at 30 a second, and "[SNAP-PCAP] wrote"
+at game frames 301, 901 and 1501: three 1600x1200 frames in
+`snap_frame_dumps/` with a picture on each (mean luminance 54, 122, 122),
+116 s from the start to the third, the app alive when stopped, logcat's
+crash buffer empty. Three runs before it taught what the tree now has:
+the launcher asks no question when adb names the folder; the activity
+hands that folder on (it had skipped it); rt64 names one swap chain
+format, RGBA on Android (plume takes only the format asked, and every
+`vkCreateSwapchainKHR` failed on the desktop's BGRA); and the process
+enters its game folder at start, since an app's working directory is "/"
+and the captures' relative path went nowhere. Not run that day: a device,
+the arm64-v8a library, a pad, the picker, the Back key, a mod (all but the
+pad have run since; below). The emulator starts windowless (`-no-window`)
+so a run shows nothing on the desk, and the "all files" access is granted
+to the package with `appops set --uid` as well as the plain form.
+
+Since 2026-10-21 the native libraries are compressed in the package and
+unpacked when it installs (`useLegacyPackaging` in `app/build.gradle`): this
+plugin version stores uncompressed libraries at 4 KB boundaries, and
+Android 15's 16 KB-page image refused to install the app. The libraries' own
+segments are 16 KB-aligned (NDK r28 and later). The debug APK of 2026-10-21
+is 11,668,462 bytes.
+
+`tools/android_check.py` drives the app through adb on an emulator or a
+test lab's phone, stage by stage, by the rules the PC suite uses; its
+docstring lists the stages. Its pad stage needs a pad that is not there:
+`tools/android/uipad.c` makes one through Linux's uinput, which takes root,
+so on an emulator only. Android takes it for a game pad (it carries an Xbox
+360 controller's ids, whose key layout every Android ships), and SDL opens
+it as it would a real one. It is built with the NDK and handed to the
+check:
+
+    $NDK/toolchains/llvm/prebuilt/linux-x86_64/bin/x86_64-linux-android29-clang -O2 -o uipad tools/android/uipad.c
+    python tools/android_check.py ... --uipad uipad --stages pad
+
+**What has run where.** Every run below is the app built from this tree
+on the day named.
+
+* Google's x86_64 emulator (Android 15 Google APIs image, a pixel_6
+  profile, 2400x1080 in landscape, the host's GPU through gfxstream),
+  2026-10-21, the tree with the touch controls and the lifecycle work:
+  `tools/android_check.py`, every stage, 48 of 49 checks passed. The one
+  failure was the boot stage's own check, which took the touch buttons'
+  lettering for the system's status bar; corrected in the tool, that stage
+  then passed 7 of 7. By stage: boot 7, mod 3, lifecycle 6, touch 11, score
+  3, stats 5, attract 2, menu 2, pages 4, settings 3, rompick 3. The touch
+  stage passed 11 of 11 with widescreen on as well. In the lifecycle
+  stage's events the game's clock moved 0.0 s while the app was away; before
+  the clock was held, 14.0 s away moved it 14.0 s. The emulator draws slower
+  than a phone, so the score stage was in step with Windows for 10 of the
+  reference's 20 photos; its pass rule is the healthy signature on every
+  scored line, which held. The Android-only paths
+  (the all-files dialog, the ROM through the system's picker, Back's quit
+  box, "Open with" for a mod while the game runs and from cold) passed 5 of
+  5 with a uiautomator script, in the tree since 2026-10-22 as
+  `tools/android/paths_check.py`.
+* The same emulator's Android 15 image with 16 KB memory pages,
+  2026-10-21, the tree before the touch controls: the boot and mod stages,
+  10 of 10.
+* A Samsung Galaxy S25 Ultra (SM-S938U: Snapdragon 8 Elite, Adreno 830,
+  Vulkan driver 0x80320023, Android 15, 2340x1080 at 120 Hz) in Samsung's
+  Remote Test Lab, 2026-10-21, the tree before the touch controls and the
+  lifecycle work: the boot, mod, score, stats, attract, menu, pages,
+  settings and rompick stages all passed. The score stage gave 37 scored
+  lines in 191 s, none outside the healthy signature, in step with Windows
+  for 15 of the reference's 20 photos. The stats stage passed with the
+  suite's frame rate setting (`fps_mode` 1); with a fresh folder's default
+  (0) the game prints fewer pacing reports and no coherence lines, so the
+  check's counts fail, which is the setting, not a fault. The mod's hooks
+  ran on ARM64.
+
+* Google's emulator, 2026-10-22, the tree with the pad fix above: the pad
+  stage, 8 of 8, with a pad made through uinput. It was opened in place of
+  the emulator's keyboard; Start went through the intro; on the recorded
+  tape each of 18 presses (the shoulders, the triggers, B and X, the D-pad,
+  the right stick's four C buttons, the left stick's four directions, A)
+  was read as the N64 input the default bindings give it; the touch
+  controls stayed while the pad was only attached, hid at its first press
+  and came back at a touch; the right shoulder fast-forwarded, the left
+  stick pressed in slowed the game (with slow motion turned on), and Back
+  opened the pages. The same stage on the APK of 2026-10-21, before the
+  fix, failed 3 of 8: the emulator's keyboard stayed the pad, and after the
+  intro the tape held only a Start and an A (which reached the game some
+  other way) and none of the other 16 presses.
+
+* Google's emulator, 2026-10-22, the tree with the Vulkan check: the
+  vkcheck stage, 4 of 4. With `SNAP_VK_TEST=1.1` the log said "[SNAP-VK]
+  refused: ... offers Vulkan 1.1.0 and the renderer needs 1.2", Android's
+  own dialog showed the message (read off the screen with uiautomator),
+  the app waited on it, ended as soon as its OK was pressed, and made no
+  renderer. The boot stage of the same build named the device (the host's
+  GPU through gfxstream, Vulkan 1.3.0) and did not refuse it. Before the
+  fatal-box fix, the same refusal ended the app 150 ms after its log line,
+  with no dialog.
+
+* Google's emulator, 2026-10-22, the final tree of the night (the debug
+  APK of both ABIs): `tools/android_check.py`, every stage, 61 of 62. The
+  one failure was the stats stage's count of coherence lines, 99 where the
+  check asked for 500. Run alone it gave 244, and last night's APK, which
+  had given 572, gave 302 in the same emulator session: the count follows
+  the emulator's speed (its game ran at 13 to 16 frames a second that
+  hour), so the stage now asks an emulator only for the lines to be there
+  and holds a phone to the PC's 500. The Android-only paths passed 5 of 5
+  on the same APK from a fresh install, and the unsigned release APK
+  passed the package check, 14 of 14.
+
+Not run anywhere yet: a real pad, wired or Bluetooth; the Button Setup
+page's capture of a press on Android (its code is shared with the PC);
+the sound, heard by a person;
+the touch controls on a real screen; the touch controls and the lifecycle
+work on a real device; any GPU but the Adreno 830 on a real device (Mali,
+PowerVR and older Adreno chips are untried); Android 10 to 14 (the app's
+floor is Android 10, and both the emulator and the phone ran Android 15).
+
 ## What a clean checkout is missing
 
 A `git clone` of this repository today contains the port's sources, the
@@ -726,8 +1183,9 @@ ignored directories fetched at recorded pins; VENDORING.md has that history.
 Four workflows run on GitHub. `.github/workflows/docs.yml` runs
 `tools/check_docs.py`, which follows every relative link and anchor in the
 Markdown files, and compiles the Python tools, on every push.
-`.github/workflows/build.yml` builds the Windows and Linux archives (step 14).
-`.github/workflows/release.yml` makes a release's three archives through the
+`.github/workflows/build.yml` builds the Windows and Linux archives (step 14)
+and the Android APK (step 16, through `tools/android/build.sh`).
+`.github/workflows/release.yml` makes a release's archives through the
 other two and signs them (step 13, "To cut a release").
 `.github/workflows/macos.yml` builds the macOS bundle (step 15): the ROM and
 what is made from it are build inputs no public workflow may hold, so it

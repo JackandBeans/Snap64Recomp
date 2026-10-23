@@ -162,10 +162,23 @@ the first report would be welcome, with `snap64.log` from the folder above.
   a logo for -- run it as it is, or copy it to
   `~/.local/share/applications`.
 * **Desktop Mode with Steam running.** Launched from a terminal or a file
-  manager, Steam's desktop layout also sends Enter for A and Escape for B,
-  which are the port's Start and pause keys: a shot opened the pause menu
-  and B kept bringing it back. While the Deck's own controller is attached
-  the port ignores those two keys, and says so in the log. Through a Steam
+  manager, Steam's desktop layout also sends keys for the Deck's buttons:
+  Enter for A and Escape for B, which are the port's Start and pause keys
+  (a shot opened the pause menu and B kept bringing it back), Tab for
+  Select, the fast forward's key (Select ran the game fast as it opened
+  the Options), Space for Y, the slow motion's key, and Left Shift for the
+  upper left paddle, the Z key. While the Deck's own controller is
+  attached the port ignores those five keys, and says so in the log; the
+  pad's own buttons do those jobs. It also sends the arrow keys for the
+  D-pad, which still steer. While the Deck's own controller is attached,
+  no key or mouse press changes the buttons the help lines name: they stay
+  the pad's, so a "Press A" no longer turns into the keyboard's "Press X"
+  for an instant. The log then traces the first 300 presses
+  (`[SNAP-Input] trace`). The layout also clicks the mouse for the
+  triggers, the left button for R2 and the right one for L2, and the port
+  reads those buttons as A and Z: while the Deck's own controller is
+  attached, a click that comes with its trigger held is ignored, and a
+  trackpad click with no trigger held still works. Through a Steam
   shortcut the layout is the gamepad one and nothing is sent.
 * **Gyro aiming.** In Gaming Mode the game cannot read the Deck's gyro:
   Steam's controller layer keeps it. In the shortcut's controller settings

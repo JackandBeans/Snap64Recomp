@@ -17,3 +17,9 @@ patches/pokemonsnap.syms.toml   linguist-generated
 # The pad mapping list is read by SDL line by line and shipped as it is
 # checked out; it stays LF everywhere so the packaged copy is the tested one.
 assets/gamecontrollerdb.txt     text eol=lf
+# The Gradle wrapper is a shell script that the Android build runs under
+# WSL or Linux; with CRLF its first line names "bash\r" and nothing starts.
+android/gradlew                 text eol=lf
+tools/android/*.sh              text eol=lf
+# Run under WSL on the Windows release machine, where CRLF breaks it the same way.
+tools/release/sign_apk.sh       text eol=lf

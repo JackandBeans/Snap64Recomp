@@ -76,6 +76,7 @@
 #include "photo_export.h"
 #include "settings.h"
 #include "snap_station.h"
+#include "touch_controls.h"
 
 // Pokemon Snap port: how many more presented images to photograph. Lives in
 // RT64's present queue, where the pictures actually leave for the screen;
@@ -129,6 +130,7 @@ struct PadSnapshot {
     bool attached = false;
     bool n64_layout = false;
     bool nso_n64 = false;       // the Switch Online N64 controller through SDL's driver (g_pad_nso_n64)
+    bool r_on_trigger = false;  // its R is its right trigger, under the N64-shaped layout (g_pad_r_on_trigger)
     uint32_t buttons = 0;
     int16_t axes[SDL_CONTROLLER_AXIS_MAX] = {};
 };
@@ -139,6 +141,12 @@ static PadSnapshot pad_snapshot() {
     std::lock_guard<std::mutex> lock(g_pad_mutex);
     return g_pad;
 }
+
+#if defined(__ANDROID__)
+// The phone's own gyroscope is open (phone_gyro_sync below): its turning
+// reaches the view even with the touch controls off (touch_controls.cpp).
+std::atomic<bool> g_phone_gyro_on{false};
+#endif
 
 // ---------------------------------------------------------------------------
 // Bindings
@@ -176,8 +184,9 @@ enum class SourceKind : uint8_t { Key, MouseButton, WheelUp, WheelDown, PadButto
 // nothing. Under this layout shoulders and triggers change roles, and every
 // binding that names one reads the other; the C buttons already arrive as
 // the right stick, which the port has always read as C. Chosen at the
-// pad's opening from its name, or by pad_layout in the settings file.
-static bool g_pad_layout_n64 = false;
+// pad's opening, and again when pad_layout changes (decide_pad_layout).
+// Written by the pad thread, read by the window's (capture_event).
+static std::atomic<bool> g_pad_layout_n64{false};
 // The Switch Online N64 controller through SDL's own driver (its name is
 // "Nintendo N64 Controller" there; through the mapping table it is the
 // "NSO N64 Controller", with the C buttons as a right stick): it has no
@@ -185,18 +194,76 @@ static bool g_pad_layout_n64 = false;
 // trigger. They are the C buttons here, whatever the tables say (issue
 // #26, Succulent-Puppet: C-down ran the fast forward, C-left threw a
 // pester ball, C-right opened the Options).
-static bool g_pad_nso_n64 = false;
+static std::atomic<bool> g_pad_nso_n64{false};
+// Under the N64-shaped layout, a pad whose mapping has a right trigger and
+// no right shoulder. An N64 pad has one button on that side, so that is its
+// R, and the swap left R reading nothing and the fast forward on R (the
+// Mayflash N64 Adapter 0079:1879 in the shipped list). That side is read as
+// it is.
+static std::atomic<bool> g_pad_r_on_trigger{false};
+// A pad with no right stick to press in: its Capture or Share button (SDL's
+// misc1) saves the photo instead (photo_button_watch), which is the Switch
+// Online N64 controller's Capture. Where the stick can be pressed in, misc1
+// stays unread: it is the DualSense's microphone button and the Deck's ...
+// button.
+static std::atomic<bool> g_pad_misc1_photo{false};
+// The pad_layout the flags above were decided under, -1 before any pad has
+// opened (pad thread only).
+static int g_pad_layout_applied = -1;
 
-// On a Steam Deck whose own controller is attached, the keyboard's Return
-// and Escape are ignored. Launched outside a Steam shortcut while Steam
-// runs, Steam's desktop layout sends Enter for A and Escape for B along
-// with the pad's own buttons, so a shot opened the pause menu (Return is
-// Start) and B kept bringing it back (Escape is the pause key). Through a
-// Steam shortcut the layout is the gamepad one and nothing is sent; the
-// pad is then Steam's virtual one, not the Deck's, and the keys stay live.
+// On a Steam Deck whose own controller is attached, the keys Steam's
+// desktop layout sends for the pad's buttons are ignored. Launched outside
+// a Steam shortcut while Steam runs, the layout sends Enter for A and
+// Escape for B along with the pad's own buttons, so a shot opened the
+// pause menu (Return is Start) and B kept bringing it back (Escape is the
+// pause key). It also sends Tab for Select, Space for Y and Left Shift for
+// the upper left paddle (the layout as the Deck ships it), so Select ran
+// the fast forward as it opened the Options (seen by JackandBeans on his
+// Deck, Oct 20 2026, the 1.1.5 Flatpak in Desktop Mode), and Y and the
+// paddle would run the slow motion and Z the same way. The arrow keys it
+// sends for the D-pad are the D-pad's own and stay. No key or mouse press
+// changes the device the help lines name while that pad is attached
+// (note_press_device): scrolling a page flickered the Button Setup row's
+// "Press A" to the keyboard's "Press X" (JackandBeans's Deck, Oct 22 2026,
+// Desktop Mode). Through a Steam shortcut the layout is the gamepad one and
+// nothing is sent; the pad is then Steam's virtual one, not the Deck's, and
+// the keys stay live.
 // Written by the pad thread at open and close, read by the game's threads
 // (source_down) and the window's (main.cpp).
 static std::atomic<bool> g_deck_pad_keys_ignored{false};
+
+// The keys that layout sends for a button, as the Deck ships.
+static bool deck_layout_key(int scancode) {
+    return (scancode == SDL_SCANCODE_RETURN) || (scancode == SDL_SCANCODE_ESCAPE) ||
+           (scancode == SDL_SCANCODE_TAB) || (scancode == SDL_SCANCODE_SPACE) ||
+           (scancode == SDL_SCANCODE_LSHIFT);
+}
+
+// The layout also clicks the mouse for the triggers: the left button for
+// the right trigger, the right button for the left one (his Deck's trace,
+// Oct 22 2026: a left click 12 ms after the right trigger's own reading).
+// The port reads those buttons as A and Z, and out of a course as the
+// menus' click and Back, so R2 could press A and L2 zoom. While the Deck's
+// own pad is attached, a press of either with its trigger past an eighth of
+// its travel is that echo. SDL 2 gives every mouse the same id, so the
+// click alone cannot tell; a click with no trigger held is a hand's.
+static bool deck_trigger_click(int button) {
+    if (!g_deck_pad_keys_ignored.load(std::memory_order_relaxed)) {
+        return false;
+    }
+    const int axis = (button == SDL_BUTTON_LEFT)    ? SDL_CONTROLLER_AXIS_TRIGGERRIGHT
+                     : (button == SDL_BUTTON_RIGHT) ? SDL_CONTROLLER_AXIS_TRIGGERLEFT
+                                                    : -1;
+    if (axis < 0) {
+        return false;
+    }
+    const PadSnapshot pad = pad_snapshot();
+    return pad.attached && (pad.axes[axis] > 4096);
+}
+
+// The buttons whose press was a trigger's click, so that their release is
+// dropped as well (the window's thread only).
+static uint32_t g_trigger_clicks = 0;
 
 // The device of the last press (input_last_device). The window's thread writes
 // it from the events; the game's thread reads it.
@@ -205,42 +272,89 @@ static std::atomic<int> g_last_device{kBindPad};
 // Presses of the Button Setup page's clear keys (input_take_clear_key).
 static std::atomic<uint32_t> g_clear_key_presses{0};
 
+// The input trace (input_trace_on): SNAP_INPUT_TRACE=1, and by itself while
+// the Deck's own pad is attached, where Steam's desktop layout echoes the
+// pad as keys and a pointer. Each press, wheel turn and stick past half its
+// travel, with the device the help lines then name; the first 300.
+static const bool g_input_trace_env = (getenv("SNAP_INPUT_TRACE") != nullptr);
+
+static bool trace_on() {
+    return g_input_trace_env || g_deck_pad_keys_ignored.load(std::memory_order_relaxed);
+}
+
+static const char* device_word(int device) {
+    return (device == kBindPad) ? "pad" : (device == kBindMouse) ? "mouse" : "keyboard";
+}
+
+static const char* or_unnamed(const char* name) {
+    return ((name != nullptr) && (name[0] != '\0')) ? name : "(unnamed)";
+}
+
 static void note_press_device(const SDL_Event& event) {
     int device = -1;
+    char what[80] = {};
     switch (event.type) {
         case SDL_KEYDOWN:
-            // The Deck's desktop layout sends these for its pad's A and B.
-            if (!event.key.repeat &&
-                !(g_deck_pad_keys_ignored.load(std::memory_order_relaxed) &&
-                  ((event.key.keysym.scancode == SDL_SCANCODE_RETURN) ||
-                   (event.key.keysym.scancode == SDL_SCANCODE_ESCAPE)))) {
+            if (!event.key.repeat) {
                 device = kBindKeyboard;
+                snprintf(what, sizeof(what), "key %s", or_unnamed(SDL_GetScancodeName(event.key.keysym.scancode)));
             }
             break;
         case SDL_MOUSEBUTTONDOWN:
             if (event.button.which != SDL_TOUCH_MOUSEID) {
                 device = kBindMouse;
+                snprintf(what, sizeof(what), "mouse button %d", int(event.button.button));
             }
             break;
         case SDL_MOUSEWHEEL:
             if (event.wheel.which != SDL_TOUCH_MOUSEID) {
                 device = kBindMouse;
+                snprintf(what, sizeof(what), "wheel %d,%d", int(event.wheel.x), int(event.wheel.y));
             }
             break;
         case SDL_CONTROLLERBUTTONDOWN:
             device = kBindPad;
+            snprintf(what, sizeof(what), "pad %s", or_unnamed(SDL_GameControllerGetStringForButton(SDL_GameControllerButton(event.cbutton.button))));
             break;
-        case SDL_CONTROLLERAXISMOTION:
+        case SDL_CONTROLLERAXISMOTION: {
             // Past half its travel: a stick at rest, or drifting, is no press.
-            if ((event.caxis.value > 16000) || (event.caxis.value < -16000)) {
+            // The trace names a stick or trigger as it goes past, not after.
+            static bool past[SDL_CONTROLLER_AXIS_MAX] = {};
+            const bool now = (event.caxis.value > 16000) || (event.caxis.value < -16000);
+            if (now) {
                 device = kBindPad;
             }
+            if ((event.caxis.axis < SDL_CONTROLLER_AXIS_MAX) && (now != past[event.caxis.axis])) {
+                past[event.caxis.axis] = now;
+                if (now) {
+                    snprintf(what, sizeof(what), "pad %s %d", or_unnamed(SDL_GameControllerGetStringForAxis(SDL_GameControllerAxis(event.caxis.axis))),
+                             int(event.caxis.value));
+                }
+            }
             break;
+        }
         default:
             break;
     }
+    // On a Steam Deck whose own pad is attached, the pad is the hand: Steam's
+    // desktop layout sends keys and a pointer for its buttons, D-pad and
+    // sticks, and each one named the keyboard's or the mouse's buttons for an
+    // instant. A key or mouse still does its job; the words stay the pad's.
+    const bool deck = g_deck_pad_keys_ignored.load(std::memory_order_relaxed);
+    if (deck && ((device == kBindKeyboard) || (device == kBindMouse))) {
+        device = -1;
+    }
+    const int was = g_last_device.load(std::memory_order_relaxed);
     if (device >= 0) {
         g_last_device.store(device, std::memory_order_relaxed);
+    }
+    static int traced = 0;
+    if ((what[0] != '\0') && (traced < 300) && trace_on()) {
+        traced++;
+        const int named = (device >= 0) ? device : was;
+        printf("[SNAP-Input] trace %u ms: %s; the help lines name the %s%s\n", unsigned(SDL_GetTicks()), what,
+               device_word(named), (named != was) ? " (changed)" : "");
+        fflush(stdout);
     }
 }
 
@@ -262,7 +376,19 @@ static bool pad_button_held(const PadSnapshot& pad, int code) {
             return snapshot_axis(pad, SDL_CONTROLLER_AXIS_TRIGGERLEFT) > 8000;
         }
         if (code == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) {
+            // The Switch Online N64 controller's right trigger is C-down,
+            // and its ZR comes as the left stick pressed in (SDL's driver;
+            // Linux's hid-nintendo reads the same bit as ZR).
+            if (pad.nso_n64) {
+                return snapshot_button(pad, SDL_CONTROLLER_BUTTON_LEFTSTICK);
+            }
+            if (pad.r_on_trigger) {
+                return false;   // that trigger is R, read by the trigger's name
+            }
             return snapshot_axis(pad, SDL_CONTROLLER_AXIS_TRIGGERRIGHT) > 8000;
+        }
+        if ((code == SDL_CONTROLLER_BUTTON_LEFTSTICK) && pad.nso_n64) {
+            return false;       // that pad has no stick to press in: the bit is its ZR
         }
     }
     return snapshot_button(pad, code);
@@ -276,7 +402,7 @@ static bool pad_axis_held(const PadSnapshot& pad, int code) {
         if (code == SDL_CONTROLLER_AXIS_TRIGGERLEFT) {
             return snapshot_button(pad, SDL_CONTROLLER_BUTTON_LEFTSHOULDER);
         }
-        if (code == SDL_CONTROLLER_AXIS_TRIGGERRIGHT) {
+        if ((code == SDL_CONTROLLER_AXIS_TRIGGERRIGHT) && !pad.r_on_trigger) {
             return snapshot_button(pad, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);
         }
     }
@@ -327,12 +453,13 @@ const Bindings& defaults() {
         // (src/fast_forward.cpp). Tab is the emulators' key for it; the
         // right shoulder is the one pad button the game leaves free (the
         // triggers are L and R, the left shoulder Z); on an N64-shaped pad
-        // it reads the right trigger, which the Switch Online N64
-        // controller sends for C-down, and there it yields (g_pad_nso_n64).
+        // it reads the right trigger, its ZR where it has one, and on the
+        // Switch Online N64 controller that pad's ZR (pad_button_held).
         {kFastForwardName, {"Tab", "Pad RightShoulder"}},
         // The slow-motion key: held while the right thumb lines up A, so
         // it lives on the left hand -- Space, and the left stick pressed
-        // in, the one unused control there.
+        // in, the one unused control there (none on the Switch Online N64
+        // controller, where that bit is its ZR).
         {kSlowMotionName, {"Space", "Pad LeftStick"}},
     };
     return table;
@@ -572,6 +699,25 @@ const char* g_dbg_stop = "not called";       // the test that dropped it
 std::atomic<int64_t> g_gyro_live_us{0};        // when a reading last carried any turning at all
 std::atomic<uint32_t> g_gyro_readings{0};      // readings since the gyro was turned on
 
+#if defined(__ANDROID__)
+// The phone's own gyroscope and accelerometer (SDL's sensors, over Android's
+// sensor manager), for Gyro Aim when no pad's gyro is in use. SDL reads
+// Android's sensors on the thread that started them, which must be the one
+// that pumps events: they are opened, closed and read on the window's
+// thread only. Android's readings reach SDL without their own clock, so each
+// gyroscope reading counts for the time since the one before it.
+SDL_Sensor* g_phone_gyro = nullptr;
+SDL_Sensor* g_phone_accel = nullptr;
+int64_t g_phone_gyro_last_us = 0;
+float g_phone_up[3] = {0.0f, 0.0f, 0.0f};   // which way is up, in the screen's axes
+uint32_t g_phone_readings = 0;
+bool g_phone_live_logged = false;
+// SNAP_GYRO_DEBUG: the angle the readings made, in all since the sensor was
+// opened (radians, the game's senses, before Gyro Speed).
+float g_phone_sum_yaw = 0.0f;
+float g_phone_sum_pitch = 0.0f;
+#endif
+
 void clear_mouse() {
     g_mouse_held.store(0, std::memory_order_relaxed);
     for (auto& p : g_mouse_press_until) p.store(0, std::memory_order_relaxed);
@@ -687,15 +833,236 @@ void apply_mouse_look(uint8_t* rdram) {
 }
 #undef SNAP_GYRO_DROP
 
-// A source that is one of the Switch Online N64 controller's C buttons as
-// SDL's driver sends them: Y, X, Back, the right trigger (and the right
-// shoulder's name, which reads that trigger under the N64-shaped layout).
-static bool nso_c_source(const Source& src) {
+#if defined(__ANDROID__)
+// A reading in the phone's own axes (x to the right, y up, z out of the
+// screen, as the panel stands in its natural portrait) put into the
+// screen's axes as the picture stands now (Android's own rule, the one its
+// AccelerometerPlay sample uses). SDL names Android's ROTATION_90, the
+// phone turned a quarter turn to the left, LANDSCAPE: its x then points up
+// and its y to the left. Works for rates and for accelerations alike.
+void phone_to_screen(const float* d, float* out) {
+    switch (SDL_GetDisplayOrientation(0)) {
+        case SDL_ORIENTATION_LANDSCAPE:
+            out[0] = -d[1];
+            out[1] = d[0];
+            break;
+        case SDL_ORIENTATION_LANDSCAPE_FLIPPED:
+            out[0] = d[1];
+            out[1] = -d[0];
+            break;
+        case SDL_ORIENTATION_PORTRAIT_FLIPPED:
+            out[0] = -d[0];
+            out[1] = -d[1];
+            break;
+        default:
+            out[0] = d[0];
+            out[1] = d[1];
+            break;
+    }
+    out[2] = d[2];
+}
+
+const char* orientation_name() {
+    switch (SDL_GetDisplayOrientation(0)) {
+        case SDL_ORIENTATION_LANDSCAPE:         return "landscape (the phone turned left)";
+        case SDL_ORIENTATION_LANDSCAPE_FLIPPED: return "landscape (the phone turned right)";
+        case SDL_ORIENTATION_PORTRAIT:          return "portrait";
+        case SDL_ORIENTATION_PORTRAIT_FLIPPED:  return "portrait, upside down";
+        default:                                return "unknown";
+    }
+}
+
+// One reading of the phone's gyroscope or accelerometer: the same sums the
+// pad's path makes (SDL_CONTROLLERSENSORUPDATE below), in the screen's axes.
+// Window thread.
+void phone_sensor_reading(const SDL_SensorEvent& e) {
+    float s[3];
+    phone_to_screen(e.data, s);
+    if ((g_phone_accel != nullptr) && (e.which == SDL_SensorGetInstanceID(g_phone_accel))) {
+        // Which way is up, while the phone is not being accelerated (the
+        // pad's rule); followed over about a quarter second at 60 Hz.
+        const float am = std::sqrt(s[0] * s[0] + s[1] * s[1] + s[2] * s[2]);
+        if ((am < 6.5f) || (am > 13.0f)) {
+            return;
+        }
+        const float have = std::sqrt(g_phone_up[0] * g_phone_up[0] + g_phone_up[1] * g_phone_up[1] +
+                                     g_phone_up[2] * g_phone_up[2]);
+        for (int i = 0; i < 3; i++) {
+            g_phone_up[i] = (have < 0.1f) ? s[i] : (g_phone_up[i] + 0.06f * (s[i] - g_phone_up[i]));
+        }
+        return;
+    }
+    if ((g_phone_gyro == nullptr) || (e.which != SDL_SensorGetInstanceID(g_phone_gyro))) {
+        return;
+    }
+    const int64_t t = now_us();
+    float dt = (g_phone_gyro_last_us != 0) ? float(t - g_phone_gyro_last_us) * 1e-6f : 0.0f;
+    g_phone_gyro_last_us = t;
+    if (dt > 0.1f) dt = 0.1f;   // a gap (the app away, a stall) is not a turn
+    g_phone_readings++;
+    if (!g_phone_live_logged && ((s[0] != 0.0f) || (s[1] != 0.0f) || (s[2] != 0.0f))) {
+        printf("[SNAP-Input] gyro: the phone's readings carry turning (%u readings since it was turned on)\n",
+               g_phone_readings);
+        fflush(stdout);
+        g_phone_live_logged = true;
+    }
+    // Pitch about the screen's right axis; yaw about the world's vertical,
+    // the reading projected on the up the accelerometer gives (the screen's
+    // own up when there is none yet), so a phone held tilted back turns the
+    // view as far as one held upright.
+    float pitchRate = s[0];
+    float yawRate = s[1];
+    const float um = std::sqrt(g_phone_up[0] * g_phone_up[0] + g_phone_up[1] * g_phone_up[1] +
+                               g_phone_up[2] * g_phone_up[2]);
+    if (um > 1.0f) {
+        yawRate = (s[0] * g_phone_up[0] + s[1] * g_phone_up[1] + s[2] * g_phone_up[2]) / um;
+    }
+    // The pad's tightening: under a degree per second the rate is scaled
+    // toward zero, so a phone at rest does not creep.
+    constexpr float Tight = 0.01745f;
+    const float mag = std::sqrt(pitchRate * pitchRate + yawRate * yawRate);
+    if (mag < Tight) {
+        const float f = mag / Tight;
+        pitchRate *= f;
+        yawRate *= f;
+    }
+    std::lock_guard<std::mutex> lock(g_motion_mutex);
+    g_gyro_yaw += -yawRate * dt;
+    g_gyro_pitch += pitchRate * dt;
+    g_phone_sum_yaw += -yawRate * dt;
+    g_phone_sum_pitch += pitchRate * dt;
+}
+
+void phone_gyro_close() {
+    if (g_phone_accel != nullptr) {
+        SDL_SensorClose(g_phone_accel);
+        g_phone_accel = nullptr;
+    }
+    if (g_phone_gyro != nullptr) {
+        SDL_SensorClose(g_phone_gyro);
+        g_phone_gyro = nullptr;
+    }
+    g_phone_gyro_on.store(false, std::memory_order_relaxed);
+}
+
+// Opens the phone's gyroscope (and its accelerometer, for which way is up)
+// while Gyro Aim is on and no pad's own gyro is, and closes them otherwise,
+// so a phone with Gyro Aim off reads no sensor at all. Window thread, once
+// per pass of the window's loop, before it pumps the events.
+void phone_gyro_sync() {
+    static bool none = false;   // no gyroscope, or SDL could not open it: said once
+    const bool want = (settings().gyro_aim != 0) && !g_gyro_enabled.load(std::memory_order_relaxed);
+    if (!want) {
+        none = false;
+        if (g_phone_gyro != nullptr) {
+            phone_gyro_close();
+            printf("[SNAP-Input] gyro: the phone's own sensor is off\n");
+            fflush(stdout);
+        }
+        return;
+    }
+    if ((g_phone_gyro == nullptr) && !none) {
+        none = true;
+        if (!SDL_WasInit(SDL_INIT_SENSOR) && (SDL_InitSubSystem(SDL_INIT_SENSOR) != 0)) {
+            printf("[SNAP-Input] gyro: the phone's sensors could not be started: %s\n", SDL_GetError());
+            fflush(stdout);
+            return;
+        }
+        // The first of each kind Android lists: the hardware's own, ahead of
+        // the system's corrected and fused ones.
+        int gyro = -1, accel = -1;
+        for (int i = 0; i < SDL_NumSensors(); i++) {
+            const SDL_SensorType type = SDL_SensorGetDeviceType(i);
+            if ((type == SDL_SENSOR_GYRO) && (gyro < 0)) gyro = i;
+            if ((type == SDL_SENSOR_ACCEL) && (accel < 0)) accel = i;
+        }
+        if (gyro < 0) {
+            printf("[SNAP-Input] gyro: the phone has no gyroscope; Gyro Aim needs a pad with one\n");
+            fflush(stdout);
+            return;
+        }
+        g_phone_gyro = SDL_SensorOpen(gyro);
+        if (g_phone_gyro == nullptr) {
+            printf("[SNAP-Input] gyro: the phone's gyroscope could not be opened: %s\n", SDL_GetError());
+            fflush(stdout);
+            return;
+        }
+        g_phone_accel = (accel >= 0) ? SDL_SensorOpen(accel) : nullptr;
+        none = false;
+        g_phone_gyro_last_us = 0;
+        g_phone_up[0] = g_phone_up[1] = g_phone_up[2] = 0.0f;
+        g_phone_readings = 0;
+        g_phone_live_logged = false;
+        {
+            std::lock_guard<std::mutex> lock(g_motion_mutex);
+            g_phone_sum_yaw = g_phone_sum_pitch = 0.0f;
+        }
+        g_phone_gyro_on.store(true, std::memory_order_relaxed);
+        printf("[SNAP-Input] gyro: the phone's own sensor is on: its turning aims the camera (%s; up from %s; "
+               "the screen %s)\n", SDL_SensorGetName(g_phone_gyro),
+               (g_phone_accel != nullptr) ? SDL_SensorGetName(g_phone_accel) : "the screen alone",
+               orientation_name());
+        fflush(stdout);
+    }
+    // SNAP_GYRO_DEBUG read here, not when the library loads (g_gyro_debug):
+    // on Android the launching intent's extras become the environment only
+    // after that.
+    static const bool debug = (getenv("SNAP_GYRO_DEBUG") != nullptr);
+    if (debug && (g_phone_gyro != nullptr)) {
+        static int64_t said = 0;
+        const int64_t t = now_us();
+        if (t - said >= 500000) {
+            said = t;
+            float sy, sp;
+            {
+                std::lock_guard<std::mutex> lock(g_motion_mutex);
+                sy = g_phone_sum_yaw;
+                sp = g_phone_sum_pitch;
+            }
+            const bool view = (g_rdram != nullptr) && g_app_level_resident.load(std::memory_order_relaxed);
+            // The game's states apply_mouse_look honors, as they stand.
+            int stick = -1;
+            if (view) {
+                const uint32_t player = read_u32(g_rdram, ADDR_gObjPlayer);
+                uint32_t proc = (player != 0) ? read_u32(g_rdram, player + GObj_processListHead) : 0;
+                for (int n = 0; (proc != 0) && (n < 64); n++) {
+                    if (read_u32(g_rdram, proc + GObjProcess_function) == ADDR_handleAnalogStick) {
+                        stick = (read_u8(g_rdram, proc + GObjProcess_paused) == 0) ? 1 : 0;
+                        break;
+                    }
+                    proc = read_u32(g_rdram, proc + GObjProcess_next);
+                }
+            }
+            printf("[SNAP-GYRO] phone: %u readings; made yaw=%.4f pitch=%.4f rad in all; up=(%.1f %.1f %.1f); "
+                   "the view yaw=%.4f pitch=%.4f; the screen %s; game: paused %d, input off %d, stick runs %d, "
+                   "direction %d, zoom turning %d, photo held %d\n",
+                   g_phone_readings, sy, sp, g_phone_up[0], g_phone_up[1], g_phone_up[2],
+                   view ? read_f32(g_rdram, ADDR_PlayerViewYaw) : 0.0f,
+                   view ? read_f32(g_rdram, ADDR_ViewPitch) : 0.0f, orientation_name(),
+                   view ? int(read_u8(g_rdram, ADDR_IsPaused)) : -1,
+                   view ? int(read_s32(g_rdram, ADDR_IsInputDisabled)) : -1, stick,
+                   view ? int(read_s32(g_rdram, ADDR_gDirectionIndex)) : -9,
+                   view ? int(read_s32(g_rdram, ADDR_TargetDirectionZoomedIn)) : -1,
+                   view ? int(read_s32(g_rdram, ADDR_ZoomedInCameraHeld)) : -1);
+            fflush(stdout);
+        }
+    }
+}
+#endif
+
+// A source that reads one of the Switch Online N64 controller's C buttons
+// as SDL's driver sends them: Y, X, Back and the right trigger. It is the
+// part read that counts, not the name: under the N64-shaped layout the
+// right shoulder's name reads the pad's ZR and the right trigger's name its
+// own R (pad_button_held, pad_axis_held), so only under Standard does a
+// name reach the right trigger. 1.1.5 counted the right trigger's name
+// under both, and R did nothing (issue #26).
+static bool nso_c_source(const Source& src, const PadSnapshot& pad) {
     if (src.kind == SourceKind::PadButton) {
         return (src.code == SDL_CONTROLLER_BUTTON_Y) || (src.code == SDL_CONTROLLER_BUTTON_X) ||
-               (src.code == SDL_CONTROLLER_BUTTON_BACK) || (src.code == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER);
+               (src.code == SDL_CONTROLLER_BUTTON_BACK);
     }
-    return (src.kind == SourceKind::PadAxis) && (src.code == SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
+    return (src.kind == SourceKind::PadAxis) && !pad.n64_layout && (src.code == SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
 }
 
 bool source_down(const Source& src, const uint8_t* keys, uint32_t held, int64_t t, const PadSnapshot& pad,
@@ -706,8 +1073,7 @@ bool source_down(const Source& src, const uint8_t* keys, uint32_t held, int64_t 
     }
     switch (src.kind) {
         case SourceKind::Key:
-            if (g_deck_pad_keys_ignored.load(std::memory_order_relaxed) &&
-                ((src.code == SDL_SCANCODE_RETURN) || (src.code == SDL_SCANCODE_ESCAPE))) {
+            if (g_deck_pad_keys_ignored.load(std::memory_order_relaxed) && deck_layout_key(src.code)) {
                 return false;
             }
             return keys != nullptr && src.code >= 0 && src.code < SDL_NUM_SCANCODES && keys[src.code];
@@ -719,12 +1085,12 @@ bool source_down(const Source& src, const uint8_t* keys, uint32_t held, int64_t 
         case SourceKind::WheelDown:
             return t < g_wheel_down_until.load(std::memory_order_relaxed);
         case SourceKind::PadButton:
-            if (pad.nso_n64 && nso_c_source(src)) {
+            if (pad.nso_n64 && nso_c_source(src, pad)) {
                 return false;       // the C buttons themselves (input_get)
             }
             return pad_button_held(pad, src.code);
         case SourceKind::PadAxis:
-            if (pad.nso_n64 && nso_c_source(src)) {
+            if (pad.nso_n64 && nso_c_source(src, pad)) {
                 return false;
             }
             return pad_axis_held(pad, src.code);
@@ -738,6 +1104,10 @@ static bool is_steam_deck_pad(SDL_GameController* gc);
 
 bool input_deck_keys_ignored() {
     return g_deck_pad_keys_ignored.load(std::memory_order_relaxed);
+}
+
+bool input_trace_on() {
+    return trace_on();
 }
 
 const Bindings& input_default_bindings() {
@@ -1178,9 +1548,8 @@ bool capture_event(const SDL_Event& event) {
                 return true;
             }
             const int sc = event.key.keysym.scancode;
-            // The Deck's desktop layout sends these for the pad's A and B.
-            if (g_deck_pad_keys_ignored.load(std::memory_order_relaxed) &&
-                ((sc == SDL_SCANCODE_RETURN) || (sc == SDL_SCANCODE_ESCAPE))) {
+            // The Deck's desktop layout sends these for the pad's buttons.
+            if (g_deck_pad_keys_ignored.load(std::memory_order_relaxed) && deck_layout_key(sc)) {
                 return true;
             }
             if (sc == SDL_SCANCODE_ESCAPE) {
@@ -1198,7 +1567,8 @@ bool capture_event(const SDL_Event& event) {
             return true;
         }
         case SDL_MOUSEBUTTONDOWN: {
-            if ((event.button.which == SDL_TOUCH_MOUSEID) || (device != kBindMouse)) {
+            if ((event.button.which == SDL_TOUCH_MOUSEID) || (device != kBindMouse) ||
+                deck_trigger_click(event.button.button)) {
                 return true;
             }
             const char* n = nullptr;
@@ -1232,11 +1602,12 @@ bool capture_event(const SDL_Event& event) {
                 return true;
             }
             const SDL_GameControllerButton b = SDL_GameControllerButton(event.cbutton.button);
-            // Back opens the port's Options, the right stick's click saves
-            // the photo on screen, and Guide is the platform's own; none
-            // can be a game button.
+            // Back opens the port's Options, the right stick's click (or
+            // Capture, on a pad without one) saves the photo on screen, and
+            // Guide is the platform's own; none can be a game button.
             if ((b == SDL_CONTROLLER_BUTTON_BACK) || (b == SDL_CONTROLLER_BUTTON_GUIDE) ||
                 (b == SDL_CONTROLLER_BUTTON_RIGHTSTICK) ||
+                (g_pad_misc1_photo && (b == SDL_CONTROLLER_BUTTON_MISC1)) ||
                 (g_pad_nso_n64 && ((b == SDL_CONTROLLER_BUTTON_Y) || (b == SDL_CONTROLLER_BUTTON_X)))) {
                 // (On the Switch Online N64 controller Y, X and Back are C buttons already.)
                 capture_end_with(CaptureState::RefusedJob, pad_source_name(b));
@@ -1244,12 +1615,15 @@ bool capture_event(const SDL_Event& event) {
             }
             // The name that reads this part under the layout in force: an
             // N64-shaped pad's shoulder buttons are read through the
-            // trigger names (pad_axis_held).
+            // trigger names (pad_axis_held), and the Switch Online N64
+            // controller's ZR through the right shoulder's (pad_button_held).
             std::string n;
             if (n64 && (b == SDL_CONTROLLER_BUTTON_LEFTSHOULDER)) {
                 n = "Pad LeftTrigger";
             } else if (n64 && (b == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)) {
                 n = "Pad RightTrigger";
+            } else if (n64 && g_pad_nso_n64 && (b == SDL_CONTROLLER_BUTTON_LEFTSTICK)) {
+                n = "Pad RightShoulder";
             } else {
                 n = pad_source_name(b);
             }
@@ -1288,13 +1662,15 @@ bool capture_event(const SDL_Event& event) {
                 g_capture.triggerAbove[idx] = above;
             }
             if (rose && g_pad_nso_n64 && (idx == 1)) {
-                capture_end_with(CaptureState::RefusedJob, "Pad RightShoulder");     // the Switch Online N64 controller's C-down
+                capture_end_with(CaptureState::RefusedJob, "Pad RightTrigger");     // the Switch Online N64 controller's C-down
                 return true;
             }
             if (rose) {
-                capture_end_with(CaptureState::Bound,
-                                 (idx == 0) ? (n64 ? "Pad LeftShoulder" : "Pad LeftTrigger")
-                                            : (n64 ? "Pad RightShoulder" : "Pad RightTrigger"));
+                const char* n = (idx == 0) ? (n64 ? "Pad LeftShoulder" : "Pad LeftTrigger")
+                                           : ((n64 && !g_pad_r_on_trigger) ? "Pad RightShoulder" : "Pad RightTrigger");
+                // Under the N64-shaped layout that can be the fast forward's
+                // name, as for a button.
+                capture_end_with(port_key_uses(n) ? CaptureState::RefusedJob : CaptureState::Bound, n);
             }
             return true;
         }
@@ -1822,6 +2198,14 @@ bool input_take_menu_request() {
     return g_menu_request.exchange(0, std::memory_order_relaxed) != 0;
 }
 
+// Android's touch controls (touch_controls.cpp): a drag in a course turns
+// the view as the mouse's motion does.
+void input_add_touch_look(float dx, float dy) {
+    std::lock_guard<std::mutex> lock(g_motion_mutex);
+    g_motion_dx += dx;
+    g_motion_dy += dy;
+}
+
 void input_release_mouse() {
     if (g_captured.load(std::memory_order_relaxed)) {
         SDL_SetRelativeMouseMode(SDL_FALSE);
@@ -1839,7 +2223,8 @@ static bool replaying_run() {
 // size then. A touch is not a pointer (a Steam Deck's screen under the
 // thumbs), and neither is the warp SDL makes when the capture changes.
 static void pointer_seen(uint32_t windowID, int32_t x, int32_t y, uint32_t which, bool motion) {
-    if ((which == SDL_TOUCH_MOUSEID) || replaying_run()) {
+    if (((which == SDL_TOUCH_MOUSEID) && !touch_as_pointer(g_menu_claimed.load(std::memory_order_relaxed))) ||
+        replaying_run()) {
         return;
     }
     int w = 0, h = 0;
@@ -1920,6 +2305,7 @@ static void publish_pointer(uint8_t* rdram) {
 
 void input_handle_sdl_event(const SDL_Event& event) {
     note_press_device(event);
+    touch_controls_event(event);
     // The Button Setup page is listening: a key, button or wheel tick is the
     // capture's, and reaches neither the latches below nor the game.
     if (g_capture_active.load(std::memory_order_relaxed) && capture_event(event)) {
@@ -1988,7 +2374,22 @@ void input_handle_sdl_event(const SDL_Event& event) {
             }
             break;
         case SDL_MOUSEBUTTONDOWN:
-            if (event.button.which == SDL_TOUCH_MOUSEID) {
+            // On Android a tap outside a course is the pointer's click.
+            if ((event.button.which == SDL_TOUCH_MOUSEID) && !touch_as_pointer(g_menu_claimed.load(std::memory_order_relaxed))) {
+                break;
+            }
+            // Steam's click for a Deck trigger reaches nothing, and nor
+            // does its release (deck_trigger_click).
+            if ((event.button.which != SDL_TOUCH_MOUSEID) && (event.button.button < 8) &&
+                deck_trigger_click(event.button.button)) {
+                g_trigger_clicks |= 1u << event.button.button;
+                if (trace_on()) {
+                    const int axis = (event.button.button == SDL_BUTTON_LEFT) ? SDL_CONTROLLER_AXIS_TRIGGERRIGHT
+                                                                             : SDL_CONTROLLER_AXIS_TRIGGERLEFT;
+                    printf("[SNAP-Input] trace %u ms: mouse button %d dropped, its trigger is held at %d (Steam's click)\n",
+                           unsigned(SDL_GetTicks()), int(event.button.button), int(pad_snapshot().axes[axis]));
+                    fflush(stdout);
+                }
                 break;
             }
             if (buttons_live && event.button.button < 8) {
@@ -2009,7 +2410,11 @@ void input_handle_sdl_event(const SDL_Event& event) {
             }
             break;
         case SDL_MOUSEBUTTONUP:
-            if (event.button.which == SDL_TOUCH_MOUSEID) {
+            if ((event.button.which == SDL_TOUCH_MOUSEID) && !touch_as_pointer(g_menu_claimed.load(std::memory_order_relaxed))) {
+                break;
+            }
+            if ((event.button.button < 8) && ((g_trigger_clicks >> event.button.button) & 1u)) {
+                g_trigger_clicks &= ~(1u << event.button.button);
                 break;
             }
             if (event.button.button < 8) {
@@ -2030,6 +2435,11 @@ void input_handle_sdl_event(const SDL_Event& event) {
                 }
             }
             break;
+#if defined(__ANDROID__)
+        case SDL_SENSORUPDATE:
+            phone_sensor_reading(event.sensor);
+            break;
+#endif
         case SDL_CONTROLLERSENSORUPDATE:
             if ((event.csensor.sensor == SDL_SENSOR_ACCEL) &&
                 g_gyro_enabled.load(std::memory_order_relaxed) &&
@@ -2161,6 +2571,10 @@ void input_handle_sdl_event(const SDL_Event& event) {
 }
 
 void input_update_mouse_capture() {
+#if defined(__ANDROID__)
+    phone_gyro_sync();
+    touch_controls_tick();   // a photo the game took: the shutter is felt
+#endif
     // A replayed run takes no input from the mouse (input_get), so it must
     // not take the cursor either: the release suite plays courses while
     // I am elsewhere on the same desktop, and a captured cursor locked me
@@ -2281,7 +2695,8 @@ static int SDLCALL photo_button_watch(void* /*userdata*/, SDL_Event* event) {
             } else {
                 input_request_menu();
             }
-        } else if (event->cbutton.button == SDL_CONTROLLER_BUTTON_RIGHTSTICK) {
+        } else if ((event->cbutton.button == SDL_CONTROLLER_BUTTON_RIGHTSTICK) ||
+                   ((event->cbutton.button == SDL_CONTROLLER_BUTTON_MISC1) && g_pad_misc1_photo)) {
             export_photo(g_rdram);
         }
     }
@@ -2320,6 +2735,93 @@ static void load_controller_mappings() {
     }
 }
 
+// Whether SDL's mapping for joystick i gives it a stick. A device with
+// buttons alone -- the Android emulator's own keyboard, which SDL maps as A,
+// B, Start and a D-pad -- is the pad only while nothing better is attached.
+static bool joystick_has_stick(int i) {
+    char* mapping = SDL_GameControllerMappingForDeviceIndex(i);
+    const bool stick = (mapping != nullptr) && (SDL_strstr(mapping, "leftx:") != nullptr);
+    SDL_free(mapping);
+    return stick;
+}
+
+// Pads shaped like the N64's whose names do not say so. The mapping list
+// the port ships (assets/gamecontrollerdb.txt) maps each as it maps the N64
+// pads -- L and R the shoulders, Z the left trigger -- under a name without
+// "N64" in it, so the name test below gave them the standard layout, which
+// reads their L as Z and their R as the fast forward. Read from the list,
+// not from a pad. Their ids are the same on every platform's line.
+struct PadIds {
+    uint16_t vendor;
+    uint16_t product;
+};
+static constexpr PadIds kN64ShapedPads[] = {
+    {0x2DC8, 0x3019},   // "8BitDo 64"
+    {0x374E, 0x0111},   // "M64 Pro Controller"
+};
+
+// The open pad's layout, from pad_layout: 0 Auto, by the pad's ids and then
+// its name; 1 Standard and 2 N64 whatever the pad is. The Controls page's
+// Pad Preset row sets pad_layout, and the pad thread calls this again when
+// it changes, so the preset is in force at once (pad_thread_main).
+static void decide_pad_layout() {
+    const int wanted = settings().pad_layout;     // read once: the menu's thread writes it
+    const int layout = std::clamp(wanted, 0, 2);
+    g_pad_layout_applied = wanted;
+    const char* name = SDL_GameControllerName(game_controller);
+    const uint16_t vendor = SDL_GameControllerGetVendor(game_controller);
+    const uint16_t product = SDL_GameControllerGetProduct(game_controller);
+    // The Switch Online N64 controller by its ids (Nintendo 057E, product
+    // 2019), which no driver or SDL renames; the name stays as a second way in.
+    const bool nso_ids = (vendor == 0x057E) && (product == 0x2019);
+    bool n64 = (layout == 2);
+    const char* why = "from the Pad Preset (pad_layout)";
+    if (layout == 0) {
+        bool by_ids = nso_ids;
+        for (const PadIds& known : kN64ShapedPads) {
+            by_ids = by_ids || ((vendor == known.vendor) && (product == known.product));
+        }
+        n64 = by_ids;
+        why = "Auto, from the pad's ids";
+        if (!by_ids) {
+            why = "Auto, from the pad's name";
+            for (const char* p = name; (p != nullptr) && (*p != '\0'); p++) {
+                if (SDL_strncasecmp(p, "N64", 3) == 0) {
+                    n64 = true;
+                    break;
+                }
+            }
+        }
+    }
+    g_pad_layout_n64 = n64;
+    // Its C buttons are a property of the pad, not of the layout: they stay
+    // wired under Standard too. Only where they come as buttons, from SDL's
+    // own driver, whose mapping has Y (C-up). Through the community list the
+    // pad is the "NSO N64 Controller": C buttons as a right stick, ZR as the
+    // right trigger, read as any N64 pad is.
+    const bool c_as_buttons = SDL_GameControllerHasButton(game_controller, SDL_CONTROLLER_BUTTON_Y) == SDL_TRUE;
+    g_pad_nso_n64 = c_as_buttons &&
+                    (nso_ids || (n64 && (name != nullptr) && (SDL_strcmp(name, "Nintendo N64 Controller") == 0)));
+    g_pad_r_on_trigger = n64 && !SDL_GameControllerHasButton(game_controller, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) &&
+                         SDL_GameControllerHasAxis(game_controller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
+    g_pad_misc1_photo = SDL_GameControllerHasButton(game_controller, SDL_CONTROLLER_BUTTON_MISC1) &&
+                        !SDL_GameControllerHasButton(game_controller, SDL_CONTROLLER_BUTTON_RIGHTSTICK);
+    printf("[SNAP-Input] pad layout: %s, %s\n",
+           n64 ? "N64-shaped (its L and R are L and R, its Z is Z)" : "standard (the left shoulder is Z, the triggers are L and R)",
+           why);
+    if (g_pad_nso_n64) {
+        printf("[SNAP-Input] Switch Online N64 controller: its C buttons are the C buttons (SDL's driver sends them as Y, X, Back and the right trigger)%s\n",
+               n64 ? "; its ZR is the right shoulder's" : "");
+    }
+    if (g_pad_r_on_trigger) {
+        printf("[SNAP-Input] the pad maps no right shoulder: its right trigger is its R\n");
+    }
+    if (g_pad_misc1_photo) {
+        printf("[SNAP-Input] the pad has no right stick to press in: its Capture or Share button saves the photo\n");
+    }
+    fflush(stdout);
+}
+
 static void try_open_controller() {
     // Drop a handle whose device is gone, otherwise the stale pointer blocks
     // every future open and a replugged controller never comes back.
@@ -2329,10 +2831,52 @@ static void try_open_controller() {
         g_deck_pad_keys_ignored.store(false, std::memory_order_relaxed);
     }
 
-    if (game_controller != nullptr) return;
-
     int num_joysticks = SDL_NumJoysticks();
-    for (int i = 0; i < num_joysticks; i++) {
+    // The open pad has no stick: when the list of joysticks changes and one
+    // that has a stick is there, that one is the pad instead. Looked at only
+    // when the count changes, since the thread polls every 2 ms.
+    static int counted = -1;
+    if (game_controller != nullptr) {
+        if ((num_joysticks == counted) || SDL_GameControllerHasAxis(game_controller, SDL_CONTROLLER_AXIS_LEFTX)) {
+            counted = num_joysticks;
+            return;
+        }
+        counted = num_joysticks;
+        int better = -1;
+        for (int i = 0; (i < num_joysticks) && (better < 0); i++) {
+            if ((!g_vpad_test || SDL_JoystickIsVirtual(i)) && SDL_IsGameController(i) && joystick_has_stick(i)) {
+                better = i;
+            }
+        }
+        if (better < 0) {
+            return;
+        }
+        const char* now = SDL_GameControllerName(game_controller);
+        const char* next = SDL_GameControllerNameForIndex(better);
+        printf("[SNAP-Input] %s has no stick; %s, which has one, is the pad now\n",
+               now ? now : "the open pad", next ? next : "another pad");
+        fflush(stdout);
+        SDL_GameControllerClose(game_controller);
+        game_controller = nullptr;
+        g_deck_pad_keys_ignored.store(false, std::memory_order_relaxed);
+    }
+    counted = num_joysticks;
+
+    // Pads with a stick first, then the rest, each in SDL's order.
+    std::vector<int> order;
+    for (int pass = 0; pass < 2; pass++) {
+        for (int i = 0; i < num_joysticks; i++) {
+            const bool stick = SDL_IsGameController(i) && joystick_has_stick(i);
+            if (stick == (pass == 0)) {
+                order.push_back(i);
+            }
+        }
+    }
+    // A joystick SDL cannot map is named once, not at every poll: while no
+    // pad was open the line went out at every poll (36,207 times in one
+    // phone's log, for its accelerometer).
+    static std::vector<SDL_JoystickID> unmappedSaid;
+    for (int i : order) {
         if (g_vpad_test && !SDL_JoystickIsVirtual(i)) {
             continue;   // the virtual test pad is the only pad this run opens
         }
@@ -2357,42 +2901,13 @@ static void try_open_controller() {
                     SDL_free(mapping);
                 }
 
-                // The layout: by name unless the settings file decides.
-                {
-                    const int layout = settings().pad_layout;
-                    const char* name = SDL_GameControllerName(game_controller);
-                    // The Switch Online N64 controller by its ids (Nintendo 057E,
-                    // product 2019), which no driver or SDL renames; the name
-                    // stays as a second way in.
-                    const bool nso_ids = (SDL_GameControllerGetVendor(game_controller) == 0x057E)
-                                         && (SDL_GameControllerGetProduct(game_controller) == 0x2019);
-                    bool n64 = nso_ids;
-                    if (layout == 2) {
-                        n64 = true;
-                    }
-                    else if (layout == 0) {
-                        for (const char* p = name; (p != nullptr) && (*p != '\0'); p++) {
-                            if (SDL_strncasecmp(p, "N64", 3) == 0) {
-                                n64 = true;
-                                break;
-                            }
-                        }
-                    }
-                    g_pad_layout_n64 = n64;
-                    g_pad_nso_n64 = nso_ids || (n64 && (name != nullptr) && (SDL_strcmp(name, "Nintendo N64 Controller") == 0));
-                    printf("[SNAP-Input] pad layout: %s%s\n",
-                           n64 ? "N64-shaped (its L and R are L and R, its Z is Z)" : "standard (the left shoulder is Z, the triggers are L and R)",
-                           (layout == 0) ? ", from the pad's name" : ", from pad_layout");
-                    if (g_pad_nso_n64) {
-                        printf("[SNAP-Input] Switch Online N64 controller: its C buttons are the C buttons (SDL's driver sends them as Y, X, Back and the right trigger)\n");
-                    }
-                }
+                decide_pad_layout();
 
                 const bool deck = is_steam_deck_pad(game_controller);
                 g_deck_pad_keys_ignored.store(deck, std::memory_order_relaxed);
                 if (deck) {
-                    printf("[SNAP-Input] the Deck's own controller is attached: keyboard Return and Escape are ignored "
-                           "(Steam's desktop layout sends them for A and B)\n");
+                    printf("[SNAP-Input] the Deck's own controller is attached: keyboard Return, Escape, Tab, Space and Left Shift are ignored "
+                           "(Steam's desktop layout sends them for A, B, Select, Y and a paddle)\n");
                 }
                 // SNAP_PAD_STALL_MS: a diagnostic. Holds this thread for the
                 // given time right after a pad opens, standing in for the
@@ -2419,10 +2934,14 @@ static void try_open_controller() {
             // A pad SDL has no mapping for is silent otherwise; say it was
             // seen, so a player knows why it does nothing and can hand SDL a
             // mapping through SDL_GAMECONTROLLERCONFIG (README, Controls).
-            const char* name = SDL_JoystickNameForIndex(i);
-            printf("[SNAP-Input] joystick %d (%s) has no game controller mapping; it is not used. "
-                   "A line for it in gamecontrollerdb.txt, beside the game, would teach SDL this pad\n",
-                   i, name ? name : "unnamed");
+            const SDL_JoystickID id = SDL_JoystickGetDeviceInstanceID(i);
+            if (std::find(unmappedSaid.begin(), unmappedSaid.end(), id) == unmappedSaid.end()) {
+                unmappedSaid.push_back(id);
+                const char* name = SDL_JoystickNameForIndex(i);
+                printf("[SNAP-Input] joystick %d (%s) has no game controller mapping; it is not used. "
+                       "A line for it in gamecontrollerdb.txt, beside the game, would teach SDL this pad\n",
+                       i, name ? name : "unnamed");
+            }
         }
     }
 }
@@ -2737,6 +3256,7 @@ static void pad_publish() {
         s.attached = true;
         s.n64_layout = g_pad_layout_n64;
         s.nso_n64 = g_pad_nso_n64;
+        s.r_on_trigger = g_pad_r_on_trigger;
         for (int b = 0; b < SDL_CONTROLLER_BUTTON_MAX; b++) {
             if (SDL_GameControllerGetButton(game_controller, SDL_GameControllerButton(b)) != 0) {
                 s.buttons |= (1u << b);
@@ -2824,6 +3344,10 @@ static void pad_thread_main() {
             disabledSaid = false;
             // Pick up a newly connected controller, and replace a detached one.
             try_open_controller();
+            // The Controls page's Pad Preset row, in force at once.
+            if ((game_controller != nullptr) && (settings().pad_layout != g_pad_layout_applied)) {
+                decide_pad_layout();
+            }
             pad_apply_rumble();
         }
         sync_gyro();
@@ -3072,7 +3596,10 @@ static void snap_input_tap(uint16_t* buttons, float* x, float* y) {
     // "Pad A"), at that reading: the window's thread takes it as a press of
     // that device (input_last_device) the way it takes a hand's. The game does
     // not see it -- SDL's key and pad state are not changed -- so a replay
-    // keeps its own buttons.
+    // keeps its own buttons. A mouse button ("Mouse Left") is pushed the same
+    // way and let go twenty readings on; a trigger ("Pad RightTrigger") is
+    // held on the virtual pad (SNAP_VPAD_TEST) for thirty readings, so a
+    // click inside that time is a trigger's click on a Deck.
     {
         struct DeviceStep { uint32_t at; std::string name; };
         static std::vector<DeviceStep> steps = [] {
@@ -3094,13 +3621,58 @@ static void snap_input_tap(uint16_t* buttons, float* x, float* y) {
             return v;
         }();
         for (const DeviceStep& d : steps) {
+            // A sixth of a second on: the device the help lines now name, and
+            // the mouse buttons the game's inputs see held.
+            if (d.at + 10 == readingIndex) {
+                const int now = g_last_device.load(std::memory_order_relaxed);
+                printf("[SNAP-Input] device test at reading %u: the help lines name the %s; mouse buttons held 0x%02x\n",
+                       readingIndex, device_word(now), unsigned(g_mouse_held.load(std::memory_order_relaxed)));
+                fflush(stdout);
+            }
+            Source src{};
+            const bool known = resolve_source(d.name, src);
+            if (known && (src.kind == SourceKind::MouseButton) && (d.at + 20 == readingIndex)) {
+                SDL_Event up{};
+                up.type = SDL_MOUSEBUTTONUP;
+                up.button.button = uint8_t(src.code);
+                up.button.state = SDL_RELEASED;
+                SDL_PushEvent(&up);
+            }
+            // A held trigger is set again at every reading of its hold: one
+            // setting alone was sometimes not seen by the pad's next reading.
+            // Its rest is the axis's low end: SDL reads the virtual pad's
+            // full-range axis at 0 as a trigger halfway down.
+            if (known && (src.kind == SourceKind::PadAxis) && (g_vpad != nullptr) && (readingIndex > d.at) &&
+                (readingIndex <= d.at + 30)) {
+                SDL_JoystickSetVirtualAxis(g_vpad, src.code,
+                                           (readingIndex < d.at + 30) ? SDL_JOYSTICK_AXIS_MAX : SDL_JOYSTICK_AXIS_MIN);
+            }
             if (d.at != readingIndex) {
                 continue;
             }
-            Source src{};
-            if (!resolve_source(d.name, src) ||
-                ((src.kind != SourceKind::Key) && (src.kind != SourceKind::PadButton))) {
-                printf("[SNAP-Input] device test at reading %u: \"%s\" is no key or pad button\n",
+            if (known && (src.kind == SourceKind::MouseButton)) {
+                SDL_Event down{};
+                down.type = SDL_MOUSEBUTTONDOWN;
+                down.button.button = uint8_t(src.code);
+                down.button.state = SDL_PRESSED;
+                down.button.clicks = 1;
+                SDL_PushEvent(&down);
+                const PadSnapshot pad = pad_snapshot();
+                printf("[SNAP-Input] device test at reading %u: a press of \"%s\" (the pad's triggers: left %d, right %d)\n",
+                       readingIndex, d.name.c_str(), int(pad.axes[SDL_CONTROLLER_AXIS_TRIGGERLEFT]),
+                       int(pad.axes[SDL_CONTROLLER_AXIS_TRIGGERRIGHT]));
+                fflush(stdout);
+                continue;
+            }
+            if (known && (src.kind == SourceKind::PadAxis) && (g_vpad != nullptr)) {
+                SDL_JoystickSetVirtualAxis(g_vpad, src.code, 32767);
+                printf("[SNAP-Input] device test at reading %u: \"%s\" held on the virtual pad\n", readingIndex,
+                       d.name.c_str());
+                fflush(stdout);
+                continue;
+            }
+            if (!known || ((src.kind != SourceKind::Key) && (src.kind != SourceKind::PadButton))) {
+                printf("[SNAP-Input] device test at reading %u: \"%s\" is no key, pad button, mouse button or trigger\n",
                        readingIndex, d.name.c_str());
                 fflush(stdout);
                 continue;
@@ -3319,13 +3891,16 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
         }
         g_slow_motion_held.store(slow, std::memory_order_relaxed);
     }
+    // Android's touch controls: the buttons the overlay holds.
+    btn |= touch_controls_buttons();
 
     // -----------------------------------------------------------------------
     // Mouse look, while captured (a course, focused): the view itself moves,
     // in the game's memory; the stick is untouched. Under SNAP_REPLAY the
     // mouse is left out, so a replay is the recording and nothing else.
     // -----------------------------------------------------------------------
-    if (g_captured.load(std::memory_order_relaxed) || g_gyro_enabled.load(std::memory_order_relaxed)) {
+    if (g_captured.load(std::memory_order_relaxed) || g_gyro_enabled.load(std::memory_order_relaxed) ||
+        touch_controls_aiming()) {
         static const bool replaying = (getenv("SNAP_REPLAY") != nullptr);
         if (!replaying) {
             apply_mouse_look(g_rdram);

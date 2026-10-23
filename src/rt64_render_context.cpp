@@ -305,6 +305,18 @@ public:
                 return;
             }
         }
+#elif defined(__ANDROID__)
+        // The phone's GPU has to offer Vulkan 1.2 and a swap chain; one that
+        // does not is refused here, named, with a message (gpu_check.cpp).
+        {
+            std::string why;
+            if (!snap::vulkan_device_check(why)) {
+                setup_result = ultramodern::renderer::SetupResult::GraphicsDeviceNotFound;
+                s_live_app.store(nullptr, std::memory_order_release);
+                app_.reset();
+                return;
+            }
+        }
 #endif
 
         // The super sampling is no more than the card's memory carries at the

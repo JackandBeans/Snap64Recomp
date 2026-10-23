@@ -10,13 +10,13 @@ them.
 
 ## The title
 
-<a href="screenshots/01p-title-115.png"><img src="screenshots/01p-title-115.png" width="640" alt="The title screen"></a>
+<a href="screenshots/01q-title-116.png"><img src="screenshots/01q-title-116.png" width="640" alt="The title screen"></a>
 
 **The title screen.** The game's own title with the port's "Recomp" wordmark
 under it, the copyright block, and the port's credits line
-(`JackandBeans (Snap64 Recomp) · v1.1.5`) set in the game's own lettering.
+(`JackandBeans (Snap64 Recomp) · v1.1.6`) set in the game's own lettering.
 The same picture from each earlier release, `01-title.png` for 1.0.0 and
-`01b` to `01n` for 1.0.1 to 1.1.3, stays in the folder for that release's
+`01b` to `01p` for 1.0.1 to 1.1.5, stays in the folder for that release's
 page.
 
 <a href="screenshots/02-title-menu.png"><img src="screenshots/02-title-menu.png" width="640" alt="The title menu with the Snap Station entry"></a>
@@ -266,3 +266,23 @@ they come to a stop without steps when the frame rate is raised.
 
 **The evaluation.** Kinds of Pokémon in the report and the report score,
 saved to the PKMN Report.
+
+## On Android
+
+These two are screenshots of the Android app on Google's emulator, at the
+emulator's own 2400 by 1080, not the PC's 1440p: Android is a beta, and
+these frames are of the app as it is ([ANDROID.md](ANDROID.md)).
+
+<a href="screenshots/28-android-touch.png"><img src="screenshots/28-android-touch.png" width="640" alt="The Android app on the Beach: Start and the four C buttons on the left, R, Z, A and B on the right"></a>
+
+**The touch controls on the Beach, 1.1.6.** With no pad, the N64's
+buttons are drawn in the black bars beside the 4:3 picture, colored like
+the N64 controller's: Start and the four C buttons on the left, R, Z, A and
+B on the right. A drag on the picture aims; outside a course a tap chooses
+on the menus. The buttons hide while a pad or a keyboard is used.
+
+<a href="screenshots/29-android-touch-116.png"><img src="screenshots/29-android-touch-116.png" width="640" alt="The Android app on the Beach, the whole screen in a 4:3 frame: a Pidgey in the reticle, Start and the C buttons on the left, R, Z, A and B on the right"></a>
+
+**The whole screen in a 4:3 frame, for the 1.1.6 release page.** The
+phone's screen scaled to fit, with black above and below: a Pidgey in
+the reticle, and the buttons on both sides.
