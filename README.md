@@ -29,8 +29,14 @@ ROM of the US cartridge to play.** Only the US cartridge's ROM works: the
 Japanese, European and Australian releases are different builds of the game,
 and the port is made from the US one.
 
-The [Releases](https://github.com/JackandBeans/Snap64Recomp/releases) page
-of this repository is the only official download.
+> [!CAUTION]
+> **Snap64 Recomp is released only on this repository's
+> [Releases](https://github.com/JackandBeans/Snap64Recomp/releases) page.**
+> Copies posted anywhere else are not the project's, and one of them offers
+> a fake download. On Windows the port is a ZIP holding a folder with
+> `Snap64Recomp.exe`, and nothing has to be installed. It opens no network
+> connection and asks for no account or password. Each file has a `.sha256`
+> beside it, and [SECURITY.md](SECURITY.md) says how to check a download.
 
 **Contents:** [Get it running](#get-it-running) ·
 [Screenshots](#screenshots) ·
