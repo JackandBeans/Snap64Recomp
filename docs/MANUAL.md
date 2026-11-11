@@ -361,6 +361,52 @@ button keeps its job.
 
 ### Which controllers work
 
+#### Generic Chinese N64 USB pad: optional Windows profile
+
+For the transparent-red, three-prong generic N64 USB pad, there is an
+[optional measured profile](controller-profiles/generic-n64-windows.txt).
+It is kept out of the shipped database because its `0079:0006` USB VID/PID is
+shared by controllers with different layouts. Use it only after comparing the
+physical inputs below; neither the case color nor the identifier is enough.
+
+| Physical control | Raw SDL input, counting from zero |
+| --- | --- |
+| A / B / Start | buttons 5 / 4 / 9 |
+| Z / L / R | buttons 8 / 6 / 7 |
+| C up / right / down / left | buttons 0 / 1 / 2 / 3 |
+| Stick X / Y | axes 0 / 1 |
+| D-pad | hat 0 |
+
+SDL reports 4 axes, 12 buttons and 1 hat. The same unit was identified as
+`USB Joystick` on SDL2 2.32.10 (CRC `8630`) and SDL2 2.26.3 (`8e4f`), and as
+`Microntek USB Joystick` on SDL3 3.4.18 (`79be`). The file contains these three
+Windows variants. CRCs are not unique device identities, and older SDL can
+fall back to a mapping with a different CRC.
+
+Close the game and back up `gamecontrollerdb.txt` beside the executable. Append
+the three mapping lines from the optional profile to that file, then restart.
+Do not replace the whole database with this small file: it only describes this
+pad. Restore the backup if another controller starts behaving differently.
+If the Windows install folder is read-only, move the installation to a folder
+you can write to before editing; Windows has no automatic writable fallback.
+
+The mapping name contains N64, so Pad Preset Auto can choose the N64-shaped
+layout: B stays B, L/R are shoulders, Z is the left trigger and C buttons drive
+the right stick. If Pad Preset was previously forced to Standard, choose N64
+instead. Check any custom Button Setup bindings too. Back is unassigned because
+this pad has no identified physical Select button; use Esc for Options.
+
+The owner's real capture contains 18 assignments and 206 frames over 10 seconds.
+Native SDL detection worked after import; SDL2 2.32.10 virtual checks covered
+buttons, all C directions, hat diagonals, signed stick values and release.
+There has been no physical Snap64 playtest. Start with **Dead Zone 2** on the
+Controls page for this unit and check idle drift and slow aiming in a course.
+That is a 2% radial recommendation from the capture, not a change to the game's
+default or a setting stored in mapping text. Leave Stick Swap off for the
+documented layout. No Linux/macOS/Android identity is inferred from this capture.
+
+#### Other controllers
+
 Anything SDL2 has a mapping for, which is most of
 what is sold: Xbox pads (360, One, Series) over USB or Bluetooth, PlayStation
 (DualShock 3 and 4, DualSense), Switch Pro and Joy-Con, the Steam Deck's own
