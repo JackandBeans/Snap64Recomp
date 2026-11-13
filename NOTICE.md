@@ -45,7 +45,7 @@ git (`VENDORING.md` explains).
 
 | Component | License (as found) | Origin | In this tree |
 | --- | --- | --- | --- |
-| **RT64** | MIT, "Copyright (c) 2024 RT64 Contributors" (`lib/rt64/LICENSE`) | <https://github.com/rt64/rt64>, forked from commit `4337374` (2026-09-02); the fork is <https://github.com/JackandBeans/rt64>, branch `snap64` (`VENDORING.md`) | `lib/rt64` is a submodule on that fork, **modified** by this port in 74 files (object identity and transform pairing, frame pacing and presentation, framebuffer readback, the texture decoder's declared format, diagnostics, configuration; the list, marked and unmarked, is in `VENDORING.md`). Statically linked. |
+| **RT64** | MIT, "Copyright (c) 2024 RT64 Contributors" (`lib/rt64/LICENSE`) | <https://github.com/rt64/rt64>, forked from commit `4337374` (2026-09-02); the fork is <https://github.com/JackandBeans/rt64>, branch `snap64` (`VENDORING.md`) | `lib/rt64` is a submodule on that fork, **modified** by this port in 75 files (object identity and transform pairing, frame pacing and presentation, framebuffer readback, the texture decoder's declared format, diagnostics, configuration; the list, marked and unmarked, is in `VENDORING.md`). Statically linked. |
 
 RT64's own third-party trees are its submodules in `lib/rt64/src/contrib`,
 at the commits RT64 records (plume on Snap64 Recomp's fork);
@@ -148,7 +148,7 @@ and the flash it leaves with, not game art.
 | `menu_text/pointer_flash.png` | this project's (GPLv3) | JackandBeans's comic burst, made for the port, over the pointer | the flash the pointer leaves and returns with |
 | `src/snap64.ico` | this project's (GPLv3) | composed from `docs/logo.png` by `tools/icon_gen.py` | the executable's icon, compiled in through `src/snap64.rc.in` |
 | `docs/screenshots/*.png` | **not this project's**: thirty-eight frames of Pokémon Snap as the port renders it (Nintendo, Creatures, GAME FREAK, HAL Laboratory, The Pokémon Company) | captured by me from the 1.0.0 build and the releases after it | the README, `docs/SCREENSHOTS.md` and the release pages only; not in the archive and not used by the program |
-| `docs/logo.png` | **not this project's**: the "Snap" lettering, the starburst, the film strip and the film canister with its Poké Ball are the Pokémon Snap logo's (Nintendo, Creatures, GAME FREAK, The Pokémon Company), the "64" is the Nintendo 64 logo's; "Recomp" is the port's own word set in the same style | renderings of the two logos, composed by me | the README header and `docs/social-preview.png` only; it names the game the port runs and is not used in the program. Their owners' trademarks; the README's first paragraph states the non-affiliation |
+| `docs/logo.png` | **not this project's**: the "Snap" lettering, the starburst, the film strip and the film canister with its Poké Ball are the Pokémon Snap logo's (Nintendo, Creatures, GAME FREAK, The Pokémon Company), the "64" is the Nintendo 64 logo's; "Recomp" is the port's own word set in the same style | renderings of the two logos, composed by me | the README header and `docs/social-preview.png`, and in the release packages as `steam_art/logo.png`, which the port hands to Steam for its shortcut and does not show itself. It names the game the port runs. Their owners' trademarks; the README's first paragraph states the non-affiliation |
 
 No texture pack and no mod ships in this repository or in the release
 archive. RT64's texture replacement system and librecomp's mod loader are

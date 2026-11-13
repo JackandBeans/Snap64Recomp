@@ -46,7 +46,7 @@ here should be assumed untried.
   here before they are published (`BUILDING.md`, "To cut a release"). The
   Android APK is signed with the release key here, so it carries no GitHub
   build record.
-* Version `1.1.6`, typed once in `CMakeLists.txt` and shown in the title
+* Version `1.1.7`, typed once in `CMakeLists.txt` and shown in the title
   bar, the log banner, the credits line, the executable's file properties and
   the ZIP's name. `CHANGELOG.md` says what each release changed.
 * Licensed under the GPLv3 (`LICENSE`); `NOTICE.md` lists every third-party
@@ -89,10 +89,10 @@ here should be assumed untried.
   the screen: the host's line for each BGM player gives its own clock at
   the hold and at the release, and the check passes only when they are
   equal.
-  On the 1.1.6 executable built here (SHA-256 beginning `08dcfb17`), run
-  without diagnostics in the environment, the suite passed 33 of 33 checks
-  in 1227 seconds, and the station's 5 of 5
-  in 488; the 1.1.5 executable had passed 33 of 33 in 1226 and the station's
+  On the 1.1.7 executable built here (SHA-256 beginning `b42fe724`), run
+  without diagnostics in the environment, the suite passed 39 of 39 checks in
+  1414 seconds, and the station's 5 of 5 in 488; the 1.1.6 executable had
+  passed 33 of 33 in 1227 and the station's 5 in 488, the 1.1.5 executable had passed 33 of 33 in 1226 and the station's
   5 in 488, the 1.1.4 executable had passed 29 of 29 in 1150 and the station's
   5 in 491, the 1.1.3 executable had
   passed 29 of 29 in 1153 and the station's 5 in 489, the 1.1.2 executable had

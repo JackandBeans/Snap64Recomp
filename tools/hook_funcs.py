@@ -21,6 +21,14 @@ HOOKED = [
     # The game's flash set-up, where the save file is swapped for the one
     # the settings name before the game reads it (src/save_file.cpp).
     'func_800C0B48_5D9E8',
+    # Options > Game > Autosave (src/autosave.cpp): the boot read and the
+    # game's one save routine keep a copy of the record as the flash holds
+    # it; the record's reset says when a new game replaced it; the lab's
+    # events, once per lab entry, are where the save is made.
+    'func_800C05D4_5D474',
+    'func_800BF244_5C0E4',
+    'func_800C042C_5D2CC',
+    'func_800E5298_8AAAB8',
     # Overlay residency tracking and the RSP memory probes.
     'dmaLoadOverlay',
     # Where a scene's general heap is started again, which is every scene's
@@ -88,6 +96,9 @@ HOOKED = [
     'album_UpdateButtonSelection',
     'album_UpdatePhotoSelection',
     'album_DragPhoto',
+    # The album's comment editor: the keyboard types on its grid and the
+    # pointer picks from it, as on the photographer card.
+    'album_EditComment',
     'func_801E28D8_9D9248',
     'func_801E2AC0_9D9430',
     'func_801E2CF8_9D9668',

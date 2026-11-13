@@ -67,10 +67,10 @@ The rest of the documentation is listed [near the end](#documentation).
 These steps are for Windows. Linux and the Steam Deck are [further
 down](#linux-and-steam-deck).
 
-1. Download `Snap64Recomp-1.1.6-win64.zip` from the
+1. Download `Snap64Recomp-1.1.7-win64.zip` from the
    [Releases](https://github.com/JackandBeans/Snap64Recomp/releases/latest)
    page and unpack it anywhere. It holds one folder,
-   `Snap64Recomp-1.1.6-win64`, with `Snap64Recomp.exe` inside. Nothing has
+   `Snap64Recomp-1.1.7-win64`, with `Snap64Recomp.exe` inside. Nothing has
    to be installed.
 2. Have your ROM of the US cartridge ready. (A ROM is the cartridge's
    contents, read out into one file.) Put it next to `Snap64Recomp.exe`
@@ -110,7 +110,7 @@ bug report.
 ## Screenshots
 
 <table><tr>
-<td><a href="docs/screenshots/01q-title-116.png"><img src="docs/screenshots/01q-title-116.png" width="400" alt="The title screen"></a></td>
+<td><a href="docs/screenshots/01r-title-117.png"><img src="docs/screenshots/01r-title-117.png" width="400" alt="The title screen"></a></td>
 <td><a href="docs/screenshots/03-course-select.png"><img src="docs/screenshots/03-course-select.png" width="400" alt="Course select"></a></td>
 </tr><tr>
 <td><a href="docs/screenshots/04-beach.png"><img src="docs/screenshots/04-beach.png" width="400" alt="The Beach: Surfing Pikachu"></a></td>
@@ -468,7 +468,7 @@ menus and a mod's hooks have run; the touch controls and a pad made in
 software have run on Android's emulator.
 
 Every release also passes an automated suite before it ships
-(`tools/release_check.py`). On the 1.1.6 executable it passed 33 of 33
+(`tools/release_check.py`). On the 1.1.7 executable it passed 39 of 39
 checks, and the station's 5 of 5. [VERIFICATION.md](docs/VERIFICATION.md) says what
 each check does, what every release reported, and what has only been read
 from the code and not seen.
@@ -480,7 +480,7 @@ under WSL, N64Recomp for the game and the patches, CMake and MSVC on
 Windows, and a list of things git does not carry
 ([What a clean checkout is missing](BUILDING.md#what-a-clean-checkout-is-missing)).
 `cpack -C Release` in the build directory then writes
-`Snap64Recomp-1.1.6-win64.zip` ([step 13](BUILDING.md#13-package)).
+`Snap64Recomp-1.1.7-win64.zip` ([step 13](BUILDING.md#13-package)).
 
 <a id="how-i-made-it"></a>
 ## How it was made
@@ -555,7 +555,7 @@ None of this would exist without:
 * Jack and Beans, the team at HAL Laboratory who made the game. Their name,
   shown in the game's opening and at the head of its credits, gave me the
   name I use here. It is on the title screen's credits line,
-  `JackandBeans (Snap64 Recomp) · v1.1.6`, with the port's name and version
+  `JackandBeans (Snap64 Recomp) · v1.1.7`, with the port's name and version
   ([the game's history](docs/HISTORY.md)).
 * [Video Game Esoterica](https://www.youtube.com/@VideoGameEsoterica), whose video on the port,
   ["Pokemon Snap Recomp Out NOW! More Pokemon PC Ports"](https://youtu.be/1ds9leciGU4?si=iLBwSeI-OqSO8NsI), asked

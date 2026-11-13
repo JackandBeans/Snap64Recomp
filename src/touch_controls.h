@@ -27,6 +27,10 @@ uint16_t touch_controls_buttons();
 // view (input_get then applies the motion as it does the mouse's).
 bool touch_controls_aiming();
 
+// Move Buttons on the CONTROLS page (menu_assets.cpp): the overlay's mode
+// for dragging the buttons opens at its next look.
+void touch_controls_move();
+
 #if defined(__ANDROID__)
 // Whether the touch controls are on the screen now (rect_tags.cpp keeps
 // the film counter out of R's corner while they are).

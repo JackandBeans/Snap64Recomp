@@ -19,6 +19,12 @@
 # of the clean right side, while its paint (the 64, the Poke Ball, the cap's
 # highlight) stays as drawn.
 #
+# The Flatpak exports the tile at every size from 16 to 256 px, each drawn
+# from the logo, and that is the program's icon everywhere, Steam included.
+# Steam keeps a Flatpak shortcut's icon as a name and looks it up in the icon
+# theme as the desktop does, and hicolor's 256x256/apps folder serves every
+# size from 64 to 256, so no size can give Gaming Mode a picture of its own.
+#
 # The macOS bundle's icon, src/snap64.icns, from the same pieces: the tile
 # at 32 px and above with the Retina doubles Finder asks for, up to 512
 # (the 1024 entry would be half the file again, for a size macOS scales
@@ -27,10 +33,10 @@
 # wants macOS's tool: an .icns is a header and a list of typed chunks, each
 # a PNG here.
 #
-# Every entry is reduced from the full-resolution logo with a Lanczos
-# filter, so no entry is an upscaled or blurred copy of another. Run from
-# anywhere; needs Pillow and NumPy. The .ico and the .icns are tracked, so
-# this only needs running when the logo changes.
+# Every .ico and .icns entry is reduced from the full-resolution logo with a
+# Lanczos filter, so none is an upscaled or blurred copy of another. Run from
+# anywhere; needs Pillow and NumPy. The .ico, the .icns and the PNGs are
+# tracked, so this only needs running when the logo changes.
 import io
 import os
 import struct
@@ -44,10 +50,12 @@ ROOT = os.path.dirname(HERE)
 LOGO = os.path.join(ROOT, 'docs', 'logo.png')
 OUT = os.path.join(ROOT, 'src', 'snap64.ico')
 # The 256 px entry on its own, for Linux: a binary there carries no icon,
-# so the tarball ships this beside it as Snap64Recomp.png, the window takes
-# it at start-up (src/menu_assets.cpp, set_window_icon) and a Steam
-# shortcut can be pointed at it.
+# so the tarball ships this beside it as Snap64Recomp.png, for a Steam shortcut
+# and the launcher the port writes.
 PNG_OUT = os.path.join(ROOT, 'src', 'snap64.png')
+# The tile at the Flatpak's smaller sizes; its 256 is PNG_OUT.
+TILE_SIZES = (16, 32, 48, 64, 128)
+TILE_OUTS = {s: os.path.join(ROOT, 'src', 'snap64-%d.png' % s) for s in TILE_SIZES}
 # The canister alone at 128 px, for the Linux window: a title bar there
 # takes one image for every size, and the tile is a purple square at 16 px
 # where Windows shows the canister from the .ico's small entries.
@@ -272,9 +280,12 @@ def main():
     frames[0].save(OUT, format='ICO', sizes=[f.size for f in frames],
                    append_images=frames[1:])
     frames[0].save(PNG_OUT, format='PNG')
+    for s, path in TILE_OUTS.items():
+        on_tile(logo, s, 1.16).save(path, format='PNG')
     alone(canister, 128).save(CANISTER_OUT, format='PNG')
     icns_bytes = write_icns(ICNS_OUT, logo, canister)
-    print('wrote', OUT, [f.size for f in frames], 'canister', canister.size, 'and', PNG_OUT, CANISTER_OUT)
+    print('wrote', OUT, [f.size for f in frames], 'canister', canister.size, 'and', PNG_OUT,
+          sorted(TILE_OUTS.values()), CANISTER_OUT)
     print('wrote', ICNS_OUT, '%d entries, %d bytes' % (len(ICNS_ENTRIES), icns_bytes))
     return canister
 

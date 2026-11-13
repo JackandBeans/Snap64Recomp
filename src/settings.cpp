@@ -164,13 +164,23 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         s.wide_hud           = j.value("wide_hud", s.wide_hud);
         s.snap_station       = j.value("snap_station", s.snap_station);
         s.save_file          = std::clamp(j.value("save_file", s.save_file), 1, 4);
+        s.autosave           = j.value("autosave", s.autosave);
         s.mouse_aim          = j.value("mouse_aim", s.mouse_aim);
         s.custom_pointer     = j.value("custom_pointer", s.custom_pointer);
+        s.pointer_always     = j.value("pointer_always", s.pointer_always);
         // rumble_strength, written by 1.0.1, is read by nothing: the
         // cartridge never rumbles. A file that still carries it loads as
         // before, and the key is not written back.
         s.pad_enabled        = j.value("pad_enabled", s.pad_enabled);
         s.pad_layout         = std::clamp(j.value("pad_layout", s.pad_layout), 0, 2);
+        s.pad_presets.clear();
+        if (j.contains("pad_presets") && j["pad_presets"].is_object()) {
+            for (const auto& [ids, value] : j["pad_presets"].items()) {
+                if (value.is_number_integer() && (ids.size() <= 32)) {
+                    s.pad_presets[ids] = std::clamp(value.get<int>(), 0, 2);
+                }
+            }
+        }
         s.pad_sticks_swapped = j.value("pad_sticks_swapped", s.pad_sticks_swapped);
         s.pad_deadzone       = std::clamp(j.value("pad_deadzone", s.pad_deadzone), 0, 40);
         s.fast_forward_speed = std::clamp(j.value("fast_forward_speed", s.fast_forward_speed), 1, 4);
@@ -178,14 +188,25 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
             const int slow = j.value("slow_motion_speed", s.slow_motion_speed);
             s.slow_motion_speed = (slow < 2) ? 1 : ((slow < 4) ? 2 : 4);
         }
-        s.mouse_sensitivity  = std::clamp(j.value("mouse_sensitivity", s.mouse_sensitivity), 0.1f, 10.0f);
+        s.mouse_sensitivity  = std::clamp(j.value("mouse_sensitivity", s.mouse_sensitivity), 0.05f, 10.0f);
         s.mouse_invert_y     = j.value("mouse_invert_y", s.mouse_invert_y);
         s.mouse_zoom_speed   = std::clamp(j.value("mouse_zoom_speed", s.mouse_zoom_speed), 0.25f, 1.0f);
         s.gyro_aim           = std::clamp(j.value("gyro_aim", s.gyro_aim), 0, 2);
-        s.gyro_sensitivity   = std::clamp(j.value("gyro_sensitivity", s.gyro_sensitivity), 0.25f, 4.0f);
+        s.gyro_sensitivity   = std::clamp(j.value("gyro_sensitivity", s.gyro_sensitivity), 0.05f, 4.0f);
         s.touch_controls     = std::clamp(j.value("touch_controls", s.touch_controls), 0, 2);
         s.touch_size         = std::clamp(j.value("touch_size", s.touch_size), 50, 150);
         s.touch_opacity      = std::clamp(j.value("touch_opacity", s.touch_opacity), 20, 100);
+        s.touch_mirror       = j.value("touch_mirror", s.touch_mirror);
+        s.touch_fade         = j.value("touch_fade", s.touch_fade);
+        // Where Move Buttons put the buttons: a string, kept as it is within
+        // a sane length (Snap64TouchOverlay.java reads it and skips what it
+        // cannot).
+        if (j.contains("touch_layout") && j["touch_layout"].is_string()) {
+            s.touch_layout = j["touch_layout"].get<std::string>();
+            if (s.touch_layout.size() > 512) {
+                s.touch_layout.clear();
+            }
+        }
         // The binding table: "keys" maps an input's name to a key or mouse
         // name, or to a list of them. Handed to input.cpp whole; it reports
         // and skips what it cannot resolve (input.h).
@@ -210,9 +231,9 @@ static SettingsRead read_settings_file(const std::filesystem::path& path, Settin
         // upgraded file gains the new keys (and keys_help) on the next flush
         // rather than staying silent about them.
         s_fields_missing = !j.contains("window_maximized") || !j.contains("wide_hud") || !j.contains("save_file") || !j.contains("gyro_aim") || !j.contains("pad_enabled") ||
-                           !j.contains("keys_help") || !j.contains("pad_layout") ||
+                           !j.contains("keys_help") || !j.contains("pad_layout") || !j.contains("pad_presets") ||
                            !j.contains("pad_sticks_swapped") || !j.contains("pad_deadzone") ||
-                           !j.contains("fast_forward_speed") || !j.contains("slow_motion_speed");
+                           !j.contains("fast_forward_speed") || !j.contains("slow_motion_speed") || !j.contains("autosave");
         out = s;
         return SettingsRead::Ok;
     } catch (const std::exception& e) {
@@ -352,6 +373,8 @@ bool save_settings() {
                          "Fast Forward speed; Tab and Pad RightShoulder as shipped"},
         {"slow_motion", "not an N64 input: the port's own key, held to run the game at the Controls page's "
                         "Slow Motion speed; Space and Pad LeftStick (the left stick pressed in) as shipped"},
+        {"photo", "not an N64 input: the port's own key, which saves the photo on screen to a file; "
+                  "P and Pad RightStick (the right stick pressed in) as shipped"},
         {"example", "\"z\": [\"Left Shift\", \"Pad LeftTrigger\"] puts Z on the left trigger"},
         {"unknown_names", "reported in snap64.log and skipped; an input left with nothing keeps its default"},
         {"not_bindable", "the sticks themselves: the left stick aims and the right stick works the C buttons"},
@@ -391,10 +414,13 @@ bool save_settings() {
         {"wide_hud",              copy.wide_hud},
         {"snap_station",          copy.snap_station},
         {"save_file",             copy.save_file},
+        {"autosave",              copy.autosave},
         {"mouse_aim",             copy.mouse_aim},
         {"custom_pointer",        copy.custom_pointer},
+        {"pointer_always",        copy.pointer_always},
         {"pad_enabled",           copy.pad_enabled},
         {"pad_layout",            copy.pad_layout},
+        {"pad_presets",           copy.pad_presets},
         {"pad_sticks_swapped",    copy.pad_sticks_swapped},
         {"pad_deadzone",          copy.pad_deadzone},
         {"fast_forward_speed",    copy.fast_forward_speed},
@@ -407,6 +433,9 @@ bool save_settings() {
         {"touch_controls",        copy.touch_controls},
         {"touch_size",            copy.touch_size},
         {"touch_opacity",         copy.touch_opacity},
+        {"touch_mirror",          copy.touch_mirror},
+        {"touch_fade",            copy.touch_fade},
+        {"touch_layout",          copy.touch_layout},
         {"keys",                  keys},
         {"keys_help",             keys_help},
     };
@@ -515,11 +544,11 @@ static bool toggle_locked(bool Settings::*flag) {
 static int step_mouse_speed(int dir) {
     std::lock_guard<std::mutex> lock(s_settings_mutex);
     const int pct = int(std::lround(s_settings.mouse_sensitivity * 100.0f));
-    int best = 3;
-    for (int i = 0; i < 11; i++) {
+    int best = kMouseSpeedStepDefault;
+    for (int i = 0; i < kMouseSpeedStepCount; i++) {
         if (std::abs(kMouseSpeedSteps[i] - pct) < std::abs(kMouseSpeedSteps[best] - pct)) best = i;
     }
-    best = std::clamp(best + dir, 0, 10);
+    best = std::clamp(best + dir, 0, kMouseSpeedStepCount - 1);
     s_settings.mouse_sensitivity = kMouseSpeedSteps[best] / 100.0f;
     return kMouseSpeedSteps[best];
 }
@@ -549,6 +578,7 @@ bool handle_settings_hotkey(int scancode) {
             const int pct = step_mouse_speed((scancode == SDL_SCANCODE_RIGHTBRACKET) ? 1 : -1);
             settings_mark_dirty();
             menu_mailbox_sync();
+            menu_speed_readout(pct);   // shown in a course only
             printf("[SNAP-CFG] mouse speed: %d\n", pct);
             return true;
         }
@@ -678,12 +708,16 @@ bool handle_settings_hotkey(int scancode) {
             printf("[SNAP-CFG] overscan crop: %s\n", on ? "on" : "off");
             return true;
         }
-        case SDL_SCANCODE_P: {
-            // Saves the photo on screen (photo_export.h). Not a setting:
-            // nothing is marked dirty. A held key repeats at the OS rate and
-            // main.cpp hands every repeat here, so a press within a short
-            // window of the last one is the same press; a second photo of
-            // the same screen is one deliberate press away.
+        default: {
+            // A key the photo entry has (P as shipped) saves the photo on
+            // screen (photo_export.h). Not a setting: nothing is marked
+            // dirty. A held key repeats at the OS rate and main.cpp hands
+            // every repeat here, so a press within a short window of the
+            // last one is the same press; a second photo of the same screen
+            // is one deliberate press away.
+            if (!input_photo_key(scancode)) {
+                return false;
+            }
             static std::chrono::steady_clock::time_point last{};
             const std::chrono::steady_clock::time_point now = std::chrono::steady_clock::now();
             if (now - last < std::chrono::milliseconds(300)) {
@@ -693,8 +727,6 @@ bool handle_settings_hotkey(int scancode) {
             export_photo(g_rdram);
             return true;
         }
-        default:
-            return false;
     }
 }
 

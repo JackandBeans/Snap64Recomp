@@ -71,6 +71,10 @@ bool     g_heap_overflowed = false;
 
 } // namespace
 
+// The pages' own display list (src/rect_tags.cpp).
+void pages_list_begin();
+void pages_list_take(uint32_t* peak, uint32_t* size, uint32_t* skipped, uint32_t* names);
+
 } // namespace snap
 
 extern "C" void gtlCheckBuffers(uint8_t* rdram, recomp_context* ctx) {
@@ -96,12 +100,14 @@ extern "C" void gtlCheckBuffers(uint8_t* rdram, recomp_context* ctx) {
             const uint32_t spare = (used < capacity) ? (capacity - used) : 0u;
             *reinterpret_cast<uint32_t*>(rdram + (snap::DlSpareAddr - 0x80000000u)) = spare;
             // What the pages cost, said once each time they close: the peak
-            // with them up against the frame before them.
+            // with them up against the frame before them, and what their own
+            // list held, where their strips draw.
             const bool open = rdram[(snap::PagesOpenAddr ^ 3u) - 0x80000000u] != 0;
             if (open) {
                 if (!snap::g_pages_seen) {
                     snap::g_pages_seen = true;
                     snap::g_pages_peak = 0;
+                    snap::pages_list_begin();
                 }
                 if (used > snap::g_pages_peak) {
                     snap::g_pages_peak = used;
@@ -109,8 +115,14 @@ extern "C" void gtlCheckBuffers(uint8_t* rdram, recomp_context* ctx) {
             } else {
                 if (snap::g_pages_seen) {
                     snap::g_pages_seen = false;
-                    printf("[SNAP-DL] with the pages up the main buffer reached %u of %u bytes; the frame before them used %u\n",
-                           snap::g_pages_peak, capacity, snap::g_used_before_pages);
+                    uint32_t listPeak = 0;
+                    uint32_t listSize = 0;
+                    uint32_t listSkipped = 0;
+                    uint32_t listNames = 0;
+                    snap::pages_list_take(&listPeak, &listSize, &listSkipped, &listNames);
+                    printf("[SNAP-DL] with the pages up the main buffer reached %u of %u bytes; the frame before them used %u; "
+                           "their own list held at most %u of %u bytes, %u strips left out for room, %u names written in it\n",
+                           snap::g_pages_peak, capacity, snap::g_used_before_pages, listPeak, listSize, listSkipped, listNames);
                     fflush(stdout);
                 }
                 snap::g_used_before_pages = used;

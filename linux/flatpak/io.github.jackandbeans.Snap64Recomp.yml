@@ -35,6 +35,10 @@ finish-args:
   - --filesystem=/media:ro
   - --filesystem=/run/media:ro
   - --filesystem=/mnt:ro
+  # The Steam art (src/steam_art.h): the port writes a Steam shortcut's art into
+  # config/grid under this folder and nowhere else in it. The account's number is
+  # not known here, so the permission cannot be any narrower.
+  - --filesystem=~/.local/share/Steam/userdata
 cleanup:
   - '*.a'
 modules:
@@ -52,6 +56,12 @@ modules:
       # The flat folder of the tarball, into /app/bin: the program finds its
       # shipped files beside itself there.
       - cmake --install build-flatpak --prefix /app/bin
+      # The logo's tile at every size from 16 to 256 (tools/icon_gen.py).
+      - install -Dm644 src/snap64-16.png /app/share/icons/hicolor/16x16/apps/${FLATPAK_ID}.png
+      - install -Dm644 src/snap64-32.png /app/share/icons/hicolor/32x32/apps/${FLATPAK_ID}.png
+      - install -Dm644 src/snap64-48.png /app/share/icons/hicolor/48x48/apps/${FLATPAK_ID}.png
+      - install -Dm644 src/snap64-64.png /app/share/icons/hicolor/64x64/apps/${FLATPAK_ID}.png
+      - install -Dm644 src/snap64-128.png /app/share/icons/hicolor/128x128/apps/${FLATPAK_ID}.png
       - install -Dm644 src/snap64.png /app/share/icons/hicolor/256x256/apps/${FLATPAK_ID}.png
       - install -Dm644 linux/flatpak/${FLATPAK_ID}.desktop /app/share/applications/${FLATPAK_ID}.desktop
       - install -Dm644 linux/flatpak/${FLATPAK_ID}.metainfo.xml /app/share/metainfo/${FLATPAK_ID}.metainfo.xml

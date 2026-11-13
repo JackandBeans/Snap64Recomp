@@ -10,13 +10,13 @@ them.
 
 ## The title
 
-<a href="screenshots/01q-title-116.png"><img src="screenshots/01q-title-116.png" width="640" alt="The title screen"></a>
+<a href="screenshots/01r-title-117.png"><img src="screenshots/01r-title-117.png" width="640" alt="The title screen"></a>
 
 **The title screen.** The game's own title with the port's "Recomp" wordmark
 under it, the copyright block, and the port's credits line
-(`JackandBeans (Snap64 Recomp) · v1.1.6`) set in the game's own lettering.
+(`JackandBeans (Snap64 Recomp) · v1.1.7`) set in the game's own lettering.
 The same picture from each earlier release, `01-title.png` for 1.0.0 and
-`01b` to `01p` for 1.0.1 to 1.1.5, stays in the folder for that release's
+`01b` to `01q` for 1.0.1 to 1.1.6, stays in the folder for that release's
 page.
 
 <a href="screenshots/02-title-menu.png"><img src="screenshots/02-title-menu.png" width="640" alt="The title menu with the Snap Station entry"></a>
@@ -90,16 +90,19 @@ cartridge kept here live on the Controls page now; Exit Game is the Game
 page's last row since 1.1.3. The picture is from 1.0.4, when Exit Game
 stood on this list.
 
-<a href="screenshots/26-game-page-114.png"><img src="screenshots/26-game-page-114.png" width="640" alt="The Game page, 1.1.4: Save File with the file's state, Restart Game, Exit Game"></a>
+<a href="screenshots/31-game-page-autosave-117.png"><img src="screenshots/31-game-page-autosave-117.png" width="640" alt="The Game page, 1.1.7: Save File, Autosave set to On with its help line, Restart Game, Exit Game"></a>
 
-**The Game page, 1.1.4.** The list's sixth row opens it: Save File, File 1
+**The Game page, 1.1.7.** The list's sixth row opens it: Save File, File 1
 to File 4, each its own file under `saves/`, read at the next start, its
 value saying what the file holds ("File 1, playing", "File 2, empty", or
-the day of its last save); Restart Game, the Mods page's restart, which
-asks first, so a chosen file is played at once; and Exit Game, which asks
-once (A again closes the program, B stays) and is how a pad quits. 1.1.3
-had a Snap Station row between Save File and Exit Game, a second switch
-for the title screen's own Snap Station item; 1.1.4 took it out.
+the day of its last save); Autosave, Off as shipped, here set to On, so the
+game saves by itself each time the lab opens with anything the last save
+does not hold; Restart Game, the Mods page's restart, which asks first, so
+a chosen file is played at once; and Exit Game, which asks once (A again
+closes the program, B stays) and is how a pad quits. 1.1.3 had a Snap
+Station row between Save File and Exit Game, a second switch for the title
+screen's own Snap Station item; 1.1.4 took it out, and 1.1.7 added
+Autosave. The picture was taken on the 1.1.7 build.
 
 
 <a href="screenshots/27-graphics-page-115.png"><img src="screenshots/27-graphics-page-115.png" width="640" alt="The Graphics page, 1.1.5: Super Sampling held to the card"></a>
@@ -269,7 +272,7 @@ saved to the PKMN Report.
 
 ## On Android
 
-These two are screenshots of the Android app on Google's emulator, at the
+These are screenshots of the Android app on Google's emulator, at the
 emulator's own 2400 by 1080, not the PC's 1440p: Android is a beta, and
 these frames are of the app as it is ([ANDROID.md](ANDROID.md)).
 
@@ -286,3 +289,11 @@ on the menus. The buttons hide while a pad or a keyboard is used.
 **The whole screen in a 4:3 frame, for the 1.1.6 release page.** The
 phone's screen scaled to fit, with black above and below: a Pidgey in
 the reticle, and the buttons on both sides.
+
+<a href="screenshots/30-android-touch-rows-117.png"><img src="screenshots/30-android-touch-rows-117.png" width="640" alt="The Android app's Controls page in a 4:3 frame: the six touch rows, Touch Controls to Move Buttons, with Start, A and B drawn beside the page"></a>
+
+**The touch rows on the Controls page, 1.1.7.** The phone's screen scaled
+to fit a 4:3 frame: Options > Controls at its end, with the six rows for
+the touch controls (Touch Controls, Touch Size, Touch Opacity, Left-Handed,
+Idle Fade, Move Buttons) and the overlay's Start, A and B beside the page.
+The page was scrolled there by a swipe.

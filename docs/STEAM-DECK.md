@@ -83,8 +83,8 @@ this:
    each size the surface takes. If the picture still shows bars top and
    bottom after a few seconds, set that Game Resolution to Native and
    send the log.
-   In Gaming Mode Steam offers the game only its own virtual pad, so gyro
-   aim has to come from Steam's layout ([Controls](MANUAL.md#controls)). The port boots
+   In Gaming Mode Steam offers the game only its own virtual pad; gyro aim
+   there is under [Gyro aiming](#on-a-deck-either-way). The port boots
    fullscreen on a Deck (F11 leaves it); any
    other machine boots as its settings file says, windowed until the
    file says fullscreen.
@@ -145,17 +145,18 @@ the first report would be welcome, with `snap64.log` from the folder above.
   B or X is B, the left bumper is Z, Start is Start, the triggers are L
   and R, the right stick is the C buttons and, pressed in, saves the photo
   on screen, the D-pad is the D-pad, and the View button opens the port's
-  Options ([Controls](MANUAL.md#controls)). Back paddles,
-  trackpads and gyro reach the game only as whatever Steam's controller
-  layout maps them to.
+  Options ([Controls](MANUAL.md#controls)). Back paddles and
+  trackpads reach the game only as whatever Steam's controller layout maps
+  them to.
 * **The icon.** A Linux binary cannot carry one, where the Windows
   executable carries two: the whole logo on a tile, and the film canister
   alone for the title bar. So both ship beside the binary. The window
-  takes `Snap64Recomp-window.png`, the canister, at start-up. A Steam
-  shortcut shows `Snap64Recomp.png`, the tile, once you pick that file in
-  the shortcut's Properties (the artwork Steam shows in Gaming Mode is a
-  separate choice there, and yours to make). And the port writes a
-  `Snap64Recomp.desktop` launcher on the first start, beside itself when
+  takes `Snap64Recomp-window.png`, the canister, at start-up. A tarball's
+  Steam shortcut shows `Snap64Recomp.png`, the tile, once you pick that
+  file in the shortcut's Properties. The Flatpak exports the tile at every
+  size from 16 to 256 pixels, and the desktop and Steam's Gaming Mode both
+  show it. And the port writes a `Snap64Recomp.desktop` launcher on the
+  first start, beside itself when
   that folder can be written and in the data directory otherwise, with
   the tile as its icon and the executable's folder as its working
   directory: that is what a file manager or an application menu can show
@@ -180,20 +181,37 @@ the first report would be welcome, with `snap64.log` from the folder above.
   attached, a click that comes with its trigger held is ignored, and a
   trackpad click with no trigger held still works. Through a Steam
   shortcut the layout is the gamepad one and nothing is sent.
-* **Gyro aiming.** In Gaming Mode the game cannot read the Deck's gyro:
-  Steam's controller layer keeps it. In the shortcut's controller settings
-  set *Gyro Behavior* to **As Mouse** and *Gyro Activation Buttons* to
-  **None Selected (Gyro Always On)**: the port's mouse look then turns the
-  camera with the Deck, and Mouse Speed on the Controls page sets how far.
-  The right trackpad as mouse works the same way. Launched outside Steam's
-  layer (Desktop Mode from a terminal or a file manager, or with Steam
-  Input disabled for the shortcut) the port reads the Deck's gyro itself:
-  Gyro Aim on the Controls page, at natural scale. On the first Deck run
-  (2026-09-06, Desktop Mode) the gyro was found and stayed silent, which is
-  what Steam's switched-off sensor looks like ([Controls](MANUAL.md#controls)); the port
+* **Gyro aiming.** In Gaming Mode Steam's virtual pad has no sensors, so the
+  port reads the Deck's own gyro from the controller's HID interface and
+  takes the same readings Desktop Mode does. Turn on Gyro Aim on the Controls
+  page and use a Steam layout without gyro (the default Gamepad one). Steam's
+  Gyro As Mouse on top of it moves the camera twice. The log says
+  `[SNAP-Input] gyro on: the Deck's own sensor through its HID interface`.
+  On an OLED Deck on Nov 6 it felt right on two rides and too slow on two. On
+  Nov 7 three full turns of the body measured 1081.5 degrees against 1080, so
+  the scale is right; why two rides felt slow is still open. With Gyro Aim off,
+  Steam's layout is the other way:
+  in the shortcut's controller settings set *Gyro Behavior* to **As Mouse**
+  and *Gyro Activation Buttons* to **None Selected (Gyro Always On)**: the
+  port's mouse look then turns the camera with the Deck, and Mouse Speed on
+  the Controls page sets how far. The right trackpad as mouse works the same
+  way. Launched outside Steam's layer (Desktop Mode from a terminal or a file
+  manager, or with Steam Input disabled for the shortcut) SDL reads the Deck's
+  gyro for the port: Gyro Aim on the Controls page, at natural scale. On the
+  first Deck run (2026-09-06, Desktop Mode) the gyro was found and stayed
+  silent, which is what Steam's switched-off sensor looks like
+  ([Controls](MANUAL.md#controls)); the port
   now sends the switch itself, and the second run's readings came alive
   within a dozen of it. Which of the two you are in shows in the log's
   controller line.
+* **Steam's art.** Once the game is a Steam shortcut, the port's next start puts
+  a poster, a background, a logo and a wide picture in place for that shortcut.
+  Steam shows them after its next restart. A picture already there stays, and a
+  picture the port wrote and you delete does not come back. Every start says what
+  it did on a `[SNAP] Steam art:` line in the log, and `SNAP_NO_STEAM_ART=1` turns
+  this off. The Flatpak has one permission for it,
+  `~/.local/share/Steam/userdata`, and writes only into each account's
+  `config/grid` there.
 * **Quitting.** **Exit Game**, the last row of the game's Options screen,
   closes the port from the pad (A asks, a second A closes, B stays). The
   Steam menu's Exit Game and a held Esc on a keyboard still work too. The
@@ -202,9 +220,13 @@ the first report would be welcome, with `snap64.log` from the folder above.
   pointer over them and clicks, and Keep playing is the highlighted
   default.
 * **Screen.** The panel is 1280x800; leave the shortcut's Game Resolution
-  alone. The Deck's own refresh and frame-limit setting should match the
-  panel (60, or 90 on the OLED); the port's Frame Rate: Display then
-  follows it. 16:10 with Widescreen fills the panel in a course; the
+  alone. In Gaming Mode gamescope tells the game the same rate whatever
+  Steam's refresh slider says, so the port measures the real one from how
+  its frames reach the screen, and the Frame Rate setting's Display follows
+  it, up or down, within seconds; the log says
+  `[SNAP-VSYNC] display measured at ...`. Not yet tried on a Deck.
+  `SNAP_NO_MEASURED_REFRESH=1` in the environment turns it off. 16:10 with
+  Widescreen fills the panel in a course; the
   menus, and 4:3, sit in black bars.
 * **Silent?** Desktop Mode's audio mixer sometimes has an app muted on
   its own; check it before anything else. Waking the Deck from sleep or

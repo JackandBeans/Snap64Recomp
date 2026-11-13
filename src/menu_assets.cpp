@@ -57,6 +57,7 @@
 #include "paths.h"
 #include "settings.h"
 #include "snap_station.h"
+#include "touch_controls.h"
 #include "version.h"
 
 // stb_image's implementation is compiled inside the RT64 library
@@ -204,11 +205,27 @@ constexpr uint32_t kStripSlots = 128;   // graphics_menu_patch.c SNAP_STRIP_SLOT
 // that would pass this (a guard, since the pool is not measured anywhere
 // else).
 constexpr uint32_t DynPixelsAddr = 0x80D40000u;
+// The CONTROLS page's touch rows' strings (Android) have a home of their own
+// past the pages' arena (0x80E00000..0x80E40000) and below a mod's picture
+// (ThumbAddr, 0x80F00000), so adding them took nothing from the pool above;
+// the speed rows' steps of five (1.1.7) are staged there too.
+constexpr uint32_t TouchPixelsAddr = 0x80E40000u;
+constexpr uint32_t TouchPixelsEnd = 0x80F00000u;
 constexpr int DynChunks = 3;
 constexpr uint32_t DynStripBytes = uint32_t(DynChunks * 64 * StripHeight * 2);
 constexpr uint32_t kStringBaseCount = 30;   // the strings[] table below, asserted there
 constexpr uint32_t kBindDynBase = kStringBaseCount + 162;   // graphics_menu_patch.c STR_BIND_DYN
 constexpr int BindInputCount = 18;
+// The page's rows for the port's own entries after the eighteen inputs
+// (1.1.7): Save Photo, Fast Forward, Slow Motion. Their values are two banks
+// of three at ids kBindPortDynBase on, with pixels of their own just below
+// the eighteen's, since the slots above run on to the pages' arena; the
+// staged strings stop short of them (stage_menu_strings' guard).
+constexpr int BindPortCount = 3;
+constexpr int BindRowCount = BindInputCount + BindPortCount;
+constexpr uint32_t kBindPortLabelBase = kStringBaseCount + 392;   // graphics_menu_patch.c STR_BIND_INPUT_PORT; the help lines follow
+constexpr uint32_t kBindPortDynBase = kStringBaseCount + 398;   // graphics_menu_patch.c STR_BIND_DYN_PORT
+constexpr uint32_t BindPortPixelsAddr = DynPixelsAddr - uint32_t(2 * BindPortCount) * DynStripBytes;
 
 // The Mods page's rows (ids kModsDynBase on): two banks of six names and six
 // help lines, composed for the window the page shows while it is open, in
@@ -243,6 +260,15 @@ static uint32_t mods_dyn_addr(uint32_t id) {
         return ModsNamesAddr + (bank * uint32_t(ModsVisible) + slot) * DynStripBytes;
     }
     return ModsHelpsAddr + (bank * uint32_t(ModsVisible) + (slot - uint32_t(ModsVisible))) * ModsHelpBytes;
+}
+
+// Where a Button Setup row value's pixels live: the eighteen inputs' banks
+// from DynPixelsAddr, the port entries' just below it.
+static uint32_t bind_dyn_addr(uint32_t id) {
+    if (id >= kBindPortDynBase) {
+        return BindPortPixelsAddr + (id - kBindPortDynBase) * DynStripBytes;
+    }
+    return DynPixelsAddr + (id - kBindDynBase) * DynStripBytes;
 }
 
 struct Strip {
@@ -1700,17 +1726,21 @@ constexpr uint32_t HeapFreeAddr = MailboxAddr + 0xF4;   // u32: the scene heap's
 constexpr uint32_t ObjStatAddr  = MailboxAddr + 0xF8;   // u32: active objects << 16 | the limit
 constexpr uint32_t SceneAgeAddr = MailboxAddr + 0xFC;   // u32: the ticks this scene has run, for the runner
 // The room the screen's main display list buffer had left last frame
-// (src/dl_budget.cpp measures it), and what the pages may draw at most: the
-// same number as SNAP_PAGES_DL_NEED in graphics_menu_patch.c.
+// (src/dl_budget.cpp measures it), and what the pages may draw there at most:
+// the same number as SNAP_PAGES_DL_NEED in graphics_menu_patch.c. Their
+// strips draw into lists of their own (src/rect_tags.cpp), and the screen's
+// list carries an eight-byte branch to each, some fifty at most.
 constexpr uint32_t DlSpareAddr = MailboxAddr + 0xE8;
-constexpr uint32_t PagesDlNeed = 8192;
+constexpr uint32_t PagesDlNeed = 1024;
 constexpr uint32_t kGeneralHeap  = 0x8004A8C8u;   // sys/gtl.c sGeneralHeap: id, start, end, ptr
 constexpr uint32_t kOmMaxObjects = 0x8004AC02u;   // sys/om.c omMaxObjects, s16
-// The page's eighteen input rows, in its order (graphics_menu_patch.c
-// STR_BIND_INPUT): the names input.h gives them.
-const char* const kBindInputs[BindInputCount] = {
+// The page's rows, in its order (graphics_menu_patch.c STR_BIND_INPUT, then
+// STR_BIND_INPUT_PORT): the names input.h gives them, the eighteen inputs
+// and then the port's own entries.
+const char* const kBindInputs[BindRowCount] = {
     "a", "b", "z", "start", "l", "r", "c_up", "c_down", "c_left", "c_right",
     "d_up", "d_down", "d_left", "d_right", "stick_up", "stick_down", "stick_left", "stick_right",
+    "photo", "fast_forward", "slow_motion",
 };
 uint32_t g_bind_handled = 0;      // the request last answered; 0 while none is pending
 bool g_bind_capturing = false;
@@ -1752,7 +1782,7 @@ constexpr int ValueHandW = 128;
 constexpr int ValueHandInk = 112;
 bool hand_line(uint32_t off) {
     return (off == 85) || (off == 98) || (off == 100) || (off == 125) || (off == 126) || (off == 128) ||
-           ((off >= 132) && (off <= 149)) || (off == 276) || (off == 343);
+           ((off >= 132) && (off <= 149)) || (off == 276) || (off == 343) || ((off >= 395) && (off <= 397));
 }
 std::map<uint32_t, uint32_t> g_hand_addr;   // a staged line's offset, and its pixels
 uint64_t g_hand_sig = 0;                     // what they were last worded for
@@ -1818,6 +1848,11 @@ static const int* const kCtlSpeeds = kMouseSpeedSteps;
 static const int kCtlZoomShares[4] = { 25, 50, 75, 100 };
 static uint32_t g_last_applied_ctl_seq = 0;
 static uint32_t g_last_applied_game_seq = 0;
+// The Pad Preset row's pad: the key of the pad in use when its byte was last
+// written ("" with none attached), and the preset written there (-1 before
+// the first poll). The row edits that pad's preset (poll_menu_mailbox).
+static std::string g_preset_key_shown;
+static int g_preset_shown = -1;
 
 // The Frame Rate row's rates: its values past Original and Display are
 // these, the Manual mode held at that rate by interpolation. A file may
@@ -1835,8 +1870,8 @@ static int fps_target_index(int hz) {
 
 static int ctl_speed_index(float sensitivity) {
     const int pct = int(std::lround(sensitivity * 100.0f));
-    int best = 3;
-    for (int i = 0; i < 11; i++) {
+    int best = kMouseSpeedStepDefault;
+    for (int i = 0; i < kMouseSpeedStepCount; i++) {
         if (std::abs(kCtlSpeeds[i] - pct) < std::abs(kCtlSpeeds[best] - pct)) best = i;
     }
     return best;
@@ -1849,6 +1884,37 @@ static int ctl_zoom_index(float share) {
         if (std::abs(kCtlZoomShares[i] - pct) < std::abs(kCtlZoomShares[best] - pct)) best = i;
     }
     return best;
+}
+
+// The CONTROLS page's touch rows, on Android (graphics_menu_patch.c
+// TOUCH_FIELD): five value bytes past the page arrays -- Touch Controls,
+// the size's step (50 to 150 percent by ten), the opacity's (20 to 100 by
+// ten), Left-Handed, Idle Fade -- whether the page shows the rows, and the
+// count of Move Buttons presses, which the page bumps. A file may carry a
+// size or opacity off the steps: the row shows the nearest, and that
+// becomes the value only once that row is changed.
+constexpr uint32_t TouchFieldsAddr = MailboxAddr + 0x680;
+constexpr uint32_t TouchRowsOnAddr = MailboxAddr + 0x686;
+constexpr uint32_t TouchMoveReqAddr = MailboxAddr + 0x687;
+static uint8_t g_touch_move_seen = 0;
+
+static int touch_size_step(int pct) {
+    return std::clamp((pct - 50 + 5) / 10, 0, 10);
+}
+
+static int touch_opacity_step(int pct) {
+    return std::clamp((pct - 20 + 5) / 10, 0, 8);
+}
+
+// The rows show on Android; SNAP_TOUCH_ROWS=1 shows them anywhere, so the
+// page can be checked on a PC (the settings change; nothing draws them).
+static bool touch_rows_shown() {
+#if defined(__ANDROID__)
+    return true;
+#else
+    const char* force = std::getenv("SNAP_TOUCH_ROWS");
+    return (force != nullptr) && (std::strcmp(force, "1") == 0);
+#endif
 }
 
 // The setting bytes of the three banks, from the settings as they are now.
@@ -1903,13 +1969,15 @@ static void write_setting_bytes(const Settings &s) {
     write_u8(MailboxAddr + 0x2B, uint8_t(std::clamp(s.shutter_volume, 0, 100)));
     write_u8(MailboxAddr + 0x2C, s.stereo ? 1 : 0);
     write_u8(MailboxAddr + 0x2D, s.mute_unfocused ? 1 : 0);
-    // The GAME bank's two value bytes (past the page arrays): the save file
-    // and the Snap Station, both for the next start (src/save_file.cpp).
+    // The GAME bank's bytes (past the page arrays): the save file, for the
+    // next start (src/save_file.cpp); the restart request; Autosave, read as
+    // the lab opens (src/autosave.cpp).
     write_u8(MailboxAddr + 0x604, uint8_t(std::clamp(s.save_file, 1, 4) - 1));
     write_u8(MailboxAddr + 0x605, 0);    // the Game page's restart request, set by the page, cleared here
+    write_u8(MailboxAddr + 0x606, s.autosave ? 1 : 0);
     // The CONTROLS bank's value bytes from +0x64: mouse aim, the mouse
-    // speed's index into the page's eleven steps, the zoom speed's index
-    // into its four, the tilt, gyro aim, the gyro speed's index.
+    // speed's index into the page's forty-three steps, the zoom speed's
+    // index into its four, the tilt, gyro aim, the gyro speed's index.
     write_u8(MailboxAddr + 0x64, s.mouse_aim ? 1 : 0);
     write_u8(MailboxAddr + 0x65, uint8_t(ctl_speed_index(s.mouse_sensitivity)));
     write_u8(MailboxAddr + 0x66, uint8_t(ctl_zoom_index(s.mouse_zoom_speed)));
@@ -1925,8 +1993,18 @@ static void write_setting_bytes(const Settings &s) {
     write_u8(MailboxAddr + 0x6D, uint8_t((s.slow_motion_speed >= 4) ? 2 : ((s.slow_motion_speed >= 2) ? 1 : 0)));
     // Pointer: 0 the system's, 1 the port's own (Camera).
     write_u8(MailboxAddr + 0x6E, s.custom_pointer ? 1 : 0);
-    // Pad Preset: pad_layout, 0 Auto, 1 Standard, 2 N64.
-    write_u8(MailboxAddr + 0x6F, uint8_t(std::clamp(s.pad_layout, 0, 2)));
+    // Pointer Shows: 0 Auto, 1 Always.
+    write_u8(MailboxAddr + 0x688, s.pointer_always ? 1 : 0);
+    // Pad Preset: the pad in use's, 0 Auto, 1 Standard, 2 N64, as the last
+    // poll found it; pad_layout before the first.
+    write_u8(MailboxAddr + 0x6F, uint8_t((g_preset_shown >= 0) ? g_preset_shown : std::clamp(s.pad_layout, 0, 2)));
+    // The touch rows' bank.
+    write_u8(TouchFieldsAddr + 0, uint8_t(std::clamp(s.touch_controls, 0, 2)));
+    write_u8(TouchFieldsAddr + 1, uint8_t(touch_size_step(s.touch_size)));
+    write_u8(TouchFieldsAddr + 2, uint8_t(touch_opacity_step(s.touch_opacity)));
+    write_u8(TouchFieldsAddr + 3, s.touch_mirror ? 1 : 0);
+    write_u8(TouchFieldsAddr + 4, s.touch_fade ? 1 : 0);
+    write_u8(TouchRowsOnAddr, touch_rows_shown() ? 1 : 0);
 }
 
 void seed_mailbox() {
@@ -1934,6 +2012,7 @@ void seed_mailbox() {
     write_u8(MailboxAddr + 0x38, 0);   // no title request pending
     write_u8(MailboxAddr + 0x3A, 0);   // no Exit Game request pending
     write_u8(MailboxAddr + 0x3C, 0);   // the title menu has not been built yet
+    write_u8(MailboxAddr + 0xAF, uint8_t(input_pad_auto_pick()));   // Auto's pick for the pad in use, refreshed every tick
     // Host-owned: the renderer's horizontal widening for the culling patch
     // (settings.h, set_view_wide_q8); refreshed every tick below.
     write_u32(MailboxAddr + 0x44, view_wide_q8());
@@ -1952,6 +2031,8 @@ void seed_mailbox() {
     // applies on each bump (poll_menu_mailbox).
     write_u32(MailboxAddr + 0x20, 0);
     write_u32(MailboxAddr + 0x60, 0);
+    write_u8(TouchMoveReqAddr, 0);
+    g_touch_move_seen = 0;
     // The BUTTON SETUP page's bank: no request, no answer, bank zero, closed.
     write_u32(BindReqAddr, 0);
     write_u32(BindAckAddr, 0);
@@ -2189,11 +2270,32 @@ void stage_menu_strings(uint8_t* rdram) {
     // absolute 280..283: the patch numbers from 0, this file from BaseCount,
     // which is 30): its label, its values System and Camera, its description.
     static const char* const ptrDesc[2] = { "Camera is a lens that snaps shut on a", "click. System is the normal arrow." };
+    // The CONTROLS page's Pointer Shows row (ids BaseCount+436, +437).
+    static const char* const ptrShowDesc[2] = { "Auto hides it once a key or pad is used.", "Always keeps it up where a click works." };
+    // The GAME page's Autosave row (ids BaseCount+438, +439).
+    static const char* const autosaveDesc[2] = { "Saves by itself each time you come back", "to the lab with new photos or progress." };
     static const char* const sticksDesc[2] = { "Normal aims with the left stick, the", "right does the C buttons. Swapped flips." };
     // The CONTROLS page's Pad Preset row (ids BaseCount+358..+361): its
     // label, its values Standard and N64 (Auto is the Graphics page's), its
-    // description.
-    static const char* const presetDesc[2] = { "How the shoulder buttons are read. Auto", "picks N64 for pads shaped like the N64." };
+    // description; +390 and +391 (after the touch rows' strings) the Auto
+    // value naming what Auto picked for the pad in use.
+    static const char* const presetDesc[2] = { "How the pad in use reads its shoulders,", "kept for each pad. Auto knows N64 pads." };
+    // The CONTROLS page's touch rows, on Android (ids BaseCount+362..+389,
+    // graphics_menu_patch.c STR_TOUCH_*): six labels, Always and Never (Auto
+    // is the Graphics page's), the percent steps 20% to 150% by ten, and six
+    // descriptions. Their pixels have a home of their own (TouchPixelsAddr),
+    // so the shared pool keeps its room.
+    static const char* const touchLabels[6] = {
+        "Touch Controls", "Touch Size", "Touch Opacity", "Left-Handed", "Idle Fade", "Move Buttons",
+    };
+    static const char* const touchDescs[6][2] = {
+        { "Auto hides them while a pad or keyboard", "is used; Never, while a pad is attached." },
+        { "How big the buttons on the screen are.",  "100% is the size they come in." },
+        { "How solid the buttons on the screen are.", "Lower lets more of the picture through." },
+        { "Puts R, Z, A and B on the left, and Start", "and the C buttons on the right." },
+        { "Dims the buttons on the screen after a",  "few seconds without a press." },
+        { "Drag the buttons where your thumbs want", "them. Reset puts every one back." },
+    };
     static const char* const gyroDescs[2][2] = {
         { "Turn the pad to look around a course, on",  "pads with a gyro. Zoomed aims zoomed in." },
         { "How far turning the pad turns the camera.", "Lower is slower, higher is faster." },
@@ -2264,7 +2366,38 @@ void stage_menu_strings(uint8_t* rdram) {
     // device in hand (hand_words, kBindRowSays).
     // Through the picture, "A OK  B Back", a fixed On, "A Type  B Cancel",
     // the rainbow New and the empty Mods page's second line.
-    constexpr uint32_t StringCount = BaseCount + 315 + ThumbBands + 39;   // +328, +329: Wide HUD; +330: a mod's notice; +331..+342: the GAME page; +343..+353: the Controls pages' polish; +354..+357: the Pointer row, moved out of the options bank; +358..+361: the Pad Preset row
+    constexpr uint32_t TouchBase = BaseCount + 362;
+    constexpr uint32_t TouchStrings = 28;
+    constexpr uint32_t PresetAutoBase = TouchBase + TouchStrings;   // +390, +391: Auto: Standard, Auto: N64
+    // The Mouse and Gyro Speed rows' steps of five that the eleven values
+    // at +74..+84 do not carry: 30, 35, 40, 45, 55 .. 195, in order
+    // (graphics_menu_patch.c STR_SPEED5, snap_ctl_speed_str).
+    constexpr uint32_t SpeedBase = kBindPortDynBase + 2 * BindPortCount;   // +404..+431
+    constexpr uint32_t SpeedStrings = 28;
+    static_assert(SpeedBase == BaseCount + 404, "graphics_menu_patch.c STR_SPEED5 is 434");
+    // Below them, the speeds' 5, 10, 15 and 20 (graphics_menu_patch.c
+    // STR_SPEED_LOW).
+    constexpr uint32_t SpeedLowBase = SpeedBase + SpeedStrings;   // +432..+435
+    constexpr uint32_t SpeedLowStrings = 4;
+    static_assert(SpeedLowBase == BaseCount + 432, "graphics_menu_patch.c STR_SPEED_LOW is 462");
+    // The CONTROLS page's Pointer Shows row: its label and its description
+    // (graphics_menu_patch.c STR_PTRSHOW_LABEL); its values are Auto and the
+    // touch rows' Always.
+    constexpr uint32_t PtrShowBase = SpeedLowBase + SpeedLowStrings;   // +436, +437
+    constexpr uint32_t PtrShowStrings = 2;
+    static_assert(PtrShowBase == BaseCount + 436, "graphics_menu_patch.c STR_PTRSHOW_LABEL is 466");
+    // The GAME page's Autosave row: its label and its description
+    // (graphics_menu_patch.c STR_AUTOSAVE_LABEL); its values are the shared
+    // Off and On.
+    constexpr uint32_t AutosaveBase = PtrShowBase + PtrShowStrings;   // +438, +439
+    constexpr uint32_t AutosaveStrings = 2;
+    static_assert(AutosaveBase == BaseCount + 438, "graphics_menu_patch.c STR_AUTOSAVE_LABEL is 468");
+    constexpr uint32_t StringCount = AutosaveBase + AutosaveStrings;   // +328, +329: Wide HUD; +330: a mod's notice; +331..+342: the GAME page; +343..+353: the Controls pages' polish; +354..+357: the Pointer row, moved out of the options bank; +358..+361: the Pad Preset row; +362..+389: the touch rows; +390, +391: the Pad Preset's Auto value with Auto's pick; +392..+394: the Button Setup page's rows for the port's own entries, +395..+397 their help lines, +398..+403 their values; +404..+431: the speeds' steps of five; +432..+435: the speeds' 5 to 20; +436, +437: the Pointer Shows row; +438, +439: the Autosave row
+    static_assert(0x8 + StringCount * 8 <= PixelsAddr - DirectoryAddr, "the directory's entries run into the first strip");
+    static_assert(TouchBase == BaseCount + 315 + ThumbBands + 39, "the touch rows' strings follow the Pad Preset row's");
+    static_assert(PresetAutoBase == BaseCount + 390, "graphics_menu_patch.c STR_PRESET_AUTO_STD is 420");
+    static_assert(kBindPortLabelBase == PresetAutoBase + 2, "the port rows' labels follow the Pad Preset's Auto values");
+    static_assert(kBindPortDynBase == kBindPortLabelBase + 2 * BindPortCount, "the port rows' values follow their labels");
 
     const char* overrideNames[] = {
         nullptr, "graphics", "render_scale", "anti_aliasing", "widescreen",
@@ -2356,6 +2489,7 @@ void stage_menu_strings(uint8_t* rdram) {
     }
 
     uint32_t cursor = PixelsAddr;
+    uint32_t touchCursor = TouchPixelsAddr;
     write_u32(DirectoryAddr + 0x4, StringCount);
 
     g_hand_sig = hand_sig();
@@ -2365,6 +2499,68 @@ void stage_menu_strings(uint8_t* rdram) {
         if ((id >= BaseCount) && hand_line(id - BaseCount)) {
             // Worded for the device in hand, and repainted as it changes.
             strip = hand_strip(id - BaseCount, input_last_device());
+            w = strip.width;
+            h = strip.height;
+        }
+        else if ((id >= TouchBase) && (id < TouchBase + TouchStrings)) {
+            // The touch rows: labels, Always and Never, the percent steps,
+            // the descriptions.
+            const uint32_t k = id - TouchBase;
+            if (k < 6) {
+                strip = compose(touchLabels[k]);
+            } else if (k < 8) {
+                strip = compose((k == 6) ? "< Always >" : "< Never >");
+            } else if (k < 22) {
+                const std::string pct = "< " + std::to_string(20 + 10 * int(k - 8)) + "% >";
+                strip = compose(pct.c_str());
+            } else {
+                strip = compose_lines(touchDescs[k - 22][0], touchDescs[k - 22][1]);
+            }
+            w = strip.width;
+            h = strip.height;
+        }
+        else if ((id >= SpeedBase) && (id < SpeedBase + SpeedStrings)) {
+            // The k-th step of five between 25 and 200 that is not a
+            // multiple of 25: four in each run of five.
+            const uint32_t k = id - SpeedBase;
+            const std::string pct = "< " + std::to_string(25 + 5 * int(k + k / 4 + 1)) + " >";
+            strip = compose(pct.c_str());
+            w = strip.width;
+            h = strip.height;
+        }
+        else if ((id >= SpeedLowBase) && (id < SpeedLowBase + SpeedLowStrings)) {
+            const std::string pct = "< " + std::to_string(5 * int(id - SpeedLowBase + 1)) + " >";
+            strip = compose(pct.c_str());
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == PtrShowBase) {
+            strip = compose("Pointer Shows");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == PtrShowBase + 1) {
+            strip = compose_lines(ptrShowDesc[0], ptrShowDesc[1]);
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == AutosaveBase) {
+            strip = compose("Autosave");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if (id == AutosaveBase + 1) {
+            strip = compose_lines(autosaveDesc[0], autosaveDesc[1]);
+            for (const char* line : autosaveDesc) {
+                // Said loudly: a line past the box runs its last letters
+                // over the box's side.
+                const int ink = ink_width(compose_help(line));
+                if (ink > ModsHelpInkWidth) {
+                    printf("[SNAP-MENU] ERROR: the Autosave help line \"%s\" is %d texels, past the box's %d\n",
+                           line, ink, ModsHelpInkWidth);
+                    fflush(stdout);
+                }
+            }
             w = strip.width;
             h = strip.height;
         }
@@ -2486,7 +2682,7 @@ void stage_menu_strings(uint8_t* rdram) {
             h = strip.height;
         }
         else if (id == BaseCount + 333) {
-            strip = compose_help("Save file, restart and Exit Game.");   // 226 texels of box: 1.1.3's longer line ran past its edge (his screenshot, Oct 11 2026)
+            strip = compose_help("Saving, restart and Exit Game.");   // 226 texels of box: 1.1.3's longer line ran past its edge (his screenshot, Oct 11 2026)
             w = strip.width;
             h = strip.height;
         }
@@ -2615,6 +2811,31 @@ void stage_menu_strings(uint8_t* rdram) {
             strip = compose_lines(presetDesc[0], presetDesc[1]);
             w = strip.width;
             h = strip.height;
+        }
+        else if ((id == PresetAutoBase) || (id == PresetAutoBase + 1)) {
+            strip = compose((id == PresetAutoBase) ? "< Auto: Standard >" : "< Auto: N64 >");
+            w = strip.width;
+            h = strip.height;
+        }
+        else if ((id >= kBindPortLabelBase) && (id < kBindPortLabelBase + BindPortCount)) {
+            // The Button Setup page's rows for the port's own entries, after
+            // the eighteen inputs; their help lines (+395..+397) are worded
+            // for the device in hand (hand_words, kBindPortSays).
+            static const char* const portLabels[BindPortCount] = {"Save Photo", "Fast Forward", "Slow Motion"};
+            strip = compose(portLabels[id - kBindPortLabelBase]);
+            w = strip.width;
+            h = strip.height;
+        }
+        else if ((id >= kBindPortDynBase) && (id < kBindPortDynBase + 2 * BindPortCount)) {
+            // Their live values, as the eighteen's below.
+            const uint32_t addr = bind_dyn_addr(id);
+            write_u32(DirectoryAddr + 0x8 + id * 8, addr);
+            write_u16(DirectoryAddr + 0xC + id * 8, 64);
+            write_u16(DirectoryAddr + 0xE + id * 8, uint16_t(StripHeight));
+            for (uint32_t k = 0; k < DynStripBytes; k += 2) {
+                write_u16(addr + k, 0);
+            }
+            continue;
         }
         else if (id == BaseCount + 233) {
             // No V in the help face (its letters are the stock sentences' and
@@ -2893,7 +3114,7 @@ void stage_menu_strings(uint8_t* rdram) {
             // A live row value of the Button Setup page: a fixed home of
             // its own, blank until the page opens (bind_compose writes it
             // and the directory entry's width then).
-            const uint32_t addr = DynPixelsAddr + (id - kBindDynBase) * DynStripBytes;
+            const uint32_t addr = bind_dyn_addr(id);
             write_u32(DirectoryAddr + 0x8 + id * 8, addr);
             write_u16(DirectoryAddr + 0xC + id * 8, 64);
             write_u16(DirectoryAddr + 0xE + id * 8, uint16_t(StripHeight));
@@ -3066,6 +3287,14 @@ void stage_menu_strings(uint8_t* rdram) {
             h = strip.height;
         }
 
+        // The touch rows' strings, and the speeds' steps of five and the
+        // Pointer Shows and Autosave rows after them, go to their own home:
+        // the cursor is theirs until this string is written.
+        const bool touchHome = ((id >= TouchBase) && (id < TouchBase + TouchStrings)) ||
+                               ((id >= SpeedBase) && (id < AutosaveBase + AutosaveStrings));
+        if (touchHome) {
+            std::swap(cursor, touchCursor);
+        }
         write_u32(DirectoryAddr + 0x8 + id * 8, cursor);
         write_u16(DirectoryAddr + 0xC + id * 8, uint16_t(w));
         write_u16(DirectoryAddr + 0xE + id * 8, uint16_t(h));
@@ -3161,15 +3390,24 @@ void stage_menu_strings(uint8_t* rdram) {
         }
         cursor = at;
         cursor = (cursor + 7u) & ~7u;
+        if (touchHome) {
+            std::swap(cursor, touchCursor);
+        }
     }
 
-    if (cursor > DynPixelsAddr) {
+    if (touchCursor > TouchPixelsEnd) {
+        printf("[SNAP-MENU] ERROR: the touch rows' strings end at 0x%08X, past 0x%08X; the strings are withheld\n",
+               touchCursor, TouchPixelsEnd);
+        fflush(stdout);
+        g_missing_glyphs++;
+    }
+    if (cursor > BindPortPixelsAddr) {
         // The staged strings would run into the Button Setup page's slots,
         // which it writes while it is open: withheld as a missing glyph is,
         // said loudly, so no build ships a page that tramples another.
         printf("[SNAP-MENU] ERROR: the staged strings end at 0x%08X, past the page slots at 0x%08X; "
                "the strings are withheld. Move DynPixelsAddr up (menu_assets.cpp).\n",
-               cursor, DynPixelsAddr);
+               cursor, BindPortPixelsAddr);
         fflush(stdout);
         g_missing_glyphs++;
     }
@@ -3187,8 +3425,8 @@ void stage_menu_strings(uint8_t* rdram) {
     }
     write_u32(DirectoryAddr + 0x0, DirectoryMagic);
     g_staged = true;
-    printf("[SNAP-MENU] staged %u interface strings (%u bytes) for the graphics page\n",
-        StringCount, cursor - PixelsAddr);
+    printf("[SNAP-MENU] staged %u interface strings (%u bytes, and %u in the touch rows' home) for the graphics page\n",
+        StringCount, cursor - PixelsAddr, touchCursor - TouchPixelsAddr);
 }
 
 // Writes a strip into a dynamic id's fixed pixels and its directory entry
@@ -3217,18 +3455,22 @@ static void stage_dynamic_at(uint32_t id, uint32_t addr, const Strip& strip, int
 
 // A live row value of the Button Setup page.
 static void stage_dynamic(uint32_t id, const Strip& strip) {
-    stage_dynamic_at(id, DynPixelsAddr + (id - kBindDynBase) * DynStripBytes, strip, DynChunks, StripHeight);
+    stage_dynamic_at(id, bind_dyn_addr(id), strip, DynChunks, StripHeight);
 }
 
-// Composes the eighteen row values for a device into the bank the page is
-// not showing, then turns the page to it: the bank shown is BIND_GEN's low
-// bit, so the one written is always the other.
+// Composes the row values for a device into the bank the page is not
+// showing, then turns the page to it: the bank shown is BIND_GEN's low bit,
+// so the one written is always the other.
 static void bind_compose(int device) {
     const uint32_t gen = read_u32_mail(BindGenAddr);
     const uint32_t bank = (gen + 1) & 1;
     for (int i = 0; i < BindInputCount; i++) {
         stage_dynamic(kBindDynBase + bank * BindInputCount + uint32_t(i),
                       compose_dyn(input_bind_display(kBindInputs[i], device)));
+    }
+    for (int i = 0; i < BindPortCount; i++) {
+        stage_dynamic(kBindPortDynBase + bank * BindPortCount + uint32_t(i),
+                      compose_dyn(input_bind_display(kBindInputs[BindInputCount + i], device)));
     }
     write_u32(BindGenAddr, gen + 1);
     g_bind_shown_device = device;
@@ -3271,11 +3513,11 @@ static void poll_bind_bank() {
         const int op = int((req >> 16) & 0xFF);
         const int reqDevice = int((req >> 8) & 0xFF);
         const int row = int(req & 0xFF);
-        const char* input = ((row >= 1) && (row <= BindInputCount)) ? kBindInputs[row - 1] : nullptr;
+        const char* input = ((row >= 1) && (row <= BindRowCount)) ? kBindInputs[row - 1] : nullptr;
         uint32_t result = 0;
         if ((op == 1) && (input != nullptr) && (reqDevice <= 2)) {
             if (!g_bind_capturing) {
-                input_capture_begin(reqDevice);
+                input_capture_begin(reqDevice, input);
                 g_bind_capturing = true;
             }
             std::string name;
@@ -3730,6 +3972,18 @@ static const char* const kBindRowPad[18] = {
     "Aims the camera right in a course, and\nwalks the menus. A changes, Z clears.",
 };
 
+// The same for the port's own entries' rows (+395..+397): what each does.
+static const char* const kBindPortSays[3] = {
+    "Saves the photo on screen to a file.",
+    "Speeds the game up while it is held.",
+    "Slows the game down while it is held.",
+};
+static const char* const kBindPortPad[3] = {
+    "Saves the photo on screen to a file.\nA changes it, Z clears it.",
+    "Speeds the game up while it is held.\nA changes it, Z clears it.",
+    "Slows the game down while it is held.\nA changes it, Z clears it.",
+};
+
 // A staged help line's words for a device, best first, the controller's
 // last. On a pad the buttons are the pad's own (an Xbox-style pad's Z is its
 // L Bumper); on a keyboard, the keys the table binds; with a mouse, clicks,
@@ -3742,8 +3996,9 @@ static std::vector<std::string> hand_words(uint32_t off, int device) {
     const std::string b = hand_key("b", keys, "B");
     const std::string z = hand_key("z", keys, "Z");
     std::vector<std::string> v;
-    if ((off >= 132) && (off <= 149)) {
-        const std::string says = kBindRowSays[off - 132];
+    if (((off >= 132) && (off <= 149)) || ((off >= 395) && (off <= 397))) {
+        const bool port = (off >= 395);
+        const std::string says = port ? kBindPortSays[off - 395] : kBindRowSays[off - 132];
         // On a keyboard, and with a mouse, Delete clears a row: the key
         // every PC's list of bindings uses for it (Z's key when the table
         // has taken both it and Backspace).
@@ -3756,7 +4011,7 @@ static std::vector<std::string> hand_words(uint32_t off, int device) {
         } else {
             v = { says + " " + a + " changes it, " + clear + " clears it.", says + " " + a + " changes, " + clear + " clears." };
         }
-        v.push_back(kBindRowPad[off - 132]);
+        v.push_back(port ? kBindPortPad[off - 395] : kBindRowPad[off - 132]);
         return v;
     }
     switch (off) {
@@ -3799,8 +4054,8 @@ static std::vector<std::string> hand_words(uint32_t off, int device) {
         case 125:
             // Button Setup's Device row.
             if (mouse) {
-                v = { "Click the device to pick what to set up.\nRight click goes back with every change kept.",
-                      "Click the device to pick what to set up.\nRight click goes back, every change kept." };
+                v = { "Click an arrow to pick what to set up.\nRight click goes back with every change kept.",
+                      "Click an arrow to pick what to set up.\nRight click goes back, every change kept." };
             } else {
                 v = { "Left and Right pick what to set up.\n" + b + " goes back with every change kept." };
             }
@@ -5203,7 +5458,7 @@ static void opt_compose(int top) {
             value = compose_value(valueText, changeable, &valueCut);
             // A name cut to fit is said whole in the help box, first; a value
             // cut to fit, on its second line when that is free.
-            const std::string own = r.stepWords ? ((input_last_device() == kBindMouse) ? "Click its value to change it."
+            const std::string own = r.stepWords ? ((input_last_device() == kBindMouse) ? "Click an arrow to change it."
                                                                                     : "Left and Right change it.")
                                                 : r.desc;
             const std::string desc = (nameCut != r.name) ? (r.name + ": " + own) : own;
@@ -5516,8 +5771,9 @@ void poll_menu_mailbox(uint8_t* rdram) {
         settings_mark_dirty();
     }
 
-    // The GAME bank: the save file and the Snap Station, both for the next
-    // start; the host only keeps them in the file.
+    // The GAME bank: the save file, for the next start, which the host only
+    // keeps in the file; Autosave, which the lab reads the next time it
+    // opens (src/autosave.cpp).
     const uint32_t gameSeq = read_u32_mail(MailboxAddr + 0x600);
     if (gameSeq != g_last_applied_game_seq) {
         g_last_applied_game_seq = gameSeq;
@@ -5525,6 +5781,7 @@ void poll_menu_mailbox(uint8_t* rdram) {
             std::lock_guard<std::mutex> lock(settings_mutex());
             Settings& g = settings();
             g.save_file = std::clamp(int(read_u8_mail(MailboxAddr + 0x604)) + 1, 1, 4);
+            g.autosave = (read_u8_mail(MailboxAddr + 0x606) != 0);
         }
         settings_mark_dirty();
         // The page's Restart Game row, confirmed: the same restart as the
@@ -5553,11 +5810,20 @@ void poll_menu_mailbox(uint8_t* rdram) {
             std::lock_guard<std::mutex> lock(settings_mutex());
             Settings &c = settings();
             c.mouse_aim = read_u8_mail(MailboxAddr + 0x64) != 0;
-            c.mouse_sensitivity = kCtlSpeeds[std::min<int>(read_u8_mail(MailboxAddr + 0x65), 10)] / 100.0f;
+            // The two speeds only when their row changed, so a speed off the
+            // page's steps (0.87 in the file) stays until its row is moved,
+            // as the touch rows' sizes do.
+            const int mouseStep = std::min<int>(read_u8_mail(MailboxAddr + 0x65), kMouseSpeedStepCount - 1);
+            if (mouseStep != ctl_speed_index(c.mouse_sensitivity)) {
+                c.mouse_sensitivity = kCtlSpeeds[mouseStep] / 100.0f;
+            }
             c.mouse_zoom_speed = kCtlZoomShares[std::min<int>(read_u8_mail(MailboxAddr + 0x66), 3)] / 100.0f;
             c.mouse_invert_y = read_u8_mail(MailboxAddr + 0x67) != 0;
             c.gyro_aim = std::min<int>(read_u8_mail(MailboxAddr + 0x68), 2);
-            c.gyro_sensitivity = kCtlSpeeds[std::min<int>(read_u8_mail(MailboxAddr + 0x69), 10)] / 100.0f;
+            const int gyroStep = std::min<int>(read_u8_mail(MailboxAddr + 0x69), kMouseSpeedStepCount - 1);
+            if (gyroStep != ctl_speed_index(c.gyro_sensitivity)) {
+                c.gyro_sensitivity = kCtlSpeeds[gyroStep] / 100.0f;
+            }
             const int deadzone = std::min<int>(read_u8_mail(MailboxAddr + 0x6B), 8) * 5;
             if (deadzone != c.pad_deadzone) {
                 c.pad_deadzone = deadzone;
@@ -5600,17 +5866,99 @@ void poll_menu_mailbox(uint8_t* rdram) {
                 printf("[SNAP-CFG] pointer: %s\n", camera ? "the port's own (Camera)" : "the system's");
                 fflush(stdout);
             }
-            // The pad thread sees the change and decides the layout again
-            // (input.cpp, decide_pad_layout).
+            const bool always = read_u8_mail(MailboxAddr + 0x688) != 0;
+            if (always != c.pointer_always) {
+                c.pointer_always = always;
+                printf("[SNAP-CFG] pointer shows: %s\n",
+                       always ? "always, where a click works" : "auto (hidden after a key or pad press)");
+                fflush(stdout);
+            }
+            // The Pad Preset row's edit is the preset of the pad it was
+            // showing, the pad in use when its byte was last written
+            // (below), or pad_layout with none attached. The pad thread
+            // lays that pad out again (input.cpp, decide_pad_layout).
             const int preset = std::min<int>(read_u8_mail(MailboxAddr + 0x6F), 2);
-            if (preset != c.pad_layout) {
-                c.pad_layout = preset;
-                printf("[SNAP-CFG] pad preset: %s\n",
-                       (preset == 1) ? "Standard" : (preset == 2) ? "N64" : "Auto (by the pad's ids, then its name)");
+            const std::string& key = g_preset_key_shown;
+            const auto it = c.pad_presets.find(key);
+            const int was = (key.empty() || (it == c.pad_presets.end())) ? c.pad_layout : it->second;
+            if (preset != was) {
+                if (key.empty()) {
+                    c.pad_layout = preset;
+                } else {
+                    c.pad_presets[key] = preset;
+                }
+                g_preset_shown = preset;
+                input_pad_preset_changed();
+                printf("[SNAP-CFG] pad preset: %s, %s%s\n",
+                       (preset == 1) ? "Standard" : (preset == 2) ? "N64" : "Auto (by the pad's ids, then its name)",
+                       key.empty() ? "for every pad not given one (no pad attached)" : "for the pad ", key.c_str());
+                fflush(stdout);
+            }
+            // The touch rows (Android): each only when its row changed, so a
+            // size or opacity off the page's steps stays until it is.
+            if (touch_rows_shown()) {
+                const int mode = std::min<int>(read_u8_mail(TouchFieldsAddr + 0), 2);
+                const int sizeStep = std::min<int>(read_u8_mail(TouchFieldsAddr + 1), 10);
+                const int opacityStep = std::min<int>(read_u8_mail(TouchFieldsAddr + 2), 8);
+                const bool mirror = read_u8_mail(TouchFieldsAddr + 3) != 0;
+                const bool fade = read_u8_mail(TouchFieldsAddr + 4) != 0;
+                if (mode != c.touch_controls) {
+                    c.touch_controls = mode;
+                    printf("[SNAP-CFG] touch controls: %s\n",
+                           (mode == 1) ? "always" : (mode == 2) ? "never" : "auto (hidden while a pad or a keyboard is used)");
+                }
+                if (sizeStep != touch_size_step(c.touch_size)) {
+                    c.touch_size = 50 + 10 * sizeStep;
+                    printf("[SNAP-CFG] touch size: %d%%\n", c.touch_size);
+                }
+                if (opacityStep != touch_opacity_step(c.touch_opacity)) {
+                    c.touch_opacity = 20 + 10 * opacityStep;
+                    printf("[SNAP-CFG] touch opacity: %d%%\n", c.touch_opacity);
+                }
+                if (mirror != c.touch_mirror) {
+                    c.touch_mirror = mirror;
+                    printf("[SNAP-CFG] touch left-handed: %s\n", mirror ? "on (A on the left)" : "off");
+                }
+                if (fade != c.touch_fade) {
+                    c.touch_fade = fade;
+                    printf("[SNAP-CFG] touch idle fade: %s\n", fade ? "on" : "off");
+                }
                 fflush(stdout);
             }
         }
         settings_mark_dirty();
+    }
+
+    // Move Buttons on the CONTROLS page: the touch controls' mode for
+    // dragging the buttons opens over the page (touch_controls.cpp).
+    {
+        const uint8_t moves = read_u8_mail(TouchMoveReqAddr);
+        if (moves != g_touch_move_seen) {
+            g_touch_move_seen = moves;
+            printf("[SNAP-TOUCH] Move Buttons: the buttons can be dragged\n");
+            fflush(stdout);
+            touch_controls_move();
+        }
+    }
+
+    // The Pad Preset row shows the pad in use's own preset, rewritten when
+    // another pad is in use, and what Auto makes of that pad beside it
+    // (+0xAF, which the row's Auto value names).
+    {
+        const std::string key = input_pad_preset_key();
+        if ((key != g_preset_key_shown) || (g_preset_shown < 0)) {
+            int preset;
+            {
+                std::lock_guard<std::mutex> lock(settings_mutex());
+                const Settings& c = settings();
+                const auto it = c.pad_presets.find(key);
+                preset = std::clamp((key.empty() || (it == c.pad_presets.end())) ? c.pad_layout : it->second, 0, 2);
+            }
+            g_preset_key_shown = key;
+            g_preset_shown = preset;
+            write_u8(MailboxAddr + 0x6F, uint8_t(preset));
+        }
+        write_u8(MailboxAddr + 0xAF, uint8_t(input_pad_auto_pick()));
     }
 
     // The BUTTON SETUP page's bank: its requests and its live row values.
@@ -5905,6 +6253,24 @@ void menu_notice_set(const std::string& raw) {
     fflush(stdout);
 }
 
+// The Mouse Speed readout: when [ or ] steps the speed in a course
+// (settings.cpp), the Controls page's own row -- "Mouse Speed" and its value,
+// "< 85 >", in the rows' face -- in the notice's place, on the notice's own
+// panel (notice_box: black at 176 of 255, six pixels each side of the ink
+// and four above and below, the corners cut by three), the gray backing a
+// mod's notice has, such as Island Skies' Live time. It fades in over a
+// seventh of a second, stays while the keys are pressed, and fades out over
+// half a second from two seconds after the last press. A mod's
+// notice on screen gives way to it. Asked for on the window's thread,
+// composed on the game's (menu_anywhere_tick).
+constexpr uint32_t NoticeReadout = 0x80000000u;   // the ticks' flag (graphics_menu_patch.c SNAP_NOTICE_READOUT)
+constexpr uint32_t ReadoutTicks = 75;             // 2 seconds up and 0.5 fading, at the game's 30 frames
+static std::atomic<int> g_speed_readout{0};
+
+void menu_speed_readout(int pct) {
+    g_speed_readout.store(pct, std::memory_order_relaxed);
+}
+
 void menu_anywhere_tick(uint8_t* rdram, void* ctxIn) {
     if ((rdram == nullptr) || (ctxIn == nullptr) || !g_staged) {
         return;
@@ -5923,8 +6289,18 @@ void menu_anywhere_tick(uint8_t* rdram, void* ctxIn) {
             printf("[SNAP-NOTICE] the tick: %s (ticks %u, serial %u)\n",
                    (state == 1) ? "made" : (state == 2) ? "shown again" : (state == 3) ? "hidden" : (state == 4) ? "dropped a dead pointer"
                    : (state == 5) ? "waiting for the HUD" : (state == 6) ? "no strip slot" : (state == 7) ? "no sprite on the object" : "?",
-                   read_u32_mail(NoticeTicksAddr), read_u32_mail(NoticeSerialAddr));
+                   read_u32_mail(NoticeTicksAddr) & ~NoticeReadout, read_u32_mail(NoticeSerialAddr));
             fflush(stdout);
+        }
+    }
+    {
+        const int pct = g_speed_readout.exchange(0, std::memory_order_relaxed);
+        if ((pct > 0) && g_app_level_resident.load(std::memory_order_relaxed)) {
+            const std::string line = "Mouse Speed < " + std::to_string(pct) + " >";
+            stage_dynamic_at(kNoticeId, NoticeAddr, notice_box(compose(line.c_str(), true)), NoticeChunks, NoticeHeight);
+            g_notice_scene = g_scene_overlay_rom.load(std::memory_order_relaxed);
+            write_u32(NoticeSerialAddr, read_u32_mail(NoticeSerialAddr) + 1);
+            write_u32(NoticeTicksAddr, ReadoutTicks | NoticeReadout);
         }
     }
     // A mod's notice does not outlive the scene it was sent in.

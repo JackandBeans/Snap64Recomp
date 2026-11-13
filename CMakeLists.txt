@@ -4,7 +4,7 @@
 # Silicon build was proved on; -DCMAKE_OSX_DEPLOYMENT_TARGET on the command
 # line wins over this.
 set(CMAKE_OSX_DEPLOYMENT_TARGET "14.0" CACHE STRING "The oldest macOS the build runs on")
-project(Snap64Recomp VERSION 1.1.6 LANGUAGES C CXX)
+project(Snap64Recomp VERSION 1.1.7 LANGUAGES C CXX)
 if (APPLE)
     # Objective-C for RT64's Apple sources and SDL's Cocoa back end; the
     # port's own sources stay C++ (main.cpp takes the Metal layer through SDL).
@@ -315,6 +315,8 @@ set(SNAP_SOURCES
     src/rom_picker.cpp
     src/fast_forward.cpp
     src/steam_deck.cpp
+    src/steam_art.cpp
+    src/relaunch_window.cpp
     src/mod_api.cpp
     src/mod_data_api.cpp
     src/mod_time_api.cpp
@@ -335,6 +337,7 @@ set(SNAP_SOURCES
     src/rect_tags.cpp
     src/lab_monitor.cpp
     src/save_file.cpp
+    src/autosave.cpp
     src/rect_census.cpp
     src/fx_tags.cpp
     src/host_hooks.cpp
@@ -386,6 +389,14 @@ endif()
 # longer exists.
 configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/version.h.in"
                "${CMAKE_CURRENT_BINARY_DIR}/generated/version.h" @ONLY)
+# The commit a build is made from, named in the log's first lines. A target and
+# not a configure step, so a new commit reaches the next build by itself.
+add_custom_target(snap_build_id
+    BYPRODUCTS "${CMAKE_CURRENT_BINARY_DIR}/generated/build_id.h"
+    COMMAND "${CMAKE_COMMAND}" "-DTREE=${CMAKE_CURRENT_SOURCE_DIR}"
+            "-DOUT=${CMAKE_CURRENT_BINARY_DIR}/generated/build_id.h"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/tools/build_id.cmake"
+    VERBATIM)
 if (MSVC)
     configure_file("${CMAKE_CURRENT_SOURCE_DIR}/src/snap64.rc.in"
                    "${CMAKE_CURRENT_BINARY_DIR}/generated/snap64.rc" @ONLY)
@@ -411,6 +422,7 @@ if (ANDROID)
 else()
     add_executable(Snap64Recomp ${SNAP_SOURCES})
 endif()
+add_dependencies(Snap64Recomp snap_build_id)
 
 target_include_directories(Snap64Recomp PRIVATE
     "${CMAKE_CURRENT_SOURCE_DIR}/src"
@@ -679,6 +691,16 @@ install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/shaders/rt64-seen-shaders.bin" DESTIN
 # that nothing ships in it.
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/mods/README.md" DESTINATION mods)
 install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/texture_packs/README.txt" DESTINATION texture_packs)
+# The Steam art (src/steam_art.h), which the port gives a Steam shortcut of itself.
+# Whatever this folder holds is what it gives. The Mac and Android builds have no
+# code that reads it.
+if (NOT APPLE AND NOT ANDROID)
+    install(FILES "${CMAKE_CURRENT_SOURCE_DIR}/docs/logo.png" DESTINATION steam_art)
+    if (EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/assets/steam_art")
+        install(DIRECTORY "${CMAKE_CURRENT_SOURCE_DIR}/assets/steam_art/" DESTINATION steam_art
+                FILES_MATCHING PATTERN "*.png" PATTERN "*.jpg")
+    endif()
+endif()
 # "START HERE.txt" sorts to the top of the unpacked folder on every platform,
 # which is the point: README.md is the reference and nobody reads a reference
 # first. It says where the ROM goes and that the port's additions live inside

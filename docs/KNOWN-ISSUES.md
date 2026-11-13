@@ -49,7 +49,8 @@ crosses that line. Snorlax on the Beach shows it: with the camera pitched up
 to the 45-degree limit, it vanishes, and returns as the camera comes down. A
 television's overscan hid part of the last sliver. The port keeps the rule
 as the cartridge has it; the Widescreen patch widens its horizontal bound to
-the wider picture, and nothing else.
+the wider picture for drawing only. Which Pokémon a photo may list keeps the
+cartridge's bound.
 
 ## A Nintendo pad over Bluetooth may answer a moment late after a pause
 

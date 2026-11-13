@@ -41,4 +41,28 @@ bool in_gamescope();
 // Linux only.
 bool gamescope_request_output_size(void* sdl_window, char* note, unsigned long cap);
 
+// The same request before SDL starts, on a connection of its own, and the wait
+// for its answer (half a second at most; none on a Deck whose screen is already
+// its panel's). SDL reads the screen's size once, when it starts, and SDL 2's X11
+// backend never updates the current mode of a display it knows. Asked any later,
+// the window is made for the old size, and that start in Gaming Mode is the
+// choppy one with a picture that shrinks: every present takes the wait's whole
+// 100 ms until fullscreen is applied again. At a Snap Station relaunch on the
+// same screen, where SDL reads the panel's size from the start, neither happens
+// (an OLED Deck, Nov 6 2026). `note` receives one line for the log. False, with
+// the reason in the note, outside gamescope or when anything on the way is
+// missing. Linux only.
+bool gamescope_ask_before_sdl(char* note, unsigned long cap);
+
+// The size of this window's X screen as the X server has it now. SDL's desktop
+// mode can be stale: SDL 2.32, the Flatpak's, goes on reporting the size the
+// screen had when SDL started after gamescope has resized it. False when the
+// window is not an X11 window or libX11 lacks what this needs. Linux only.
+bool gamescope_screen_size(void* sdl_window, int* w, int* h);
+
+// Inside gamescope, once the window exists: tells relaunch_window.h which X
+// connection it is on. Nothing outside gamescope or for a window not on X11, so
+// nothing is kept across a relaunch there. Linux only.
+void gamescope_note_window(void* sdl_window);
+
 } // namespace snap

@@ -13,7 +13,7 @@ belongs. Python 3.11 with Pillow, NumPy and SciPy covers all of them.
 | `gen_reference_syms.py` | Writes `patches/game_syms.ld` and `patches/pokemonsnap.syms.toml`, the symbol names, addresses and sizes the patch build and the recompiler need, and, given a fourth path, the data symbols a mod build names variables with (`docs/MODS.md`). |
 | `gen_overlays.py` | Generates `src/recomp_overlays.inl`, the port's overlay section table, from the recompiler's ELF input. |
 | `hook_funcs.py` | Renames generated functions so the port can intercept them (MSVC has no linker `--wrap`). |
-| `embed_bin.cmake`, `filter_map.cmake` | CMake helpers: embed the patches' data section as a C array; ship a linker map with build paths replaced. |
+| `embed_bin.cmake`, `filter_map.cmake`, `build_id.cmake` | CMake helpers: embed the patches' data section as a C array; ship a linker map with build paths replaced; name the commit a build is made from. |
 
 ## Assets
 
@@ -28,7 +28,7 @@ belongs. Python 3.11 with Pillow, NumPy and SciPy covers all of them.
 
 | Script | What it does |
 | --- | --- |
-| `release_check.py` | The headless verification suite a release build goes through: windowed subsystem and icon, logging, the attract replay, pacing statistics, Oak's evaluation, the Options page, the settings file, the package, and the Snap Station print. `--only package --zip <archive>` checks any of the three archives (Windows zip, Linux tarball, Mac zip) without an executable, as the workflows do. |
+| `release_check.py` | The headless verification suite a release build goes through: windowed subsystem and icon, logging, the attract replay, pacing statistics, Oak's evaluation, the Autosave row, on a copy of the save (`autosave`), the Options page, the settings file, the Switch Online N64 controller's ids and buttons pressed one by one on the built game through a virtual pad (`padpress`), the package, and the Snap Station print. `--only package --zip <archive>` checks any of the three archives (Windows zip, Linux tarball, Mac zip) without an executable, as the workflows do. |
 | `ci_inputs.py` | Lays out the private inputs the build workflows clone (the recompiled game and patches, the ROM, the replay's save, a test mod) with `inputs.json`, the fingerprint of the tree they were made from; `--check <folder>` is what each workflow runs before building (BUILDING.md, step 15). |
 | `dump_threads.py` | From a minidump: every thread's instruction pointer and stack return addresses, resolved through the linker map. |
 | `unlock_save.py` | Writes an "everything unlocked" copy of a save file (all courses and items), for testing. |

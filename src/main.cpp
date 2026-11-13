@@ -42,11 +42,14 @@
 #include "input.h"
 #include "settings.h"
 #include "version.h"
+#include "build_id.h"
 #include "paths.h"
 #include "rom_picker.h"
 #include "fast_forward.h"
 #include "snap_station.h"
 #include "steam_deck.h"
+#include "steam_art.h"
+#include "relaunch_window.h"
 #include "mod_api.h"
 #if defined(__ANDROID__)
 #include "android.h"
@@ -60,6 +63,9 @@ extern "C" int snap_render_queue_state(char* buf, size_t cap);
 extern "C" void snap_dump_game_threads(uint8_t* rdram);
 // The swap chain's size as the renderer last saw it (rt64_render_context.cpp).
 extern "C" void snap_render_surface_size(uint32_t* w, uint32_t* h);
+#if defined(__linux__) && !defined(__ANDROID__)
+extern "C" std::atomic<int32_t> snap_present_stall_ask;
+#endif
 
 // Pull in the recompiled function declarations and overlay tables.
 #include "recomp_overlays.inl"
@@ -206,6 +212,16 @@ static void* create_gfx() {
 #else
     const Uint32 sdlSubsystems = SDL_INIT_VIDEO | SDL_INIT_AUDIO | SDL_INIT_GAMECONTROLLER;
 #endif
+#if defined(__linux__) && !defined(__ANDROID__)
+    // SDL reads the screen's size here, once: asked after this, the answer would
+    // reach the X server and never SDL (steam_deck.h).
+    if (snap::in_gamescope()) {
+        char note[256];
+        snap::gamescope_ask_before_sdl(note, sizeof(note));
+        printf("[SNAP] gamescope: %s\n", note);
+        fflush(stdout);
+    }
+#endif
     if (SDL_Init(sdlSubsystems) != 0) {
         // Nothing downstream can work without SDL, and the failures it would
         // produce (no window, no native handle, no renderer) all read as
@@ -273,6 +289,7 @@ static ultramodern::renderer::WindowHandle create_window(void* /*gfx_data*/) {
         printf("[SNAP] window icon: Snap64Recomp-window.png not found beside the executable" "\n");
     }
     snap::write_desktop_entry();
+    snap::gamescope_note_window(sdl_window);
 #endif
     if (!sdl_window) {
         fprintf(stderr, "[SNAP] SDL_CreateWindow failed: %s\n", SDL_GetError());
@@ -434,6 +451,13 @@ static void update_gfx(void* /*gfx_data*/) {
     // renderer's interpolation switch follow it (src/fast_forward.cpp).
     snap::fast_forward_tick();
 
+#if defined(__linux__) && !defined(__ANDROID__)
+    // The window from before a relaunch goes once the game has run for a moment.
+    // The first present comes well before the game's first step, so by then this
+    // run's window has long had a frame (relaunch_window.h).
+    snap::relaunch_window_tick(snap_logic_steps_total.load(std::memory_order_relaxed) >= 30);
+#endif
+
     // The Snap Station's relaunches come back at the window state the run
     // had. A boot is always windowed (settings.cpp), so the return to
     // fullscreen goes through the live path F11 uses,
@@ -474,6 +498,34 @@ static void update_gfx(void* /*gfx_data*/) {
         }
         if (restorePending && (sdl_window != nullptr) && (now >= restoreAt)) {
             restorePending = false;
+#if defined(__linux__) && !defined(__ANDROID__)
+            // The ask before SDL started should have made SDL's size the screen's,
+            // and then nothing is done here: that is the start the Snap Station's
+            // relaunch makes, which has neither the chop nor the shrink. If the
+            // answer came too late for SDL, the window was centered on the old
+            // size and can stand off the screen altogether (1280,600 on a 1280x800
+            // one), so it starts fullscreen from the screen's corner at its size.
+            if (snap::in_gamescope()) {
+                int rootW = 0;
+                int rootH = 0;
+                SDL_DisplayMode sdlMode{};
+                const int sdlDisplay = SDL_GetWindowDisplayIndex(sdl_window);
+                if ((sdlDisplay >= 0) && (SDL_GetDesktopDisplayMode(sdlDisplay, &sdlMode) == 0) &&
+                    snap::gamescope_screen_size(sdl_window, &rootW, &rootH) &&
+                    ((rootW != sdlMode.w) || (rootH != sdlMode.h))) {
+                    SDL_SetWindowPosition(sdl_window, 0, 0);
+                    // Not while the screen is still the size it was when asked:
+                    // it is about to change, and a window sized to it would be
+                    // drawn at that size and scaled until gamescope resized it.
+                    if ((rootW != s_gamescope_ask_w) || (rootH != s_gamescope_ask_h)) {
+                        SDL_SetWindowSize(sdl_window, rootW, rootH);
+                    }
+                    printf("[SNAP] gamescope: SDL still has the screen at %dx%d and the X server at %dx%d; the window goes to its corner before fullscreen\n",
+                           sdlMode.w, sdlMode.h, rootW, rootH);
+                    fflush(stdout);
+                }
+            }
+#endif
             {
                 std::lock_guard<std::mutex> lock(snap::settings_mutex());
                 snap::settings().fullscreen = true;
@@ -510,6 +562,25 @@ static void update_gfx(void* /*gfx_data*/) {
             const int display = SDL_GetWindowDisplayIndex(sdl_window);
             const bool haveScreen = (display >= 0) && (SDL_GetDesktopDisplayMode(display, &screen) == 0);
             const bool fullscreenDesktop = (SDL_GetWindowFlags(sdl_window) & SDL_WINDOW_FULLSCREEN_DESKTOP) == SDL_WINDOW_FULLSCREEN_DESKTOP;
+#if defined(__linux__) && !defined(__ANDROID__)
+            // SDL 2.32 goes on reporting the size the screen had when SDL started
+            // (the Flatpak's: 3840x2160 on a Deck whose screen is 1280x800), and
+            // taking that for the screen sized the window to 4K twice on every
+            // start in Gaming Mode: the picture shrank for a second, then came back.
+            // The X server's own answer is the one compared.
+            {
+                int rootW = 0;
+                int rootH = 0;
+                if (snap::gamescope_screen_size(sdl_window, &rootW, &rootH)) {
+                    if ((rootW != screen.w) || (rootH != screen.h)) {
+                        printf("[SNAP] gamescope: SDL says the screen is %dx%d, the X server %dx%d; the X server is taken\n", screen.w, screen.h, rootW, rootH);
+                        fflush(stdout);
+                    }
+                    screen.w = rootW;
+                    screen.h = rootH;
+                }
+            }
+#endif
             if (haveScreen && fullscreenDesktop && (surfaceW > 0) && (surfaceH > 0) && (recheckApplies < 2) &&
                 ((surfaceW != uint32_t(screen.w)) || (surfaceH != uint32_t(screen.h)))) {
                 // The window did not take the screen's size: out of
@@ -540,6 +611,36 @@ static void update_gfx(void* /*gfx_data*/) {
                 recheckAt = now + std::chrono::milliseconds(3000);
             }
         }
+#if defined(__linux__) && !defined(__ANDROID__)
+        // The present thread's call when the screen stops answering at startup
+        // and making the swap chain again did not help (rt64_present_queue.cpp).
+        // Out of fullscreen and back in: first at the screen's own size, which
+        // nobody sees; last as the earlier builds did by accident, through the
+        // size SDL still reports, which was seen to cure it (on an OLED Deck, Nov
+        // 5 2026: every present took the wait's whole 100 ms until then).
+        if (const int ask = snap_present_stall_ask.exchange(0, std::memory_order_relaxed)) {
+            int w = 0;
+            int h = 0;
+            bool haveSize = snap::gamescope_screen_size(sdl_window, &w, &h);
+            if (ask >= 3) {
+                SDL_DisplayMode screen{};
+                const int display = SDL_GetWindowDisplayIndex(sdl_window);
+                if ((display >= 0) && (SDL_GetDesktopDisplayMode(display, &screen) == 0)) {
+                    w = screen.w;
+                    h = screen.h;
+                    haveSize = true;
+                }
+            }
+            if (haveSize) {
+                SDL_SetWindowFullscreen(sdl_window, 0);
+                SDL_SetWindowSize(sdl_window, w, h);
+                SDL_SetWindowPosition(sdl_window, 0, 0);
+                SDL_SetWindowFullscreen(sdl_window, SDL_WINDOW_FULLSCREEN_DESKTOP);
+                printf("[SNAP] gamescope: presents still stall; fullscreen applied again at %dx%d\n", w, h);
+                fflush(stdout);
+            }
+        }
+#endif
     }
 
     // The mouse's capture follows the settings, the focus and whether a
@@ -1504,6 +1605,81 @@ static void snap_radv_debug_nonggc() {
     printf("[SNAP] RADV_DEBUG=%s: the Mesa driver's NGG culling is left off (it drops a sky triangle at a course's start on a Steam Deck)\n", value.c_str());
     fflush(stdout);
 }
+
+// Lime, cyan and magenta blocks over the picture, and ghosts of earlier
+// frames, in Gaming Mode on a Steam Deck (issue #30). Proved on an OLED Deck on
+// Nov 6 2026: Steam's Force Composite cures it, and so does this one setting
+// with Force Composite off; vk_xwayland_wait_ready changes nothing (RT64
+// already waits on the fence of each present). Inferred from those two cures:
+// with too few swap images, an image comes back to the port while gamescope is
+// still scanning it out, and the port draws into a picture that is on the
+// screen. RT64 asks for two or three images and Mesa's X11 minimum is three.
+// Mesa reads the setting when the Vulkan instance is created, so it is set
+// here, before SDL and the renderer start. A value already set stays. A
+// desktop's X server is left as it was.
+static void snap_gamescope_swap_images() {
+    if (!snap::in_gamescope()) {
+        return;
+    }
+    static const char* const name = "vk_x11_override_min_image_count";
+    if (const char* existing = std::getenv(name)) {
+        printf("[SNAP] gamescope: %s=%s is already set; it stays\n", name, existing);
+        fflush(stdout);
+        return;
+    }
+    setenv(name, "5", 1);
+    printf("[SNAP] gamescope: five swap images (%s=5), so the screen never shows an image the port is drawing into again\n", name);
+    fflush(stdout);
+}
+
+// Whether Mesa could keep its cache under this folder: it makes the folder when
+// it is missing and then its own subfolders inside.
+static bool snap_cache_folder_usable(const std::string& folder) {
+    std::error_code ignored;
+    std::filesystem::create_directories(folder, ignored);
+    return access(folder.c_str(), W_OK | X_OK) == 0;
+}
+
+// In Gaming Mode Steam points Mesa's shader cache at a folder of its own for
+// the shortcut, under ~/.local/share/Steam/steamapps/shadercache. A Flatpak
+// reads the home folder read-only, so Mesa fails to make its subfolder there,
+// says "---disabling", and compiles every shader anew on every start (a Deck's
+// log on Nov 5 2026 has a 687.8 ms gap at the start, with 242 compiled). When
+// the folder cannot be written, the cache moves to one that can: the sandbox's
+// own cache folder, else the port's data folder. A folder that can be written
+// is left alone, so the tarball keeps Steam's. RADV reads the variable when
+// the device is created, so this comes before the renderer starts.
+static void snap_mesa_shader_cache_dir() {
+    const char* set = std::getenv("MESA_SHADER_CACHE_DIR");
+    if (set == nullptr) {
+        return;
+    }
+    const std::string steam = set;
+    if (snap_cache_folder_usable(steam)) {
+        return;
+    }
+    const int why = errno;
+    std::string folder;
+    const char* xdg = std::getenv("XDG_CACHE_HOME");
+    if ((xdg != nullptr) && snap_cache_folder_usable(xdg)) {
+        folder = xdg;
+    } else {
+        const std::string own = snap::base_path("cache").string();
+        if (snap_cache_folder_usable(own)) {
+            folder = own;
+        }
+    }
+    if (folder.empty()) {
+        printf("[SNAP] shader cache: MESA_SHADER_CACHE_DIR=%s cannot be written (%s) and no other folder can; it stays, and Mesa will run without a cache\n",
+               steam.c_str(), strerror(why));
+        fflush(stdout);
+        return;
+    }
+    setenv("MESA_SHADER_CACHE_DIR", folder.c_str(), 1);
+    printf("[SNAP] shader cache: MESA_SHADER_CACHE_DIR was %s, which cannot be written (%s); it is now %s\n",
+           steam.c_str(), strerror(why), folder.c_str());
+    fflush(stdout);
+}
 #endif
 
 int main(int argc, char* argv[]) {
@@ -1533,7 +1709,10 @@ int main(int argc, char* argv[]) {
     }
 #endif
 #if defined(__linux__) && !defined(__ANDROID__)
+    snap::relaunch_window_take();
     snap_radv_debug_nonggc();
+    snap_gamescope_swap_images();
+    snap_mesa_shader_cache_dir();
 #endif
     if (snap::base_dir() != snap::exe_dir()) {
         // paths.cpp said why on stderr when it decided (the executable's
@@ -1584,6 +1763,7 @@ int main(int argc, char* argv[]) {
     }
 #endif
     printf("[SNAP] " SNAP_PORT_NAME " " SNAP_PORT_VERSION " (" SNAP_PORT_CODENAME ")\n");
+    printf("[SNAP] built from commit " SNAP_BUILD_ID "\n");
     // The first thing a support log needs: where this run reads and writes.
     printf("[SNAP] data directory: %s\n",
            reinterpret_cast<const char*>(snap::base_dir().u8string().c_str()));
@@ -1595,6 +1775,8 @@ int main(int argc, char* argv[]) {
     // Before anything else opens the save or the caches: a relaunch after a
     // Snap Station print waits here for the previous instance to exit.
     snap::station_init();
+    // A Steam shortcut of this program gets its library art (steam_art.h).
+    snap::steam_art_start();
     snap::apply_graphics_settings();
     snap::set_master_volume(snap::settings().master_volume);
     snap::set_mute_unfocused(snap::settings().mute_unfocused);

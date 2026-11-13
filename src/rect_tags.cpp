@@ -193,7 +193,72 @@ bool valid_ram_address(uint32_t address) {
     return ((address >> 29) == 4u) && ((address & 0x1FFFFFFFu) < 0x00800000u);
 }
 
+// The pages' own display lists (patches/src/graphics_menu_patch.c,
+// snap_pages_dl). The port's pages are sprites, and the sprite library writes
+// each one's whole list where the screen's list stands, in a buffer of the
+// cartridge's own size: 20,480 bytes on the title, where a mod's details page
+// with its picture, then its options, drew some 10,500 bytes over a frame of
+// 9,784 and left 192 (Nov 6 2026). So a strip of the pages' pool is drawn into
+// one of their own lists, and the screen's list carries one branch to it,
+// eight bytes. The patch says where the lists and the pool are.
+constexpr uint32_t PagesDlBaseAddr = 0x80C006B0u;     // u32: the lists, one per graphics context
+constexpr uint32_t PagesDlBytesAddr = 0x80C006B4u;    // u32: both lists, in bytes
+constexpr uint32_t StripPoolAddr = 0x80C006B8u;       // u32: the strip pool
+constexpr uint32_t StripPoolBytesAddr = 0x80C006BCu;  // u32: the pool, in bytes
+constexpr uint32_t GtlDrawnFrameCounter = 0x80040CF8u;
+constexpr uint32_t GObjSObj = 0x48;            // GObj.data.sobj
+constexpr uint32_t SObjNext = 0x08;            // SObj.next
+constexpr uint32_t SpriteBitmapCount = 0x28;   // Sprite.nbitmaps, s16
+constexpr uint32_t SpriteBitmaps = 0x34;       // Sprite.bitmap
+constexpr uint32_t GfxBranch = 0xDE000000u;    // F3DEX2 G_DL, pushed: the list, then back here
+constexpr uint32_t GfxEnd = 0xDF000000u;       // F3DEX2 G_ENDDL
+
+// The port's memory beside the game's 8 MB: the patch's code and data, the
+// mailbox, the staged strings and the pages' arena all sit below 16 MB.
+bool port_ram_address(uint32_t address) {
+    return ((address >> 29) == 4u) && ((address & 0x1FFFFFFFu) < 0x01000000u);
+}
+
+// This frame's list, and what it has held since the pages last opened.
+struct PagesList {
+    uint32_t frame = 0xFFFFFFFFu;
+    uint32_t context = 0xFFFFFFFFu;
+    uint32_t start = 0;
+    uint32_t pos = 0;
+    uint32_t end = 0;
+    uint32_t peak = 0;
+    uint32_t skipped = 0;
+    uint32_t names = 0;
+};
+PagesList g_pages_list;
+
+bool in_pages_list(uint32_t address) {
+    return (g_pages_list.start != 0u) && (address >= g_pages_list.start) && (address < g_pages_list.end);
+}
+
+// Where a tag may be written: the game's 8 MB, or the pages' own list.
+bool list_address(uint32_t address) {
+    return valid_ram_address(address) || in_pages_list(address);
+}
+
 } // namespace
+
+// For the line dl_budget.cpp prints when the pages close: the most one frame
+// of their list held, its size, the strips left out for room and the names
+// written in it, since they opened.
+void pages_list_begin() {
+    g_pages_list.peak = 0;
+    g_pages_list.skipped = 0;
+    g_pages_list.names = 0;
+}
+
+void pages_list_take(uint32_t* peak, uint32_t* size, uint32_t* skipped, uint32_t* names) {
+    *peak = g_pages_list.peak;
+    *size = g_pages_list.end - g_pages_list.start;
+    *skipped = g_pages_list.skipped;
+    *names = g_pages_list.names;
+}
+
 } // namespace snap
 
 // Whether the main display-list buffer has room for one tag.
@@ -204,6 +269,10 @@ bool valid_ram_address(uint32_t address) {
 // anything added here asks first and simply declines when the answer is no --
 // an untagged sprite is drawn exactly as it is today.
 static bool snap_dl_room(uint8_t* rdram, uint32_t cursor, uint32_t bytes) {
+    if (snap::in_pages_list(cursor)) {
+        return (snap::g_pages_list.end - cursor) > (bytes + 64u);
+    }
+
     const uint32_t context = MEM_W(0, (gpr)(int32_t)snap::GtlContextId);
     if (context >= 2u) {
         return false;
@@ -505,7 +574,7 @@ static SnapWhole snap_whole_open(uint8_t* rdram, uint32_t sprite, const snap::Cl
     // wide picture puts it.
     const int32_t fine = g_fine_quarters;
     const uint32_t cursor = static_cast<uint32_t>(MEM_W(snap::SpriteCursorOffset, (gpr)(int32_t)sprite));
-    if (((dx == 0) && (dy == 0) && (fine == 0)) || !snap::valid_ram_address(cursor) ||
+    if (((dx == 0) && (dy == 0) && (fine == 0)) || !snap::list_address(cursor) ||
         !snap_dl_room(rdram, cursor, snap::WholeOpenBytes + snap::TagBytes + snap::WholeCloseBytes)) {
         if (slide != 0) {
             whole.slide = slide;
@@ -548,7 +617,7 @@ static void snap_whole_close(uint8_t* rdram, uint32_t sprite, const SnapWhole& w
     }
 
     const uint32_t end = static_cast<uint32_t>(MEM_W(snap::SpriteCursorOffset, (gpr)(int32_t)sprite));
-    if (!snap::valid_ram_address(end) || !snap::valid_ram_address(end - 8u)) {
+    if (!snap::list_address(end) || !snap::list_address(end - 8u)) {
         return;
     }
 
@@ -591,8 +660,11 @@ static void snap_tag_sprite(uint8_t* rdram, recomp_context* ctx) {
     }
 
     const uint32_t cursor = static_cast<uint32_t>(MEM_W(snap::SpriteCursorOffset, (gpr)(int32_t)sprite));
-    if (!snap::valid_ram_address(cursor) || !snap_rect_tag_fits(rdram, cursor)) {
+    if (!snap::list_address(cursor) || !snap_rect_tag_fits(rdram, cursor)) {
         return;
+    }
+    if (snap::in_pages_list(cursor)) {
+        snap::g_pages_list.names++;
     }
 
     const uint32_t id = snap::sobj_id(sprite - snap::SObjFromSprite);
@@ -605,7 +677,7 @@ static void snap_tag_sprite(uint8_t* rdram, recomp_context* ctx) {
 // left exactly where they were put.
 static void snap_close_sprite_group(uint8_t* rdram) {
     const uint32_t cursor = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)snap::GMainGfxPos));
-    if (snap::valid_ram_address(cursor) && snap_rect_tag_fits(rdram, cursor)) {
+    if (snap::list_address(cursor) && snap_rect_tag_fits(rdram, cursor)) {
         MEM_W(0, (gpr)(int32_t)snap::GMainGfxPos) =
             static_cast<int32_t>(snap_write_rect_tag(rdram, cursor, 0u));
     }
@@ -620,7 +692,94 @@ extern "C" void spX2Draw(uint8_t* rdram, recomp_context* ctx) {
     snap_whole_close(rdram, sprite, whole);
 }
 
+// The words a strip of the pages' pool may write, or 0 for an object that is
+// not one of theirs or shows nothing: per sprite shown, its setup, its end
+// and the names and alignment this file adds (16 words), and a texture load
+// and a rectangle for each block of it (12); then the group's close, the end
+// and the room the tags keep (16).
+static uint32_t snap_pages_strip_words(uint8_t* rdram, uint32_t gobj) {
+    if (!snap::port_ram_address(gobj)) {
+        return 0;
+    }
+    const uint32_t pool = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)snap::StripPoolAddr));
+    const uint32_t poolBytes = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)snap::StripPoolBytesAddr));
+    uint32_t sobj = static_cast<uint32_t>(MEM_W(snap::GObjSObj, (gpr)(int32_t)gobj));
+    if ((pool == 0u) || (poolBytes == 0u) || !snap::port_ram_address(pool) || !snap::port_ram_address(sobj)) {
+        return 0;
+    }
+    const uint32_t bitmaps = static_cast<uint32_t>(MEM_W(snap::SObjFromSprite + snap::SpriteBitmaps, (gpr)(int32_t)sobj));
+    if ((bitmaps < pool) || (bitmaps >= (pool + poolBytes))) {
+        return 0;
+    }
+
+    uint32_t words = 0;
+    for (int guard = 0; snap::port_ram_address(sobj) && (guard < 64); guard++) {
+        const uint32_t sprite = sobj + snap::SObjFromSprite;
+        const uint32_t flags = static_cast<uint32_t>(MEM_HU(snap::SpriteFlagsOffset, (gpr)(int32_t)sprite));
+        if ((flags & snap::SpriteHiddenFlag) == 0u) {
+            const int32_t count = static_cast<int16_t>(MEM_H(snap::SpriteBitmapCount, (gpr)(int32_t)sprite));
+            words += 16u + 12u * static_cast<uint32_t>((count > 0) ? count : 0);
+        }
+        sobj = static_cast<uint32_t>(MEM_W(snap::SObjNext, (gpr)(int32_t)sobj));
+    }
+    return (words == 0u) ? 0u : (words + 16u);
+}
+
+// A strip of the pages drawn into their own list, with one branch to it in
+// the screen's. True when it is one of theirs, drawn or left out for room;
+// false leaves it to the screen's list, as before.
+static bool snap_pages_draw(uint8_t* rdram, recomp_context* ctx) {
+    const uint32_t words = snap_pages_strip_words(rdram, static_cast<uint32_t>(ctx->r4));
+    if (words == 0u) {
+        return false;
+    }
+    const uint32_t base = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)snap::PagesDlBaseAddr));
+    const uint32_t bytes = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)snap::PagesDlBytesAddr));
+    const uint32_t context = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)snap::GtlContextId));
+    if ((base == 0u) || !snap::port_ram_address(base) || !snap::port_ram_address(base + bytes - 1u) ||
+        (bytes < (4u * 8u * words)) || (context >= 2u)) {
+        return false;
+    }
+
+    // A list is begun again on each frame the game draws, in that frame's
+    // context, which the game hands out only when the frame before it in that
+    // context is done.
+    snap::PagesList& list = snap::g_pages_list;
+    const uint32_t frame = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)snap::GtlDrawnFrameCounter));
+    if ((frame != list.frame) || (context != list.context) || (list.start == 0u)) {
+        list.frame = frame;
+        list.context = context;
+        list.start = base + context * (bytes / 2u);
+        list.pos = list.start;
+        list.end = list.start + (bytes / 2u);
+    }
+
+    const uint32_t screen = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)snap::GMainGfxPos));
+    if (((list.end - list.pos) < (words * 8u)) || !snap::valid_ram_address(screen) || !snap_dl_room(rdram, screen, 8u)) {
+        list.skipped++;
+        return true;
+    }
+
+    MEM_W(0x0, (gpr)(int32_t)screen) = snap::GfxBranch;
+    MEM_W(0x4, (gpr)(int32_t)screen) = list.pos;
+    MEM_W(0, (gpr)(int32_t)snap::GMainGfxPos) = list.pos;
+    snap_close_sprite_group(rdram);
+    __real_renDrawSprite(rdram, ctx);
+    const uint32_t end = static_cast<uint32_t>(MEM_W(0, (gpr)(int32_t)snap::GMainGfxPos));
+    MEM_W(0x0, (gpr)(int32_t)end) = snap::GfxEnd;
+    MEM_W(0x4, (gpr)(int32_t)end) = 0;
+    list.pos = end + 8u;
+    MEM_W(0, (gpr)(int32_t)snap::GMainGfxPos) = screen + 8u;
+    if ((list.pos - list.start) > list.peak) {
+        list.peak = list.pos - list.start;
+    }
+    return true;
+}
+
 extern "C" void renDrawSprite(uint8_t* rdram, recomp_context* ctx) {
+    if (snap_pages_draw(rdram, ctx)) {
+        return;
+    }
     snap_close_sprite_group(rdram);
     __real_renDrawSprite(rdram, ctx);
 }

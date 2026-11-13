@@ -315,17 +315,17 @@ applies only in Automatic mode, which the port never uses. The lists below
 describe the changes by area as they were cataloged against `a012a23`;
 `shaders/TextureDecodeCS.hlsl` joined them on 2026-09-10.
 
-**Forty-eight files carry the marker**: forty-seven under `lib/rt64/src` and
+**Forty-nine files carry the marker**: forty-eight under `lib/rt64/src` and
 `lib/rt64/include/rt64_extended_gbi.h`. Forty-three are modified upstream
-files and five are new (`hle/rt64_snap_diag.h`, `hle/rt64_snap_overlay.h`,
-`hle/rt64_snap_photo_detail.h`, `render/rt64_shader_blob_cache.h`,
-`render/rt64_snap_recolor.h`). By area:
+files and six are new (`hle/rt64_snap_diag.h`, `hle/rt64_snap_overlay.h`,
+`hle/rt64_snap_photo_detail.h`, `hle/rt64_snap_refresh.h`,
+`render/rt64_shader_blob_cache.h`, `render/rt64_snap_recolor.h`). By area:
 object identity and transform-group pairing (`hle/rt64_state.cpp/.h`,
 `rt64_rigid_body.cpp/.h`, `rt64_transform_group.h`, `rt64_draw_call.h`,
 `rt64_projection.h`, `rt64_rdp.cpp/.h`, `rt64_rsp.cpp`,
 `gbi/rt64_gbi.cpp`, `gbi/rt64_gbi_extended.cpp`, `gbi/rt64_gbi_rdp.cpp`,
 `include/rt64_extended_gbi.h`), frame pacing and presentation
-(`hle/rt64_present_queue.cpp/.h`, `rt64_workload_queue.cpp/.h`,
+(`hle/rt64_present_queue.cpp/.h`, `rt64_snap_refresh.h`, `rt64_workload_queue.cpp/.h`,
 `rt64_workload.h`, `rt64_game_frame.cpp/.h`, `rt64_vi.cpp/.h`,
 `rt64_application.cpp`, `render/rt64_vi_renderer.cpp/.h`,
 `render/rt64_framebuffer_renderer.cpp/.h`, `render/rt64_projection_processor.cpp`),

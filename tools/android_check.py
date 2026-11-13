@@ -97,6 +97,12 @@ The stages:
   withheld.
 * pages: the title tape with the menu key at readings 300 and 700
   (SNAP_MENU_AT): the pages open, close, and the music is held with them.
+* autosave: Options > Game > Autosave on the save file itself. The eval tape
+  falls out of step here before Oak's check, so SNAP_AUTOSAVE_TEST starts the
+  port's copy of the save one bit off and the tape's first lab finds a change.
+  On: the game's own save runs there once, the file changes, the game's
+  checksum is right, and the old file is kept as .bak. Off: the log says the
+  lab opened with changes, and the file stays byte for byte.
 * settings: snapsettings.json written by a first run parses and has the fields
   the PC check names; with widescreen and a volume of 37 written into it, a
   second run applies widescreen and keeps the volume.
@@ -133,7 +139,7 @@ LAUNCHER = PKG + '/.Snap64Launcher'
 ROOT = '/sdcard/Snap64Check'
 # The order a reservation that can end at any minute wants: the quick proofs
 # first (boot, the mod's hooks), then the tapes.
-ALL_STAGES = 'boot,vkcheck,mod,lifecycle,touch,touchswitch,touchwide,gyro,pad,score,stats,attract,menu,pages,settings,rompick'
+ALL_STAGES = 'boot,vkcheck,mod,lifecycle,touch,touchswitch,touchwide,gyro,pad,score,stats,attract,menu,pages,autosave,settings,rompick'
 
 
 class Checks:
@@ -661,6 +667,41 @@ def stage_pages(checks, dev, out, a):
                (held[0].split('] ', 1)[1] if held else 'the music was never held with the screen')
                + ('' if all(' stood ' in l for l in held) else '; a player MOVED while held'))
     s.judge_end(checks)
+
+
+def stage_autosave(checks, dev, out, a):
+    """The Autosave row's two answers, on the file the runtime writes
+    (src/autosave.cpp; the PC suite's autosave check has the real ride)."""
+    sys.path.insert(0, str(TOOLS))
+    import unlock_save
+    original = pathlib.Path(a.save).read_bytes()
+    for mode in ('on', 'off'):
+        s = Stage(dev, out, 'autosave/' + mode, folder=ROOT + '/autosave_' + mode)
+        settings = out / ('autosave-%s.json' % mode)
+        settings.write_text('{"autosave": %s}\n' % ('true' if mode == 'on' else 'false'), encoding='utf-8')
+        s.fresh([(a.rom, 'pokemonsnap.z64'), (a.save, 'saves/pokemonsnap.bin'),
+                 (REPLAYS / 'eval.inputs', 'eval.inputs'), (settings, 'snapsettings.json')])
+        marker = '[SNAP-SAVE] autosave: the lab opened' if mode == 'on' else '[SNAP-SAVE] autosave is off'
+        # The runtime writes the file 250 ms after the game's writes stop.
+        s.run({'SNAP_REPLAY': 'eval.inputs', 'SNAP_AUTOSAVE_TEST': '1'},
+              lambda ls: any(l.startswith(marker) for l in ls), 8.0, 300, keep=False)
+        said = [l for l in s.lines if l.startswith('[SNAP-SAVE] autosave')]
+        save = dev.cat(s.folder + '/saves/pokemonsnap.bin')
+        bak = dev.cat(s.folder + '/saves/pokemonsnap.bin.bak')
+        same = save == original
+        if mode == 'on':
+            checks.add(s.name, len(said) == 1 and ', saved in ' in said[0],
+                       said[0] if len(said) == 1 else '%d autosave lines' % len(said))
+            right = save is not None and not same and len(save) == len(original) \
+                and unlock_save.checksum(save) == save[0:0x10]
+            differ = sum(1 for x, y in zip(save, original) if x != y) if save else 0
+            checks.add(s.name, right, 'the file changed (%d bytes) and the game\'s checksum is %s'
+                       % (differ, 'right' if right else 'WRONG, or the file is the old one'))
+            checks.add(s.name, bak == original, 'the old file %s' % ('is kept as .bak' if bak == original else 'is NOT the .bak'))
+        else:
+            checks.add(s.name, bool(said), said[0] if said else 'no line saying the lab opened with changes')
+            checks.add(s.name, same, 'the file %s' % ('stayed byte for byte' if same else 'CHANGED'))
+        s.judge_end(checks)
 
 
 def stage_settings(checks, dev, out, a):
@@ -1860,7 +1901,7 @@ def main():
     stages = [x for x in a.stages.split(',') if x]
     if stages == ['cleanup']:
         a.apk = None
-    tapes = {'score', 'attract', 'stats', 'menu', 'pages', 'touch', 'touchswitch', 'touchwide', 'gyro', 'pad'}
+    tapes = {'score', 'attract', 'stats', 'menu', 'pages', 'autosave', 'touch', 'touchswitch', 'touchwide', 'gyro', 'pad'}
     if (set(stages) & tapes) and not a.save:
         print('the tapes need --save, the save they were recorded on', file=sys.stderr)
         return 2
@@ -1903,7 +1944,8 @@ def main():
             dev.sh('appops set %s MANAGE_EXTERNAL_STORAGE allow' % PKG)
             dev.sh('appops set --uid %s MANAGE_EXTERNAL_STORAGE allow' % PKG)
         fns = {'boot': stage_boot, 'score': stage_score, 'attract': stage_attract, 'stats': stage_stats,
-               'menu': stage_menu, 'pages': stage_pages, 'settings': stage_settings, 'rompick': stage_rompick,
+               'menu': stage_menu, 'pages': stage_pages, 'autosave': stage_autosave,
+               'settings': stage_settings, 'rompick': stage_rompick,
                'mod': stage_mod, 'lifecycle': stage_lifecycle, 'touch': stage_touch,
                'touchswitch': lambda c, d, o, a: stage_touch(c, d, o, a, switch=True),
                'touchwide': lambda c, d, o, a: stage_touch(c, d, o, a, wide=True),

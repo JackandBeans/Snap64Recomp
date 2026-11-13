@@ -109,6 +109,8 @@ namespace snap {
 extern uint8_t* g_rdram;
 // overlay_hook.cpp: true while a course's code overlay is resident.
 extern std::atomic<bool> g_app_level_resident;
+// overlay_hook.cpp: the ROM start of the scene overlay loaded last.
+extern std::atomic<uint32_t> g_scene_overlay_rom;
 
 // The pad. Every SDL controller call the port makes -- opening, polling,
 // closing, the sensors, rumble -- runs on one thread of the port's own, the
@@ -124,6 +126,27 @@ extern std::atomic<bool> g_app_level_resident;
 // (SDL_HINT_AUTO_UPDATE_JOYSTICKS is off, main.cpp).
 static SDL_GameController* game_controller = nullptr;   // pad thread only
 
+// Every pad SDL recognizes is opened and kept, and game_controller is the
+// one pressed last (pad_follow_press). Until 1.1.7 the first pad opened was
+// kept until it was unplugged, so the Deck's own controls, which never
+// leave, very likely hid a pad paired beside them, and of two pads on a PC
+// only the first was read.
+struct OpenPad {
+    SDL_GameController* gc;
+    SDL_JoystickID id;
+    uint32_t above;     // the axes past a press's travel, a bit each (pad_follow_press)
+    uint64_t key;       // its key in the settings' pad_presets (pad_key_of)
+    int preset;         // its Pad Preset, 0 Auto, 1 Standard, 2 N64 (pad_presets_refresh)
+};
+static std::vector<OpenPad> g_open_pads;   // pad thread only
+// The pad in use's key, for the Controls page (input_pad_preset_key): bit 40
+// set while a pad is in use, bit 32 for Steam's virtual pad, the vendor and
+// product ids below. Written by the pad thread.
+static std::atomic<uint64_t> g_pad_key{0};
+// Raised by the host when a pad's preset changed (input_pad_preset_changed).
+static std::atomic<bool> g_pad_presets_changed{false};
+static std::string pad_key_text(uint64_t key);
+
 // What the game's threads see of the pad: taken by the pad thread, read by
 // input_get. The buttons are a bit per SDL_GameControllerButton.
 struct PadSnapshot {
@@ -131,6 +154,8 @@ struct PadSnapshot {
     bool n64_layout = false;
     bool nso_n64 = false;       // the Switch Online N64 controller through SDL's driver (g_pad_nso_n64)
     bool r_on_trigger = false;  // its R is its right trigger, under the N64-shaped layout (g_pad_r_on_trigger)
+    bool n64_shaped = false;    // Auto's verdict, whatever the preset (g_pad_n64_shaped)
+    bool right_stick = true;    // its mapping has a right stick (g_pad_right_stick)
     uint32_t buttons = 0;
     int16_t axes[SDL_CONTROLLER_AXIS_MAX] = {};
 };
@@ -165,9 +190,16 @@ const char* const kInputNames[IN_COUNT] = {
     "c_up", "c_down", "c_left", "c_right", "stick_up", "stick_down", "stick_left", "stick_right",
 };
 
-// The port's own keys, the table's nineteenth and twentieth names (input.h).
+// The port's own entries, the table's nineteenth to twenty-first names (input.h).
 static const char* const kFastForwardName = "fast_forward";
 static const char* const kSlowMotionName = "slow_motion";
+static const char* const kPhotoName = "photo";
+// The port's own entries, in the order the Button Setup page lists them
+// after the eighteen inputs.
+static const char* const kPortEntries[3] = {kPhotoName, kFastForwardName, kSlowMotionName};
+static bool is_port_entry(const std::string& name) {
+    return (name == kPhotoName) || (name == kFastForwardName) || (name == kSlowMotionName);
+}
 
 const uint16_t kInputBits[IN_CR + 1] = {
     N64_BTN_A, N64_BTN_B, N64_BTN_Z, N64_BTN_START, N64_BTN_DU, N64_BTN_DD, N64_BTN_DL, N64_BTN_DR,
@@ -207,6 +239,18 @@ static std::atomic<bool> g_pad_r_on_trigger{false};
 // stays unread: it is the DualSense's microphone button and the Deck's ...
 // button.
 static std::atomic<bool> g_pad_misc1_photo{false};
+// Auto's verdict on the pad, by its ids and then its name, whatever the Pad
+// Preset says: what the pad is, where g_pad_layout_n64 is how it is read.
+// The Button Setup page names the pad's parts by it (input_bind_display).
+static std::atomic<bool> g_pad_n64_shaped{false};
+// The pad's mapping has a right stick. The Switch Online N64 controller
+// through SDL's driver has none, so Stick Swap would leave its aim reading
+// nothing and its one stick pressing C buttons; the swap is not applied to
+// such a pad (input_get).
+static std::atomic<bool> g_pad_right_stick{true};
+// Its mapping has a stick at all: a keyboard SDL maps as a pad (Android's
+// emulator) has none, and is no pad in hand (input_pad_in_hand).
+static std::atomic<bool> g_pad_left_stick{true};
 // The pad_layout the flags above were decided under, -1 before any pad has
 // opened (pad thread only).
 static int g_pad_layout_applied = -1;
@@ -268,6 +312,11 @@ static uint32_t g_trigger_clicks = 0;
 // The device of the last press (input_last_device). The window's thread writes
 // it from the events; the game's thread reads it.
 static std::atomic<int> g_last_device{kBindPad};
+// When a key or a pad's button was last pressed (now_us), from the same
+// events: the mouse is the hand in use while it moved, clicked or turned
+// after that (input_update_mouse_capture).
+static std::atomic<int64_t> g_key_pad_press_at{0};
+int64_t now_us();
 
 // Presses of the Button Setup page's clear keys (input_take_clear_key).
 static std::atomic<uint32_t> g_clear_key_presses{0};
@@ -348,6 +397,9 @@ static void note_press_device(const SDL_Event& event) {
     if (device >= 0) {
         g_last_device.store(device, std::memory_order_relaxed);
     }
+    if ((device == kBindKeyboard) || (device == kBindPad)) {
+        g_key_pad_press_at.store(now_us(), std::memory_order_relaxed);
+    }
     static int traced = 0;
     if ((what[0] != '\0') && (traced < 300) && trace_on()) {
         traced++;
@@ -422,6 +474,7 @@ struct Resolved {
     std::vector<Source> sources[IN_COUNT];
     std::vector<Source> fast_forward;   // the fast_forward entry's (input_fast_forward_held)
     std::vector<Source> slow_motion;    // the slow_motion entry's (input_slow_motion_held)
+    std::vector<Source> photo;          // the photo entry's (photo_uses)
 };
 
 const Bindings& defaults() {
@@ -461,6 +514,14 @@ const Bindings& defaults() {
         // in, the one unused control there (none on the Switch Online N64
         // controller, where that bit is its ZR).
         {kSlowMotionName, {"Space", "Pad LeftStick"}},
+        // Saves the photo on screen to a file (photo_export.h): P, and the
+        // right stick pressed in, the click a player's thumb finds without
+        // leaving the C buttons. On a pad with no right stick to press in,
+        // its Capture or Share button stands in for that click
+        // (g_pad_misc1_photo). Until 1.1.7 these were fixed: P a hotkey,
+        // the click hard-wired, so a pad whose C buttons sit on the stick
+        // clicks (the Tribute64 in its X-Input mode) could not have them.
+        {kPhotoName, {"P", "Pad RightStick"}},
     };
     return table;
 }
@@ -513,7 +574,9 @@ std::mutex g_bindings_mutex;
 std::shared_ptr<const Resolved> g_resolved;   // read by the game's thread
 Bindings g_bindings_in_force;                 // the names, for the file
 std::atomic<uint32_t> g_bindings_gen{0};      // bumped by every table put in force
-static std::vector<Source> g_extra_sources;   // the fast_forward and slow_motion entries in force, for the page's refusals
+// The port's own entries in force (kPortEntries), each source with its
+// entry's index, for the page's refusals (port_key_uses).
+static std::vector<std::pair<int, Source>> g_extra_sources;
 
 std::shared_ptr<const Resolved> resolved() {
     std::lock_guard<std::mutex> lock(g_bindings_mutex);
@@ -545,6 +608,10 @@ std::atomic<int64_t> g_wheel_down_until{0};
 std::atomic<int64_t> g_esc_start_until{0};
 // A press of the menu key not yet taken by the game thread.
 std::atomic<int> g_menu_request{0};
+// Every photo the input layer asked for, and every Options request, counted
+// for SNAP_VPAD_PRESS's report of what a press did (vpad_press_tick).
+std::atomic<uint32_t> g_photo_count{0};
+std::atomic<uint32_t> g_menu_count{0};
 
 // The pointer, for the game's menus. A menu that handles the mouse itself
 // (patches/src/graphics_menu_patch.c, snap_mouse_*) raises the claim byte
@@ -575,6 +642,21 @@ std::atomic<int32_t> g_test_gx{-1};           // SNAP_MOUSE_TEST: the pointer, g
 std::atomic<uint32_t> g_inject_buttons{0};
 std::atomic<int32_t> g_test_gy{-1};
 std::atomic<bool> g_test_held{false};         // SNAP_MOUSE_TEST's press and release, for a drag
+// The system cursor's state, SDL_ENABLE or SDL_DISABLE, as fullscreen last
+// set it (input_update_mouse_capture; -1 before its first pump).
+static std::atomic<int> g_cursor_state{-1};
+
+// A left click on a menu that takes the mouse, made while fullscreen has
+// the pointer hidden, only brings the pointer back: it is not the menu's
+// click. Oak's talk takes no mouse, so the pointer was hidden through it,
+// and the click that went on to the pick between the Report's picture and
+// the new one kept the photo under the unseen pointer (fizzlepicklepop,
+// discussion #32). A screen that takes no mouse still has its click as A
+// (Oak's text), and a finger's tap acts at once (Android).
+static bool click_unseen() {
+    return (g_cursor_state.load(std::memory_order_relaxed) == SDL_DISABLE) &&
+           g_menu_claimed.load(std::memory_order_relaxed);
+}
 
 // A press is reported for at least this long. The game samples its pad
 // once per frame (33 ms), so a click shorter than a frame could fall
@@ -642,6 +724,7 @@ constexpr uint32_t ADDR_MailboxViewTurned       = 0x80C0003B;  // u8, written he
 constexpr uint32_t ADDR_MailboxPointer          = 0x80C00088;  // u32
 constexpr uint32_t ADDR_MailboxPointerCounts    = 0x80C0008C;  // u32: moved, click, back, wheel up
 constexpr uint32_t ADDR_MailboxWheelDown        = 0x80C00090;  // u8
+constexpr uint32_t ADDR_MailboxWheelSwipe       = 0x80C00689;  // u8: the wheel steps are a swipe's (touch_pointer_motion)
 constexpr uint32_t ADDR_MailboxMouseClaim       = 0x80C00091;  // u8
 constexpr uint32_t ADDR_MailboxMouseHeld        = 0x80C00092;  // u8: 1 while the left button is down, for a drag
 // Typing on the photographer card (patches/src/mouse_patch.inc): the card
@@ -672,16 +755,50 @@ std::atomic<bool> g_gyro_enabled{false};       // the sensor is on and its event
 std::atomic<int32_t> g_gyro_instance{-1};      // the joystick the readings must come from
 uint64_t g_gyro_last_us = 0;                   // the sensor's own clock, when it has one
 float g_gyro_rate_hz = 0.0f;                   // else its nominal rate spaces the readings
-// SNAP_GYRO_DEBUG: what the sensor sent and what became of it. Guarded by
-// g_motion_mutex, which the reading path already takes.
-const bool g_gyro_debug = (getenv("SNAP_GYRO_DEBUG") != nullptr);
-float g_dbg_peak[3] = {0.0f, 0.0f, 0.0f};   // largest |rate| per axis, rad/s
-uint32_t g_dbg_n = 0;                        // readings counted this second
-float g_dbg_last_yaw = 0.0f;                 // angle handed over, radians
-float g_dbg_last_pitch = 0.0f;
-float g_dbg_dt_sum = 0.0f;                   // seconds the readings claimed to span
-uint32_t g_dbg_clock = 0;                    // readings whose own clock was believed
-float g_dbg_grav[3] = {0.0f, 0.0f, 0.0f};    // where up was, last reading
+
+#if defined(__linux__) && !defined(__ANDROID__)
+// What became of the sensor's readings, said each ten seconds under SNAP_STATS
+// while the gyro is on (gyro_summary). The counting runs in every build, so what a
+// test build says describes the path a player has. Angles in degrees, each step
+// counted whatever its direction. Guarded by g_motion_mutex.
+struct GyroTally {
+    uint32_t readings = 0;
+    uint32_t byClock = 0;
+    double spanS = 0.0;
+    double turnedYaw = 0.0;     // what the readings made
+    double turnedPitch = 0.0;
+    double appliedYaw = 0.0;    // what reached the view, after Gyro Speed
+    double appliedPitch = 0.0;
+    double mouse = 0.0;         // what the mouse added, Steam's Gyro As Mouse among it
+    float speed = 0.0f;
+    int aim = 0;
+    struct Drop {
+        const char* why = nullptr;
+        double angle = 0.0;
+    };
+    Drop drops[12];
+};
+GyroTally g_gyro_tally;
+
+constexpr double kDegPerRad = 180.0 / 3.14159265358979323846;
+
+// An angle apply_mouse_look did not hand to the view, and why. The reasons are its
+// own string literals, so one pointer is one reason.
+void gyro_tally_drop(const char* why, float yaw, float pitch) {
+    const double angle = (double(std::fabs(yaw)) + double(std::fabs(pitch))) * kDegPerRad;
+    if (angle <= 0.0) {
+        return;
+    }
+    std::lock_guard<std::mutex> lock(g_motion_mutex);
+    for (GyroTally::Drop& d : g_gyro_tally.drops) {
+        if ((d.why == nullptr) || (d.why == why)) {
+            d.why = why;
+            d.angle += angle;
+            return;
+        }
+    }
+}
+#endif
 
 // Which way is UP, in the pad's own frame, low-passed out of the
 // accelerometer (about a quarter second). Touched only on the event thread.
@@ -694,7 +811,6 @@ float g_dbg_grav[3] = {0.0f, 0.0f, 0.0f};    // where up was, last reading
 // and a Steam Deck is held tilted back, which put the whole of a left-right
 // turn onto an axis the port was not reading (found on a Deck, 2026-09-06).
 float g_grav[3] = {0.0f, 0.0f, 0.0f};
-const char* g_dbg_stop = "not called";       // the test that dropped it
 
 std::atomic<int64_t> g_gyro_live_us{0};        // when a reading last carried any turning at all
 std::atomic<uint32_t> g_gyro_readings{0};      // readings since the gyro was turned on
@@ -749,12 +865,11 @@ void apply_mouse_look(uint8_t* rdram) {
         g_motion_dx = 0.0f; g_motion_dy = 0.0f;
         g_gyro_yaw = 0.0f; g_gyro_pitch = 0.0f;
     }
-    if (g_gyro_debug) {
-        std::lock_guard<std::mutex> lock(g_motion_mutex);
-        g_dbg_last_yaw = gyaw;
-        g_dbg_last_pitch = gpitch;
-    }
-#define SNAP_GYRO_DROP(why) do { if (g_gyro_debug) g_dbg_stop = (why); return; } while (0)
+#if defined(__linux__) && !defined(__ANDROID__)
+#define SNAP_GYRO_DROP(why) do { gyro_tally_drop((why), gyaw, gpitch); return; } while (0)
+#else
+#define SNAP_GYRO_DROP(why) return
+#endif
     if (rdram != nullptr) {
         // Cleared first: a frame that turns nothing, or is dropped below,
         // must not leave the previous frame's one behind.
@@ -798,14 +913,14 @@ void apply_mouse_look(uint8_t* rdram) {
     if (zoomedIn && (read_s32(rdram, ADDR_ZoomedInCameraHeld) != 0)) SNAP_GYRO_DROP("photo held");
 
     const Settings& s = settings();
-    const float sens = std::fmax(0.1f, std::fmin(10.0f, s.mouse_sensitivity));
+    const float sens = std::fmax(0.05f, std::fmin(10.0f, s.mouse_sensitivity));
     const float zoom = std::fmax(0.25f, std::fmin(1.0f, s.mouse_zoom_speed));
     const float k = RadiansPerPixel * sens * (zoomedIn ? zoom : 1.0f);
     // The gyro at natural scale, a turn of the pad turning the view as far,
     // whatever the zoom: that is what makes a pad feel like a camera. Mode 2
     // listens only zoomed in, the way a photographer raises the camera.
     const bool gyroOn = (s.gyro_aim == 1) || ((s.gyro_aim == 2) && zoomedIn);
-    const float gs = gyroOn ? std::fmax(0.25f, std::fmin(4.0f, s.gyro_sensitivity)) : 0.0f;
+    const float gs = gyroOn ? std::fmax(0.05f, std::fmin(4.0f, s.gyro_sensitivity)) : 0.0f;
 
     float yaw = read_f32(rdram, ADDR_PlayerViewYaw) + dx * k + gyaw * gs;
     write_f32(rdram, ADDR_PlayerViewYaw, yaw);
@@ -813,6 +928,19 @@ void apply_mouse_look(uint8_t* rdram) {
     // SDL's y grows downward; the game's pitch grows upward. The gyro's
     // pitch already grows upward; the same tilt setting flips both.
     const float dpitch = (s.mouse_invert_y ? dy : -dy) * k + (s.mouse_invert_y ? -gpitch : gpitch) * gs;
+#if defined(__linux__) && !defined(__ANDROID__)
+    if (!gyroOn) {
+        gyro_tally_drop("Gyro Aim is off, or for zoomed in only", gyaw, gpitch);
+    }
+    {
+        std::lock_guard<std::mutex> lock(g_motion_mutex);
+        g_gyro_tally.appliedYaw += double(std::fabs(gyaw * gs)) * kDegPerRad;
+        g_gyro_tally.appliedPitch += double(std::fabs(gpitch * gs)) * kDegPerRad;
+        g_gyro_tally.mouse += (double(std::fabs(dx * k)) + double(std::fabs(dy * k))) * kDegPerRad;
+        g_gyro_tally.speed = gs;
+        g_gyro_tally.aim = s.gyro_aim;
+    }
+#endif
     float pitch = read_f32(rdram, ADDR_ViewPitch) + dpitch;
     const float lo = read_f32(rdram, ADDR_MinPitch);
     const float hi = read_f32(rdram, ADDR_MaxPitch);
@@ -829,7 +957,6 @@ void apply_mouse_look(uint8_t* rdram) {
     if (turned > 0.002f) {
         write_u8(rdram, ADDR_MailboxViewTurned, 1);
     }
-    if (g_gyro_debug) g_dbg_stop = "applied to the view";
 }
 #undef SNAP_GYRO_DROP
 
@@ -1004,9 +1131,9 @@ void phone_gyro_sync() {
                orientation_name());
         fflush(stdout);
     }
-    // SNAP_GYRO_DEBUG read here, not when the library loads (g_gyro_debug):
-    // on Android the launching intent's extras become the environment only
-    // after that.
+    // SNAP_GYRO_DEBUG: the line the Android checks read. Read here, not when the
+    // library loads: on Android the launching intent's extras become the
+    // environment only after that.
     static const bool debug = (getenv("SNAP_GYRO_DEBUG") != nullptr);
     if (debug && (g_phone_gyro != nullptr)) {
         static int64_t said = 0;
@@ -1200,15 +1327,14 @@ static void set_bindings(const Bindings& given, bool migrate) {
         r->sources[i] = std::move(sources);
         in_force[name] = std::move(accepted);
     }
-    // The port's own keys (input.h): fast_forward and slow_motion are not
-    // N64 inputs, so the Button Setup page never lists them and a table
-    // from the page carries the eighteen inputs only. Absent from the table
-    // given, the sources in force stay; nothing in force yet (the first
-    // load) or nothing usable means the shipped pair, as for the inputs.
+    // The port's own entries (input.h): photo, fast_forward and
+    // slow_motion are not N64 inputs. Absent from the table given, the
+    // sources in force stay; nothing in force yet (the first load) or
+    // nothing usable means the shipped pair, as for the inputs.
     {
-        std::vector<Source> extra;
-        for (int e = 0; e < 2; e++) {
-            const char* const ename = (e == 0) ? kFastForwardName : kSlowMotionName;
+        std::vector<std::pair<int, Source>> extra;
+        for (int e = 0; e < 3; e++) {
+            const char* const ename = kPortEntries[e];
             std::vector<std::string> wanted;
             auto it = bindings.find(ename);
             if (it != bindings.end()) {
@@ -1239,8 +1365,10 @@ static void set_bindings(const Bindings& given, bool migrate) {
                     printf("[SNAP-Input] keys.%s: no usable source; the default stays\n", ename);
                 }
             }
-            extra.insert(extra.end(), sources.begin(), sources.end());
-            ((e == 0) ? r->fast_forward : r->slow_motion) = std::move(sources);
+            for (const Source& src : sources) {
+                extra.push_back({e, src});
+            }
+            ((e == 0) ? r->photo : (e == 1) ? r->fast_forward : r->slow_motion) = std::move(sources);
             in_force[ename] = std::move(accepted);
         }
         {
@@ -1249,7 +1377,7 @@ static void set_bindings(const Bindings& given, bool migrate) {
         }
     }
     for (const auto& entry : bindings) {
-        bool known = (entry.first == kFastForwardName) || (entry.first == kSlowMotionName);
+        bool known = is_port_entry(entry.first);
         for (const char* k : kInputNames) known = known || (entry.first == k);
         if (!known) {
             printf("[SNAP-Input] keys.%s: not an input this port has; ignored (input.h lists them)\n", entry.first.c_str());
@@ -1379,14 +1507,18 @@ std::string display_name(const std::string& name, bool n64) {
                 case SDL_CONTROLLER_BUTTON_BACK: return "Back";
                 case SDL_CONTROLLER_BUTTON_GUIDE: return "Guide";
                 case SDL_CONTROLLER_BUTTON_START: return "Start";
-                case SDL_CONTROLLER_BUTTON_LEFTSTICK: return "L Stick";
-                case SDL_CONTROLLER_BUTTON_RIGHTSTICK: return "R Stick";
+                // The clicks are L3 and R3: "R Stick" is the stick itself,
+                // which the C rows name first, and since 1.1.7 a click can
+                // be a C button too ("R Stick or R3").
+                case SDL_CONTROLLER_BUTTON_LEFTSTICK: return "L3";
+                case SDL_CONTROLLER_BUTTON_RIGHTSTICK: return "R3";
                 case SDL_CONTROLLER_BUTTON_LEFTSHOULDER: return n64 ? "Z" : "L Bumper";
                 case SDL_CONTROLLER_BUTTON_RIGHTSHOULDER: return n64 ? "ZR" : "R Bumper";
                 case SDL_CONTROLLER_BUTTON_DPAD_UP: return "D Up";
                 case SDL_CONTROLLER_BUTTON_DPAD_DOWN: return "D Down";
                 case SDL_CONTROLLER_BUTTON_DPAD_LEFT: return "D Left";
                 case SDL_CONTROLLER_BUTTON_DPAD_RIGHT: return "D Right";
+                case SDL_CONTROLLER_BUTTON_MISC1: return "Capture";
                 default: {
                     const char* n = SDL_GameControllerGetStringForButton(SDL_GameControllerButton(src.code));
                     return (n != nullptr) ? n : name;
@@ -1416,6 +1548,7 @@ void bind_publish(const Bindings& table) {
 struct Capture {
     std::mutex mutex;
     int device = kBindKeyboard;
+    std::string input;                       // the row's entry in the table ("a", "photo")
     int64_t startedUs = 0;
     CaptureState state = CaptureState::Idle;
     std::string name;
@@ -1450,6 +1583,165 @@ int64_t g_vpad_release_us = 0;           // when the pressed part is let go (0: 
 int g_vpad_button = -1;
 int g_vpad_axis = -1;
 
+// SNAP_VPAD_PRESS: the virtual pad's own parts pressed one at a time, each
+// held a quarter second with a third of a second between, from a second and
+// a half after the pad is in use, with no capture listening: a comma-separated
+// list of joystick parts ("b10" a button, "a5" an axis to its end, "a0-" the
+// other end), what a real pad's driver sends, read through whatever mapping
+// the pad carries (SNAP_VPAD_MAP). For each, one line says what the game was
+// handed while it was held and what the port did with it; the suite's
+// padpress check reads them (tools/release_check.py), so a press that
+// reaches nothing, as R did on the Switch Online N64 controller in 1.1.5
+// (issue #26), is caught on the built game. Game thread only.
+struct VpadPress {
+    std::string part;
+    int button = -1;
+    int axis = -1;
+    int16_t value = 0;
+};
+std::vector<VpadPress> g_vpad_press;   // the script
+size_t g_vpad_press_next = 0;
+int64_t g_vpad_press_at = 0;           // when the part in hand went down (0: none held)
+int64_t g_vpad_press_due = 0;          // when the next goes down (0: not yet scheduled)
+uint16_t g_vpad_press_btn = 0;         // the game's buttons while it was held
+float g_vpad_press_x = 0.0f;           // and the stick's farthest
+float g_vpad_press_y = 0.0f;
+bool g_vpad_press_ff = false;
+bool g_vpad_press_sm = false;
+uint32_t g_vpad_press_photos = 0;      // the counts as it went down
+uint32_t g_vpad_press_menus = 0;
+constexpr int64_t VpadPressHoldUs = 250000;
+constexpr int64_t VpadPressGapUs = 350000;
+constexpr int64_t VpadPressFirstUs = 1500000;
+// A reading this soon after the press may predate the pad thread's poll.
+constexpr int64_t VpadPressSettleUs = 40000;
+
+int16_t vpad_axis_rest(int axis);
+
+void vpad_press_tick(int64_t t) {
+    static bool parsed = false;
+    if (!parsed) {
+        parsed = true;
+        const char* e = getenv("SNAP_VPAD_PRESS");
+        std::string cur;
+        for (const char* q = (e != nullptr) ? e : ""; ; q++) {
+            if ((*q == ',') || (*q == '\0')) {
+                VpadPress v;
+                v.part = cur;
+                int n = -1;
+                if ((cur.size() >= 2) && (std::sscanf(cur.c_str() + 1, "%d", &n) == 1) && (n >= 0)) {
+                    if (cur[0] == 'b') {
+                        v.button = n;
+                    } else if (cur[0] == 'a') {
+                        v.axis = n;
+                        v.value = (cur.back() == '-') ? int16_t(-32768) : int16_t(32767);
+                    }
+                }
+                if ((v.button >= 0) || (v.axis >= 0)) {
+                    g_vpad_press.push_back(v);
+                } else if (!cur.empty()) {
+                    printf("[SNAP-Input] SNAP_VPAD_PRESS: \"%s\" is not a part (b<n> or a<n>, a<n>- for the other end); skipped\n", cur.c_str());
+                    fflush(stdout);
+                }
+                cur.clear();
+                if (*q == '\0') break;
+            } else {
+                cur.push_back(*q);
+            }
+        }
+    }
+    if ((g_vpad_press_at == 0) && (g_vpad_press_next >= g_vpad_press.size())) {
+        return;
+    }
+    if (g_vpad_press_due == 0) {
+        if (pad_snapshot().attached) {
+            g_vpad_press_due = t + VpadPressFirstUs;
+        }
+        return;
+    }
+    if ((g_vpad_press_at == 0) && (t >= g_vpad_press_due)) {
+        const VpadPress& v = g_vpad_press[g_vpad_press_next];
+        if (v.button >= 0) {
+            SDL_JoystickSetVirtualButton(g_vpad, v.button, SDL_PRESSED);
+        } else {
+            SDL_JoystickSetVirtualAxis(g_vpad, v.axis, v.value);
+        }
+        g_vpad_press_at = t;
+        g_vpad_press_btn = 0;
+        g_vpad_press_x = 0.0f;
+        g_vpad_press_y = 0.0f;
+        g_vpad_press_ff = false;
+        g_vpad_press_sm = false;
+        g_vpad_press_photos = g_photo_count.load(std::memory_order_relaxed);
+        g_vpad_press_menus = g_menu_count.load(std::memory_order_relaxed);
+    } else if ((g_vpad_press_at != 0) && (t >= g_vpad_press_at + VpadPressHoldUs)) {
+        const VpadPress& v = g_vpad_press[g_vpad_press_next++];
+        if (v.button >= 0) {
+            SDL_JoystickSetVirtualButton(g_vpad, v.button, SDL_RELEASED);
+        } else {
+            SDL_JoystickSetVirtualAxis(g_vpad, v.axis, vpad_axis_rest(v.axis));
+        }
+        g_vpad_press_at = 0;
+        g_vpad_press_due = t + VpadPressGapUs;
+        static const struct { uint16_t bit; const char* name; } kNames[] = {
+            {N64_BTN_A, "A"}, {N64_BTN_B, "B"}, {N64_BTN_Z, "Z"}, {N64_BTN_START, "Start"},
+            {N64_BTN_DU, "D-Up"}, {N64_BTN_DD, "D-Down"}, {N64_BTN_DL, "D-Left"}, {N64_BTN_DR, "D-Right"},
+            {N64_BTN_L, "L"}, {N64_BTN_R, "R"}, {N64_BTN_CU, "C-Up"}, {N64_BTN_CD, "C-Down"},
+            {N64_BTN_CL, "C-Left"}, {N64_BTN_CR, "C-Right"},
+        };
+        std::string game;
+        for (const auto& k : kNames) {
+            if (g_vpad_press_btn & k.bit) {
+                game += (game.empty() ? "" : " ") + std::string(k.name);
+            }
+        }
+        if (g_vpad_press_x > 0.5f) game += (game.empty() ? "" : " ") + std::string("Stick-Right");
+        if (g_vpad_press_x < -0.5f) game += (game.empty() ? "" : " ") + std::string("Stick-Left");
+        if (g_vpad_press_y > 0.5f) game += (game.empty() ? "" : " ") + std::string("Stick-Up");
+        if (g_vpad_press_y < -0.5f) game += (game.empty() ? "" : " ") + std::string("Stick-Down");
+        std::string port;
+        if (g_vpad_press_ff) port += (port.empty() ? "" : " ") + std::string("fast-forward");
+        if (g_vpad_press_sm) port += (port.empty() ? "" : " ") + std::string("slow-motion");
+        if (g_photo_count.load(std::memory_order_relaxed) != g_vpad_press_photos) port += (port.empty() ? "" : " ") + std::string("photo");
+        if (g_menu_count.load(std::memory_order_relaxed) != g_vpad_press_menus) port += (port.empty() ? "" : " ") + std::string("Options");
+        printf("[SNAP-Input] SNAP_VPAD_PRESS: %s read as %s; the port: %s\n", v.part.c_str(),
+               game.empty() ? "nothing" : game.c_str(), port.empty() ? "nothing" : port.c_str());
+        fflush(stdout);
+    }
+}
+
+// What input_get made of the pad while a scripted part is held (above).
+void vpad_press_record(uint16_t btn, float ax, float ay) {
+    if ((g_vpad_press_at == 0) || (now_us() < g_vpad_press_at + VpadPressSettleUs)) {
+        return;
+    }
+    g_vpad_press_btn |= btn;
+    if (std::fabs(ax) > std::fabs(g_vpad_press_x)) g_vpad_press_x = ax;
+    if (std::fabs(ay) > std::fabs(g_vpad_press_y)) g_vpad_press_y = ay;
+    g_vpad_press_ff = g_vpad_press_ff || g_fast_forward_held.load(std::memory_order_relaxed);
+    g_vpad_press_sm = g_vpad_press_sm || g_slow_motion_held.load(std::memory_order_relaxed);
+}
+
+// Where one of the virtual pad's axes rests. SDL's game controller reads a
+// trigger's whole range, 0 to 32767, from the joystick axis's -32768 to
+// 32767, and SDL's virtual joystick starts every axis at 0, halfway along:
+// an axis the pad's mapping binds to a trigger rests at the low end, or the
+// game reads that trigger half pressed for the whole run (Z on the Switch
+// Online N64 controller's mapping, L and R on an Xbox-style pad's, through
+// every press of the padpress check). Every other axis rests at 0.
+int16_t vpad_axis_rest(int axis) {
+    SDL_GameController* gc = SDL_GameControllerFromInstanceID(SDL_JoystickInstanceID(g_vpad));
+    if (gc != nullptr) {
+        for (SDL_GameControllerAxis trigger : { SDL_CONTROLLER_AXIS_TRIGGERLEFT, SDL_CONTROLLER_AXIS_TRIGGERRIGHT }) {
+            const SDL_GameControllerButtonBind bind = SDL_GameControllerGetBindForAxis(gc, trigger);
+            if ((bind.bindType == SDL_CONTROLLER_BINDTYPE_AXIS) && (bind.value.axis == axis)) {
+                return SDL_JOYSTICK_AXIS_MIN;
+            }
+        }
+    }
+    return 0;
+}
+
 // The scripted press and its release, on the game thread: input_get calls
 // this every reading, so the release lands whether or not a capture is
 // still polling, and the settle after the capture sees the part let go.
@@ -1457,6 +1749,21 @@ void vpad_tick() {
     if (g_vpad == nullptr) {
         return;
     }
+    // The triggers put to rest once the pad is open as a game controller,
+    // which tells which axes they are (vpad_axis_rest).
+    static bool rested = false;
+    if (!rested && pad_snapshot().attached) {
+        rested = true;
+        for (int a = 0; a < SDL_CONTROLLER_AXIS_MAX; a++) {
+            const int16_t rest = vpad_axis_rest(a);
+            if (rest != 0) {
+                SDL_JoystickSetVirtualAxis(g_vpad, a, rest);
+                printf("[SNAP-Input] SNAP_VPAD_TEST: axis %d is a trigger; it rests at %d\n", a, int(rest));
+                fflush(stdout);
+            }
+        }
+    }
+    vpad_press_tick(now_us());
     std::lock_guard<std::mutex> lock(g_capture.mutex);
     const int64_t t = now_us();
     if ((g_vpad_due_us != 0) && (t >= g_vpad_due_us)) {
@@ -1481,22 +1788,80 @@ void vpad_tick() {
             SDL_JoystickSetVirtualButton(g_vpad, g_vpad_button, SDL_RELEASED);
         }
         if (g_vpad_axis >= 0) {
-            SDL_JoystickSetVirtualAxis(g_vpad, g_vpad_axis, 0);
+            SDL_JoystickSetVirtualAxis(g_vpad, g_vpad_axis, vpad_axis_rest(g_vpad_axis));
         }
         g_vpad_button = -1;
         g_vpad_axis = -1;
     }
 }
 
-// A source the fast_forward or slow_motion entry has (by its name as the
-// page would bind it): it has a job of its own, like the keys below.
-static bool port_key_uses(const std::string& name) {
+// A source one of the port's own entries has (by its name as the page would
+// bind it), other than the entry `except` names: it has a job of its own,
+// like the keys below.
+static bool port_key_uses(const std::string& name, const std::string& except = std::string()) {
     Source s{};
     if (!resolve_source(name, s)) {
         return false;
     }
     std::lock_guard<std::mutex> lock(g_bindings_mutex);
-    for (const Source& f : g_extra_sources) {
+    for (const auto& f : g_extra_sources) {
+        if ((f.second.kind == s.kind) && (f.second.code == s.code) && (except != kPortEntries[f.first])) {
+            return true;
+        }
+    }
+    return false;
+}
+
+// A source one of the eighteen N64 inputs has: a port entry's row refuses
+// it, so a press never both saves a photo, say, and presses a game button.
+static bool game_input_uses(const std::string& name) {
+    Source s{};
+    if (!resolve_source(name, s)) {
+        return false;
+    }
+    const std::shared_ptr<const Resolved> table = resolved();
+    if (table == nullptr) {
+        return false;
+    }
+    for (int i = 0; i < IN_COUNT; i++) {
+        for (const Source& f : table->sources[i]) {
+            if ((f.kind == s.kind) && (f.code == s.code)) {
+                return true;
+            }
+        }
+    }
+    return false;
+}
+
+// What the capture refuses for the row it listens for: a source of a port
+// entry other than the row's own, and on a port entry's row, a source of
+// an N64 input too.
+static bool capture_refuses(const std::string& name) {
+    std::string row;
+    {
+        std::lock_guard<std::mutex> lock(g_capture.mutex);
+        row = g_capture.input;
+    }
+    return port_key_uses(name, row) || (is_port_entry(row) && game_input_uses(name));
+}
+
+// The photo entry has the source by that name. On a pad with no right stick
+// to press in, its Capture or Share button stands in for the click
+// (g_pad_misc1_photo), and on the Switch Online N64 controller a C button
+// is a C button whatever the entry says (nso_c_source).
+static bool photo_uses(const std::string& name, const PadSnapshot& pad) {
+    Source s{};
+    if (!resolve_source(name, s)) {
+        return false;
+    }
+    if (pad.nso_n64 && ((s.kind == SourceKind::PadButton) || (s.kind == SourceKind::PadAxis)) && nso_c_source(s, pad)) {
+        return false;
+    }
+    const std::shared_ptr<const Resolved> table = resolved();
+    if (table == nullptr) {
+        return false;
+    }
+    for (const Source& f : table->photo) {
         if ((f.kind == s.kind) && (f.code == s.code)) {
             return true;
         }
@@ -1511,12 +1876,46 @@ bool key_has_job(int sc) {
         case SDL_SCANCODE_F1: case SDL_SCANCODE_F2: case SDL_SCANCODE_F3: case SDL_SCANCODE_F4:
         case SDL_SCANCODE_F5: case SDL_SCANCODE_F6: case SDL_SCANCODE_F7: case SDL_SCANCODE_F8:
         case SDL_SCANCODE_F9: case SDL_SCANCODE_F10: case SDL_SCANCODE_F11: case SDL_SCANCODE_F12:
-        case SDL_SCANCODE_P: case SDL_SCANCODE_LEFTBRACKET: case SDL_SCANCODE_RIGHTBRACKET:
+        case SDL_SCANCODE_LEFTBRACKET: case SDL_SCANCODE_RIGHTBRACKET:
         case SDL_SCANCODE_HOME: case SDL_SCANCODE_END: case SDL_SCANCODE_ESCAPE:
             return true;
         default:
             return false;
     }
+}
+
+// The name that reads a pad part under the layout in force, as the page
+// binds it: an N64-shaped pad's shoulder buttons are read through the
+// trigger names and its triggers through the shoulders' (pad_axis_held),
+// the Switch Online N64 controller's ZR through the right shoulder's
+// (pad_button_held), and a pad whose R is its right trigger keeps that name.
+std::string pad_press_name(SDL_GameControllerButton b, bool n64) {
+    if (n64 && (b == SDL_CONTROLLER_BUTTON_LEFTSHOULDER)) {
+        return "Pad LeftTrigger";
+    }
+    if (n64 && (b == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)) {
+        return "Pad RightTrigger";
+    }
+    if (n64 && g_pad_nso_n64 && (b == SDL_CONTROLLER_BUTTON_LEFTSTICK)) {
+        return "Pad RightShoulder";
+    }
+    return pad_source_name(b);
+}
+
+const char* mouse_source_name(int button) {
+    switch (button) {
+        case SDL_BUTTON_LEFT: return "Mouse Left";
+        case SDL_BUTTON_RIGHT: return "Mouse Right";
+        case SDL_BUTTON_MIDDLE: return "Mouse Middle";
+        case SDL_BUTTON_X1: return "Mouse X1";
+        case SDL_BUTTON_X2: return "Mouse X2";
+        default: return nullptr;
+    }
+}
+
+const char* pad_trigger_name(int idx, bool n64) {
+    return (idx == 0) ? (n64 ? "Pad LeftShoulder" : "Pad LeftTrigger")
+                      : ((n64 && !g_pad_r_on_trigger) ? "Pad RightShoulder" : "Pad RightTrigger");
 }
 
 void capture_end_with(CaptureState state, const std::string& name) {
@@ -1534,12 +1933,14 @@ void capture_end_with(CaptureState state, const std::string& name) {
 // press reaches the game either way.
 bool capture_event(const SDL_Event& event) {
     int device;
+    std::string row;
     {
         std::lock_guard<std::mutex> lock(g_capture.mutex);
         if (g_capture.state != CaptureState::Listening) {
             return false;
         }
         device = g_capture.device;
+        row = g_capture.input;
     }
     const bool n64 = pad_snapshot().n64_layout;
     switch (event.type) {
@@ -1563,7 +1964,7 @@ bool capture_event(const SDL_Event& event) {
             if ((n == nullptr) || (n[0] == '\0')) {
                 return true;
             }
-            capture_end_with((key_has_job(sc) || port_key_uses(n)) ? CaptureState::RefusedJob : CaptureState::Bound, n);
+            capture_end_with((key_has_job(sc) || capture_refuses(n)) ? CaptureState::RefusedJob : CaptureState::Bound, n);
             return true;
         }
         case SDL_MOUSEBUTTONDOWN: {
@@ -1571,17 +1972,9 @@ bool capture_event(const SDL_Event& event) {
                 deck_trigger_click(event.button.button)) {
                 return true;
             }
-            const char* n = nullptr;
-            switch (event.button.button) {
-                case SDL_BUTTON_LEFT: n = "Mouse Left"; break;
-                case SDL_BUTTON_RIGHT: n = "Mouse Right"; break;
-                case SDL_BUTTON_MIDDLE: n = "Mouse Middle"; break;
-                case SDL_BUTTON_X1: n = "Mouse X1"; break;
-                case SDL_BUTTON_X2: n = "Mouse X2"; break;
-                default: break;
-            }
+            const char* n = mouse_source_name(event.button.button);
             if (n != nullptr) {
-                capture_end_with(CaptureState::Bound, n);
+                capture_end_with(capture_refuses(n) ? CaptureState::RefusedJob : CaptureState::Bound, n);
             }
             return true;
         }
@@ -1590,10 +1983,9 @@ bool capture_event(const SDL_Event& event) {
                 return true;
             }
             const int y = (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) ? -event.wheel.y : event.wheel.y;
-            if (y > 0) {
-                capture_end_with(CaptureState::Bound, "Wheel Up");
-            } else if (y < 0) {
-                capture_end_with(CaptureState::Bound, "Wheel Down");
+            const char* n = (y > 0) ? "Wheel Up" : (y < 0) ? "Wheel Down" : nullptr;
+            if (n != nullptr) {
+                capture_end_with(capture_refuses(n) ? CaptureState::RefusedJob : CaptureState::Bound, n);
             }
             return true;
         }
@@ -1602,34 +1994,24 @@ bool capture_event(const SDL_Event& event) {
                 return true;
             }
             const SDL_GameControllerButton b = SDL_GameControllerButton(event.cbutton.button);
-            // Back opens the port's Options, the right stick's click (or
-            // Capture, on a pad without one) saves the photo on screen, and
-            // Guide is the platform's own; none can be a game button.
-            if ((b == SDL_CONTROLLER_BUTTON_BACK) || (b == SDL_CONTROLLER_BUTTON_GUIDE) ||
-                (b == SDL_CONTROLLER_BUTTON_RIGHTSTICK) ||
-                (g_pad_misc1_photo && (b == SDL_CONTROLLER_BUTTON_MISC1)) ||
+            // Back opens the port's Options and Guide is the platform's own;
+            // neither can be bound. Capture, on a pad with no right stick to
+            // press in, stands in for that click while the photo has it.
+            const PadSnapshot pad = pad_snapshot();
+            const bool misc1Photo = g_pad_misc1_photo && (b == SDL_CONTROLLER_BUTTON_MISC1) &&
+                                    (row != kPhotoName) && photo_uses("Pad RightStick", pad);
+            if ((b == SDL_CONTROLLER_BUTTON_BACK) || (b == SDL_CONTROLLER_BUTTON_GUIDE) || misc1Photo ||
                 (g_pad_nso_n64 && ((b == SDL_CONTROLLER_BUTTON_Y) || (b == SDL_CONTROLLER_BUTTON_X)))) {
                 // (On the Switch Online N64 controller Y, X and Back are C buttons already.)
                 capture_end_with(CaptureState::RefusedJob, pad_source_name(b));
                 return true;
             }
-            // The name that reads this part under the layout in force: an
-            // N64-shaped pad's shoulder buttons are read through the
-            // trigger names (pad_axis_held), and the Switch Online N64
-            // controller's ZR through the right shoulder's (pad_button_held).
-            std::string n;
-            if (n64 && (b == SDL_CONTROLLER_BUTTON_LEFTSHOULDER)) {
-                n = "Pad LeftTrigger";
-            } else if (n64 && (b == SDL_CONTROLLER_BUTTON_RIGHTSHOULDER)) {
-                n = "Pad RightTrigger";
-            } else if (n64 && g_pad_nso_n64 && (b == SDL_CONTROLLER_BUTTON_LEFTSTICK)) {
-                n = "Pad RightShoulder";
-            } else {
-                n = pad_source_name(b);
-            }
-            // The fast-forward and slow-motion keys' buttons (input.h)
-            // have jobs of their own, like Back.
-            if (!n.empty() && port_key_uses(n)) {
+            const std::string n = pad_press_name(b, n64);
+            // A button a port entry has (the photo's click, the fast
+            // forward's shoulder) has a job of its own, like Back, unless
+            // the row is that entry's; a port entry's row refuses a game
+            // button's too.
+            if (!n.empty() && capture_refuses(n)) {
                 capture_end_with(CaptureState::RefusedJob, n);
                 return true;
             }
@@ -1666,11 +2048,10 @@ bool capture_event(const SDL_Event& event) {
                 return true;
             }
             if (rose) {
-                const char* n = (idx == 0) ? (n64 ? "Pad LeftShoulder" : "Pad LeftTrigger")
-                                           : ((n64 && !g_pad_r_on_trigger) ? "Pad RightShoulder" : "Pad RightTrigger");
+                const char* n = pad_trigger_name(idx, n64);
                 // Under the N64-shaped layout that can be the fast forward's
                 // name, as for a button.
-                capture_end_with(port_key_uses(n) ? CaptureState::RefusedJob : CaptureState::Bound, n);
+                capture_end_with(capture_refuses(n) ? CaptureState::RefusedJob : CaptureState::Bound, n);
             }
             return true;
         }
@@ -1685,12 +2066,16 @@ bool input_pad_attached() {
     return pad_snapshot().attached;
 }
 
+bool input_pad_in_hand() {
+    return pad_snapshot().attached && g_pad_left_stick.load(std::memory_order_relaxed);
+}
+
 int input_last_device() {
     return g_last_device.load(std::memory_order_relaxed);
 }
 
-// True when the table in force binds a key to an input (or to the port's
-// fast forward or slow motion).
+// True when the table in force binds a key to an input (or to one of the
+// port's own entries).
 static bool key_in_table(int sc) {
     const std::shared_ptr<const Resolved> table = resolved();
     if (!table) {
@@ -1709,7 +2094,20 @@ static bool key_in_table(int sc) {
             return true;
         }
     }
-    return has(table->fast_forward) || has(table->slow_motion);
+    return has(table->fast_forward) || has(table->slow_motion) || has(table->photo);
+}
+
+bool input_photo_key(int scancode) {
+    const std::shared_ptr<const Resolved> table = resolved();
+    if (table == nullptr) {
+        return false;
+    }
+    for (const Source& s : table->photo) {
+        if ((s.kind == SourceKind::Key) && (s.code == scancode)) {
+            return true;
+        }
+    }
+    return false;
 }
 
 bool input_take_clear_key() {
@@ -1730,28 +2128,55 @@ bool input_pad_n64_layout() {
     return pad_snapshot().n64_layout;
 }
 
+std::string input_pad_preset_key() {
+    return pad_key_text(g_pad_key.load(std::memory_order_relaxed));
+}
+
+int input_pad_auto_pick() {
+    if ((g_pad_key.load(std::memory_order_relaxed) >> 40) == 0) {
+        return 0;
+    }
+    return g_pad_n64_shaped ? 2 : 1;
+}
+
+void input_pad_preset_changed() {
+    g_pad_presets_changed.store(true, std::memory_order_relaxed);
+}
+
 std::string input_bind_display(const char* input, int device) {
     const Bindings table = input_bindings();
     const auto it = table.find(input);
     if (it == table.end()) {
         return "None";
     }
-    const bool n64 = pad_snapshot().n64_layout;
+    const PadSnapshot pad = pad_snapshot();
+    const bool n64 = pad.n64_layout;
     const Settings& cfg = settings();
     std::string out;
     // What no table changes, named first so a row never says "None" of a
     // thing that works it: the two sticks under the controller (input_get
     // reads one as the stick and the other as the C buttons, swapped by
-    // Pad Sticks), and the mouse's motion under the mouse while Mouse Aim
-    // is on (apply_mouse_look turns the view with it).
+    // Stick Swap where the pad has a right stick), and the mouse's motion
+    // under the mouse while Mouse Aim is on (apply_mouse_look turns the view
+    // with it). A pad shaped like the N64's has one stick and four C
+    // buttons, which its mapping sends as a right stick or, on the Switch
+    // Online pad through SDL's driver, as buttons, so its rows name those.
     const bool cRow = std::strncmp(input, "c_", 2) == 0;
     const bool stickRow = std::strncmp(input, "stick_", 6) == 0;
     if (device == kBindPad) {
-        if (cRow) {
-            out = cfg.pad_sticks_swapped ? "L Stick" : "R Stick";
+        const bool shaped = pad.n64_shaped || pad.nso_n64;
+        const bool swapped = cfg.pad_sticks_swapped && pad.right_stick;
+        if (cRow && !swapped && shaped) {
+            out = (std::strcmp(input, "c_up") == 0)     ? "C-Up"
+                  : (std::strcmp(input, "c_down") == 0) ? "C-Down"
+                  : (std::strcmp(input, "c_left") == 0) ? "C-Left"
+                                                        : "C-Right";
+        }
+        else if (cRow) {
+            out = swapped ? (shaped ? "Stick" : "L Stick") : "R Stick";
         }
         else if (stickRow) {
-            out = cfg.pad_sticks_swapped ? "R Stick" : "L Stick";
+            out = swapped ? (shaped ? "C Buttons" : "R Stick") : (shaped ? "Stick" : "L Stick");
         }
     }
     else if ((device == kBindMouse) && stickRow && cfg.mouse_aim) {
@@ -1764,8 +2189,27 @@ std::string input_bind_display(const char* input, int device) {
         if (source_device(s) != device) {
             continue;
         }
+        // A source the Switch Online pad's C buttons take is not named on
+        // another row: its X is C-left, so the B row says "B", not "B or X"
+        // (source_down reads nothing from it there). Nor is the left stick's
+        // click under its N64 layout, which that pad does not have: the bit
+        // is its ZR (pad_button_held), so Slow Motion says "None" there.
+        Source src{};
+        if ((device == kBindPad) && pad.nso_n64 && resolve_source(s, src) &&
+            (nso_c_source(src, pad) || (n64 && (src.kind == SourceKind::PadButton) &&
+                                        (src.code == SDL_CONTROLLER_BUTTON_LEFTSTICK)))) {
+            continue;
+        }
         if (!out.empty()) {
             out += " or ";
+        }
+        // On a pad with no right stick to press in, the photo's click is its
+        // Capture button (g_pad_misc1_photo), and the row names that.
+        if ((device == kBindPad) && g_pad_misc1_photo && (std::strcmp(input, kPhotoName) == 0) &&
+            resolve_source(s, src) && (src.kind == SourceKind::PadButton) &&
+            (src.code == SDL_CONTROLLER_BUTTON_RIGHTSTICK)) {
+            out += "Capture";
+            continue;
         }
         out += display_name(s, n64);
     }
@@ -1839,7 +2283,7 @@ void input_bind_reset(int device) {
     bind_publish(table);
 }
 
-void input_capture_begin(int device) {
+void input_capture_begin(int device, const char* input) {
     const PadSnapshot pad = pad_snapshot();
     // SNAP_BIND_TEST: a comma-separated list of source names, each taken
     // as the press of one capture three tenths of a second in, so a replay
@@ -1864,6 +2308,7 @@ void input_capture_begin(int device) {
     {
         std::lock_guard<std::mutex> lock(g_capture.mutex);
         g_capture.device = device;
+        g_capture.input = (input != nullptr) ? input : "";
         g_capture.startedUs = now_us();
         g_capture.state = CaptureState::Listening;
         g_capture.name.clear();
@@ -2192,6 +2637,7 @@ void input_inject_press(uint16_t n64_buttons) {
 
 void input_request_menu() {
     g_menu_request.store(1, std::memory_order_relaxed);
+    g_menu_count.fetch_add(1, std::memory_order_relaxed);
 }
 
 bool input_take_menu_request() {
@@ -2217,6 +2663,96 @@ void input_release_mouse() {
 static bool replaying_run() {
     static const bool replaying = (getenv("SNAP_REPLAY") != nullptr);
     return replaying;
+}
+
+static void pointer_seen(uint32_t windowID, int32_t x, int32_t y, uint32_t which, bool motion);
+
+// A finger on a menu (touch_as_pointer, Android): its tap is the pointer's
+// click, counted when the finger lifts, and a swipe scrolls the page instead
+// of clicking: a wheel step for every kTouchScrollStep of the window's
+// height, the rows following the finger, so the twenty-one rows of the
+// Controls page are reached without a chevron tapped ten times. Until
+// 1.1.7 the click was counted as the finger went down, so a swipe clicked
+// where it began. Window thread.
+constexpr float kTouchScrollStart = 0.025f;   // of the window's height, before a touch is a swipe
+constexpr float kTouchScrollStep = 0.045f;    // of the window's height, a row
+static bool g_touch_ptr_down = false;
+static bool g_touch_ptr_scroll = false;
+static int32_t g_touch_ptr_y0 = 0;    // where the finger went down
+static int32_t g_touch_ptr_y = 0;     // the last wheel step's place
+static int g_touch_ptr_steps = 0;
+// Set while the wheel steps come from a swipe, cleared by a turn of a
+// mouse's wheel: a page does not wrap its rows for a swipe's steps
+// (graphics_menu_patch.c, snap_page_mouse), so a finger swiping past
+// the last row stops there instead of landing on the first.
+static std::atomic<bool> g_ptr_wheel_swipe{false};
+
+static int touch_window_height(uint32_t windowID) {
+    int w = 0, h = 0;
+    if (SDL_Window* win = SDL_GetWindowFromID(windowID)) {
+        SDL_GetWindowSize(win, &w, &h);
+    }
+    return h;
+}
+
+static void touch_pointer_down(const SDL_MouseButtonEvent& b) {
+    g_touch_ptr_down = true;
+    g_touch_ptr_scroll = false;
+    g_touch_ptr_y0 = b.y;
+    g_touch_ptr_y = b.y;
+    g_touch_ptr_steps = 0;
+    pointer_seen(b.windowID, b.x, b.y, b.which, false);
+}
+
+// True while the finger swipes: the motion is the page's scroll, not the
+// pointer's.
+static bool touch_pointer_motion(const SDL_MouseMotionEvent& m) {
+    if (!g_touch_ptr_down) {
+        return false;
+    }
+    const int h = touch_window_height(m.windowID);
+    if (h <= 0) {
+        return g_touch_ptr_scroll;
+    }
+    if (!g_touch_ptr_scroll) {
+        if (std::abs(m.y - g_touch_ptr_y0) < int(kTouchScrollStart * float(h))) {
+            return false;
+        }
+        g_touch_ptr_scroll = true;
+        g_touch_ptr_y = g_touch_ptr_y0;
+    }
+    const int step = std::max(8, int(kTouchScrollStep * float(h)));
+    // The rows follow the finger: a finger moving up brings the rows below
+    // (the wheel down), one row a step.
+    g_ptr_wheel_swipe.store(true, std::memory_order_relaxed);
+    while (m.y - g_touch_ptr_y <= -step) {
+        g_ptr_wheel_down.fetch_add(1, std::memory_order_relaxed);
+        g_touch_ptr_y -= step;
+        g_touch_ptr_steps++;
+    }
+    while (m.y - g_touch_ptr_y >= step) {
+        g_ptr_wheel_up.fetch_add(1, std::memory_order_relaxed);
+        g_touch_ptr_y += step;
+        g_touch_ptr_steps++;
+    }
+    return true;
+}
+
+// The finger lifts: a tap is the click where it lifted; a swipe was the
+// scroll and is no click.
+static bool touch_pointer_up(const SDL_MouseButtonEvent& b) {
+    if (!g_touch_ptr_down) {
+        return false;
+    }
+    g_touch_ptr_down = false;
+    if (g_touch_ptr_scroll) {
+        g_touch_ptr_scroll = false;
+        printf("[SNAP-TOUCH] a swipe scrolled %d rows\n", g_touch_ptr_steps);
+        fflush(stdout);
+        return false;
+    }
+    pointer_seen(b.windowID, b.x, b.y, b.which, false);
+    return true;
 }
 
 // Where the pointer is, from an event: its window position and the window's
@@ -2297,6 +2833,7 @@ static void publish_pointer(uint8_t* rdram) {
         ((g_ptr_back.load(std::memory_order_relaxed) & 0xFFu) << 8) |
         (g_ptr_wheel_up.load(std::memory_order_relaxed) & 0xFFu);
     write_u8(rdram, ADDR_MailboxWheelDown, uint8_t(g_ptr_wheel_down.load(std::memory_order_relaxed)));
+    write_u8(rdram, ADDR_MailboxWheelSwipe, g_ptr_wheel_swipe.load(std::memory_order_relaxed) ? 1 : 0);
     const bool held = scripted ? g_test_held.load(std::memory_order_relaxed)
                     : (!replaying_run() && !g_captured.load(std::memory_order_relaxed) &&
                        ((g_mouse_held.load(std::memory_order_relaxed) >> SDL_BUTTON_LEFT) & 1u));
@@ -2369,13 +2906,21 @@ void input_handle_sdl_event(const SDL_Event& event) {
                 g_motion_dx += float(event.motion.xrel);
                 g_motion_dy += float(event.motion.yrel);
             }
+            if ((event.motion.which == SDL_TOUCH_MOUSEID) && touch_pointer_motion(event.motion)) {
+                break;   // a swipe scrolls the page; the pointer stays where the finger went down
+            }
             if (!captured) {
                 pointer_seen(event.motion.windowID, event.motion.x, event.motion.y, event.motion.which, true);
             }
             break;
         case SDL_MOUSEBUTTONDOWN:
-            // On Android a tap outside a course is the pointer's click.
-            if ((event.button.which == SDL_TOUCH_MOUSEID) && !touch_as_pointer(g_menu_claimed.load(std::memory_order_relaxed))) {
+            // On Android a tap outside a course is the pointer's click, counted
+            // when the finger lifts (a swipe scrolls instead, touch_pointer_up).
+            if (event.button.which == SDL_TOUCH_MOUSEID) {
+                if (touch_as_pointer(g_menu_claimed.load(std::memory_order_relaxed)) && !captured && !replaying_run() &&
+                    (event.button.button == SDL_BUTTON_LEFT)) {
+                    touch_pointer_down(event.button);
+                }
                 break;
             }
             // Steam's click for a Deck trigger reaches nothing, and nor
@@ -2395,14 +2940,24 @@ void input_handle_sdl_event(const SDL_Event& event) {
             if (buttons_live && event.button.button < 8) {
                 g_mouse_held.fetch_or(1u << event.button.button, std::memory_order_relaxed);
                 g_mouse_press_until[event.button.button].store(now_us() + PressHoldUs, std::memory_order_relaxed);
+                // A mouse button the photo entry has saves the photo, as P does.
+                const char* n = mouse_source_name(event.button.button);
+                if ((n != nullptr) && photo_uses(n, pad_snapshot())) {
+                    g_photo_count.fetch_add(1, std::memory_order_relaxed);
+                    export_photo(g_rdram);
+                }
             }
             // The pointer's shutter, on the pointer's own click (pointer.cpp).
             if (!captured && (event.button.button == SDL_BUTTON_LEFT)) {
                 pointer_click();
             }
             if (buttons_live && !captured && !replaying_run()) {
+                const bool unseen = click_unseen();
                 pointer_seen(event.button.windowID, event.button.x, event.button.y, event.button.which, false);
-                if (event.button.button == SDL_BUTTON_LEFT) {
+                if ((event.button.button == SDL_BUTTON_LEFT) && unseen) {
+                    printf("[SNAP-MOUSE] a click on the hidden pointer brought it back; the menu did not take it\n");
+                    fflush(stdout);
+                } else if (event.button.button == SDL_BUTTON_LEFT) {
                     g_ptr_click.fetch_add(1, std::memory_order_relaxed);
                 } else if (event.button.button == SDL_BUTTON_RIGHT) {
                     g_ptr_back.fetch_add(1, std::memory_order_relaxed);
@@ -2410,7 +2965,22 @@ void input_handle_sdl_event(const SDL_Event& event) {
             }
             break;
         case SDL_MOUSEBUTTONUP:
-            if ((event.button.which == SDL_TOUCH_MOUSEID) && !touch_as_pointer(g_menu_claimed.load(std::memory_order_relaxed))) {
+            if (event.button.which == SDL_TOUCH_MOUSEID) {
+                if ((event.button.button == SDL_BUTTON_LEFT) && touch_pointer_up(event.button)) {
+                    // The tap: the click where the finger lifted, and the
+                    // press a mouse's left button is in the table (A, as
+                    // shipped), latched for one reading as a click is.
+                    pointer_click();
+                    g_ptr_click.fetch_add(1, std::memory_order_relaxed);
+                    if (buttons_live) {
+                        g_mouse_press_until[SDL_BUTTON_LEFT].store(now_us() + PressHoldUs, std::memory_order_relaxed);
+                        const char* n = mouse_source_name(SDL_BUTTON_LEFT);
+                        if ((n != nullptr) && photo_uses(n, pad_snapshot())) {
+                            g_photo_count.fetch_add(1, std::memory_order_relaxed);
+                            export_photo(g_rdram);
+                        }
+                    }
+                }
                 break;
             }
             if ((event.button.button < 8) && ((g_trigger_clicks >> event.button.button) & 1u)) {
@@ -2426,7 +2996,12 @@ void input_handle_sdl_event(const SDL_Event& event) {
                 const int y = (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) ? -event.wheel.y : event.wheel.y;
                 if (y > 0) g_wheel_up_until.store(now_us() + PressHoldUs, std::memory_order_relaxed);
                 if (y < 0) g_wheel_down_until.store(now_us() + PressHoldUs, std::memory_order_relaxed);
+                if ((y != 0) && photo_uses((y > 0) ? "Wheel Up" : "Wheel Down", pad_snapshot())) {
+                    g_photo_count.fetch_add(1, std::memory_order_relaxed);
+                    export_photo(g_rdram);
+                }
                 if (!captured && !replaying_run()) {
+                    g_ptr_wheel_swipe.store(false, std::memory_order_relaxed);
                     if (y > 0) g_ptr_wheel_up.fetch_add(1, std::memory_order_relaxed);
                     if (y < 0) g_ptr_wheel_down.fetch_add(1, std::memory_order_relaxed);
                     // A turn of the wheel is a hand on the mouse too: it
@@ -2549,20 +3124,15 @@ void input_handle_sdl_event(const SDL_Event& event) {
                 std::lock_guard<std::mutex> lock(g_motion_mutex);
                 g_gyro_yaw += -yawRate * dt;
                 g_gyro_pitch += rx * dt;
-                if (g_gyro_debug) {
-                    const float raw[3] = {event.csensor.data[0], event.csensor.data[1],
-                                          event.csensor.data[2]};
-                    for (int i = 0; i < 3; i++) {
-                        const float a = std::fabs(raw[i]);
-                        if (a > g_dbg_peak[i]) g_dbg_peak[i] = a;
-                    }
-                    g_dbg_n++;
-                    g_dbg_dt_sum += dt;
-                    if (clockUsed) g_dbg_clock++;
-                    g_dbg_grav[0] = g_grav[0];
-                    g_dbg_grav[1] = g_grav[1];
-                    g_dbg_grav[2] = g_grav[2];
-                }
+#if defined(__linux__) && !defined(__ANDROID__)
+                g_gyro_tally.readings++;
+                g_gyro_tally.byClock += clockUsed ? 1 : 0;
+                g_gyro_tally.spanS += double(dt);
+                g_gyro_tally.turnedYaw += double(std::fabs(yawRate * dt)) * kDegPerRad;
+                g_gyro_tally.turnedPitch += double(std::fabs(rx * dt)) * kDegPerRad;
+#else
+                (void)clockUsed;
+#endif
             }
             break;
         default:
@@ -2607,9 +3177,9 @@ void input_update_mouse_capture() {
     // Kept out of the early return below: fullscreen can change while the
     // capture state does not.
     {
-        static int cursorState = -1;
         static int64_t lastClaimUs = 0;
         const int64_t nowUs = now_us();
+        const int cursorState = g_cursor_state.load(std::memory_order_relaxed);
         if (wantedNow && !g_captured.load(std::memory_order_relaxed)) {
             if (captureAtUs == 0) {
                 captureAtUs = (cursorState == SDL_ENABLE) ? (nowUs + kPointerFlashUs) : nowUs;
@@ -2628,17 +3198,66 @@ void input_update_mouse_capture() {
         // that, so the pointer rides through it, while a cutscene or the
         // intro keeps it dropped and the pointer goes (it went at every fade
         // before: JackandBeans, Oct 3 2026).
+        //
+        // While the mouse is the hand in use -- moved, clicked or turned
+        // after the last key or pad press -- the pointer does not hide for
+        // sitting still: it stays while a menu took the mouse in the last
+        // second and a half, and through Oak's talk in the lab, the camera
+        // check and the photo check, where it went before and the next
+        // click was made blind (fizzlepicklepop, discussion #32). A key or
+        // pad press gives it back to the rule above. On a Steam Deck whose
+        // own pad is attached, Steam's layout moves the pointer for the pad,
+        // so that rule always holds there.
+        //
+        // Pointer Shows set to Always (pointer_always) treats the mouse as in
+        // hand whatever was pressed last: the pointer stays wherever a menu
+        // takes the mouse and through Oak's scenes, and still goes in a ride
+        // or a cutscene.
+        constexpr uint32_t kSceneCameraCheck = 0x87A0B0u;   // overlay_hook.cpp's ROM starts
+        constexpr uint32_t kSceneOaksLab = 0x8A70E0u;
+        constexpr uint32_t kScenePhotoCheck = 0x98C330u;
         if (claimed) {
             lastClaimUs = nowUs;
         }
-        const int64_t idleUs = nowUs - g_ptr_moved_at.load(std::memory_order_relaxed);
+        const int64_t movedAt = g_ptr_moved_at.load(std::memory_order_relaxed);
+        const int64_t idleUs = nowUs - movedAt;
         const int64_t unclaimedUs = nowUs - lastClaimUs;
-        const int64_t hideInUs = std::min<int64_t>(3000000 - idleUs, 1500000 - unclaimedUs);
+        const bool mouseInHand = settings().pointer_always ||
+                                 (!g_deck_pad_keys_ignored.load(std::memory_order_relaxed) &&
+                                  (movedAt > g_key_pad_press_at.load(std::memory_order_relaxed)));
+        const uint32_t scene = g_scene_overlay_rom.load(std::memory_order_relaxed);
+        const bool oakTalks = (scene == kSceneOaksLab) || (scene == kSceneCameraCheck) || (scene == kScenePhotoCheck);
+        int64_t hideInUs;
+        if (mouseInHand) {
+            hideInUs = oakTalks ? (int64_t(INT32_MAX) * 1000) : (1500000 - unclaimedUs);
+        } else {
+            hideInUs = std::min<int64_t>(3000000 - idleUs, 1500000 - unclaimedUs);
+        }
+        // It never hides without its flash. The rules above go down only as
+        // the clock does, except where one gives way to the other: a key or
+        // pad press after the mouse, or Oak's scenes left for a course. The
+        // hide then waits a flash from the last pump that wanted the pointer
+        // on for longer; a press that took a pointer shown so from the hand
+        // hides it no sooner than a flash after the press.
+        static int64_t sureUs = 0;      // the last pump that wanted it on past a flash
+        static int64_t handedUs = 0;    // the pump that saw such a press
+        static bool wasSure = false;
+        static bool wasInHand = false;
+        if (wasInHand && !mouseInHand && wasSure) {
+            handedUs = nowUs;
+        }
+        wasInHand = mouseInHand;
+        wasSure = (hideInUs > kPointerFlashUs);
+        if (wasSure) {
+            sureUs = nowUs;
+        } else {
+            hideInUs = std::max<int64_t>(hideInUs, kPointerFlashUs - (nowUs - std::max(sureUs, handedUs)));
+        }
         const bool pointing = hideInUs > 0;
         const int want = (settings().fullscreen && !wanted && !pointing) ? SDL_DISABLE : SDL_ENABLE;
         if (cursorState != want) {
             SDL_ShowCursor(want);
-            cursorState = want;
+            g_cursor_state.store(want, std::memory_order_relaxed);
         }
         // The port's own pointer: it flashes in as it comes on screen
         // (shown, and not captured for aiming), flashes out in the last
@@ -2684,7 +3303,92 @@ void input_update_mouse_capture() {
 // as the event is queued. export_photo takes its own lock, so the P key's
 // path on the main thread and this one never overlap. The return value of
 // a watch is ignored by SDL.
+static void decide_pad_layout();
+
+static SDL_JoystickID pad_instance(SDL_GameController* gc) {
+    return SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(gc));
+}
+
+// The pad pressed last is the pad read. A press is a button going down, or
+// a trigger or a stick crossing well into its travel, which a stick at rest
+// or a trigger's drift never reaches. Called from the event watch, so the
+// switch is made on the pad thread, while SDL queues the press and before
+// the window's thread can see it (SDL calls the watches before it queues):
+// the press that picks a pad up is already read as that pad's.
+static void pad_follow_press(const SDL_Event* event) {
+    const bool button = (event->type == SDL_CONTROLLERBUTTONDOWN);
+    const SDL_JoystickID which = button ? event->cbutton.which : event->caxis.which;
+    for (OpenPad& p : g_open_pads) {
+        if (p.id != which) {
+            continue;
+        }
+        bool pressed = button;
+        if (!button && (event->caxis.axis < 32)) {
+            const bool trigger = (event->caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT) ||
+                                 (event->caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
+            const int v = trigger ? int(event->caxis.value) : std::abs(int(event->caxis.value));
+            const uint32_t bit = 1u << event->caxis.axis;
+            if (v > (trigger ? 16000 : 20000)) {
+                pressed = (p.above & bit) == 0;
+                p.above |= bit;
+            } else if (v < 8000) {
+                p.above &= ~bit;
+            }
+        }
+        if (pressed && (p.gc != game_controller)) {
+            game_controller = p.gc;
+            printf("[SNAP-Input] now reading %s, the pad pressed last\n", SDL_GameControllerName(p.gc));
+            decide_pad_layout();
+        }
+        return;
+    }
+}
+
+// A pad press the photo entry has: a button, or a trigger crossing an eighth
+// of its travel, by the name that reads it under the layout in force, as the
+// Button Setup page binds it (pad_press_name). Capture stands in for the
+// right stick's click on a pad that has none (g_pad_misc1_photo). The pad
+// thread, from the watch below; the layout is taken from the flags, which
+// a switch to another pad (pad_follow_press) has already set.
+static bool photo_pad_press(const SDL_Event* event) {
+    if (game_controller == nullptr) {
+        return false;
+    }
+    PadSnapshot pad;
+    pad.n64_layout = g_pad_layout_n64.load(std::memory_order_relaxed);
+    pad.nso_n64 = g_pad_nso_n64.load(std::memory_order_relaxed);
+    if ((event->type == SDL_CONTROLLERBUTTONDOWN) && (event->cbutton.which == pad_instance(game_controller))) {
+        const SDL_GameControllerButton b = SDL_GameControllerButton(event->cbutton.button);
+        if (b == SDL_CONTROLLER_BUTTON_BACK) {
+            return false;
+        }
+        const std::string n = pad_press_name(b, pad.n64_layout);
+        return (!n.empty() && photo_uses(n, pad)) ||
+               (g_pad_misc1_photo && (b == SDL_CONTROLLER_BUTTON_MISC1) && photo_uses("Pad RightStick", pad));
+    }
+    static bool above[2] = {false, false};
+    if (event->type == SDL_CONTROLLERAXISMOTION) {
+        const int idx = (event->caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERLEFT)    ? 0
+                        : (event->caxis.axis == SDL_CONTROLLER_AXIS_TRIGGERRIGHT) ? 1
+                                                                                  : -1;
+        if ((idx < 0) || (event->caxis.which != pad_instance(game_controller))) {
+            return false;
+        }
+        const bool was = above[idx];
+        above[idx] = event->caxis.value > 8000;
+        // The Switch Online N64 controller's right trigger is its C-down.
+        if (!above[idx] || was || (pad.nso_n64 && (idx == 1))) {
+            return false;
+        }
+        return photo_uses(pad_trigger_name(idx, pad.n64_layout), pad);
+    }
+    return false;
+}
+
 static int SDLCALL photo_button_watch(void* /*userdata*/, SDL_Event* event) {
+    if ((event->type == SDL_CONTROLLERBUTTONDOWN) || (event->type == SDL_CONTROLLERAXISMOTION)) {
+        pad_follow_press(event);
+    }
     if (event->type == SDL_CONTROLLERBUTTONDOWN) {
         if ((event->cbutton.button == SDL_CONTROLLER_BUTTON_BACK) && !g_pad_nso_n64) {
             // Select: the port's Options, from anywhere; Start while they
@@ -2695,10 +3399,14 @@ static int SDLCALL photo_button_watch(void* /*userdata*/, SDL_Event* event) {
             } else {
                 input_request_menu();
             }
-        } else if ((event->cbutton.button == SDL_CONTROLLER_BUTTON_RIGHTSTICK) ||
-                   ((event->cbutton.button == SDL_CONTROLLER_BUTTON_MISC1) && g_pad_misc1_photo)) {
+        } else if (!g_capture_active.load(std::memory_order_relaxed) && photo_pad_press(event)) {
+            g_photo_count.fetch_add(1, std::memory_order_relaxed);
             export_photo(g_rdram);
         }
+    } else if ((event->type == SDL_CONTROLLERAXISMOTION) && !g_capture_active.load(std::memory_order_relaxed) &&
+               photo_pad_press(event)) {
+        g_photo_count.fetch_add(1, std::memory_order_relaxed);
+        export_photo(g_rdram);
     }
     return 1;
 }
@@ -2760,52 +3468,128 @@ static constexpr PadIds kN64ShapedPads[] = {
     {0x374E, 0x0111},   // "M64 Pro Controller"
 };
 
-// The open pad's layout, from pad_layout: 0 Auto, by the pad's ids and then
-// its name; 1 Standard and 2 N64 whatever the pad is. The Controls page's
-// Pad Preset row sets pad_layout, and the pad thread calls this again when
-// it changes, so the preset is in force at once (pad_thread_main).
+// Steam's virtual pad. With Steam Input on for the game, the game is shown
+// only the pads Steam makes, each with Steam's own layout for the real pad
+// already applied, and SDL (2.30 on) gives each the real pad's name and ids
+// (SDL_steam_virtual_gamepad.c). Its GUID keeps the virtual pad's own ids,
+// which is how SDL itself tells it (SDL_IsJoystickSteamVirtualGamepad):
+// 28DE:11FF, or 045E:028E version 0 on macOS.
+static bool is_steam_virtual_pad(SDL_GameController* pad) {
+#if SDL_VERSION_ATLEAST(2, 26, 0)
+    Uint16 vendor = 0;
+    Uint16 product = 0;
+    Uint16 version = 0;
+    SDL_GetJoystickGUIDInfo(SDL_JoystickGetGUID(SDL_GameControllerGetJoystick(pad)), &vendor, &product, &version, nullptr);
+#if defined(__APPLE__)
+    return (vendor == 0x045E) && (product == 0x028E) && (version == 0);
+#else
+    (void)version;
+    return (vendor == 0x28DE) && (product == 0x11FF);
+#endif
+#else
+    (void)pad;
+    return false;
+#endif
+}
+
+// A pad's key in the settings' pad_presets: its ids, and whether it is
+// Steam's virtual pad, which carries the real pad's ids but Steam's layout.
+static uint64_t pad_key_of(SDL_GameController* gc) {
+    return (uint64_t(1) << 40) | (uint64_t(is_steam_virtual_pad(gc) ? 1 : 0) << 32) |
+           (uint64_t(SDL_GameControllerGetVendor(gc)) << 16) | uint64_t(SDL_GameControllerGetProduct(gc));
+}
+
+static std::string pad_key_text(uint64_t key) {
+    if ((key >> 40) == 0) {
+        return std::string();
+    }
+    char text[24];
+    snprintf(text, sizeof(text), "%04X:%04X%s", unsigned((key >> 16) & 0xFFFF), unsigned(key & 0xFFFF),
+             ((key >> 32) & 1) ? " Steam" : "");
+    return text;
+}
+
+// Each open pad's preset, from its pad_presets entry, or pad_layout for a
+// pad never given one. On the pad thread, outside the event watch: the
+// settings' lock is not taken inside it, where SDL holds its own.
+static void pad_presets_refresh() {
+    std::lock_guard<std::mutex> lock(settings_mutex());
+    const Settings& cfg = settings();
+    for (OpenPad& p : g_open_pads) {
+        const auto it = cfg.pad_presets.find(pad_key_text(p.key));
+        p.preset = std::clamp((it != cfg.pad_presets.end()) ? it->second : cfg.pad_layout, 0, 2);
+    }
+}
+
+// The pad in use's layout, from its Pad Preset: 0 Auto, by the pad's ids
+// and then its name; 1 Standard and 2 N64 whatever the pad is. The Controls
+// page's Pad Preset row sets the preset of the pad in use, and the pad
+// thread calls this again when it changes, so the preset is in force at
+// once (pad_thread_main), and when another pad is picked up.
 static void decide_pad_layout() {
-    const int wanted = settings().pad_layout;     // read once: the menu's thread writes it
+    int wanted = 0;
+    for (const OpenPad& p : g_open_pads) {
+        if (p.gc == game_controller) {
+            wanted = p.preset;
+        }
+    }
     const int layout = std::clamp(wanted, 0, 2);
     g_pad_layout_applied = wanted;
+    g_pad_key = pad_key_of(game_controller);
     const char* name = SDL_GameControllerName(game_controller);
     const uint16_t vendor = SDL_GameControllerGetVendor(game_controller);
     const uint16_t product = SDL_GameControllerGetProduct(game_controller);
     // The Switch Online N64 controller by its ids (Nintendo 057E, product
     // 2019), which no driver or SDL renames; the name stays as a second way in.
     const bool nso_ids = (vendor == 0x057E) && (product == 0x2019);
-    bool n64 = (layout == 2);
-    const char* why = "from the Pad Preset (pad_layout)";
-    if (layout == 0) {
+    // Under Steam Input those ids and that name are the real pad's, but the
+    // buttons are Steam's, laid out already: laying them out again by the
+    // real pad would put a second layout on top of Steam's.
+    const bool steam_virtual = is_steam_virtual_pad(game_controller);
+    // Auto's verdict, taken whatever the preset, since the Button Setup page
+    // names the pad's parts by what the pad is.
+    bool shaped = false;
+    const char* auto_why = "Auto, Steam's virtual pad (Steam's own layout for the pad is in force)";
+    if (!steam_virtual) {
         bool by_ids = nso_ids;
         for (const PadIds& known : kN64ShapedPads) {
             by_ids = by_ids || ((vendor == known.vendor) && (product == known.product));
         }
-        n64 = by_ids;
-        why = "Auto, from the pad's ids";
+        shaped = by_ids;
+        auto_why = "Auto, from the pad's ids";
         if (!by_ids) {
-            why = "Auto, from the pad's name";
+            auto_why = "Auto, from the pad's name";
             for (const char* p = name; (p != nullptr) && (*p != '\0'); p++) {
                 if (SDL_strncasecmp(p, "N64", 3) == 0) {
-                    n64 = true;
+                    shaped = true;
                     break;
                 }
             }
         }
     }
+    const bool n64 = (layout == 0) ? shaped : (layout == 2);
+    const char* why = (layout == 0) ? auto_why : "from the pad's Pad Preset";
     g_pad_layout_n64 = n64;
+    g_pad_n64_shaped = shaped;
     // Its C buttons are a property of the pad, not of the layout: they stay
     // wired under Standard too. Only where they come as buttons, from SDL's
     // own driver, whose mapping has Y (C-up). Through the community list the
     // pad is the "NSO N64 Controller": C buttons as a right stick, ZR as the
     // right trigger, read as any N64 pad is.
     const bool c_as_buttons = SDL_GameControllerHasButton(game_controller, SDL_CONTROLLER_BUTTON_Y) == SDL_TRUE;
-    g_pad_nso_n64 = c_as_buttons &&
+    g_pad_nso_n64 = !steam_virtual && c_as_buttons &&
                     (nso_ids || (n64 && (name != nullptr) && (SDL_strcmp(name, "Nintendo N64 Controller") == 0)));
     g_pad_r_on_trigger = n64 && !SDL_GameControllerHasButton(game_controller, SDL_CONTROLLER_BUTTON_RIGHTSHOULDER) &&
                          SDL_GameControllerHasAxis(game_controller, SDL_CONTROLLER_AXIS_TRIGGERRIGHT);
     g_pad_misc1_photo = SDL_GameControllerHasButton(game_controller, SDL_CONTROLLER_BUTTON_MISC1) &&
                         !SDL_GameControllerHasButton(game_controller, SDL_CONTROLLER_BUTTON_RIGHTSTICK);
+    g_pad_right_stick = SDL_GameControllerHasAxis(game_controller, SDL_CONTROLLER_AXIS_RIGHTX) ||
+                        SDL_GameControllerHasAxis(game_controller, SDL_CONTROLLER_AXIS_RIGHTY);
+    g_pad_left_stick = SDL_GameControllerHasAxis(game_controller, SDL_CONTROLLER_AXIS_LEFTX) ||
+                       SDL_GameControllerHasAxis(game_controller, SDL_CONTROLLER_AXIS_LEFTY);
+    if (steam_virtual) {
+        printf("[SNAP-Input] the pad is Steam's virtual pad (Steam Input is on for the game): its buttons come with Steam's layout for it already applied\n");
+    }
     printf("[SNAP-Input] pad layout: %s, %s\n",
            n64 ? "N64-shaped (its L and R are L and R, its Z is Z)" : "standard (the left shoulder is Z, the triggers are L and R)",
            why);
@@ -2819,50 +3603,111 @@ static void decide_pad_layout() {
     if (g_pad_misc1_photo) {
         printf("[SNAP-Input] the pad has no right stick to press in: its Capture or Share button saves the photo\n");
     }
+    if (!g_pad_right_stick) {
+        printf("[SNAP-Input] the pad has no right stick: Stick Swap is not applied to it\n");
+    }
     fflush(stdout);
 }
 
-static void try_open_controller() {
-    // Drop a handle whose device is gone, otherwise the stale pointer blocks
-    // every future open and a replugged controller never comes back.
-    if (game_controller != nullptr && !SDL_GameControllerGetAttached(game_controller)) {
-        SDL_GameControllerClose(game_controller);
-        game_controller = nullptr;
-        g_deck_pad_keys_ignored.store(false, std::memory_order_relaxed);
-    }
-
-    int num_joysticks = SDL_NumJoysticks();
-    // The open pad has no stick: when the list of joysticks changes and one
-    // that has a stick is there, that one is the pad instead. Looked at only
-    // when the count changes, since the thread polls every 2 ms.
-    static int counted = -1;
-    if (game_controller != nullptr) {
-        if ((num_joysticks == counted) || SDL_GameControllerHasAxis(game_controller, SDL_CONTROLLER_AXIS_LEFTX)) {
-            counted = num_joysticks;
-            return;
+// A pad at rest: no button held, every trigger and stick near its rest.
+static bool pad_at_rest(SDL_GameController* gc) {
+    for (int b = 0; b < SDL_CONTROLLER_BUTTON_MAX; b++) {
+        if (SDL_GameControllerGetButton(gc, SDL_GameControllerButton(b)) != 0) {
+            return false;
         }
-        counted = num_joysticks;
-        int better = -1;
-        for (int i = 0; (i < num_joysticks) && (better < 0); i++) {
-            if ((!g_vpad_test || SDL_JoystickIsVirtual(i)) && SDL_IsGameController(i) && joystick_has_stick(i)) {
-                better = i;
+    }
+    for (int a = 0; a < SDL_CONTROLLER_AXIS_MAX; a++) {
+        if (std::abs(int(SDL_GameControllerGetAxis(gc, SDL_GameControllerAxis(a)))) > 8000) {
+            return false;
+        }
+    }
+    return true;
+}
+
+// The keys Steam's desktop layout sends for the Deck's own controls
+// (deck_layout_key) are ignored while those controls are open, whichever pad
+// is read: the layout sends them whenever the Deck's buttons are pressed.
+static void pad_deck_keys_update() {
+    bool deck = false;
+    for (const OpenPad& p : g_open_pads) {
+        deck = deck || is_steam_deck_pad(p.gc);
+    }
+    const bool was = g_deck_pad_keys_ignored.exchange(deck, std::memory_order_relaxed);
+    if (deck && !was) {
+        printf("[SNAP-Input] the Deck's own controller is attached: keyboard Return, Escape, Tab, Space and Left Shift are ignored "
+               "(Steam's desktop layout sends them for A, B, Select, Y and a paddle)\n");
+    }
+}
+
+static bool pad_has_stick(SDL_GameController* gc) {
+    return SDL_GameControllerHasAxis(gc, SDL_CONTROLLER_AXIS_LEFTX) == SDL_TRUE;
+}
+
+// Of the open pads, the first with a stick, else the first: the pad read
+// when the one in use is disconnected.
+static SDL_GameController* pad_to_read_next() {
+    for (const OpenPad& p : g_open_pads) {
+        if (pad_has_stick(p.gc)) {
+            return p.gc;
+        }
+    }
+    return g_open_pads.empty() ? nullptr : g_open_pads.front().gc;
+}
+
+static void try_open_controller() {
+    // SDL_NumJoysticks at the last look for new pads, and when to look again
+    // after an open that failed. The list is walked when it changes, not on
+    // every poll (the thread polls every 2 ms).
+    static int scanned = -1;
+    static Uint32 retryAt = 0;
+    // Drop the handles whose devices are gone, otherwise a stale pointer
+    // stays in the list and a replugged controller never comes back.
+    bool dropped = false;
+    for (size_t i = 0; i < g_open_pads.size();) {
+        if (SDL_GameControllerGetAttached(g_open_pads[i].gc)) {
+            i++;
+            continue;
+        }
+        if (g_open_pads[i].gc == game_controller) {
+            game_controller = nullptr;
+        }
+        SDL_GameControllerClose(g_open_pads[i].gc);
+        g_open_pads.erase(g_open_pads.begin() + std::ptrdiff_t(i));
+        dropped = true;
+    }
+    if (dropped) {
+        pad_deck_keys_update();
+        scanned = -1;
+        if (g_open_pads.empty()) {
+            g_pad_key = 0;
+        }
+        if (game_controller == nullptr) {
+            game_controller = pad_to_read_next();
+            if (game_controller != nullptr) {
+                printf("[SNAP-Input] now reading %s: the pad in use was disconnected\n", SDL_GameControllerName(game_controller));
+                decide_pad_layout();
             }
         }
-        if (better < 0) {
-            return;
-        }
-        const char* now = SDL_GameControllerName(game_controller);
-        const char* next = SDL_GameControllerNameForIndex(better);
-        printf("[SNAP-Input] %s has no stick; %s, which has one, is the pad now\n",
-               now ? now : "the open pad", next ? next : "another pad");
-        fflush(stdout);
-        SDL_GameControllerClose(game_controller);
-        game_controller = nullptr;
-        g_deck_pad_keys_ignored.store(false, std::memory_order_relaxed);
     }
-    counted = num_joysticks;
 
-    // Pads with a stick first, then the rest, each in SDL's order.
+    const int num_joysticks = SDL_NumJoysticks();
+    const bool retryDue = (retryAt != 0) && SDL_TICKS_PASSED(SDL_GetTicks(), retryAt);
+    if ((num_joysticks == scanned) && !retryDue) {
+        return;
+    }
+    // A pad opened beside the one in use is opened while that one is at
+    // rest. A driver can hold this thread for seconds in its open (SDL's
+    // HIDAPI Switch driver over Bluetooth, issue #7), and the pad in use is
+    // not polled meanwhile, so a button held through the open would stay
+    // held for the game.
+    if ((game_controller != nullptr) && !pad_at_rest(game_controller)) {
+        return;
+    }
+    scanned = num_joysticks;
+    retryAt = 0;
+
+    // Pads with a stick first, then the rest, each in SDL's order: the first
+    // opened is the pad read until a press on another.
     std::vector<int> order;
     for (int pass = 0; pass < 2; pass++) {
         for (int i = 0; i < num_joysticks; i++) {
@@ -2880,35 +3725,59 @@ static void try_open_controller() {
         if (g_vpad_test && !SDL_JoystickIsVirtual(i)) {
             continue;   // the virtual test pad is the only pad this run opens
         }
+        const SDL_JoystickID id = SDL_JoystickGetDeviceInstanceID(i);
+        bool open = false;
+        for (const OpenPad& p : g_open_pads) {
+            open = open || (p.id == id);
+        }
+        if (open) {
+            continue;
+        }
         if (SDL_IsGameController(i)) {
-            game_controller = SDL_GameControllerOpen(i);
-            if (game_controller) {
-                const bool gyro = SDL_GameControllerHasSensor(game_controller, SDL_SENSOR_GYRO) == SDL_TRUE;
+            SDL_GameController* gc = SDL_GameControllerOpen(i);
+            if (gc == nullptr) {
+                retryAt = SDL_GetTicks() + 1000;
+                continue;
+            }
+            {
+                const bool gyro = SDL_GameControllerHasSensor(gc, SDL_SENSOR_GYRO) == SDL_TRUE;
                 const char* path = nullptr;
 #if SDL_VERSION_ATLEAST(2, 24, 0)
-                path = SDL_GameControllerPath(game_controller);
+                path = SDL_GameControllerPath(gc);
 #endif
                 printf("[SNAP-Input] Opened game controller: %s (gyro: %s%s%s)\n",
-                       SDL_GameControllerName(game_controller), gyro ? "yes" : "none",
+                       SDL_GameControllerName(gc), gyro ? "yes" : "none",
                        path ? ", " : "", path ? path : "");
                 // The pad's ids and SDL's mapping line, so a report of a button
                 // that does the wrong thing comes with the facts (issue #26).
                 {
-                    char* mapping = SDL_GameControllerMapping(game_controller);
+                    char* mapping = SDL_GameControllerMapping(gc);
                     printf("[SNAP-Input] pad ids %04X:%04X, SDL's mapping: %s\n",
-                           unsigned(SDL_GameControllerGetVendor(game_controller)), unsigned(SDL_GameControllerGetProduct(game_controller)),
+                           unsigned(SDL_GameControllerGetVendor(gc)), unsigned(SDL_GameControllerGetProduct(gc)),
                            (mapping != nullptr) ? mapping : "(none)");
                     SDL_free(mapping);
                 }
 
-                decide_pad_layout();
-
-                const bool deck = is_steam_deck_pad(game_controller);
-                g_deck_pad_keys_ignored.store(deck, std::memory_order_relaxed);
-                if (deck) {
-                    printf("[SNAP-Input] the Deck's own controller is attached: keyboard Return, Escape, Tab, Space and Left Shift are ignored "
-                           "(Steam's desktop layout sends them for A, B, Select, Y and a paddle)\n");
+                g_open_pads.push_back({gc, pad_instance(gc), 0, pad_key_of(gc), 0});
+                pad_presets_refresh();
+                if (game_controller == nullptr) {
+                    game_controller = gc;
+                    decide_pad_layout();
+                } else if (!pad_has_stick(game_controller) && pad_has_stick(gc)) {
+                    // The pad in use has no stick (a keyboard SDL maps as a
+                    // pad, on Android's emulator): the one with a stick is
+                    // the pad now, without waiting for a press.
+                    const char* now = SDL_GameControllerName(game_controller);
+                    printf("[SNAP-Input] %s has no stick; %s, which has one, is the pad now\n",
+                           now ? now : "the pad in use", SDL_GameControllerName(gc));
+                    game_controller = gc;
+                    decide_pad_layout();
+                } else {
+                    printf("[SNAP-Input] it is open beside %s, the pad in use, and is read from its first press\n",
+                           SDL_GameControllerName(game_controller));
+                    fflush(stdout);
                 }
+                pad_deck_keys_update();
                 // SNAP_PAD_STALL_MS: a diagnostic. Holds this thread for the
                 // given time right after a pad opens, standing in for the
                 // seconds SDL's HIDAPI Switch driver can spend in its
@@ -2927,14 +3796,12 @@ static void try_open_controller() {
                         fflush(stdout);
                     }
                 }
-                break;
             }
         }
         else {
             // A pad SDL has no mapping for is silent otherwise; say it was
             // seen, so a player knows why it does nothing and can hand SDL a
             // mapping through SDL_GAMECONTROLLERCONFIG (README, Controls).
-            const SDL_JoystickID id = SDL_JoystickGetDeviceInstanceID(i);
             if (std::find(unmappedSaid.begin(), unmappedSaid.end(), id) == unmappedSaid.end()) {
                 unmappedSaid.push_back(id);
                 const char* name = SDL_JoystickNameForIndex(i);
@@ -3012,6 +3879,11 @@ static SDL_hid_device* deck_hid_open() {
     }
     if (best != nullptr) g_deckHid = SDL_hid_open_path(best, 0);
     SDL_hid_free_enumeration(list);
+#if defined(__linux__) && !defined(__ANDROID__)
+    // Under Steam's virtual pad the pad thread reads the sensor's reports from
+    // this handle (deck_imu_poll) and must never wait for one.
+    if (g_deckHid != nullptr) SDL_hid_set_nonblocking(g_deckHid, 1);
+#endif
     return g_deckHid;
 }
 
@@ -3021,6 +3893,10 @@ static void deck_hid_close() {
         g_deckHid = nullptr;
     }
 }
+
+#if defined(__linux__) && !defined(__ANDROID__)
+static uint32_t g_deckImuSends = 0;   // for the ten-second line (deck_imu_poll)
+#endif
 
 // Sends the settings report to the Deck's controller. Returns what was done,
 // for the log, or nullptr when nothing could be sent; a handle that no longer
@@ -3038,6 +3914,9 @@ static const char* deck_send_imu_on() {
         how = "output report";
     }
     if (how != nullptr) {
+#if defined(__linux__) && !defined(__ANDROID__)
+        g_deckImuSends++;
+#endif
         // A lingering report may come back after a settings change; SDL's
         // driver discards it the same way.
         unsigned char back[65];
@@ -3048,6 +3927,53 @@ static const char* deck_send_imu_on() {
     }
     return how;
 }
+
+#if defined(__linux__) && !defined(__ANDROID__)
+// Each ten seconds while the gyro is on, the count begins again; under SNAP_STATS it
+// is said first: what the readings made, what reached the view, and what did not and
+// why.
+static void gyro_summary(int64_t t) {
+    static int64_t lastAt = 0;
+    if ((lastAt == 0) || (t - lastAt > 60000000)) {
+        lastAt = t;
+        return;
+    }
+    if (t - lastAt < 10000000) {
+        return;
+    }
+    GyroTally tally;
+    {
+        std::lock_guard<std::mutex> lock(g_motion_mutex);
+        tally = g_gyro_tally;
+        g_gyro_tally = GyroTally{};
+    }
+    if (!snapdiag::statsEnabled()) {
+        lastAt = t;
+        return;
+    }
+    char dropped[320] = "";
+    double droppedAll = 0.0;
+    size_t used = 0;
+    for (const GyroTally::Drop& d : tally.drops) {
+        if ((d.why != nullptr) && (used < sizeof(dropped))) {
+            droppedAll += d.angle;
+            const int n = snprintf(dropped + used, sizeof(dropped) - used, "%s%s %.1f", (used == 0) ? " (" : ", ", d.why, d.angle);
+            used += (n > 0) ? size_t(n) : 0;
+        }
+    }
+    if ((used > 0) && (used + 1 < sizeof(dropped))) {
+        dropped[used] = ')';
+        dropped[used + 1] = '\0';
+    }
+    printf("[SNAP-GYRO10] %.1f s: %u readings spanning %.2f s (%u by the sensor's own clock); the readings turned yaw %.1f pitch %.1f deg; "
+           "the view took yaw %.1f pitch %.1f deg at speed %.2f, Gyro Aim %d; the mouse %.1f deg; dropped %.1f deg%s; up (%.1f %.1f %.1f)\n",
+           double(t - lastAt) * 1e-6, tally.readings, tally.spanS, tally.byClock, tally.turnedYaw, tally.turnedPitch,
+           tally.appliedYaw, tally.appliedPitch, double(tally.speed), tally.aim, tally.mouse, droppedAll, dropped,
+           double(g_grav[0]), double(g_grav[1]), double(g_grav[2]));
+    fflush(stdout);
+    lastAt = t;
+}
+#endif
 
 // While the gyro is on: says once when the readings carry turning; when
 // they stay at exactly zero for half a second (a pad lying still reads
@@ -3083,32 +4009,9 @@ static void gyro_watch(bool justEnabled) {
         return;
     }
     if (!g_gyro_enabled.load(std::memory_order_relaxed)) return;
-    if (g_gyro_debug) {
-        static int64_t said = 0;
-        if (t - said >= 1000000) {
-            said = t;
-            float pk[3], gv[3];
-            uint32_t n, clk;
-            float ly, lp, dts;
-            {
-                std::lock_guard<std::mutex> lock(g_motion_mutex);
-                pk[0] = g_dbg_peak[0]; pk[1] = g_dbg_peak[1]; pk[2] = g_dbg_peak[2];
-                n = g_dbg_n;
-                ly = g_dbg_last_yaw; lp = g_dbg_last_pitch;
-                dts = g_dbg_dt_sum; clk = g_dbg_clock;
-                gv[0] = g_dbg_grav[0]; gv[1] = g_dbg_grav[1]; gv[2] = g_dbg_grav[2];
-                g_dbg_peak[0] = g_dbg_peak[1] = g_dbg_peak[2] = 0.0f;
-                g_dbg_n = 0;
-                g_dbg_dt_sum = 0.0f;
-                g_dbg_clock = 0;
-            }
-            printf("[SNAP-GYRO] %u readings spanning %.3f s (%u by the sensor's own clock), "
-                   "biggest rate x=%.4f y=%.4f z=%.4f rad/s; down=(%.1f %.1f %.1f); "
-                   "angle handed over yaw=%.4f pitch=%.4f rad; %s\n",
-                   n, dts, clk, pk[0], pk[1], pk[2], gv[0], gv[1], gv[2], ly, lp, g_dbg_stop);
-            fflush(stdout);
-        }
-    }
+#if defined(__linux__) && !defined(__ANDROID__)
+    gyro_summary(t);
+#endif
     constexpr int64_t Dead = 500000;
     constexpr int64_t Resend = 1000000;
     const int64_t live = g_gyro_live_us.load(std::memory_order_relaxed);
@@ -3158,11 +4061,288 @@ static void gyro_watch(bool justEnabled) {
     }
 }
 
+#if defined(__linux__) && !defined(__ANDROID__)
+// ---------------------------------------------------------------------------
+// The Deck's own sensor, under Steam's virtual pad. In Gaming Mode SDL opens
+// only Steam's pad, which carries the Deck's ids and no sensors, and Steam
+// passes none through to it (SDL issue 12997), so Gyro Aim had nothing to read
+// and the way to aim was Steam's Gyro As Mouse. The Deck's controller still
+// sends its state on its own HID interface, and every reader of that interface
+// gets every report, Steam's client among them. The port reads the reports on
+// the pad thread, takes the sensor's values as SDL's Steam Deck driver takes
+// them (SDL_hidapi_steamdeck.c, the driver behind Desktop Mode's gyro), and
+// hands them to the handler of SDL's own sensor event, so from there on Gaming
+// Mode and Desktop Mode are one path. Only the sensor is read: the buttons stay
+// Steam's, and so do its layouts and its menus. The IMU-on setting and its
+// watch (gyro_watch) work as they do in Desktop Mode.
+// ---------------------------------------------------------------------------
+
+// Where SDL's ValveInReport_t keeps them, packed: a four-byte header (the
+// version in two bytes, the type, the length), the packet number, the buttons
+// and the two trackpads, then the accelerometer and the gyroscope, three
+// little-endian int16s each.
+constexpr int kDeckReportBytes = 64;
+constexpr int kDeckReportAccel = 24;
+constexpr int kDeckReportGyro = 30;
+constexpr unsigned char kDeckReportVersion = 1;   // k_ValveInReportMsgVersion
+constexpr unsigned char kDeckReportState = 9;     // ID_CONTROLLER_DECK_STATE
+
+// SDL's driver counts each report as 4 ms: "Always 1kHz according to USB
+// descriptor, but actually about 4 ms."
+constexpr uint32_t kDeckReportStepUs = 4000;
+
+// A real accelerometer always reads gravity, so three reports with exactly zero
+// on all three of its axes mean the sensor is not being sent: Steam has switched
+// it off (or left the gyroscope alone on). Every report lost is 4 ms of turn lost,
+// so the setting goes out at once, where the watch waits half a second of zeros,
+// and again at growing gaps while it does not take. On a Deck the sensor has come
+// back within a dozen readings of the setting.
+constexpr int kDeckSensorOffReports = 3;
+constexpr uint32_t kDeckResendFirstUs = 100000;
+constexpr uint32_t kDeckResendMostUs = 1000000;
+
+// The sensor's values in a state report, in the driver's own order, signs and
+// units (rad/s, m/s^2). False for any other report.
+static bool deck_report_sensors(const unsigned char* d, int size, float* gyro, float* accel) {
+    if ((size != kDeckReportBytes) || (d[0] != kDeckReportVersion) || (d[1] != 0) ||
+        (d[2] != kDeckReportState) || (d[3] != kDeckReportBytes)) {
+        return false;
+    }
+    const auto i16 = [d](int at) { return int(int16_t(uint16_t(d[at]) | uint16_t(uint16_t(d[at + 1]) << 8))); };
+    const float rate = 2000.0f * (float(M_PI) / 180.0f);
+    gyro[0] = (i16(kDeckReportGyro) / 32768.0f) * rate;
+    gyro[1] = (i16(kDeckReportGyro + 4) / 32768.0f) * rate;
+    gyro[2] = (-i16(kDeckReportGyro + 2) / 32768.0f) * rate;
+    accel[0] = (i16(kDeckReportAccel) / 32768.0f) * 2.0f * SDL_STANDARD_GRAVITY;
+    accel[1] = (i16(kDeckReportAccel + 4) / 32768.0f) * 2.0f * SDL_STANDARD_GRAVITY;
+    accel[2] = (-i16(kDeckReportAccel + 2) / 32768.0f) * 2.0f * SDL_STANDARD_GRAVITY;
+    return true;
+}
+
+// Pad thread only.
+struct DeckImu {
+    bool on = false;            // Gyro Aim is reading the HID interface
+    bool noHidSaid = false;
+    bool silentSaid = false;
+    bool rateSaid = false;
+    int64_t retryAt = 0;        // when to look for the interface again
+    int64_t openedAt = 0;
+    int64_t firstAt = 0;        // the report the rate is counted from
+    int64_t lastAt = 0;
+    uint32_t reports = 0;       // since firstAt
+    uint64_t clock = 0;         // the sensor's clock, as the driver keeps it
+    uint32_t stepUs = kDeckReportStepUs;
+    int offRun = 0;             // reports in a row with no accelerometer reading
+    int64_t resendAt = 0;
+    uint32_t resendGapUs = kDeckResendFirstUs;
+    int offSaid = 0;
+    // The reports as they came, set against the packet numbers (a report lost
+    // before it reached the port shows as a gap there), said each ten seconds
+    // under SNAP_STATS.
+    struct Count {
+        int64_t at = 0;
+        uint32_t reports = 0;
+        uint32_t packets = 0;
+        uint32_t noGyro = 0;
+        uint32_t noAccel = 0;
+        uint32_t noFocus = 0;
+        uint32_t sends = 0;
+    };
+    Count ten;
+    uint32_t lastPacket = 0;
+};
+static DeckImu g_deckImu;
+
+// When the ten seconds are up, the count begins again; under SNAP_STATS it is said
+// first.
+static void deck_imu_count_say(int64_t t) {
+    DeckImu::Count& c = g_deckImu.ten;
+    if (c.at == 0) {
+        c.at = t;
+        c.sends = g_deckImuSends;
+        return;
+    }
+    if (t - c.at < 10000000) {
+        return;
+    }
+    if (snapdiag::statsEnabled()) {
+        printf("[SNAP-GYRO10] Deck: %u reports in %.3f s, packet numbers moved %u, %u with no gyro, %u with no accelerometer, "
+               "%u with the window out of focus, %u IMU-on sends\n",
+               c.reports, double(t - c.at) * 1e-6, c.packets, c.noGyro, c.noAccel, c.noFocus, g_deckImuSends - c.sends);
+        fflush(stdout);
+    }
+    c = DeckImu::Count{};
+    c.at = t;
+    c.sends = g_deckImuSends;
+}
+
+// One report's readings through SDL's event handler, the gyroscope first, as
+// the driver raises them.
+static void deck_imu_reading(const float* gyro, const float* accel) {
+    g_deckImu.clock += g_deckImu.stepUs;
+    // SDL drops a sensor's readings while the window has no keyboard focus
+    // (SDL_PrivateJoystickShouldIgnoreEvent); here they end the same way.
+    if (!g_focused.load(std::memory_order_relaxed)) {
+        return;
+    }
+    SDL_Event e;
+    SDL_zero(e);
+    e.type = SDL_CONTROLLERSENSORUPDATE;
+    e.csensor.which = g_gyro_instance.load(std::memory_order_relaxed);
+    e.csensor.timestamp_us = g_deckImu.clock;
+    e.csensor.sensor = SDL_SENSOR_GYRO;
+    memcpy(e.csensor.data, gyro, sizeof(e.csensor.data));
+    input_handle_sdl_event(e);
+    e.csensor.sensor = SDL_SENSOR_ACCEL;
+    memcpy(e.csensor.data, accel, sizeof(e.csensor.data));
+    input_handle_sdl_event(e);
+}
+
+// Once per poll while Gyro Aim reads the interface: finds it when it is not
+// open yet, or is gone, and reads every report waiting.
+static void deck_imu_poll() {
+    const int64_t t = now_us();
+    if (g_deckHid == nullptr) {
+        g_gyro_enabled.store(false, std::memory_order_relaxed);
+        if (t < g_deckImu.retryAt) {
+            return;
+        }
+        g_deckImu.retryAt = t + 5000000;
+        if (deck_hid_open() == nullptr) {
+            if (!g_deckImu.noHidSaid) {
+                g_deckImu.noHidSaid = true;
+                printf("[SNAP-Input] gyro: Steam's virtual pad has no sensor and the Deck's HID interface could not be opened (%s); "
+                       "Gyro Aim has nothing to read until it can be, and the port looks again every five seconds\n",
+                       SDL_GetError());
+                fflush(stdout);
+            }
+            return;
+        }
+        g_deckImu.silentSaid = false;
+        g_deckImu.rateSaid = false;
+        g_deckImu.openedAt = t;
+        g_deckImu.firstAt = 0;
+        g_deckImu.offRun = 0;
+        g_deckImu.resendGapUs = kDeckResendFirstUs;
+        g_deckImu.resendAt = t + kDeckResendFirstUs;   // gyro_watch sends it now
+        g_grav[0] = g_grav[1] = g_grav[2] = 0.0f;
+        g_gyro_last_us = 0;
+        g_gyro_enabled.store(true, std::memory_order_relaxed);
+        gyro_watch(true);
+    }
+    unsigned char d[kDeckReportBytes];
+    float gyro[3];
+    float accel[3];
+    int r = 0;
+    while ((g_deckHid != nullptr) && ((r = SDL_hid_read(g_deckHid, d, sizeof(d))) > 0)) {
+        if (!deck_report_sensors(d, r, gyro, accel)) {
+            continue;
+        }
+        deck_imu_reading(gyro, accel);
+        const bool noAccel = (accel[0] == 0.0f) && (accel[1] == 0.0f) && (accel[2] == 0.0f);
+        if (noAccel) {
+            g_deckImu.offRun++;
+        } else {
+            g_deckImu.offRun = 0;
+            g_deckImu.resendGapUs = kDeckResendFirstUs;
+            g_deckImu.resendAt = 0;
+        }
+        {
+            uint32_t packet;
+            memcpy(&packet, d + 4, sizeof(packet));
+            const uint32_t moved = (g_deckImu.lastPacket != 0) ? (packet - g_deckImu.lastPacket) : 0;
+            g_deckImu.lastPacket = packet;
+            const bool noGyro = (gyro[0] == 0.0f) && (gyro[1] == 0.0f) && (gyro[2] == 0.0f);
+            const bool noFocus = !g_focused.load(std::memory_order_relaxed);
+            DeckImu::Count& c = g_deckImu.ten;
+            c.reports++;
+            c.packets += moved;
+            c.noGyro += noGyro ? 1 : 0;
+            c.noAccel += noAccel ? 1 : 0;
+            c.noFocus += noFocus ? 1 : 0;
+        }
+        if (!g_deckImu.rateSaid) {
+            // A gap is this thread held up, not the sensor's rate: the count
+            // starts over after one (the kernel keeps 64 reports, 256 ms).
+            const int64_t at = now_us();
+            if ((g_deckImu.firstAt == 0) || (at - g_deckImu.lastAt > 100000)) {
+                g_deckImu.firstAt = at;
+                g_deckImu.reports = 0;
+            } else {
+                g_deckImu.reports++;
+            }
+            g_deckImu.lastAt = at;
+        }
+    }
+    if (r < 0) {
+        printf("[SNAP-Input] gyro: the Deck's HID interface stopped answering; the port looks for it again\n");
+        fflush(stdout);
+        deck_hid_close();
+        return;
+    }
+    if ((g_deckImu.offRun >= kDeckSensorOffReports) && (t >= g_deckImu.resendAt)) {
+        const char* how = deck_send_imu_on();
+        g_deckImu.resendAt = t + g_deckImu.resendGapUs;
+        g_deckImu.resendGapUs = std::min(g_deckImu.resendGapUs * 2, kDeckResendMostUs);
+        if (g_deckImu.offSaid < 5) {
+            g_deckImu.offSaid++;
+            printf("[SNAP-Input] gyro: %d reports in a row with no accelerometer reading, so the sensor is off; the Deck's IMU-on setting %s\n",
+                   g_deckImu.offRun, how ? how : "could not be sent");
+            fflush(stdout);
+        }
+    }
+    deck_imu_count_say(t);
+    if (g_deckImu.rateSaid) {
+        return;
+    }
+    if (g_deckImu.firstAt == 0) {
+        if (!g_deckImu.silentSaid && (t - g_deckImu.openedAt > 3000000)) {
+            g_deckImu.silentSaid = true;
+            printf("[SNAP-Input] gyro: the Deck's HID interface is open but has sent no state report in three seconds\n");
+            fflush(stdout);
+        }
+        return;
+    }
+    if (t - g_deckImu.firstAt < 1000000) {
+        return;
+    }
+    const double hz = double(g_deckImu.reports) * 1e6 / double(t - g_deckImu.firstAt);
+    // The driver's 4 ms stands, so Gaming Mode turns as Desktop Mode does,
+    // unless the reports plainly come at another rate: a turn of the Deck must
+    // stay a turn of the view of the same size. (Below 50 a second is a sensor
+    // stopping, not a rate.)
+    if ((hz >= 50.0) && ((hz < 225.0) || (hz > 275.0))) {
+        g_deckImu.stepUs = uint32_t(1e6 / hz);
+        g_gyro_rate_hz = float(hz);
+    }
+    g_deckImu.rateSaid = true;
+    printf("[SNAP-Input] gyro on: the Deck's own sensor through its HID interface (Steam's virtual pad has none), %.0f Hz\n", hz);
+    fflush(stdout);
+}
+
+static void deck_imu_start(SDL_JoystickID pad) {
+    g_deckImu = DeckImu{};
+    g_deckImu.on = true;
+    g_gyro_rate_hz = 1e6f / float(kDeckReportStepUs);
+    g_gyro_instance.store(pad, std::memory_order_relaxed);
+    deck_imu_poll();
+}
+
+static void deck_imu_stop() {
+    g_deckImu.on = false;
+    g_gyro_enabled.store(false, std::memory_order_relaxed);
+    deck_hid_close();
+    printf("[SNAP-Input] gyro off: the Deck's own sensor is no longer read\n");
+    fflush(stdout);
+}
+#endif
+
 // Turns the pad's gyro on when the setting asks and the pad has one, off
 // otherwise; decided on every poll so the Controls page's row and a
-// replugged pad both take effect at once. A pad without a gyro (every
-// Xbox pad, Steam's virtual pad in the Deck's gaming mode) has nothing to
-// enable, and the setting then does nothing.
+// replugged pad both take effect at once. A pad without a gyro (every Xbox
+// pad) has nothing to enable, and the setting then does nothing. Steam's
+// virtual pad has none either, but on Linux, where it stands for the Deck, the
+// Deck's own sensor is read for it (deck_imu_poll above).
 static void sync_gyro() {
     static bool enabledFor = false;
     // The pad is named by its joystick instance id, which SDL never reuses
@@ -3173,17 +4353,46 @@ static void sync_gyro() {
     static SDL_JoystickID padId = -1;
     const bool has = (game_controller != nullptr) &&
                      (SDL_GameControllerHasSensor(game_controller, SDL_SENSOR_GYRO) == SDL_TRUE);
+#if defined(__linux__) && !defined(__ANDROID__)
+    const bool deckImu = !has && is_steam_deck_pad(game_controller);
+    const bool want = (has || deckImu) && (settings().gyro_aim != 0);
+#else
     const bool want = has && (settings().gyro_aim != 0);
+#endif
     const SDL_JoystickID nowId =
         (game_controller != nullptr)
             ? SDL_JoystickInstanceID(SDL_GameControllerGetJoystick(game_controller))
             : -1;
     if ((padId == nowId) && (enabledFor == want)) {
+#if defined(__linux__) && !defined(__ANDROID__)
+        if (g_deckImu.on) {
+            deck_imu_poll();
+        }
+#endif
         gyro_watch(false);
         return;
     }
+    // Another pad is read now (pad_follow_press): the one before it, still
+    // open, has its sensors turned off again.
+    if ((padId != nowId) && enabledFor) {
+        for (const OpenPad& p : g_open_pads) {
+            if (p.id == padId) {
+                SDL_GameControllerSetSensorEnabled(p.gc, SDL_SENSOR_GYRO, SDL_FALSE);
+                SDL_GameControllerSetSensorEnabled(p.gc, SDL_SENSOR_ACCEL, SDL_FALSE);
+            }
+        }
+    }
     padId = nowId;
     enabledFor = want;
+#if defined(__linux__) && !defined(__ANDROID__)
+    if (g_deckImu.on) {
+        deck_imu_stop();
+    }
+    if (deckImu && want) {
+        deck_imu_start(nowId);
+        return;
+    }
+#endif
     if (!has) {
         g_gyro_enabled.store(false, std::memory_order_relaxed);
         deck_hid_close();
@@ -3229,20 +4438,35 @@ static void sync_gyro() {
 static std::atomic<int> g_rumble_wanted{-1};
 
 static void pad_close() {
-    if (game_controller != nullptr) {
-        SDL_GameControllerClose(game_controller);
-        game_controller = nullptr;
+    for (const OpenPad& p : g_open_pads) {
+        SDL_GameControllerClose(p.gc);
     }
+    g_open_pads.clear();
+    game_controller = nullptr;
+    g_pad_key = 0;
     g_deck_pad_keys_ignored.store(false, std::memory_order_relaxed);
 }
 
 static void pad_apply_rumble() {
     static int applied = 0;
+    static SDL_JoystickID appliedTo = -1;    // the pad it was sent to; another is sent it afresh
     const int want = g_rumble_wanted.load(std::memory_order_relaxed);
-    if ((want < 0) || (want == applied) || (game_controller == nullptr)) {
+    if ((want < 0) || (game_controller == nullptr)) {
         return;
     }
+    const SDL_JoystickID padId = pad_instance(game_controller);
+    if ((want == applied) && ((padId == appliedTo) || (want == 0))) {
+        return;
+    }
+    if (applied && (padId != appliedTo)) {
+        for (const OpenPad& p : g_open_pads) {
+            if (p.id == appliedTo) {
+                SDL_GameControllerRumble(p.gc, 0, 0, 0);
+            }
+        }
+    }
     applied = want;
+    appliedTo = padId;
     // On or off, as the Rumble Pak is; SDL caps one start at
     // SDL_MAX_RUMBLE_DURATION_MS (0xFFFF), about 65 seconds.
     const Uint16 mag = want ? 0xFFFF : 0;
@@ -3257,6 +4481,8 @@ static void pad_publish() {
         s.n64_layout = g_pad_layout_n64;
         s.nso_n64 = g_pad_nso_n64;
         s.r_on_trigger = g_pad_r_on_trigger;
+        s.n64_shaped = g_pad_n64_shaped;
+        s.right_stick = g_pad_right_stick;
         for (int b = 0; b < SDL_CONTROLLER_BUTTON_MAX; b++) {
             if (SDL_GameControllerGetButton(game_controller, SDL_GameControllerButton(b)) != 0) {
                 s.buttons |= (1u << b);
@@ -3320,6 +4546,34 @@ static void pad_thread_main() {
             }
         }
         const int idx = SDL_JoystickAttachVirtualEx(&desc);
+        // SNAP_VPAD_MAP: the mapping the pad carries, the fields after the
+        // name ("a:b0,b:b1,..."), in place of the one SDL makes for a virtual
+        // joystick, so it reads exactly as a real pad does through that
+        // mapping: the suite gives it the one SDL's own driver gives the
+        // Switch Online N64 controller (SDL_CreateMappingForHIDAPIController).
+        // Added for its GUID before the pad is opened, so the open finds it.
+        const char* vmap = getenv("SNAP_VPAD_MAP");
+        if ((idx >= 0) && (vmap != nullptr) && (*vmap != '\0')) {
+            char guid[64];
+            SDL_JoystickGetGUIDString(SDL_JoystickGetDeviceGUID(idx), guid, sizeof guid);
+            // Every field ends with a comma: SDL appends its own (crc, platform)
+            // straight after the string, and without one the last field
+            // read "misc1:b15crc:18ee" and bound nothing.
+            std::string line = std::string(guid) + "," + desc.name + "," + vmap;
+            if (line.back() != ',') {
+                line += ',';
+            }
+            const int added = SDL_GameControllerAddMapping(line.c_str());
+            printf("[SNAP-Input] SNAP_VPAD_TEST: the virtual pad carries the mapping %s%s\n", vmap,
+                   (added < 0) ? " -- SDL refused it" : "");
+            fflush(stdout);
+        }
+        // Its presses count while the window is not in front: SDL drops a
+        // joystick's presses for a window in the background, and a check
+        // started by hand from a .cmd lost the front after a few seconds
+        // (Oct 29 2026: the pad-press check read nothing from then on). A
+        // real pad keeps the rule, since the hint goes only with the test pad.
+        SDL_SetHint(SDL_HINT_JOYSTICK_ALLOW_BACKGROUND_EVENTS, "1");
         g_vpad = (idx >= 0) ? SDL_JoystickOpen(idx) : nullptr;
         printf("[SNAP-Input] SNAP_VPAD_TEST: virtual pad %s\n",
                (g_vpad != nullptr) ? "attached; it is the pad this run opens, any real one is left alone" : "could not be attached");
@@ -3345,8 +4599,14 @@ static void pad_thread_main() {
             // Pick up a newly connected controller, and replace a detached one.
             try_open_controller();
             // The Controls page's Pad Preset row, in force at once.
-            if ((game_controller != nullptr) && (settings().pad_layout != g_pad_layout_applied)) {
-                decide_pad_layout();
+            if (g_pad_presets_changed.exchange(false, std::memory_order_relaxed)) {
+                pad_presets_refresh();
+                for (const OpenPad& p : g_open_pads) {
+                    if ((p.gc == game_controller) && (p.preset != g_pad_layout_applied)) {
+                        decide_pad_layout();
+                        break;
+                    }
+                }
             }
             pad_apply_rumble();
         }
@@ -3572,20 +4832,27 @@ static void snap_input_tap(uint16_t* buttons, float* x, float* y) {
         }();
         for (const MouseStep& m : steps) {
             if (m.at == readingIndex) {
+                // A step is a hand on the mouse, and its click meets the
+                // hidden pointer's rule as a hand's does (click_unseen), so
+                // a replay in fullscreen can check that rule.
+                const bool unseen = ((m.what == 'c') || (m.what == 'p')) && click_unseen();
                 g_test_gx.store(m.x, std::memory_order_relaxed);
                 g_test_gy.store(m.y, std::memory_order_relaxed);
                 g_ptr_moved.fetch_add(1, std::memory_order_relaxed);
-                if ((m.what == 'c') || (m.what == 'p')) g_ptr_click.fetch_add(1, std::memory_order_relaxed);
+                g_ptr_moved_at.store(now_us(), std::memory_order_relaxed);
+                if (((m.what == 'c') || (m.what == 'p')) && !unseen) g_ptr_click.fetch_add(1, std::memory_order_relaxed);
                 if (m.what == 'p') g_test_held.store(true, std::memory_order_relaxed);
                 if (m.what == 'r') g_test_held.store(false, std::memory_order_relaxed);
                 if (m.what == 'b') g_ptr_back.fetch_add(1, std::memory_order_relaxed);
+                if ((m.what == 'u') || (m.what == 'd')) g_ptr_wheel_swipe.store(false, std::memory_order_relaxed);
                 if (m.what == 'u') g_ptr_wheel_up.fetch_add(1, std::memory_order_relaxed);
                 if (m.what == 'd') g_ptr_wheel_down.fetch_add(1, std::memory_order_relaxed);
                 if (m.what != 0) g_last_device.store(kBindMouse, std::memory_order_relaxed);
-                printf("[SNAP-MOUSE] test at reading %u: the pointer at %d,%d%s%s\n", readingIndex, m.x, m.y,
+                printf("[SNAP-MOUSE] test at reading %u: the pointer at %d,%d%s%s%s\n", readingIndex, m.x, m.y,
                        m.what ? ", " : "", (m.what == 'c') ? "click" : (m.what == 'b') ? "right-click"
                                            : (m.what == 'u') ? "wheel up" : (m.what == 'd') ? "wheel down"
-                                           : (m.what == 'p') ? "press" : (m.what == 'r') ? "release" : "");
+                                           : (m.what == 'p') ? "press" : (m.what == 'r') ? "release" : "",
+                       unseen ? " on the hidden pointer: it comes back, the menu does not take the click" : "");
                 fflush(stdout);
             }
         }
@@ -3704,6 +4971,13 @@ static void snap_input_tap(uint16_t* buttons, float* x, float* y) {
         }
         else {
             // The recording ran out: hold neutral rather than repeat the tail.
+            // Said once, so a run can end on the tape's own end.
+            static bool saidEnd = false;
+            if (!saidEnd) {
+                saidEnd = true;
+                printf("[SNAP-INPUT] the replay ended at reading %u\n", readingIndex);
+                fflush(stdout);
+            }
             *buttons = 0;
             *x = 0.0f;
             *y = 0.0f;
@@ -3918,8 +5192,9 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
         // not a button, and neither of the two below is expressible as one.
 
         // Which stick is which: the left aims and the right works the C
-        // buttons unless the Controls page's Pad Sticks row swapped them.
-        const bool swapped = settings().pad_sticks_swapped;
+        // buttons unless the Controls page's Stick Swap row swapped them,
+        // on a pad that has a right stick to swap with (g_pad_right_stick).
+        const bool swapped = settings().pad_sticks_swapped && pad.right_stick;
 
         // The C stick → C buttons (threshold-based)
         int16_t rx = snapshot_axis(pad, swapped ? SDL_CONTROLLER_AXIS_LEFTX : SDL_CONTROLLER_AXIS_RIGHTX);
@@ -4043,6 +5318,9 @@ bool input_get(int controller_num, uint16_t* buttons, float* x, float* y) {
         }
     }
 
+    if (g_vpad != nullptr) {
+        vpad_press_record(btn, ax, ay);
+    }
     *buttons = btn;
     *x = ax;
     *y = ay;

@@ -174,7 +174,23 @@ static GObj* snap_dim_make(void) {
  * processed and the position stands (src/overlay_hook.cpp). The sound
  * player is untouched, so the pages' own sounds go on. The release clears
  * the byte and posts the volume the driver believes in, which the handler
- * takes on its first turn back, in the tick the screen thaws. */
+ * takes on its first turn back, in the tick the screen thaws.
+ *
+ * Nothing may go on posting to a held player. Its event queue has 64
+ * items and a held handler takes none out; a queue that fills while held
+ * loses the player's own heartbeat event at the release (the handler had
+ * taken it out before the hold and cannot put it back), and once the rest
+ * drains the library's handler loops on the empty queue forever, at the
+ * audio thread's priority, above the game's: the picture stops (Oct 30
+ * 2026, a song stopped in the lab just before this hold: a test build's
+ * three frozen runs, read from the stall report's stacks). Two
+ * things post without the screen running: the audio thread itself, which
+ * posts a stop every frame to a player stopping or changing its song until
+ * the player reports stopped (sys/audio.c auThreadMain, status 1), and a
+ * volume fade, one post a frame for its length (30 to 240 frames in the
+ * game). So a fade ends here at its target, unheard under the mute and the
+ * volume the release restores, and a player still stopping or starting is
+ * given the moment it needs, a second at most. */
 static void snap_bgm_hold(void) {
     s32 i;
     for (i = 0; i < 2; i++) {
@@ -183,6 +199,28 @@ static void snap_bgm_hold(void) {
         }
     }
     ohWait(2);
+    for (i = 0; i < 2; i++) {
+        if (auBGMVolTimer[i] != 0) {
+            f32 end = auBGMVolume[i] + auSongVolRate[i] * (f32) auBGMVolTimer[i];
+            if (end < 0.0f) {
+                end = 0.0f;
+            } else if (end > 32512.0f) {
+                end = 32512.0f;
+            }
+            auBGMVolTimer[i] = 0;
+            auBGMVolume[i] = end;
+        }
+    }
+    for (i = 0; i < 30; i++) {
+        if ((auBGMPlayerStatus[0] != 1) && (auBGMPlayerStatus[0] != 2) &&
+            (auBGMPlayerStatus[1] != 1) && (auBGMPlayerStatus[1] != 2)) {
+            break;
+        }
+        ohWait(1);
+    }
+    if (i > 0) {
+        ohWait(1);   /* a song just started: its play event taken before the hold */
+    }
     MBOX_BGM_HOLD = 1;
 }
 

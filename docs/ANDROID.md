@@ -34,7 +34,10 @@ The app also carries an x86_64 build, for Android's emulator.
    **Internal storage > Snap64**, and asks for "All files access" to use
    it. **Allow** opens the system's setting: turn it on for Snap64 Recomp
    and go back. **Not now** uses the app's own folder instead,
-   `Android/data/io.github.jackandbeans.snap64recomp/files`.
+   `Android/data/io.github.jackandbeans.snap64recomp/files`, and asks
+   again at the next start. **Don't ask again** keeps the app's own
+   folder. A tap beside the question does not close it, and Back closes
+   the app without an answer, so the next start asks again.
 4. Give it your ROM. Either copy it into the Snap64 folder yourself (from
    a PC over USB, or with a file manager), named `pokemonsnap.z64`, or let
    the game ask: it opens the system's file picker, and the file you pick,
@@ -53,8 +56,16 @@ check.
 Internal storage > Snap64 holds what the port's own folder holds on a PC:
 the ROM, `saves/`, `photos/`, `mods/`, `texture_packs/`, `snapsettings.json`
 and `snap64.log`. A file manager or a PC over USB reaches it. Uninstalling
-the app leaves this folder where it is. (With "Not now", the app's own
-folder is used, and Android deletes that folder with the app.)
+the app leaves this folder where it is.
+
+Without "All files access", the game folder is the app's own,
+`Android/data/io.github.jackandbeans.snap64recomp/files`. A short message
+at every start says so ("Game folder: the app's own, in Android/data"). A
+file manager may not open that folder, and Android deletes it with the
+app. To move to Internal storage > Snap64 later, turn on "All files
+access" for Snap64 Recomp in the system settings. The next start copies
+the app's own folder into Snap64, saves and photos included, without
+replacing any file Snap64 already has.
 
 ## Playing
 
@@ -101,13 +112,34 @@ cutout.
 The first course after the app is installed shows one line over the
 picture for five seconds: "Drag to aim. Tap Z to zoom. A takes the photo."
 
-They have no Options rows yet. Three settings in `snapsettings.json` in
-the game folder change them:
+Options > Controls has six rows for them on Android, after Pointer Shows:
 
-* `touch_controls`: 0 shows them until a pad or keyboard is used (the
-  default), 1 always, 2 never.
-* `touch_size`: their size in percent, 50 to 150 (default 100).
-* `touch_opacity`: how solid they are in percent, 20 to 100 (default 60).
+* Touch Controls: Auto shows them until a pad or keyboard is used (the
+  default), Always keeps them, Never hides them while a pad is attached.
+  With no pad, Never still shows them: a phone has nothing else to press.
+* Touch Size: their size, 50% to 150% (default 100%).
+* Touch Opacity: how solid they are, 20% to 100% (default 60%).
+* Left-Handed: puts R, Z, A and B on the left, and Start and the C
+  buttons on the right. The C buttons keep their own left and right.
+* Idle Fade: dims them after four seconds without a press. The next press
+  brings them back.
+* Move Buttons: shows every button over the page, to drag each one where
+  your thumb wants it. Reset puts them all back where they came. Done
+  keeps the new places, which Left-Handed mirrors too. Nothing reaches the
+  game while the buttons are being moved.
+
+B on the page undoes what the first five rows changed, as on every page.
+A place kept with Done stays.
+
+On every Options page a tap on a value's arrows changes it (the left one
+down, the right one up), a tap on a label or between the arrows selects the
+row, and a swipe up or down scrolls the page, so the rows after Pointer
+Shows are two swipes away. A swipe stops at the page's first or last row;
+it does not wrap around as the wheel does.
+
+They are kept in `snapsettings.json` in the game folder as
+`touch_controls` (0 Auto, 1 Always, 2 Never), `touch_size`,
+`touch_opacity`, `touch_mirror`, `touch_fade` and `touch_layout`.
 
 With Widescreen on, the picture fills the bars, so the buttons sit over
 its outer edges. While they are shown, the film counter stays where the
@@ -177,26 +209,33 @@ mode, the shutter felt at the game's own photo, a resting
 finger beside one that aims, the touch feedback as Android's vibrator
 service records it, the 48 dp touch squares at the smallest size, the
 first course's hint, Gyro Aim on the emulator's virtual sensors, a pad
-made in software, and a display-size change.
+made in software, and a display-size change. On Nov 5 2026, every check
+again on the 1.1.7 tree, with the Autosave row On and Off on the save file.
+
+On a handheld, by a player: Rhys Wittingslow ran 1.1.6 on his AYN Odin 3
+Pro and wrote on Oct 24 2026. The game ran smoothly with its built-in
+controls, the sound was fine, he finished the first course's first run,
+and every photo got its points and showed up with Oak. Z was mapped to the
+left shoulder button (L1) on its own, and the inverted aim he had asked for
+was there. He had not tried widescreen or the other settings yet. He also
+found the lost first-start question (CHANGELOG, 1.1.7).
 
 [BUILDING.md, step 16](../BUILDING.md#16-android-cross-build-experimental)
 has every run with its numbers.
 
 Not tried yet:
 
-* a real pad, Bluetooth or USB;
-* the sound, heard by a person;
+* a Bluetooth or USB pad;
 * the touch controls on a real screen, by a hand, and their feel;
 * Gyro Aim with a phone's own gyroscope, in a hand;
-* any GPU but the Adreno 830, and the speed on any other phone;
-* Android 10 to 14 (both test devices ran Android 15).
+* any GPU but the Adreno 830;
+* Android 10 to 14.
 
 ## Known limits
 
 * The Snap Station's print is not available. On a PC the port restarts
   itself twice for it, and an Android app cannot (read from the code, not
   tried).
-* The touch controls have no Options rows yet (above).
 * The Graphics page's Fullscreen row does nothing: the game is always
   full screen on Android.
 * The phone's game tools may not shrink the picture or change the frame

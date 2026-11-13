@@ -1,5 +1,418 @@
 # Changelog
 
+## 1.1.7 -- 2026-11-13
+
+* On an Options page, a click between a setting's arrows changed the
+  setting. A click on a value counted as Left on its left half and as Right
+  on its right half (graphics_menu_patch.c, snap_page_mouse). The halves
+  were taken from the strip the value is drawn on, which is rounded up to a
+  block of 64 pixels, not from its words. So a click past the right arrow
+  counted as Right too, and on a few values the right arrow lay mostly in
+  the left half, so a click on it stepped back: a volume at 0 went to 100,
+  a Mouse or Gyro Speed of 5 went to 400, Frame Rate's Display went back to
+  Original, and its Original could jump to 240. JackandBeans found it on
+  Nov 10. Now only the arrows change a value. The page finds them in the
+  value's own pixels, by the game's own chevrons, and a click between them
+  selects the row and does nothing more. This holds on every Options page,
+  on a mod's options and on the Mods page, and for a tap on Android. A value
+  drawn without arrows (a key's name, Click, a mod that another mod needs)
+  answers a click as before. The help lines that said to click a value now
+  say to click an arrow. Checked without the game: every value the port's
+  own pages draw was composed with the game's font as the port composes it,
+  and the new test found both arrows on each, and none on the same values
+  with their arrows blanked or on key names. In the game, on Nov 12, a
+  scripted run clicked every two pixels along the Sound page's Master
+  Volume: only the clicks on its arrows changed it, the left one down and
+  the right one up, and none of the nine on the number between them. The
+  build before the fix, given the same clicks, changed it at all nine.
+* The manual gives a line for `gamecontrollerdb.txt` that makes the clear
+  red N64 USB pad (0079:0006) work on Windows. Its layout comes from
+  MatyMeatBoy's capture of the pad, in pull request 37. The pad has not
+  been tried here.
+* With MSAA on, a photo could score differently than with it off. The photo
+  check draws each photo again at 64 by 48 pixels and counts each Pokémon's
+  pixels in depth images it reads back from memory (score.c). RT64 draws
+  every frame twice: once for the picture, and once at the console's own
+  resolution into memory, where the game reads it. It drew that second copy
+  with the picture's MSAA. Where a pixel's samples differ, at the edges of
+  things, two readings of one depth image then disagreed: the copy the game
+  takes of it through a texture held the nearest sample, and the image
+  written back held the first. No sample sits where a game without MSAA
+  takes its one, so a Pokémon's own count moved a little too. Found on Nov 8
+  in the scripted games JackandBeans ran for Island Skies. On the Beach tape,
+  MSAA 8x alone changed all 45 of the photo check's lines and the points of
+  14 photos of 21: totals moved by -20 to +30 (a Pidgey from 180 to 210),
+  22,870 in all against 22,900. No other setting of his changed a point.
+  RT64 now draws that second copy at one sample, with pipelines of its own
+  built from the same shaders a game without MSAA uses. The picture keeps
+  its MSAA, and without MSAA nothing changes. The focus dot's tiles and the
+  photos the game makes come from that copy too, so with Photo Detail off
+  the album's photos are now as without MSAA (read from the code, not run).
+  Under `SNAP_STATS`, a `[SNAP-ZBUF]` line now fingerprints each photo's
+  depth images and counts, so two games can be compared byte for byte.
+  Checked on Nov 10 with six scripted games of the Beach tape, through
+  Oak's evaluation. With MSAA 8x the photo check read the same bytes as
+  without it, and Oak gave the same points, 22,900 in all. So did
+  Widescreen in a 1280x720 window, and MSAA with Widescreen. On Vulkan,
+  MSAA 8x and no MSAA gave the same bytes too. Vulkan's depth bytes are
+  not Direct3D 12's, but every count the photo check makes of them, and
+  every point, is the same.
+* In a wide window, a photo could list a Pokémon the cartridge would have
+  left out. Each frame, one test per Pokémon decides both whether it is
+  drawn and whether a photo taken then may list it, twelve at most. The
+  Widescreen patch widened that test to the wider picture, for both. Found
+  on Nov 8 in the same games: with his settings, full screen at 2560x1440,
+  one photo on the Beach tape listed a second Pokémon with no pixel in the
+  photo check (line 33; 47 lines where the release folder's settings give
+  45). Now only the drawing takes the wider bound, and the photo's list keeps
+  the cartridge's. The items a photo lists had the same widening and keep
+  the cartridge's bound now too. In a 4:3 window nothing changes. Checked
+  on Nov 10 in the same games: in a 1280x720 window the wider bound drew a
+  Pokémon the cartridge would have culled at least 162 times, and every
+  photo listed the same Pokémon as in a 4:3 window, line for line.
+* Gaming Mode on a Steam Deck, the Flatpak above all, after issue #30.
+  JackandBeans found these on an OLED Deck on Nov 5 and 6. All are Linux only
+  and each says in the log what it did. On the rides of Nov 6 the blocks were
+  gone and the start was smooth. The gyro's scale measured right on Nov 7; why it
+  felt too slow on two rides of the four before that is still open.
+  - Every start in Gaming Mode was choppy for about three seconds, then the
+    picture shrank for a second, and then all was well. The port asked
+    gamescope for the panel's size after SDL had read the screen, and SDL 2
+    never reads it again, so SDL went on saying 3840x2160. From the first
+    fullscreen every present took the present wait's whole 100 ms, about ten
+    frames a second; why is not known. Three seconds later the port took SDL's
+    size for a fault and applied fullscreen again at 4K, which was the shrink
+    and which ended the stall. At a Snap Station relaunch in the same session,
+    with SDL reading 1280x800 from the start, neither happened. So the port now
+    asks before SDL starts and waits for the answer, half a second at most, and
+    its later check compares the X server's size, never SDL's. If presents still
+    stall at startup, it makes the swap chain again, then applies fullscreen
+    again, and the log names the step that cleared it.
+  - Lime, cyan and magenta blocks over the picture, and ghosts of earlier
+    frames. Steam's Force Composite cured them, and so did
+    `vk_x11_override_min_image_count=5` with it off, while
+    `vk_xwayland_wait_ready` changed nothing. Inferred from that: with too few
+    swap images, an image comes back to the port while gamescope is still
+    scanning it out. RT64 asks for two or three, and Mesa's X11 minimum is
+    three. Inside gamescope the port now asks for five; a value already set
+    stays.
+  - Gyro Aim did nothing in Gaming Mode, because Steam's virtual pad has no
+    sensors and Steam passes none through (SDL issue 12997). The port now
+    reads the Deck's own sensor from the controller's HID interface, takes its
+    values as SDL's Deck driver does, and feeds the handler of SDL's sensor
+    event, so Gaming Mode and Desktop Mode are one path from there. Only the
+    sensor is read; the buttons stay Steam's. Use a Steam layout without gyro:
+    Steam's Gyro As Mouse on top moves the camera twice. On the first try it
+    felt far too slow. While Steam has the sensor switched off, every report is
+    turn lost, so three reports with no accelerometer reading now send the
+    setting at once, where the watch waits for half a second of zeros.
+    JackandBeans called the gyro too slow on two rides and right on two, and the
+    cause is open. Under `SNAP_STATS`, a `[SNAP-GYRO10]` line every ten seconds now
+    says what the readings made, what reached the view, and what did not and why;
+    the counting runs in every build. On the last
+    right ride, from a fresh start, 94 to 100% of the yaw reached the view with no
+    report lost. On Nov 7 three full turns of his whole body read 1081.5 degrees
+    of yaw against 1080 and the view took 1081.3 with nothing dropped, so the
+    scale at 100% is right. No slow ride has these numbers yet. The reader and the view code,
+    run on real threads against a made-up sensor, gave the same angle with the
+    measuring on or off and with the locks taken out, and ThreadSanitizer found no
+    race, so neither the measuring nor the handover explains it.
+  - An option of a mod changed just before the Mods page's Restart was lost on
+    Linux and macOS: the runtime writes it a second after the last change, and
+    the relaunch replaces the process without waiting. The Restart now waits.
+  - The Mods page's Restart could throw Steam off in Gaming Mode. JackandBeans
+    turned a mod on and restarted (Nov 7). The game booted with the mod, but took
+    no press for 16.7 s. About 14 s in, the X server went to 3840x2160, the size
+    Steam sets when it launches a game, and the window went with it, slow and wrong.
+    Steam's Exit Game ended that copy, a new copy came up, and Steam stayed on
+    "Exiting game" until the game's own Exit Game. The relaunch replaces the process
+    in place, which closes its X connection, so the game has no window until the new
+    image draws, and gamescope has no game to show. From there the log only suggests
+    the rest: Steam took the game for closing, and a second start of the shortcut
+    waited on the lock with no window until the first copy ended. A Restart with the
+    mod turned off, the same morning, showed none of it. 1.1.6 relaunches the same
+    way. Inside gamescope the X connection now stays open across the relaunch, and
+    the new image closes it once the game has run for a moment. Gamescope goes on
+    showing the window it has until the newest one has a finished frame, so the game
+    is never without one. Checked with the real code and real `execv` from a second
+    thread against a stand-in for the X server (65 checks). On his Deck the same
+    evening, four Restarts in Gaming Mode (Island Skies off and on, twice) came back
+    with nothing else on screen, the old window going about a second after each, and
+    Steam's Exit Game ended the game; in his words, "the restart fixes did work".
+  - Mesa's shader cache was off in the Flatpak in Gaming Mode. Steam points it
+    at a folder under the home folder, the sandbox reads that read-only, and
+    Mesa disables the cache when it cannot make its subfolder (the log of Nov 5
+    has a 687.8 ms gap at the start, with 242 shaders compiled). When the
+    folder set cannot be written, the cache now moves to the sandbox's cache
+    folder, else the data folder.
+  - Gamescope reports the same rate whatever Steam's refresh slider says: 90 Hz
+    with the slider at 60 (Oct 29), so the port made frames for a rate the
+    screen could not show. Inside gamescope it now measures the real rate. Going
+    down, from presents the display holds back, when two seconds of them are
+    steady. Going up, where presents can no longer show it, from a pair of
+    frames that waits for the screen about once a second while a lower rate is
+    in force. A heavy scene is not held back and moves nothing.
+    `SNAP_NO_MEASURED_REFRESH=1` turns it off.
+  Checked with no game and no window, under the address and undefined-behavior
+  sanitizers, on the source's own text: the report parser against SDL's struct
+  and sums, bit for bit, on 200,000 reports; the cache's move against a
+  read-only bind, the sandbox's own case; the rate measure on made-up presents
+  and on a model of the present thread against a display (that a real Deck's
+  presents behave as the model does is still inferred).
+* A mod's options page ignored the pad's A, and the key set to A. On any row
+  but the last, A did nothing and the page stayed, and B then put the change
+  back, as B does, so a change looked impossible to keep. JackandBeans found it
+  on his Deck on Nov 6, setting Island Skies' Weather to Snow: 66 presses of A
+  over five visits, none kept. A on a row first asks the port whether the row is
+  a text to type, and the answer comes on the next tick. That tick publishes the
+  game's presses again, so the page's own test of A, right after the answer,
+  found nothing. A click on the header's A OK and Start never went that way, and
+  they kept the changes all along. The page now reads the press once, before it
+  asks. The code is the same on every system and has stood since 1.1.0, so
+  Windows has the fault too (read from the code, not run). On his ride the same
+  night A closed the page and the Beach loaded with snow.
+* The port's pages could overrun the game's display list, which is the game's
+  panic. Every strip on them is a sprite, and the game's sprite library writes a
+  sprite's whole list, a texture load and a rectangle for each block of it, into
+  the screen's buffer, which is the cartridge's own size: 20,480 bytes on the
+  title. In the log of a ride on Nov 6, a mod's details page with its picture,
+  then its options, drew about 10,500 bytes there over a frame of 9,784 and left
+  192. The check made as the pages open asked for 8,192 bytes, and nothing
+  checked again. Each strip of the pages now draws into a list of their own, one
+  of 32 KB for each of the game's two frames in flight, and the screen's list
+  carries one branch to it, eight bytes; the pages open where 1,024 bytes are
+  left. A strip that would not fit is left out and counted. The names that keep
+  the pages smooth at a raised frame rate are written in that list too. The line
+  printed when the pages close also says what their list held. Checked on Nov 8
+  with three scripted games. Over the title with six mods, through a mod's
+  details with its picture and then its options, the pages added 936 bytes to
+  the screen's list, and their own list held at most 9,992 bytes in a frame. The
+  suite's pages check passed. Over a paused ride, their names were written in
+  their list. No strip was left out.
+* The Steam art. Added to Steam as a shortcut, the game had an icon and a blank
+  library page. The port now gives the shortcut a poster, a background, a logo and
+  a wide picture, as JackandBeans asked, the pictures his. Steam reads a shortcut's
+  art from files named after its app id in the account's `config/grid` folder, so
+  the port writes them there, only for a shortcut whose own entry in `shortcuts.vdf`
+  names the game, in its name in Steam, its target or its launch options. Steam's
+  `SteamGameId` and `SteamAppId` are not enough: a game started through another
+  shortcut, a launcher, reports that one's id, and the launcher would get the art.
+  The port never replaces a file already there, writes nowhere else in Steam's
+  folder, and does not put back a picture it wrote and the player deleted; a slot
+  that holds the player's own art gets the port's picture if they remove theirs.
+  Steam shows the art after its next restart. On his first ride the library showed
+  nothing and the log had no word of it, and the log could not say whether that was
+  an older build or a run with no `SteamGameId`. So every start now logs one
+  `[SNAP] Steam art:` line with what Steam passed, which shortcut names the game and
+  what became of the pictures, and a `[SNAP] built from commit` line names the build.
+  The Flatpak has one more permission for it, `~/.local/share/Steam/userdata`.
+  `SNAP_NO_STEAM_ART=1` turns it off. Checked with no game and no Steam against a
+  made-up Steam folder, on Linux under the address and undefined-behavior sanitizers
+  (216 checks) and on Windows under the address sanitizer (188), with the registry
+  read for real, and in the Flatpak's read-only home. On JackandBeans's Deck in
+  Gaming Mode on Nov 7 the port wrote the four and the library showed them; that was
+  by `SteamGameId`, before the rule about the entry, which has not been ridden yet.
+  Not yet tried with Steam on Windows or on a Linux desktop.
+* The Flatpak's icon is the logo on its tile at every size from 16 to 256 pixels,
+  each drawn from the logo (`tools/icon_gen.py`); 1.1.6's had one, at 256. It is
+  the program's icon everywhere, Steam's Gaming Mode included: Steam keeps a
+  Flatpak shortcut's icon as a name, `io.github.jackandbeans.Snap64Recomp`, and
+  looks it up in the icon theme as the desktop does. On a Deck on Nov 8 the
+  desktop and Gaming Mode both showed it. Windows keeps 1.1.6's icon, and the
+  macOS and Android icons are unchanged. The Steam art's log line now names each
+  shortcut's icon: a name Steam looks up, or a file's path and whether the file
+  is there.
+* Autosave, a new row on Options > Game, Off by default, from TommyDahlin's
+  post in discussion #34 (Oct 30): he played every course, hunted the
+  signs, forgot to save and lost it all. The cartridge saves only when
+  asked: the lab's Save, the save before the credits and the Gallery's
+  print tray. The window's close button quits at once, so a session could
+  end with nothing saved. On, each time the lab opens, the port compares
+  the game's save record with what the last save wrote. When they differ,
+  it runs the game's own save routine, the one the lab's Save calls, with
+  no text, no pause and no music fade. After a new game started over an
+  old save, it waits for the first save made by hand, so the old save is
+  not written over unasked. A record the game's copy check has marked is
+  left alone. Off, nothing the game can see changes; the log says when the
+  lab opened with anything unsaved. Checked on the suite's eval tape, from
+  a copy of its save: with Autosave on, the lab saved once after Oak's
+  check, the save's Report went from no entries to five, and the game's
+  checksum still matched; with it off, the save stayed byte-identical. The
+  release checks now do the same (`autosave`, and `score` for off). On
+  Android's emulator, on Nov 5, the file behaved the same way: saved once
+  with its checksum right and the old file kept as `.bak`, or untouched with
+  the row off. The tape falls out of step there before Oak's check, so a test
+  switch (`SNAP_AUTOSAVE_TEST`) made the change the lab found. JackandBeans
+  looked at the row on Nov 5 and it looks good; the save itself has not yet
+  been tried by hand.
+* The pages from anywhere could freeze the game. While they are up, the port
+  holds both music players: their handler is skipped, so each song stands
+  where it was. A held player takes no events, but the game went on posting
+  to it: a stop every frame while a song was stopping, a volume every frame
+  while a fade ran (the game's fades last 30 to 240 frames). Its queue has
+  64 places. When it filled, the player's own heartbeat event was lost at
+  the release, and the sound library's handler looped on the empty queue at
+  the audio thread's priority, above the game's: the picture stopped. The
+  hold now ends a running fade at its target and waits, a second at most,
+  for a player that is stopping or starting. Found on a test build, where a
+  song was stopped just before the hold: runs froze there, the stall
+  report's stacks named the loop, and with this change the same run went
+  through. No player has reported it. That a fade can do the same on a
+  released build is read from the code, not seen.
+* The album's comment grid takes the keyboard and the mouse, as the name
+  card does (JackandBeans, Oct 28). Typing on an enlarged photo's comment
+  did nothing, and in fullscreen the pointer hid there: the grid is the
+  album's own code, not the card's, and the port had not reached it, so it
+  neither took the keys nor claimed the mouse. Now a letter, a digit or
+  one of the grid's marks is entered as if the cursor had been moved onto
+  it and A pressed, Space is a space, Backspace takes a letter back and
+  Enter is End; the arrow keys move on the grid. The pointer picks a
+  letter, a click enters it, the right button takes one back and the
+  wheel moves up and down the rows. On the enlarged photo, a click on the
+  header's arrows now shows the previous or the next photo; it did
+  nothing. The photo's Check page still takes no pointer: a click anywhere
+  closes it, as a press does. Checked with no window: the album's code
+  compiled over a fake memory with the grid's bytes from the ROM, 577
+  checks (every character the grid has lands on its cell, those it lacks
+  do nothing, the cells under the pointer, the arrows, a full comment).
+  JackandBeans tried it in the game on Oct 28 and it worked.
+* The mouse on the menus, from fizzlepicklepop's post in discussion #32
+  (Oct 23). JackandBeans tried the clicks in the game on Oct 28 and they
+  worked: at Oak's pick a click on the hidden pointer only brought it back,
+  and a click on an answer's words answered. How the rest was checked is
+  the last point.
+  - In fullscreen the pointer hid three seconds after the mouse last
+    moved, and a second and a half after the last screen that took the
+    mouse. Oak's talk takes no mouse, so the pointer was gone while he
+    reviewed the photos. A click still counted where the unseen pointer
+    stood: at his pick between the Report's photo and the new one, it kept
+    the worse photo. Now the pointer stays while the mouse is the hand in
+    use, that is, moved, clicked or turned after the last key or pad
+    press. It no longer hides for sitting still, and it stays through
+    Oak's talk in the lab and at his checks. A key or pad press brings
+    back the old rule, after the pointer's flash. A Steam Deck with its
+    own controls attached keeps the old rule.
+  - On a screen that takes the mouse, a click on the hidden pointer now
+    only brings it back, so it chooses nothing unseen. On Oak's text a
+    click is still A, and a finger's tap on Android still acts at once.
+  - On the game's questions, only the A, B or Z icon took a click, not
+    the words after it. Now each answer's target runs from its icon to its
+    last letter, measured from the text box's own pixels, and the
+    underline spans it. Where those pixels cannot be read, the icon alone
+    stays the target. The underline is now the game's own highlight
+    yellow. It was the Options pages' orange, which stood out too little
+    on the question boxes: 2.3 to 1 against the camera check's red, 1.9 to
+    1 against the lab's gray-green, measured on screenshots. The yellow is
+    5.3 and 4.4 to 1.
+  - Mouse Speed stepped by 25 percent; for fizzlepicklepop 100 was a bit
+    too fast and 75 a bit too slow. Mouse Speed, Gyro Speed and the [ ]
+    keys now step by five from 5 to 200, then 250, 300 and 400 (25 was
+    still a bit fast in JackandBeans's own try). A speed set in the
+    settings file between two steps now stays until its own row is
+    changed; any edit on the page used to round it to a step. In a course,
+    [ and ] now show the new speed, "Mouse Speed < 85 >" in the Controls
+    page's own letters on the gray panel a mod's notice has (Island Skies'
+    Live time), at the top of the picture: it fades in, stays while
+    the keys are pressed, and fades out two seconds after the last press.
+    Before, it went only to the log. Held on the Controls page, Left or Right on Mouse
+    Speed and Gyro Speed now goes three steps at the page's pace and then
+    one every tenth of a second, so 100 to 400 takes about 3.5 seconds
+    instead of 9.5.
+  - A new Controls row after Pointer, Pointer Shows: Auto (the default) is
+    the rule above, and Always keeps the pointer on every screen that takes
+    the mouse, whatever was pressed last; it still goes for a ride or a
+    cutscene. JackandBeans tried it in the game on Oct 28 and it works as
+    intended.
+  - Checked with no window: both builds; a test that prints the game's
+    five questions in the cartridge's own font, the way the game's printer
+    does, and runs the patch's code on them (292 checks: each target ends
+    at the answer's last letter, a click on the words presses that answer
+    and a click past them nothing, and the underline leaves the letters'
+    own pixels and is undone exactly); all 43 speed steps show their own
+    number; `tools/check_menu_ids.py`.
+* Android has run on a real handheld. Rhys Wittingslow played 1.1.6 on his
+  AYN Odin 3 Pro and wrote on Oct 24: the game ran smoothly, the sound was
+  fine, he finished the first course's first run, and every photo got its
+  points and showed up with Oak. Z was mapped to the left shoulder button
+  (L1) on its own, and the inverted aim he had asked for was there. He also
+  found the lost question below.
+* Android: the first start's question about the game folder could be lost
+  for good. Rhys Wittingslow, on his AYN Odin 3 Pro, tapped beside it. It
+  closed, the game started in the app's own folder
+  (`Android/data/io.github.jackandbeans.snap64recomp/files`), and no later
+  start asked again, so he could not find the game's files and
+  reinstalled. The cause: the app marked the question as asked before it
+  showed it, and a tap beside it counted as "Not now". Now only an answer
+  closes it. A tap beside it does nothing, Back closes the app, and the
+  next start asks again; so does "Not now". A new "Don't ask again" keeps
+  the app's own folder. Every start in the app's own folder shows a short
+  message naming it. A player 1.1.6 left there is asked again. The first
+  start in Internal storage > Snap64 after starts in the app's own folder
+  copies that folder's files across (saves, photos, settings, the ROM),
+  never replacing a file Snap64 already has. `tools/android/paths_check.py`
+  checks each of these on the emulator: the released 1.1.6 APK fails the
+  first two (the tap beside it, the next start), and this build passes all
+  eleven paths.
+* Android: the touch controls have their own rows on Options > Controls,
+  after Pointer: Touch Controls (Auto, Always, Never), Touch Size (50% to
+  150%), Touch Opacity (20% to 100%), Left-Handed, Idle Fade and Move
+  Buttons. 1.1.6 had only the settings file, which a phone player cannot
+  easily edit. Left-Handed puts R, Z, A and B on the left and Start and the
+  C buttons on the right. Idle Fade dims the buttons after four seconds
+  without a press, until the next. Move Buttons shows every button over the
+  page to drag where the thumb wants it, with Reset and Done; nothing
+  reaches the game meanwhile. Never hides the buttons only while a pad is
+  attached: with nothing else to press, a phone could lock itself out of
+  its own Options. A swipe on a page scrolls it, since the rows are six on
+  screen of twenty-two, and a tap counts when the finger lifts, so a swipe
+  is no click; a swipe stops at the page's first or last row, where the
+  wheel wraps around. The rows show only on Android. Their words
+  are staged in memory of their own, so the menus' shared pool keeps its
+  room. Checked on the emulator: every row changed its setting and the
+  buttons, B undid the page's changes, the fade came at four seconds and
+  left at a press, and a dragged A was kept in the settings file. Not yet
+  tried by a hand on a real screen.
+* With Steam Input on for the game (a Steam shortcut, or Game Mode on a
+  Deck), the pad the game sees is Steam's virtual pad, laid out by Steam
+  already, though it carries the real pad's name and ids. Auto took an
+  N64-shaped pad there for the real one and laid it out a second time. It
+  now reads Steam's pad as a standard pad, as SDL tells it, and the log
+  says so; the Pad Preset still sets it by hand. Read from SDL's source;
+  not yet tried under Steam.
+* The Button Setup page names an N64-shaped pad's parts as that pad has
+  them: "C-Up" and the other C buttons, and "Stick", not "R Stick" and "L
+  Stick". The Switch Online N64 controller's B row no longer says "B or
+  X". Stick Swap on a pad with no right stick no longer leaves the aim
+  with nothing; the swap is skipped there and the log says so.
+* Every controller is read, not only the first one plugged in: the one
+  pressed last is the one in use, so a pad paired beside a Steam Deck's
+  own controls works without turning them off (not yet tried on a Deck).
+  The gyro and the motor follow the pad in use. A pad with a stick still
+  takes over from one without (a keyboard Android's emulator shows as a
+  pad) without waiting for a press.
+* The Pad Preset is kept for each controller, so setting an 8BitDo 64 to
+  N64 no longer changes an Xbox pad too, and its Auto says what it picked
+  for the pad in use ("Auto: N64" or "Auto: Standard"). `pad_presets` in
+  the settings file holds them; `pad_layout` stays the preset of a pad
+  never given one.
+* Save Photo, Fast Forward and Slow Motion are rows on the Button Setup
+  page, after the eighteen game inputs, so a pad that sends its C buttons
+  as the stick clicks (N64-style pads posing as an Xbox pad) can have
+  them, and an N64 pad with no stick click can have a photo button (one
+  another row has is cleared there first). No press does two jobs: the
+  page refuses a source another of these three has, and on these rows one
+  a game input has. The stick clicks are named L3 and R3. The keyboard's
+  P, Tab and Space keep their jobs as shipped.
+* The release checks press the controller's buttons on the built game, as
+  the Switch Online N64 controller and as an Xbox-style pad, and check
+  each press against the console. Before, the check only read the log,
+  which is how 1.1.5 shipped with that pad's R dead (issue #26).
+* The Snap Station check ended its last relaunch by the program's file name,
+  which also closed any game open from another folder. It now ends only the
+  game started from the suite's own folder. Tried on stand-in programs in
+  three folders, then in the Snap Station check of the 1.1.7 suite, which
+  passed.
+
 ## 1.1.6 -- 2026-10-23
 
 * Android, as a beta. Snap64 Recomp runs on Android 10 and newer as an

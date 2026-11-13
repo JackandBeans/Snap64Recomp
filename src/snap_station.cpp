@@ -53,6 +53,7 @@
 #include "stb/stb_image_write.h"
 
 #include "paths.h"
+#include "relaunch_window.h"
 #include "settings.h"
 
 // osViGetCurrentFramebuffer (ultramodern/src/events.cpp, declared in
@@ -461,8 +462,18 @@ bool relaunch_self(const char* why) {
     // is brought to disk first. Called from this detached thread; the main
     // thread's own join later finds nothing left to join.
     ultramodern::join_saving_thread();
+#if defined(__linux__)
+    // Inside gamescope the window outlives the image, so the game is never without
+    // one (relaunch_window.h).
+    const bool windowKept = relaunch_window_keep();
+#endif
     char* const argv[] = { exe, nullptr };
     execv(exe, argv);
+#if defined(__linux__)
+    if (windowKept) {
+        relaunch_window_keep_undo();
+    }
+#endif
     say("execv failed with errno %d; not relaunching (%s)", errno, why);
     return false;
 #else
@@ -884,7 +895,14 @@ void mods_open_folder(const std::string& utf8) {
 }
 
 void mods_restart_game() {
+#if defined(__linux__) || defined(__APPLE__)
+    // The runtime writes a mod's options on its own thread, a second after the
+    // last change (librecomp mods.cpp), and execv takes that thread with the old
+    // image: an option changed just before Restart never reached the disk.
+    schedule_relaunch("restart", "the Mods page's Restart row", 1500, false);
+#else
     schedule_relaunch("restart", "the Mods page's Restart row", 300, false);
+#endif
 }
 
 } // namespace snap

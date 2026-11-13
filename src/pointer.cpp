@@ -25,9 +25,10 @@
  * the pointer set in from the corner (its tip at the frame's center less
  * half the pointer, where the hotspot goes), JackandBeans's comic burst
  * over the whole pointer (make_flash.py), the pointer under the first two
- * and gone from the last two. In fullscreen the pointer hides three seconds
- * after the hand last moved or clicked (input.cpp); in the last four tenths
- * of that second the flash frames show, a tenth each, so the pointer goes
+ * and gone from the last two. In fullscreen the pointer hides by the rules
+ * input.cpp keeps (once a key or a pad is in use, three seconds after the
+ * hand last moved or clicked); in the last four tenths of a second before
+ * it hides the flash frames show, a tenth each, so the pointer goes
  * out in its own flash, and it comes back the same way in reverse, the
  * burst first and the pointer out of it. Without the file there is no
  * flash, and an appearance opens the lens instead.
@@ -41,8 +42,8 @@
  * events (pointer_click). Where the cursor cannot be made, the file is
  * absent, or the setting is off, the system's pointer stays. When it shows
  * and when it hides is unchanged (src/input.cpp): hidden while a course
- * runs and the mouse aims, shown on the menus, and in fullscreen only while
- * it moves.
+ * runs and the mouse aims, shown on the menus, and in fullscreen while the
+ * mouse is the hand in use.
  *
  * SNAP_POINTER_TEST=1 clicks the shutter by itself every second and a half,
  * plays the flash and a hidden spell once every six seconds, and prints

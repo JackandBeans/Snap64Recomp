@@ -491,7 +491,10 @@ files:
   at a time is a `flock` on `snap64.lock` in the data directory. The Snap
   Station's relaunch `execv`s `/proc/self/exe` in place, keeping the pid
   so Steam keeps the game as running, and the sheet's folder opens with
-  `xdg-open` (`src/main.cpp`, `src/snap_station.cpp`).
+  `xdg-open` (`src/main.cpp`, `src/snap_station.cpp`). Inside gamescope the X
+  connection stays open across that `execv`, so the game is never without a
+  window, and the new image closes it once the game has run for a moment
+  (`src/relaunch_window.h`).
 * The data directory is the executable's when it can be written, else
   `$XDG_CONFIG_HOME/Snap64Recomp` (`~/.config/Snap64Recomp`);
   `SNAP_DATA_DIR` names one outright on every platform (`src/paths.cpp`,
@@ -1149,6 +1152,15 @@ on the day named.
   and holds a phone to the PC's 500. The Android-only paths passed 5 of 5
   on the same APK from a fresh install, and the unsigned release APK
   passed the package check, 14 of 14.
+
+* Google's emulator, 2026-11-05, the 1.1.7 tree (the debug APK of both
+  ABIs): `tools/android_check.py`, every stage, 114 of 114 in 1344 seconds,
+  and the Android-only paths 11 of 11 on the same APK. The autosave stage is
+  new: with the Autosave row On, the game's own save ran as the lab opened,
+  the file changed with its checksum right, and the old file was kept as
+  `.bak`; Off, the file stayed byte for byte. The eval tape falls out of step
+  on the emulator before Oak's check (12 of its 20 photos in this run), so
+  `SNAP_AUTOSAVE_TEST` makes the change the lab finds.
 
 Not run anywhere yet: a real pad, wired or Bluetooth; the Button Setup
 page's capture of a press on Android (its code is shared with the PC);

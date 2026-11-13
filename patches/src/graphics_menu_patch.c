@@ -68,6 +68,7 @@ static s32 snap_nav_dir_v = 0;
 static s32 snap_nav_dir_h = 0;
 static s32 snap_nav_repeat_v = 0;
 static s32 snap_nav_repeat_h = 0;
+static s32 snap_ctl_hold_steps = 0;   /* the Controls page: repeats since Left or Right went down */
 /* The CONTROLS page reopens on this row when the BUTTON SETUP page closes (its
  * Button Setup row opened it), and the two hand the hidden Option list to each
  * other -- the count of PAGE_HIDDEN entries still hidden -- so the list
@@ -215,6 +216,17 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *   +0x5F4 u32  host-owned: the ticks a mod's notice has left to show (+0xE0 and +0xE4 are the fine slides', rect_tags.cpp)
  *               (snap64_notice), counted down by Icons_UpdateDefault
  *   +0x5FC u32  host-owned: the notices sent, so a new one replaces the old
+ *   +0x680 u8   TOUCH_FIELD 0..4, the CONTROLS page's touch rows on Android
+ *               (Touch Controls, Touch Size, Touch Opacity, Left-Handed,
+ *               Idle Fade); +0x686 TOUCH_ROWS_ON, host-owned: the page has
+ *               them; +0x687 TOUCH_MOVE_REQ, the page's: Move Buttons presses
+ *   +0x688 u8   PTR_SHOWS, the Pointer Shows row (0 Auto, 1 Always)
+ *   +0x689 u8   WHEEL_SWIPE, host-owned: the wheel steps are a finger's
+ *               swipe (Android); a page does not wrap its rows for them
+ *   +0x6B0 u32  MBOX_PAGES_DL_BASE, the patch's own: the pages' own display
+ *               lists (snap_pages_dl), +0x6B4 their size in bytes, +0x6B8
+ *               the strip pool, +0x6BC its size; read by the host, which
+ *               draws the pages' strips into those lists (src/rect_tags.cpp)
  *   +0x4E  u8   SKY_KEEP_DRUM, host-owned: 1 keeps every course's sky as
  *               the cartridge draws it (SNAP_SKY_DRUM=original); read by
  *               sky_patch.c
@@ -245,12 +257,13 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *   +0x9C  u8   BIND_CLEAR, host-owned, taken by the BUTTON SETUP page: 1
  *               when Delete or Backspace was pressed there (it clears the
  *               row, as Z does); the page sets it back to 0
- *   +0x9D  u8   TYPE_CLAIM, raised by the photographer card every frame
- *               (mouse_patch.inc), lowered by the host each reading: while
- *               it is up, the keys that type are the card's
+ *   +0x9D  u8   TYPE_CLAIM, raised every frame by the photographer card
+ *               (mouse_patch.inc) and by the port for the album's comment
+ *               grid (src/menu_mouse.cpp), lowered by the host each
+ *               reading: while it is up, the keys that type are the grid's
  *   +0x9E  u8   TYPE_CHAR, host-owned: the next character typed (ASCII,
- *               0xE9 e acute, 0x08 Backspace, 0x0D Enter); the card sets it
- *               back to 0 when it takes it
+ *               0xE9 e acute, 0x08 Backspace, 0x0D Enter); its taker sets
+ *               it back to 0 when it takes it
  *   +0x60  u32  CONTROLS sequence word
  *   +0x64  u8   CONTROLS fields 0..11, through +0x6F: mouse aim, the mouse
  *               speed's step, the zoom speed's step, the tilt, the gyro
@@ -278,6 +291,9 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *   +0xAC  u8   BIND_DEVICE, the page's: the device it shows
  *   +0xAD  u8   BIND_OPEN, the page's: 1 while it is open
  *   +0xAE  u8   BIND_PAD, host-owned: 1 while a pad is attached
+ *   +0xAF  u8   PAD_AUTO, host-owned: what Auto makes of the pad in use,
+ *               whatever its preset (0 no pad, 1 Standard, 2 N64); the
+ *               CONTROLS page's Pad Preset row names it beside Auto
  *   +0xB0  u32  MODS_REQ, the MODS page's request to the host: the
  *               operation in bits 16..23 (1 turn the row's mod on or off),
  *               the row in bits 0..15
@@ -301,8 +317,8 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *               Written by that patch, cleared by the host at a scene's
  *               set-up, read by the host's sprite hook (src/rect_tags.cpp)
  *   +0x100      SCRATCH_ARRAYS, the page's pointer and snapshot arrays
- *               (the BUTTON SETUP page's own twenty-row arrays sit at +0x300
- *               and +0x350 inside it)
+ *               (the BUTTON SETUP page's own row arrays sit at +0x100 and
+ *               +0x300 inside it)
  *
  * The host never touches anything the map calls the patch's own. */
 #define SNAP_GFX_MAILBOX   0x80C00000
@@ -394,8 +410,8 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_GAME_HDR        361
 #define STR_GAME_ITEM       362
 #define STR_GAME_ITEM_HELP  363
-#define STR_GAME_LABEL      364  /* ..366: Save File, Snap Station, Exit Game */
-#define STR_GAME_DESC       367  /* ..368: the first two rows' help; Exit Game's is STR_EXIT_HELP */
+#define STR_GAME_LABEL      364  /* ..366: Save File, Restart Game, Exit Game */
+#define STR_GAME_DESC       367  /* ..368: Save File's and Restart Game's help; Exit Game's is STR_EXIT_HELP */
 #define STR_FILE1           369  /* ..372: File 1 .. File 4 */
 /* The CONTROLS and BUTTON SETUP pages' polish (menu_assets.cpp
  * BaseCount+343..+353): the Button Setup row's value column, worded by the
@@ -405,6 +421,27 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_OPEN            373
 #define STR_BIND_LEGEND     374
 #define STR_DZ0             375  /* ..383: 0% to 40% by five */
+/* The BUTTON SETUP page's rows for the port's own entries, after the
+ * eighteen inputs (menu_assets.cpp BaseCount+392..+403, after the Pad
+ * Preset's Auto values): Save Photo, Fast Forward and Slow Motion, their
+ * help lines, and their values, two banks of three composed live as the
+ * eighteen's are. */
+#define STR_BIND_INPUT_PORT 422  /* ..424 */
+#define STR_BIND_DESC_PORT  425  /* ..427 */
+#define STR_BIND_DYN_PORT   428  /* ..433 */
+/* The Mouse and Gyro Speed rows' steps of five that STR_CTL_SPEED's eleven
+ * do not carry: 30, 35, 40, 45, 55 .. 195 (menu_assets.cpp BaseCount+404..
+ * +431; snap_ctl_speed_str). */
+#define STR_SPEED5          434  /* ..461 */
+#define STR_SPEED_LOW       462  /* ..465: 5 10 15 20 (menu_assets.cpp BaseCount+432..+435) */
+/* The CONTROLS page's Pointer Shows row (menu_assets.cpp BaseCount+436,
+ * +437): its label and its help; its values are Auto and Always. */
+#define STR_PTRSHOW_LABEL   466
+#define STR_PTRSHOW_DESC    467
+/* The GAME page's Autosave row (menu_assets.cpp BaseCount+438, +439): its
+ * label and its help; its values are Off and On. */
+#define STR_AUTOSAVE_LABEL  468
+#define STR_AUTOSAVE_DESC   469
 /* "Snap Station" in the title menu's own face, for the title's fifth item
  * (the title section at the end of this file). Width 0 when the port could
  * not compose it, and then there is no fifth item. */
@@ -419,7 +456,7 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_SWITCH        101
 #define STR_NORMAL        102
 #define STR_REVERSE       103
-#define STR_CTL_SPEED     104  /* ..114: 25 50 75 100 125 150 175 200 250 300 400 */
+#define STR_CTL_SPEED     104  /* ..114: 25 50 75 100 125 150 175 200 250 300 400 (the steps between: STR_SPEED5) */
 #define STR_CTL_DESC      115  /* ..120: the six descriptions */
 /* The page's two gyro rows (menu_assets.cpp ids BaseCount+91..+95). */
 #define STR_GYRO_LABEL    121  /* ..122: Gyro Aim, Gyro Speed */
@@ -485,13 +522,27 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_PTR_SYSTEM       385
 #define STR_PTR_CAMERA       386
 #define STR_PTR_DESC         387
-/* The CONTROLS page's Pad Preset row: how the pad's shoulder buttons are
- * read (menu_assets.cpp ids BaseCount+358..+361). Its values are the
- * Graphics page's Auto, then Standard and N64. */
+/* The CONTROLS page's Pad Preset row: how the pad in use reads its
+ * shoulder buttons, kept for each pad by the host (menu_assets.cpp ids
+ * BaseCount+358..+361, and +390, +391 after the touch rows' strings). Its
+ * values are Auto, then Standard and N64; Auto names what it picked for the
+ * pad in use (PAD_AUTO), and is the Graphics page's plain Auto with no pad
+ * attached. */
 #define STR_PRESET_LABEL     388
 #define STR_PRESET_STANDARD  389
 #define STR_PRESET_N64       390
 #define STR_PRESET_DESC      391
+#define STR_PRESET_AUTO_STD  420
+#define STR_PRESET_AUTO_N64  421
+/* The CONTROLS page's touch rows, on Android (menu_assets.cpp ids
+ * BaseCount+362..+389, staged in a home of their own): the six labels,
+ * Always and Never (Auto is the Graphics page's), the percent steps 20% to
+ * 150% by ten, the six descriptions. */
+#define STR_TOUCH_LABEL      392  /* ..397: Touch Controls, Touch Size, Touch Opacity, Left-Handed, Idle Fade, Move Buttons */
+#define STR_ALWAYS           398
+#define STR_NEVER            399
+#define STR_PCT20            400  /* ..413 */
+#define STR_TOUCH_DESC       414  /* ..419 */
 /* The MODS page (snap_mods_page): the Option list's item and its help line,
  * the heading, the empty-folder line, and the strips the host composes
  * while the page is open -- two banks of six names and six help lines, one
@@ -570,12 +621,17 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define MBOX_MENU_REQ   (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x39))
 #define MBOX_PAGES_OPEN (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x3D))
 /* The room the screen's main display list buffer had left last frame (the
- * host measures it in gtlCheckBuffers, src/dl_budget.cpp). The strips are
- * sprites drawn into that buffer, the buffer is the cartridge's own size,
- * and an overrun is the game's panic: the pages stay shut where the room
- * is less than they may draw. */
+ * host measures it in gtlCheckBuffers, src/dl_budget.cpp). That buffer is
+ * the cartridge's own size and an overrun is the game's panic. The strips
+ * draw into the pages' own lists (snap_pages_dl, below) and the screen's
+ * list carries an eight-byte branch to each, some fifty at most: the pages
+ * stay shut where even that much is not left. */
 #define MBOX_DL_SPARE (*(volatile u32*) (SNAP_GFX_MAILBOX + 0xE8))
-#define SNAP_PAGES_DL_NEED 8192
+#define SNAP_PAGES_DL_NEED 1024
+#define MBOX_PAGES_DL_BASE    (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x6B0))
+#define MBOX_PAGES_DL_BYTES   (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x6B4))
+#define MBOX_STRIP_POOL       (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x6B8))
+#define MBOX_STRIP_POOL_BYTES (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x6BC))
 /* Written to 3 by the pause menu's handler every frame it runs and counted
  * down by the host: while it is above zero a ride is on and the key is
  * the pause code's; the title, its demo and a course's intro have the
@@ -653,7 +709,7 @@ typedef struct SnapMouse {
     u8 wdn;
     s8 target;     /* a page's row the pointer asked for, -1 for none */
     s8 pendRow;    /* a row clicked, acted on when the selection is there */
-    s8 pendSide;   /* where on it: -1, 1 the value's left or right half, 0 the label */
+    s8 pendSide;   /* where on it: -1, 1 the value's left or right arrow, 0 elsewhere */
     u8 clickOnSel; /* the clicked row was already the selected one */
     u8 noWalk;     /* the page is dragging: the pointer does not walk the selection */
 } SnapMouse;
@@ -745,9 +801,10 @@ static s32 snap_mouse_on_sprite(SObj* sobj, s32 margin) {
 #define SND_SEQ      (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x20))
 #define SND_FIELD(i) (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x28 + (i)))
 /* The GAME bank, in the scratch area past the page arrays (the mailbox's
- * first page is full): a sequence word and two value bytes, Save File
- * (0..3 for File 1..4) and Snap Station (0/1), both kept by the host for
- * the next start. */
+ * first page is full): a sequence word and three bytes. Save File (0..3
+ * for File 1..4), kept by the host for the next start; Restart Game's
+ * request, set by the page and cleared by the host; Autosave (0/1), kept
+ * by the host and read as the lab opens (src/autosave.cpp). */
 #define GAME_SEQ      (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x600))
 #define GAME_FIELD(i) (*(volatile u8*)  (SNAP_GFX_MAILBOX + 0x604 + (i)))
 
@@ -806,6 +863,9 @@ static s32 snap_arrow_dn_y = ARROW_DN_Y;
  * while snap_arrows_off is set, and a click on the bar above its thumb steps
  * up, below it down. */
 #define PAGE_BAR_X     275
+/* The wheel steps are a finger's swipe (host-owned, Android): a page does
+ * not wrap its rows for them, so a swipe stops at the first or last row. */
+#define WHEEL_SWIPE    (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x689))
 static s32 snap_arrows_off;
 static s32 snap_bar_shown;
 static s32 snap_bar_h;
@@ -822,6 +882,100 @@ static s32 snap_mouse_row(s32 top, s32 visible, s32 count) {
     return -1;
 }
 
+/* Whether column x of a staged 16-bit strip shows ink: a texel with any
+ * alpha, the low byte of an IA16 texel. base is the strip's first block of
+ * 64 columns; the blocks follow one another, h rows each. */
+static s32 snap_strip_col_ink(u32 base, s32 h, s32 x) {
+    volatile u16* col = (volatile u16*) (base + (u32) (((x >> 6) * h * 64 + (x & 63)) * 2));
+    s32 y;
+
+    for (y = 0; y < h; y++) {
+        if (col[y * 64] & 0xFF) {
+            return 1;
+        }
+    }
+    return 0;
+}
+
+/* Whether n columns of two strips of h rows show the same ink, texel for
+ * texel: a's from column ax on, b's from column bx on. */
+static s32 snap_strip_cols_same(u32 a, s32 ax, u32 b, s32 bx, s32 n, s32 h) {
+    s32 k, y;
+
+    for (k = 0; k < n; k++) {
+        volatile u16* ca = (volatile u16*) (a + (u32) ((((ax + k) >> 6) * h * 64 + ((ax + k) & 63)) * 2));
+        volatile u16* cb = (volatile u16*) (b + (u32) ((((bx + k) >> 6) * h * 64 + ((bx + k) & 63)) * 2));
+        for (y = 0; y < h; y++) {
+            if ((ca[y * 64] & 0xFF) != (cb[y * 64] & 0xFF)) {
+                return 0;
+            }
+        }
+    }
+    return 1;
+}
+
+/* Where a value's arrows are, read off its own pixels. A value that Left
+ * and Right change is drawn "< text >" with the game's own chevrons
+ * (menu_assets.cpp, compose): its first columns hold the very "<" of the
+ * Sound page's "< Stereo >", the pattern here, and its last ink the very
+ * ">". A value they cannot change has its chevrons blanked, and the other
+ * values in the column (a key's name, "Click") are words, so neither
+ * matches. Returns 1 with the strip's columns of the "<", [0, *l1), and of
+ * the ">", [*r0, *r1), else 0. */
+static s32 snap_value_arrows(Sprite* sp, s32* l1, s32* r0, s32* r1) {
+    u32 ref, base;
+    s32 h, refW, w, n, refLast, refStart, last, start;
+
+    if (((u32) STR_STEREO >= DIR_COUNT) || (sp->nbitmaps <= 0) || (sp->attr & SP_SCALE) ||
+        (sp->bmfmt != G_IM_FMT_IA) || (sp->bmsiz != G_IM_SIZ_16b)) {
+        return 0;
+    }
+    ref = DIR_ADDR(STR_STEREO);
+    h = DIR_H(STR_STEREO);
+    refW = DIR_W(STR_STEREO);
+    base = (u32) sp->bitmap[0].buf;
+    w = sp->nbitmaps * 64;
+    if (w > sp->width) {
+        w = sp->width;
+    }
+    if ((ref == 0) || (h <= 0) || (sp->height != h) || (refW <= 0)) {
+        return 0;
+    }
+    /* The "<": the pattern's columns to the end of its first ink. */
+    n = 0;
+    while ((n < refW) && !snap_strip_col_ink(ref, h, n)) {
+        n++;
+    }
+    while ((n < refW) && snap_strip_col_ink(ref, h, n)) {
+        n++;
+    }
+    if ((n >= refW) || (n >= w) || !snap_strip_cols_same(base, 0, ref, 0, n, h)) {
+        return 0;
+    }
+    /* The ">": the last run of ink, as long as the pattern's and the same. */
+    refLast = refW - 1;
+    while ((refLast > n) && !snap_strip_col_ink(ref, h, refLast)) {
+        refLast--;
+    }
+    refStart = refLast;
+    while ((refStart > n) && snap_strip_col_ink(ref, h, refStart - 1)) {
+        refStart--;
+    }
+    last = w - 1;
+    while ((last > n) && !snap_strip_col_ink(base, h, last)) {
+        last--;
+    }
+    start = last - (refLast - refStart);
+    if ((start <= n) || snap_strip_col_ink(base, h, start - 1) ||
+        !snap_strip_cols_same(base, start, ref, refStart, refLast - refStart + 1, h)) {
+        return 0;
+    }
+    *l1 = n;
+    *r0 = start;
+    *r1 = last + 1;
+    return 1;
+}
+
 /* The mouse on a page of rows (Graphics, Sound, Controls, Button Setup,
  * Mods, a mod's options): the rows stand PAGE_PITCH apart from PAGE_TOP_Y
  * between the rules. The pointer moving onto a row walks the selection
@@ -829,13 +983,16 @@ static s32 snap_mouse_row(s32 top, s32 visible, s32 count) {
  * on the last -- so every page keeps its own rules for a move (the help
  * line, a question withdrawn, the Mods window's bank). A click on a row
  * selects it and, once the selection is there, is handed back as the row
- * with the side of its value it landed on (-1 left half, 1 right half, 0
- * the label), for the page to turn into a change of value or into A. The
- * header's A OK and B Cancel are A and B, the right button is B, the wheel
- * and the scroll chevrons step. valueBase is the page's array of value
- * objects, indexed by row, or by window slot from valueSlot0 when that is
- * not negative. Returns the clicked row, or -1; m->clickOnSel then says
- * whether that row was already the selected one when it was clicked. */
+ * with where it landed (-1 the value's left arrow, 1 its right arrow, 0
+ * elsewhere), for the page to turn into a change of value or into A. Only
+ * the arrows step a value: a click between them selects the row and is not
+ * handed back. A value without arrows keeps the halves it always had, which
+ * its page refuses or reads as A. The header's A OK and B Cancel are A and
+ * B, the right button is B, the wheel and the scroll chevrons step.
+ * valueBase is the page's array of value objects, indexed by row, or by
+ * window slot from valueSlot0 when that is not negative. Returns the
+ * clicked row, or -1; m->clickOnSel then says whether that row was already
+ * the selected one when it was clicked. */
 static s32 snap_page_mouse(SnapMouse* m, s32 sel, s32 top, s32 visible, s32 count,
                            u32 valueBase, s32 valueSlot0,
                            s32* navUp, s32* navDown, s32* side, s32* a, s32* b) {
@@ -877,7 +1034,21 @@ static s32 snap_page_mouse(SnapMouse* m, s32 sel, s32 top, s32 visible, s32 coun
             value = (GObj*) *(volatile u32*) (valueBase + slot * 4);
             if ((value != NULL) && (value->data.sobj != NULL) && !(value->data.sobj->sprite.attr & SP_HIDDEN)) {
                 Sprite* sp = &value->data.sobj->sprite;
-                if (snap_mouse_in(sp->x - 6, snap_row_y(top, hit - top) - 2, sp->width + 12, PAGE_PITCH)) {
+                s32 rowY = snap_row_y(top, hit - top) - 2;
+                s32 l1, r0, r1;
+                if (snap_value_arrows(sp, &l1, &r0, &r1)) {
+                    /* Each arrow with two columns of the gap beside it and a
+                     * margin outside: four pixels on the left, where a long
+                     * label may end, six on the right. Between them the
+                     * click only selects the row. */
+                    if (snap_mouse_in(sp->x - 4, rowY, l1 + 6, PAGE_PITCH)) {
+                        m->pendSide = -1;
+                    } else if (snap_mouse_in(sp->x + r0 - 2, rowY, r1 - r0 + 8, PAGE_PITCH)) {
+                        m->pendSide = 1;
+                    } else if (snap_mouse_in(sp->x, rowY, r0, PAGE_PITCH)) {
+                        m->pendRow = -1;
+                    }
+                } else if (snap_mouse_in(sp->x - 6, rowY, sp->width + 12, PAGE_PITCH)) {
                     m->pendSide = snap_mouse_in(sp->x - 6, 0, 6 + sp->width / 2, 240) ? -1 : 1;
                 }
             }
@@ -894,13 +1065,19 @@ static s32 snap_page_mouse(SnapMouse* m, s32 sel, s32 top, s32 visible, s32 coun
     if (ev & SNAP_MOUSE_BACK) {
         *b = 1;
     }
+    /* The wheel wraps at either end as the stick does; a swipe's steps
+     * (WHEEL_SWIPE) stop at the first and the last row. */
     if (ev & SNAP_MOUSE_UP) {
-        *navUp = 1;
+        if (!WHEEL_SWIPE || (sel > 0)) {
+            *navUp = 1;
+        }
         m->target = -1;
         m->pendRow = -1;
     }
     if (ev & SNAP_MOUSE_DOWN) {
-        *navDown = 1;
+        if (!WHEEL_SWIPE || (sel < count - 1)) {
+            *navDown = 1;
+        }
         m->target = -1;
         m->pendRow = -1;
     }
@@ -1250,6 +1427,21 @@ typedef struct SnapStripSlot {
  * says the same thing but only prints it, because ld runs with
  * --noinhibit-exec and exits 0 on a failed assert under that flag. */
 static SnapStripSlot snap_strip_pool[SNAP_STRIP_SLOTS];
+/* The pages' own display lists. The sprite library writes a sprite's whole
+ * list -- a texture load and a rectangle for every 64-texel block -- where
+ * the screen's list stands, and that buffer is the cartridge's own size:
+ * 20,480 bytes on the title, where a mod's details page with its picture,
+ * then its options, drew some 10,500 bytes over a frame of 9,784 and left
+ * 192 (Nov 6 2026). So the host draws every strip of this pool into one of
+ * these instead, and the screen's list carries one branch to it, eight
+ * bytes (src/rect_tags.cpp, renDrawSprite). One list a graphics context,
+ * as the game keeps its own, begun again each frame the game draws; a strip
+ * that would not fit is left out and counted, never written past the end.
+ * The renderer reads display lists up here as it reads the sky's
+ * (sky_patch.c). 32 KB each: the most the pages have drawn in a frame is
+ * some 13,500 bytes. */
+#define SNAP_PAGES_DL_WORDS 4096
+static Gfx snap_pages_dl[2][SNAP_PAGES_DL_WORDS];
 /* 1 while a slot must not be handed out. snap_strip_take sets it; a sweep
  * recomputes the whole array from what is actually on screen. */
 static u8 snap_strip_used[SNAP_STRIP_SLOTS];
@@ -1409,6 +1601,11 @@ static Sprite* snap_build_sprite(s32 id, s32 x, s32 y, u8 fmt, u8 siz) {
     if ((DIR_MAGIC != 0x53474130) || ((u32) id >= DIR_COUNT)) {
         return NULL;
     }
+    /* Where the host finds the pool and the pages' own lists. */
+    MBOX_PAGES_DL_BASE = (u32) &snap_pages_dl[0][0];
+    MBOX_PAGES_DL_BYTES = sizeof(snap_pages_dl);
+    MBOX_STRIP_POOL = (u32) &snap_strip_pool[0];
+    MBOX_STRIP_POOL_BYTES = sizeof(snap_strip_pool);
     pixels = DIR_ADDR(id);
     w = DIR_W(id);
     h = DIR_H(id);
@@ -1546,6 +1743,7 @@ static void snap_tint(GObj* gobj, u8 r, u8 g, u8 b) {
  * by the host (src/menu_assets.cpp). */
 #define CTL_SEQ      (*(volatile u32*) (SNAP_GFX_MAILBOX + 0x60))
 #define CTL_FIELD(i) (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x64 + (i)))
+#define PAD_AUTO     (*(volatile u8*) (SNAP_GFX_MAILBOX + 0xAF))
 /* +0x20 belongs to SND_SEQ; a scratch slot briefly defined here collided
  * with it and was never used -- any write would have faked a sound-bank
  * sequence bump every tick and spammed apply+save. Left retired. */
@@ -2556,6 +2754,9 @@ extern u8* auSoundReverbAmt;
 extern ALInstrument* auSFXPlayer;
 extern ALCSPlayer* auBGMPlayers[2];
 extern f32 auBGMVolume[2];
+extern u8* auBGMPlayerStatus;   /* a player's machine: 0 idle, 1 stopping, 2 loading, 3 playing (sys/audio.c) */
+extern s32 auBGMVolTimer[2];    /* a fade's frames left; one volume post a frame while it runs */
+extern f32 auSongVolRate[2];    /* the fade's step a frame */
 s32 auStealSound(u8 priority);
 
 /* Replaces the sequence players' volume setter: the body the library
@@ -3022,18 +3223,44 @@ static void snap_sound_page(void) {
 
 
 /* The GAME page: the Option list's sixth item, in the SOUND page's dress,
- * three rows. Save File: which of four files the game plays, from the next
- * start (the host swaps the file through the runtime before the game reads
- * it, src/save_file.cpp). Exit Game: the row the list's own item was, asking
- * first as it did, with the host's device-worded question (STR_EXIT_CONFIRM).
- * The value lives in the GAME bank; the host keeps it in the file. Restart
- * Game, between them, is the Mods page's restart with the same ask, asked
- * for through the bank's second byte (the Mods bank answers only while its
- * page is open), so a change of file leads somewhere. The Snap Station row
- * 1.1.3 had here is gone: the title screen's own Snap Station item is that
- * switch (his word, Oct 11 2026). */
-#define GAME_ROWS 3
+ * four rows, the settings first and the acts last. Save File: which of four
+ * files the game plays, from the next start (the host swaps the file through
+ * the runtime before the game reads it, src/save_file.cpp). Autosave: Off or
+ * On; On, the host runs the game's own save as the lab opens with anything
+ * unsaved (src/autosave.cpp). Restart Game is the Mods page's restart with
+ * the same ask, asked for through the bank's second byte (the Mods bank
+ * answers only while its page is open), so a change of file leads
+ * somewhere. Exit Game: the row the list's own item was, asking first as it
+ * did, with the host's device-worded question (STR_EXIT_CONFIRM). The
+ * values live in the GAME bank; the host keeps them in the file. The Snap
+ * Station row 1.1.3 had here is gone: the title screen's own Snap Station
+ * item is that switch (his word, Oct 11 2026). */
+#define GAME_ROWS 4
+#define GAME_VALUE_ROWS 2   /* Save File and Autosave; Restart Game and Exit Game are acts */
 static void snap_exit_game(void);
+
+/* The bank byte a value row keeps: Save File the first, Autosave the third
+ * (the second is Restart Game's request). */
+static s32 snap_game_field_of(s32 row) {
+    return (row == 0) ? 0 : 2;
+}
+
+static s32 snap_game_label_str(s32 row) {
+    if (row == 1) {
+        return STR_AUTOSAVE_LABEL;
+    }
+    return STR_GAME_LABEL + ((row == 0) ? 0 : (row - 1));
+}
+
+static s32 snap_game_desc_str(s32 row) {
+    if (row == 1) {
+        return STR_AUTOSAVE_DESC;
+    }
+    if (row == 3) {
+        return STR_EXIT_HELP;
+    }
+    return STR_GAME_DESC + ((row == 0) ? 0 : 1);
+}
 
 static s32 snap_game_value_str(s32 row, s32 v) {
     if (row == 0) {
@@ -3059,19 +3286,19 @@ static void snap_game_page(void) {
     s32 sel, i, moved, hiddenCount, armed;
     s32 v;
     u8 pulseState, pulseCounter;
-    u8 entryFields[2];
+    u8 entryFields[3];
 
     if (DIR_MAGIC != 0x53474130) {
         return;
     }
 
-    for (i = 0; i < 2; i++) {
+    for (i = 0; i < 3; i++) {
         entryFields[i] = GAME_FIELD(i);
         if ((i == 0) && (entryFields[i] > 3)) {
             entryFields[i] = 0;
             GAME_FIELD(i) = 0;
         }
-        if ((i == 1) && (entryFields[i] > 1)) {
+        if ((i >= 1) && (entryFields[i] > 1)) {
             entryFields[i] = 0;
             GAME_FIELD(i) = 0;
         }
@@ -3129,16 +3356,16 @@ static void snap_game_page(void) {
             itemHelp->data.sobj->sprite.attr |= SP_HIDDEN;
         }
     }
-    descStrip = snap_make_strip(STR_GAME_DESC + 0, 49, 171);
+    descStrip = snap_make_strip(snap_game_desc_str(0), 49, 171);
 
     for (i = 0; i < GAME_ROWS; i++) {
-        PAGE_LABEL(i) = (u32) snap_make_strip(STR_GAME_LABEL + i, 50, PAGE_TOP_Y + i * PAGE_PITCH);
-        if (i < 1) {
-            v = GAME_FIELD(i);
+        PAGE_LABEL(i) = (u32) snap_make_strip(snap_game_label_str(i), 50, PAGE_TOP_Y + i * PAGE_PITCH);
+        if (i < GAME_VALUE_ROWS) {
+            v = GAME_FIELD(snap_game_field_of(i));
             PAGE_VALUE(i) = (u32) snap_make_strip(snap_game_value_str(i, v), 163, PAGE_TOP_Y + i * PAGE_PITCH);
             snap_tint((GObj*) PAGE_VALUE(i), SEL_R, SEL_G, SEL_B);
         } else {
-            PAGE_VALUE(i) = 0;      /* Exit Game has no value: A is its act */
+            PAGE_VALUE(i) = 0;      /* Restart Game and Exit Game have no value: A is their act */
         }
     }
 
@@ -3163,11 +3390,11 @@ static void snap_game_page(void) {
             if (armed) {
                 /* The question withdrawn, the page stays. */
                 armed = 0;
-                snap_swap_strip(descStrip, (sel == 2) ? STR_EXIT_HELP : (STR_GAME_DESC + sel));
+                snap_swap_strip(descStrip, snap_game_desc_str(sel));
                 ohWait(1);
                 continue;
             }
-            for (i = 0; i < 2; i++) {
+            for (i = 0; i < 3; i++) {
                 GAME_FIELD(i) = entryFields[i];
             }
             GAME_SEQ = GAME_SEQ + 1;
@@ -3176,7 +3403,7 @@ static void snap_game_page(void) {
 
         if ((gContInputPressedButtons & A_BUTTON) || clickA) {
             snap_ui_sound(SND_OK);
-            if (sel == 1) {
+            if (sel == 2) {
                 /* Restart Game: the Mods page's ask, then its request. */
                 if (!armed) {
                     armed = 1;
@@ -3187,11 +3414,11 @@ static void snap_game_page(void) {
                 GAME_FIELD(1) = 1;              /* the host restarts on its next tick */
                 GAME_SEQ = GAME_SEQ + 1;
                 armed = 0;
-                snap_swap_strip(descStrip, STR_GAME_DESC + 1);
+                snap_swap_strip(descStrip, snap_game_desc_str(2));
                 ohWait(1);
                 continue;
             }
-            if (sel == 2) {
+            if (sel == 3) {
                 if (!armed) {
                     /* Exit Game asks first: the help box becomes the question
                      * and the next A answers it. B, or moving off the row,
@@ -3287,17 +3514,17 @@ static void snap_game_page(void) {
             sel = navUp ? ((sel == 0) ? (GAME_ROWS - 1) : (sel - 1)) : ((sel + 1) % GAME_ROWS);
             pulseState = 0;
             armed = 0;      /* moving off the Exit Game row withdraws its question */
-            snap_swap_strip(descStrip, (sel == 2) ? STR_EXIT_HELP : (STR_GAME_DESC + sel));
+            snap_swap_strip(descStrip, snap_game_desc_str(sel));
             snap_ui_sound(SND_MOVE);
         }
-        else if ((navRight || navLeft) && (sel < 1)) {
-            v = GAME_FIELD(sel);
+        else if ((navRight || navLeft) && (sel < GAME_VALUE_ROWS)) {
+            v = GAME_FIELD(snap_game_field_of(sel));
             if (navRight) {
                 v = (v + 1) % snap_game_value_count(sel);
             } else {
                 v = (v == 0) ? (snap_game_value_count(sel) - 1) : (v - 1);
             }
-            GAME_FIELD(sel) = (u8) v;
+            GAME_FIELD(snap_game_field_of(sel)) = (u8) v;
             moved = 1;
         }
 
@@ -3384,8 +3611,13 @@ static void snap_game_page(void) {
  * and the CONTROLS bank were laid out in (the six mouse and gyro settings
  * first, Pad Sticks, Dead Zone, Fast Forward and Slow Motion last as the
  * seventh to tenth fields; Pointer, the last row, is the eleventh, and Pad
- * Preset the twelfth), and snap_ctl_setting maps a row to its setting. */
-#define CTL_ROWS 15
+ * Preset the twelfth), and snap_ctl_setting maps a row to its setting.
+ * Pointer Shows follows Pointer (1.1.7): Auto, the pointer as it always
+ * came and went in fullscreen, or Always, kept on every screen that takes
+ * the mouse whatever was pressed last (src/input.cpp); its byte is
+ * PTR_SHOWS, setting 14. On Android six more follow, for the touch
+ * controls (below). */
+#define CTL_ROWS (snap_ctl_rows())
 #define CTL_VISIBLE 6
 #define CTL_ROW_BUTTONS 2
 #define CTL_ROW_PRESET 3
@@ -3394,27 +3626,60 @@ static void snap_game_page(void) {
 #define CTL_ROW_FAST 6
 #define CTL_ROW_SLOW 7
 #define CTL_ROW_POINTER 14
+#define CTL_ROW_PTRSHOW 15
 #define CTL_SETTING_STICKS 8
 #define CTL_SETTING_DEADZONE 9
 #define CTL_SETTING_FAST 10
 #define CTL_SETTING_SLOW 11
 #define CTL_SETTING_POINTER 12
 #define CTL_SETTING_PRESET 13
+#define CTL_SETTING_PTRSHOW 14
+#define PTR_SHOWS (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x688))   /* 0 Auto, 1 Always */
+
+/* Android's touch controls (src/touch_controls.cpp): six rows after
+ * Pointer, which the host shows only there (TOUCH_ROWS_ON): Touch Controls
+ * (Auto, Always, Never), Touch Size (50 to 150 percent by ten), Touch
+ * Opacity (20 to 100 by ten), Left-Handed and Idle Fade (Off, On), and Move
+ * Buttons, whose A opens the overlay's own mode for dragging the buttons
+ * over the page, which stays (TOUCH_MOVE_REQ counts the presses). Their five
+ * value bytes are a bank past the page arrays, applied by the host on
+ * CTL_SEQ as the rest of the page's are. They are settings 15 to 19, and
+ * Move Buttons 20. */
+#define CTL_ROWS_PC 16
+#define CTL_ROWS_MAX 22
+#define CTL_ROW_TOUCH 16
+#define CTL_ROW_MOVE 21
+#define CTL_SETTING_TOUCH 15
+#define CTL_SETTING_MOVE 20
+#define TOUCH_FIELD(i)  (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x680 + (i)))
+#define TOUCH_ROWS_ON   (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x686))
+#define TOUCH_MOVE_REQ  (*(volatile u8*) (SNAP_GFX_MAILBOX + 0x687))
+
+static s32 snap_ctl_rows(void) {
+    return TOUCH_ROWS_ON ? CTL_ROWS_MAX : CTL_ROWS_PC;
+}
 
 /* A row's setting: 0 and 1 the game's own, 2..7 the six mouse and gyro
  * settings (CONTROLS bank fields 0..5), 8 Pad Sticks (field 6), 9 Dead
  * Zone (field 7), 10 Fast Forward (field 8), 11 Slow Motion (field 9),
- * 12 Pointer (field 10), 13 Pad Preset (field 11); -1 for the Button
- * Setup row, which has none. */
+ * 12 Pointer (field 10), 13 Pad Preset (field 11), 14 Pointer Shows
+ * (PTR_SHOWS), 15..19 the touch rows (TOUCH_FIELD 0..4), 20 Move Buttons;
+ * -1 for the Button Setup row, which has none. */
 static s32 snap_ctl_setting(s32 row) {
     if (row == CTL_ROW_BUTTONS) {
         return -1;
+    }
+    if (row >= CTL_ROW_TOUCH) {
+        return CTL_SETTING_TOUCH + (row - CTL_ROW_TOUCH);
     }
     if (row == CTL_ROW_PRESET) {
         return CTL_SETTING_PRESET;
     }
     if (row == CTL_ROW_POINTER) {
         return CTL_SETTING_POINTER;
+    }
+    if (row == CTL_ROW_PTRSHOW) {
+        return CTL_SETTING_PTRSHOW;
     }
     if (row == CTL_ROW_STICKS) {
         return CTL_SETTING_STICKS;
@@ -3436,14 +3701,19 @@ static s32 snap_ctl_value_count(s32 row) {
         return 1;
     }
     switch (snap_ctl_setting(row)) {
-        case 3:  return 11;   /* Mouse Speed */
+        case 3:  return 43;   /* Mouse Speed: 5 to 200 by five, 250, 300, 400 (settings.h kMouseSpeedSteps) */
         case 4:  return 4;    /* Zoom Speed */
         case 6:  return 3;    /* Gyro Aim: off, on, zoomed */
-        case 7:  return 11;   /* Gyro Speed */
+        case 7:  return 43;   /* Gyro Speed, the same steps */
         case CTL_SETTING_DEADZONE: return 9;   /* 0, 5, 10 .. 40 */
         case CTL_SETTING_FAST: return 4;       /* Off, 2x, 3x, 4x */
         case CTL_SETTING_SLOW: return 3;       /* Off, 2x, 4x slower */
         case CTL_SETTING_PRESET: return 3;     /* Auto, Standard, N64 */
+        case CTL_SETTING_PTRSHOW: return 2;    /* Auto, Always */
+        case CTL_SETTING_TOUCH: return 3;      /* Auto, Always, Never */
+        case CTL_SETTING_TOUCH + 1: return 11; /* Touch Size: 50% to 150% */
+        case CTL_SETTING_TOUCH + 2: return 9;  /* Touch Opacity: 20% to 100% */
+        case CTL_SETTING_MOVE: return 1;       /* Move Buttons opens a mode */
         default: return 2;    /* the on/off pairs, Pad Sticks among them */
     }
 }
@@ -3469,8 +3739,14 @@ static s32 snap_ctl_label_str(s32 row) {
     if (setting == CTL_SETTING_POINTER) {
         return STR_PTR_LABEL;
     }
+    if (setting == CTL_SETTING_PTRSHOW) {
+        return STR_PTRSHOW_LABEL;
+    }
     if (setting == CTL_SETTING_PRESET) {
         return STR_PRESET_LABEL;
+    }
+    if (setting >= CTL_SETTING_TOUCH) {
+        return STR_TOUCH_LABEL + (setting - CTL_SETTING_TOUCH);
     }
     return (setting < 6) ? (STR_CTL_LABEL + setting) : (STR_GYRO_LABEL + (setting - 6));
 }
@@ -3496,8 +3772,14 @@ static s32 snap_ctl_desc_str(s32 row) {
     if (setting == CTL_SETTING_POINTER) {
         return STR_PTR_DESC;
     }
+    if (setting == CTL_SETTING_PTRSHOW) {
+        return STR_PTRSHOW_DESC;
+    }
     if (setting == CTL_SETTING_PRESET) {
         return STR_PRESET_DESC;
+    }
+    if (setting >= CTL_SETTING_TOUCH) {
+        return STR_TOUCH_DESC + (setting - CTL_SETTING_TOUCH);
     }
     return (setting < 6) ? (STR_CTL_DESC + setting) : (STR_GYRO_DESC + (setting - 6));
 }
@@ -3548,6 +3830,29 @@ static void snap_ctl_layout(s32 top) {
     }
 }
 
+/* A speed step's string, v from 0 to 42 (settings.h kMouseSpeedSteps): 5
+ * to 20 are STR_SPEED_LOW's four; from 25, the multiples of 25 up to 200
+ * and the last three are STR_CTL_SPEED's eleven, the steps between them
+ * STR_SPEED5's, four in each run of five. */
+static s32 snap_ctl_speed_str(s32 v) {
+    if (v < 0) {
+        v = 0;
+    } else if (v > 42) {
+        v = 42;
+    }
+    if (v < 4) {
+        return STR_SPEED_LOW + v;              /* 5, 10, 15, 20 */
+    }
+    v -= 4;                                    /* from 25, as the list began until 1.1.7 */
+    if (v >= 36) {
+        return STR_CTL_SPEED + 8 + (v - 36);   /* 250, 300, 400 */
+    }
+    if ((v % 5) == 0) {
+        return STR_CTL_SPEED + v / 5;          /* 25, 50 .. 200 */
+    }
+    return STR_SPEED5 + v - (v + 4) / 5;
+}
+
 static s32 snap_ctl_value_str(s32 row, s32 v) {
     if (row == CTL_ROW_BUTTONS) {
         return STR_OPEN;   /* the row opens a page: its value column says what press does, in the device's words */
@@ -3555,18 +3860,29 @@ static s32 snap_ctl_value_str(s32 row, s32 v) {
     switch (snap_ctl_setting(row)) {
         case CTL_SETTING_STICKS: return v ? STR_ON : STR_OFF;
         case CTL_SETTING_POINTER: return v ? STR_PTR_CAMERA : STR_PTR_SYSTEM;
-        case CTL_SETTING_PRESET: return (v == 1) ? STR_PRESET_STANDARD : ((v == 2) ? STR_PRESET_N64 : STR_AUTO);
+        case CTL_SETTING_PTRSHOW: return v ? STR_ALWAYS : STR_AUTO;
+        case CTL_SETTING_PRESET:
+            if (v == 0) {
+                return (PAD_AUTO == 2) ? STR_PRESET_AUTO_N64 : ((PAD_AUTO == 1) ? STR_PRESET_AUTO_STD : STR_AUTO);
+            }
+            return (v == 1) ? STR_PRESET_STANDARD : STR_PRESET_N64;
         case CTL_SETTING_DEADZONE:
             return STR_DZ0 + ((v < 0) ? 0 : (v > 8) ? 8 : v);   /* 0% to 40% by five, its own strings */
         case CTL_SETTING_FAST: return (v == 0) ? STR_OFF : (STR_1X + v);   /* Off, then 2x, 3x, 4x */
         case CTL_SETTING_SLOW: return (v == 0) ? STR_OFF : ((v == 1) ? (STR_1X + 1) : (STR_1X + 3));   /* Off, 2x, 4x */
+        case CTL_SETTING_TOUCH: return (v == 1) ? STR_ALWAYS : ((v == 2) ? STR_NEVER : STR_AUTO);
+        case CTL_SETTING_TOUCH + 1: return STR_PCT20 + 3 + ((v < 0) ? 0 : (v > 10) ? 10 : v);   /* 50% to 150% */
+        case CTL_SETTING_TOUCH + 2: return STR_PCT20 + ((v < 0) ? 0 : (v > 8) ? 8 : v);         /* 20% to 100% */
+        case CTL_SETTING_TOUCH + 3: return v ? STR_ON : STR_OFF;   /* Left-Handed */
+        case CTL_SETTING_TOUCH + 4: return v ? STR_ON : STR_OFF;   /* Idle Fade */
+        case CTL_SETTING_MOVE: return STR_OPEN;   /* opens a mode, as the Button Setup row opens a page */
         case 0:  return v ? STR_SWITCH : STR_HOLD;
         case 1:  return v ? STR_REVERSE : STR_NORMAL;
         case 2:  return v ? STR_ON : STR_OFF;
-        case 3:  return STR_CTL_SPEED + v;
-        case 4:  return STR_CTL_SPEED + v;   /* 25, 50, 75, 100: the first four steps */
+        case 3:  return snap_ctl_speed_str(v);
+        case 4:  return STR_CTL_SPEED + v;   /* 25, 50, 75, 100: the first four of the eleven */
         case 6:  return (v == 0) ? STR_OFF : ((v == 1) ? STR_ON : STR_ZOOMED);
-        case 7:  return STR_CTL_SPEED + v;
+        case 7:  return snap_ctl_speed_str(v);
         default: return v ? STR_REVERSE : STR_NORMAL;
     }
 }
@@ -3655,12 +3971,21 @@ static void snap_ride_zoom_icon(s32 on) {
  * scissor the camera sets every frame, since the HUD's own update stops
  * while the HUD is hidden and a patch function cannot be a process (the
  * runtime's tables do not dispatch one). The cartridge's Icons_UpdateDefault
- * is empty; here it only notes that the HUD has been up this course. */
+ * is empty; here it only notes that the HUD has been up this course.
+ * With SNAP_NOTICE_READOUT in the ticks (the Mouse Speed readout,
+ * menu_speed_readout) the line fades in faster, over five frames, and out
+ * slower, over fifteen, and is
+ * dropped rather than kept waiting if the HUD has not been up yet. A line
+ * that comes while one is still shown goes on from the alpha it has, so a
+ * readout pressed again stays up rather than blinking. */
 #define MBOX_NOTICE_TICKS  (*(volatile u32*) (SCRATCH_ARRAYS + 0x4F4))   /* past the page arrays: +0xE0 is the fine slides' (rect_tags.cpp) */
+#define SNAP_NOTICE_READOUT 0x80000000
 #define MBOX_NOTICE_SERIAL (*(volatile u32*) (SCRATCH_ARRAYS + 0x4FC))
 #define SNAP_NOTICE_X 32      /* the strip is 256 wide: centered in the 320 */
 #define SNAP_NOTICE_Y 23      /* the film counter's row: its digits stand at 26..40, the line's text at 27..39 */
 #define SNAP_NOTICE_FADE 12   /* frames in, and frames out: four tenths of a second */
+#define SNAP_NOTICE_FADE_IN_READOUT 5   /* the readout's frames in: about a seventh of a second */
+#define SNAP_NOTICE_FADE_OUT_READOUT 15 /* and out: half a second */
 #define SNAP_NOTICE_LINK 0
 #define MBOX_NOTICE_STATE  (*(volatile u32*) (SCRATCH_ARRAYS + 0x4F8))   /* what the tick last did, for the log */
 static GObj* snap_notice_obj;
@@ -3699,7 +4024,7 @@ static s32 snap_notice_frame = -1;
  * for each region it reads), so the count steps once per drawn frame, on
  * the game's own counter. */
 static void snap_notice_tick(void) {
-    u32 ticks = MBOX_NOTICE_TICKS;
+    u32 ticks = MBOX_NOTICE_TICKS & ~SNAP_NOTICE_READOUT;
     u32 serial = MBOX_NOTICE_SERIAL;
 
     if (gtlDrawnFrameCounter == snap_notice_frame) {
@@ -3720,6 +4045,9 @@ static void snap_notice_tick(void) {
     if (snap_notice_obj == NULL) {
         if (!Icons_IsShown && ((Icons_MainObject == NULL) || (snap_notice_hud != Icons_MainObject))) {
             MBOX_NOTICE_STATE = 5;
+            if (MBOX_NOTICE_TICKS & SNAP_NOTICE_READOUT) {
+                MBOX_NOTICE_TICKS = 0;   /* a readout is for now, not for later */
+            }
             return;             /* before the HUD's first showing: the intro; the ticks wait */
         }
         snap_notice_obj = snap_make_strip(STR_NOTICE, SNAP_NOTICE_X, SNAP_NOTICE_Y);
@@ -3734,9 +4062,13 @@ static void snap_notice_tick(void) {
     } else if (serial != snap_notice_serial) {
         snap_notice_serial = serial;    /* a new line in the same strip: shown again */
         if (snap_notice_obj->data.sobj != NULL) {
-            snap_notice_obj->data.sobj->sprite.attr &= ~SP_HIDDEN;
+            Sprite* sp = &snap_notice_obj->data.sobj->sprite;
+            u32 len = (MBOX_NOTICE_TICKS & SNAP_NOTICE_READOUT) ? SNAP_NOTICE_FADE_IN_READOUT : SNAP_NOTICE_FADE;
+
+            /* Shown already: the fade in goes on from the alpha it has. */
+            snap_notice_age = (sp->attr & SP_HIDDEN) ? 0 : (sp->alpha * len + 254) / 255;
+            sp->attr &= ~SP_HIDDEN;
             MBOX_NOTICE_STATE = 2;
-            snap_notice_age = 0;
         } else {
             MBOX_NOTICE_STATE = 7;
         }
@@ -3745,13 +4077,18 @@ static void snap_notice_tick(void) {
      * color over the strip's texels, up over the first frames and down
      * over the last. */
     if (snap_notice_obj->data.sobj != NULL) {
-        u32 fadeIn = (snap_notice_age >= SNAP_NOTICE_FADE) ? 255 : snap_notice_age * 255 / SNAP_NOTICE_FADE;
-        u32 fadeOut = (ticks >= SNAP_NOTICE_FADE) ? 255 : ticks * 255 / SNAP_NOTICE_FADE;
+        u32 len = (MBOX_NOTICE_TICKS & SNAP_NOTICE_READOUT) ? SNAP_NOTICE_FADE_IN_READOUT : SNAP_NOTICE_FADE;
+        u32 fadeIn = (snap_notice_age >= len) ? 255 : snap_notice_age * 255 / len;
+        u32 outLen = (MBOX_NOTICE_TICKS & SNAP_NOTICE_READOUT) ? SNAP_NOTICE_FADE_OUT_READOUT : SNAP_NOTICE_FADE;
+        u32 fadeOut = (ticks >= outLen) ? 255 : ticks * 255 / outLen;
 
         snap_notice_obj->data.sobj->sprite.alpha = (u8) ((fadeIn < fadeOut) ? fadeIn : fadeOut);
     }
     snap_notice_age++;
-    MBOX_NOTICE_TICKS = ticks - 1;
+    /* The flag is read again rather than kept: the count runs on a ride's
+     * small stack, and a value kept across the strip's making costs a
+     * saved register. */
+    MBOX_NOTICE_TICKS = (ticks > 1) ? ((ticks - 1) | (MBOX_NOTICE_TICKS & SNAP_NOTICE_READOUT)) : 0;
 }
 
 void mainCameraSetScissor(Gfx** gfxPtr) {
@@ -3797,24 +4134,42 @@ static void snap_ctl_flag_set(s32 which, s32 v) {
 }
 
 static s32 snap_ctl_get(s32 row) {
-    if (row == CTL_ROW_BUTTONS) {
+    s32 setting;
+    if ((row == CTL_ROW_BUTTONS) || (row == CTL_ROW_MOVE)) {
         return 0;
     }
-    switch (snap_ctl_setting(row)) {
+    setting = snap_ctl_setting(row);
+    if (setting >= CTL_SETTING_TOUCH) {
+        return TOUCH_FIELD(setting - CTL_SETTING_TOUCH);
+    }
+    if (setting == CTL_SETTING_PTRSHOW) {
+        return PTR_SHOWS;
+    }
+    switch (setting) {
         case 0:  return snap_ctl_flag_get(0);
         case 1:  return snap_ctl_flag_get(1);
-        default: return CTL_FIELD(snap_ctl_setting(row) - 2);   /* Pad Sticks is field 6, Dead Zone 7, Fast Forward 8, Slow Motion 9, Pointer 10, Pad Preset 11 */
+        default: return CTL_FIELD(setting - 2);   /* Pad Sticks is field 6, Dead Zone 7, Fast Forward 8, Slow Motion 9, Pointer 10, Pad Preset 11 */
     }
 }
 
 static void snap_ctl_set(s32 row, s32 v) {
-    if (row == CTL_ROW_BUTTONS) {
+    s32 setting;
+    if ((row == CTL_ROW_BUTTONS) || (row == CTL_ROW_MOVE)) {
         return;
     }
-    switch (snap_ctl_setting(row)) {
+    setting = snap_ctl_setting(row);
+    if (setting >= CTL_SETTING_TOUCH) {
+        TOUCH_FIELD(setting - CTL_SETTING_TOUCH) = (u8) v;
+        return;
+    }
+    if (setting == CTL_SETTING_PTRSHOW) {
+        PTR_SHOWS = (u8) v;
+        return;
+    }
+    switch (setting) {
         case 0:  snap_ctl_flag_set(0, v); break;
         case 1:  snap_ctl_flag_set(1, v); break;
-        default: CTL_FIELD(snap_ctl_setting(row) - 2) = (u8) v; break;
+        default: CTL_FIELD(setting - 2) = (u8) v; break;
     }
 }
 
@@ -3908,7 +4263,8 @@ static s32 snap_controls_page(void) {
     s32 openButtons;
     u8 pulseState, pulseCounter, bobTick;
     u8 nudgeUp, nudgeDn;
-    u8 entry[CTL_ROWS];
+    u8 presetShown;
+    u8 entry[CTL_ROWS_MAX];
 
     if (DIR_MAGIC != 0x53474130) {
         return 0;
@@ -3949,6 +4305,7 @@ static s32 snap_controls_page(void) {
         PAGE_VALUE(i) = (u32) snap_make_strip(snap_ctl_value_str(i, entry[i]), 163, PAGE_TOP_Y + i * PAGE_PITCH);
         snap_tint((GObj*) PAGE_VALUE(i), SEL_R, SEL_G, SEL_B);
     }
+    presetShown = (u8) (entry[CTL_ROW_PRESET] | (PAD_AUTO << 4));
     PAGE_ARROW_UP = (u32) snap_make_strip_fmt(STR_SCROLL_UP, ARROW_X, ARROW_UP_Y, G_IM_FMT_RGBA);
     PAGE_ARROW_DN = (u32) snap_make_strip_fmt(STR_SCROLL_DN, ARROW_X, ARROW_DN_Y, G_IM_FMT_RGBA);
 
@@ -3998,6 +4355,14 @@ static s32 snap_controls_page(void) {
             break;
         }
 
+        if ((sel == CTL_ROW_MOVE) && ((gContInputPressedButtons & A_BUTTON) || clickA)) {
+            /* Move Buttons: the overlay's mode for dragging the buttons
+             * opens over the page, which stays (touch_controls.cpp). */
+            TOUCH_MOVE_REQ = TOUCH_MOVE_REQ + 1;
+            snap_ui_sound(SND_OK);
+            ohWait(1);
+            continue;
+        }
         if (((gContInputPressedButtons & A_BUTTON) || clickA) || snap_start_closes()) {
             snap_ui_sound(SND_OK);
             if ((sel == CTL_ROW_BUTTONS) && !snap_close_all) {
@@ -4045,6 +4410,7 @@ static s32 snap_controls_page(void) {
             if (dirH != snap_nav_dir_h) {
                 snap_nav_dir_h = dirH;
                 snap_nav_repeat_h = 20;
+                snap_ctl_hold_steps = 0;
                 if (dirH > 0) {
                     navRight = 1;
                 }
@@ -4053,7 +4419,12 @@ static s32 snap_controls_page(void) {
                 }
             }
             else if ((dirH != 0) && (--snap_nav_repeat_h <= 0)) {
-                snap_nav_repeat_h = 12;
+                /* Mouse Speed and Gyro Speed have 43 steps: held, they go
+                 * three steps at the page's pace, then one every three
+                 * frames, a tenth of a second. Every other row keeps 12. */
+                snap_ctl_hold_steps++;
+                snap_nav_repeat_h = (((snap_ctl_setting(sel) == 3) || (snap_ctl_setting(sel) == 7)) &&
+                                     (snap_ctl_hold_steps >= 3)) ? 3 : 12;
                 if (dirH > 0) {
                     navRight = 1;
                 }
@@ -4067,8 +4438,8 @@ static s32 snap_controls_page(void) {
             s32 cr, side;
             cr = snap_page_mouse(&mouse, sel, top, CTL_VISIBLE, CTL_ROWS, PAGE_VALUE_BASE, -1,
                                  &navUp, &navDown, &side, &mouseA, &mouseB);
-            if (cr == CTL_ROW_BUTTONS) {
-                mouseA = 1;   /* the Button Setup row opens its page, as A does */
+            if ((cr == CTL_ROW_BUTTONS) || (cr == CTL_ROW_MOVE)) {
+                mouseA = 1;   /* the Button Setup row opens its page, as A does; Move Buttons its mode */
             } else if (cr >= 0) {
                 if (side < 0) {
                     navLeft = 1;
@@ -4131,6 +4502,26 @@ static s32 snap_controls_page(void) {
             snap_swap_strip((GObj*) PAGE_VALUE(sel), snap_ctl_value_str(sel, snap_ctl_get(sel)));
             if (snap_ctl_setting(sel) >= 2) {
                 CTL_SEQ = CTL_SEQ + 1;
+            }
+            if (sel == CTL_ROW_PRESET) {
+                presetShown = (u8) (snap_ctl_get(CTL_ROW_PRESET) | (PAD_AUTO << 4));
+            }
+        }
+
+        {
+            /* The Pad Preset row follows the pad in use: the host writes
+             * that pad's preset into the row's byte when another pad is
+             * picked up, and Auto's pick beside it (PAD_AUTO). The new
+             * pad's preset becomes the row's value at entry, so B leaves
+             * that pad as it found it. */
+            u8 nowPreset = (u8) (snap_ctl_get(CTL_ROW_PRESET) | (PAD_AUTO << 4));
+            if (nowPreset != presetShown) {
+                if ((nowPreset & 0xF) != (presetShown & 0xF)) {
+                    entry[CTL_ROW_PRESET] = (u8) (nowPreset & 0xF);
+                }
+                presetShown = nowPreset;
+                snap_swap_strip((GObj*) PAGE_VALUE(CTL_ROW_PRESET),
+                                snap_ctl_value_str(CTL_ROW_PRESET, snap_ctl_get(CTL_ROW_PRESET)));
             }
         }
 
@@ -4234,11 +4625,13 @@ static s32 snap_controls_page(void) {
 /* =========================================================================
  * The BUTTON SETUP page: what presses each of the game's inputs.
  *
- * Twenty rows in the CONTROLS page's dress, six on screen: a Device row
- * (Keyboard, Mouse, Controller; Left and Right pick it), the eighteen
+ * Twenty-three rows in the CONTROLS page's dress, six on screen: a Device
+ * row (Keyboard, Mouse, Controller; Left and Right pick it), the eighteen
  * inputs -- the fourteen buttons and the four stick directions -- each
- * with a help line saying what it does in the game, and Restore Defaults
- * last. An input row's value is what presses it on the device shown,
+ * with a help line saying what it does in the game, the port's own Save
+ * Photo, Fast Forward and Slow Motion (1.1.7; before, their buttons were
+ * fixed, and a pad with C buttons on its stick clicks could not have
+ * them), and Restore Defaults last. An input row's value is what presses it on the device shown,
  * composed live by the host from the binding table (src/input.cpp,
  * input_bind_display) into a bank of staged ids; the host turns the bank
  * with BIND_GEN and the page swaps its strips to the bank named, never
@@ -4255,10 +4648,11 @@ static s32 snap_controls_page(void) {
  * debounced write; B leaves. There is no Cancel: what is on screen is what
  * is bound, as on the other recompilations' binding pages.
  * ========================================================================= */
-#define BIND_ROWS      20
+#define BIND_ROWS      23
 #define BIND_VISIBLE   6
-#define BIND_INPUTS    18
-/* Device, the eighteen inputs, then Restore Defaults last (1.0.7; 1.0.6
+#define BIND_INPUTS    21   /* the eighteen N64 inputs, then the port's three */
+#define BIND_N64       18
+/* Device, the inputs, then Restore Defaults last (1.0.7; 1.0.6
  * had it second, seen without scrolling). Last is where every list a
  * player knows keeps its reset, after what it resets; the row under the
  * device is the page's most looked-at slot and belongs to the first
@@ -4275,11 +4669,14 @@ static s32 snap_controls_page(void) {
 #define BIND_DEVICE  (*(volatile u8*)  (SNAP_GFX_MAILBOX + 0xAC))
 #define BIND_OPEN    (*(volatile u8*)  (SNAP_GFX_MAILBOX + 0xAD))
 #define BIND_PAD     (*(volatile u8*)  (SNAP_GFX_MAILBOX + 0xAE))
-/* Twenty rows need arrays of their own: the shared PAGE_LABEL and
- * PAGE_VALUE slots hold sixteen. Past PAGE_ENTRY (+0x1C8..+0x1D7), in the
- * scratch block nothing else uses. */
-#define BIND_LABEL(i) (*(volatile u32*) (SCRATCH_ARRAYS + 0x200 + (i) * 4))   /* GObj*, 20 */
-#define BIND_VALUE(i) (*(volatile u32*) (SCRATCH_ARRAYS + 0x250 + (i) * 4))   /* GObj*, 20 */
+/* Twenty-three rows need arrays of their own: the shared PAGE_LABEL and
+ * PAGE_VALUE slots hold sixteen. In the scratch block nothing else uses:
+ * the labels past PAGE_ENTRY (+0x1C8..+0x1D7), and the values, moved off
+ * +0x250 when the rows passed twenty (the labels now run to +0x25B), at the
+ * block's start, below PAGE_HIDDEN at +0x80. */
+#define BIND_VALUE_BASE (SCRATCH_ARRAYS + 0x000)                              /* the mouse indexes it by row */
+#define BIND_LABEL(i) (*(volatile u32*) (SCRATCH_ARRAYS + 0x200 + (i) * 4))   /* GObj*, 23 */
+#define BIND_VALUE(i) (*(volatile u32*) (BIND_VALUE_BASE + (i) * 4))          /* GObj*, 23 */
 #define BIND_HINT(i)  (*(volatile u32*) (SCRATCH_ARRAYS + 0x2A0 + (i) * 4))   /* SObj*, 4: the header's hints */
 /* The host's answers (BIND_ACK bits 24..31). */
 #define BIND_DONE      1
@@ -4295,6 +4692,9 @@ static s32 snap_bind_label_str(s32 row) {
     if (row == BIND_ROW_RESET) {
         return STR_BIND_RESET;
     }
+    if (BIND_INPUT(row) >= BIND_N64) {
+        return STR_BIND_INPUT_PORT + (BIND_INPUT(row) - BIND_N64);
+    }
     return STR_BIND_INPUT + BIND_INPUT(row);
 }
 
@@ -4305,7 +4705,10 @@ static s32 snap_bind_value_str(s32 row, s32 device, u32 gen) {
     if (row == BIND_ROW_RESET) {
         return -1;   /* no value; its help line says what A does */
     }
-    return STR_BIND_DYN + ((s32) (gen & 1)) * BIND_INPUTS + BIND_INPUT(row);
+    if (BIND_INPUT(row) >= BIND_N64) {
+        return STR_BIND_DYN_PORT + ((s32) (gen & 1)) * (BIND_INPUTS - BIND_N64) + (BIND_INPUT(row) - BIND_N64);
+    }
+    return STR_BIND_DYN + ((s32) (gen & 1)) * BIND_N64 + BIND_INPUT(row);
 }
 
 /* Each input row's line says what that input does in the game. */
@@ -4315,6 +4718,9 @@ static s32 snap_bind_desc_str(s32 row) {
     }
     if (row == BIND_ROW_RESET) {
         return STR_BIND_DESC_RESET;
+    }
+    if (BIND_INPUT(row) >= BIND_N64) {
+        return STR_BIND_DESC_PORT + (BIND_INPUT(row) - BIND_N64);
     }
     return STR_BIND_DESC_INPUT + BIND_INPUT(row);
 }
@@ -4642,7 +5048,7 @@ static void snap_bind_page(void) {
 
         {
             s32 cr, side;
-            cr = snap_page_mouse(&mouse, sel, top, BIND_VISIBLE, BIND_ROWS, SCRATCH_ARRAYS + 0x250, -1,
+            cr = snap_page_mouse(&mouse, sel, top, BIND_VISIBLE, BIND_ROWS, BIND_VALUE_BASE, -1,
                                  &navUp, &navDown, &side, &mouseA, &mouseB);
             if (cr == 0) {
                 /* The Device row: its value steps, as Left and Right do. */
@@ -5255,7 +5661,7 @@ static void snap_mod_options_page(s32 modRow) {
     s32 sel, top, count, i, result;
     s32 navUp, navDown, navLeft, navRight;
     SnapMouse mouse;
-    s32 mouseA, mouseB, clickA, clickB;
+    s32 mouseA, mouseB, clickA, clickB, padA;
     u32 gen;
     u8 pulseState, pulseCounter, bobTick;
     u8 nudgeUp, nudgeDn;
@@ -5408,15 +5814,18 @@ static void snap_mod_options_page(s32 modRow) {
             continue;
         }
         /* A on a text option types a new one (the host answers OPT_EDITING);
-         * on any other option A keeps the changes and returns. */
-        if ((gContInputPressedButtons & A_BUTTON) && (count > 1) && (sel < count - 1)) {
+         * on any other option A keeps the changes and returns. The press is
+         * read once, before the question: the host answers on the next tick,
+         * and that tick publishes the presses again, without this one. */
+        padA = (gContInputPressedButtons & A_BUTTON) != 0;
+        if (padA && (count > 1) && (sel < count - 1)) {
             if (snap_bank_request(&OPT_REQ, &OPT_ACK, (10u << 16) | (u32) sel) == OPT_EDITING) {
                 snap_ui_sound(SND_OK);
                 ohWait(1);
                 continue;
             }
         }
-        if (((gContInputPressedButtons & A_BUTTON) || clickA) || snap_start_closes()) {
+        if ((padA || clickA) || snap_start_closes()) {
             snap_ui_sound(SND_OK);
             break;
         }
@@ -5424,7 +5833,7 @@ static void snap_mod_options_page(s32 modRow) {
         snap_nav_read(&navUp, &navDown, &navLeft, &navRight);
         {
             s32 cr, side;
-            cr = snap_page_mouse(&mouse, sel, top, OPT_SHOWN, count, SCRATCH_ARRAYS + 0x250, OPT_SLOT,
+            cr = snap_page_mouse(&mouse, sel, top, OPT_SHOWN, count, BIND_VALUE_BASE, OPT_SLOT,
                                  &navUp, &navDown, &side, &mouseA, &mouseB);
             if ((cr >= 0) && (count > 1) && (cr == count - 1)) {
                 mouseA = 1;   /* Restore Defaults */
@@ -6106,11 +6515,11 @@ static void snap_mods_page(void) {
         {
             s32 cr, side;
             mouse.noWalk = (u8) dragging;
-            cr = snap_page_mouse(&mouse, sel, top, MODS_VISIBLE, count, SCRATCH_ARRAYS + 0x250, 0,
+            cr = snap_page_mouse(&mouse, sel, top, MODS_VISIBLE, count, BIND_VALUE_BASE, 0,
                                  &navUp, &navDown, &side, &mouseA, &mouseB);
             if ((cr >= 0) && (cr < modCount)) {
                 if (side != 0) {
-                    clickToggle = 1;   /* a click on a mod's On or Off turns it, as Left and Right do */
+                    clickToggle = 1;   /* a click on an arrow of a mod's On or Off turns it, as Left and Right do */
                 } else if (MOUSE_HELD) {
                     /* Pressed on a mod's name: a drag along the load order,
                      * or, let go where it was, a click, which opens the

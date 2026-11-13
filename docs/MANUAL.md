@@ -187,32 +187,47 @@ Report, Oak's photo check, the Gallery, the name card, the question
 New Game asks over a saved game, and every question the game asks with
 an A line and a B line (Oak's "Shall I repeat this information?", the
 save question, the photo check's). Moving the
-pointer over an item or a photo selects it; on a question, the A or B
-icon under the pointer is underlined, and a click on the icon presses
-that button. On a photo screen showing one picture, the header's arrows
+pointer over an item or a photo selects it; on a question, the answer
+under the pointer, its A or B icon and the words after it, is underlined,
+and a click on it presses that button. On a photo screen showing one picture, the header's arrows
 and the wheel step to the previous and the next picture, and a click on
-the picture is A on it. A click chooses the item under the pointer, and
+the picture is A on it. On the album's enlarged photo the header's arrows
+step to the previous and the next photo too, and on its comment grid a
+click enters the letter under the pointer, the right button takes a
+letter back and the wheel moves up and down the rows. A click chooses the item under the pointer, and
 a click anywhere else does nothing. The right button goes back, as B
 does, and the wheel steps up and down. On an Options page, a click on a
-setting's value steps it: the left half back, the right half forward. The
+setting's left arrow steps it back, and a click on its right arrow steps it
+forward. A click between the arrows only selects the row. The
 header's A and B are buttons too: moving onto one sounds as a row does and
 underlines it in orange, and a click presses it. So are the arrows that
-scroll a long page. In fullscreen the pointer shows while you move it on
-a menu and hides again three seconds after the last move, click or
-turn of the wheel, or a second and a half after the last screen that
-took the mouse (it rides through the fades between menus and goes for a
-cutscene), going out in a flash and coming back in one; a course takes
-the mouse after that flash too. The pointer itself is the
+scroll a long page. In fullscreen the pointer shows on a menu while the
+mouse is the hand in use, that is, while you moved, clicked or turned it
+after the last key or pad button you pressed. Then it stays while you hold
+still, rides through the fades between menus and stays through Prof.
+Oak's talk in the lab and at his photo check; it goes a second and a half
+after the last screen that took the mouse, for a cutscene. Once you press
+a key or a pad button, it also hides three seconds after the mouse's last
+move, click or turn of the wheel. On a Steam Deck with its own controls
+attached, that is always the rule. The pointer goes out in a flash and
+comes back in one; a course takes the mouse after that flash too. On a
+menu, a click while the pointer is hidden only brings it back, so it never
+chooses what you could not see. The pointer itself is the
 port's own, an arrow carrying a camera lens: the lens's shutter closes
 and opens again on a click. The Controls page's Pointer row, Camera or
 System, picks the system's arrow instead (`custom_pointer` in the
-settings file is the same switch).
+settings file is the same switch). The Pointer Shows row below it picks
+when the pointer shows. Auto is the rule above. Always keeps it on every
+screen that takes the mouse, whatever you pressed last and however long it
+sits still; it still goes for a ride or a cutscene (`pointer_always` in
+the settings file).
 
-The keyboard types on the name card, where a new game's name is entered:
-a letter, a digit or one of the card's own marks is entered as if the
+The keyboard types on the name card, where a new game's name is entered,
+and on the album's comment grid, where an enlarged photo gets its words:
+a letter, a digit or one of the grid's own marks is entered as if the
 cursor had been moved onto it and A pressed, Space is a space, Backspace
 takes a letter back and Enter is End. The arrow keys move on the grid.
-While the card is up, only the keys that type are its own; Esc and the
+While a grid is up, only the keys that type are its own; Esc and the
 port's own keys keep their jobs.
 
 The port's help lines that name a button name the one in your hand:
@@ -257,7 +272,8 @@ with both off that check is the game's own. The pads whose gyro reaches
 the port are the ones SDL
 reads it from: DualSense, DualShock 4, Switch Pro and Joy-Cons, over USB
 or Bluetooth, and the Steam Deck's own controls when Steam's controller
-layer is not in between (see [STEAM-DECK.md](STEAM-DECK.md)); an Xbox pad has no
+layer is not in between; under that layer the port reads the Deck's sensor
+itself (see [STEAM-DECK.md](STEAM-DECK.md)). An Xbox pad has no
 gyro. On Android, with no such pad, the phone's own gyroscope is read
 instead ([ANDROID.md](ANDROID.md#gyro-aim)). The log says at start-up whether the pad it opened has one
 (`[SNAP-Input] Opened game controller: ... (gyro: yes)`), and once the gyro
@@ -277,15 +293,22 @@ Every keyboard, mouse and controller binding can be changed in the game.
 The Button Setup row of the Controls page (named as the game names such
 screens: "Z Button Setup") opens a page with a row for each of the game's
 inputs, each row named by its button and what it does ("Z Button: Zoom",
-"C-Up: Look Back", "A Button: Photo"), showing what presses it on the
+"C-Up: Look Back", "A Button: Photo"), then a row for each of the port's
+own three, Save Photo, Fast Forward and Slow Motion (since 1.1.7; before,
+their buttons could move only in the file), showing what presses it on the
 device picked at the top ("Device: Keyboard", Mouse or Controller; Left
 and Right switch), and the help line says more about what that input does
 in the game. A on a row makes the port listen: the next key, mouse button,
 wheel tick or pad button pressed on that device becomes the row's
 binding, in place of what the device had there (the other devices' stay).
 Esc leaves the row as it was, and so does waiting eight seconds; a key the
-port answers to itself (the function keys, P, the brackets, Home, End,
-Esc) and the pad's Back and Guide are refused. Delete clears the row on
+port answers to itself (the function keys, the brackets, Home, End,
+Esc) and the pad's Back and Guide are refused, and so is a key or button
+that Save Photo, Fast Forward or Slow Motion has, on any other row; on
+those three rows, one that a game input has is refused too, so no press
+does two things. To give a button to another row, clear it first where it
+is. The pad's stick clicks are named L3 and R3, since "R Stick" names the
+stick itself. Delete clears the row on
 that device, as Backspace (a Mac's delete key) and Z do, unless nothing
 else would press the input; with a mouse, point at the row and press
 Delete. Delete and Backspace clear only while no binding uses them. Restore Defaults, the
@@ -293,14 +316,19 @@ last row (Up from the top row wraps to it), asks for a second A and then
 puts the shipped bindings of the device shown back. What no table changes
 is named on the rows too:
 under Controller the stick that aims and the one that works the C
-buttons, under Mouse the motion that aims while Mouse Aim is on, and Esc
-beside Start on the keyboard. Every change is in force at once and saved.
+buttons (on a pad shaped like the N64's, its Stick and its C buttons by
+name: "C-Up" rather than "R Stick"), under Mouse the motion that aims
+while Mouse Aim is on, and Esc beside Start on the keyboard. On the Switch
+Online N64 controller a button that is one of its C buttons is not named on
+another row, so its B row says "B", not "B or X"; its Save Photo row says
+"Capture", and its Slow Motion row "None" until one is set, since it has no
+stick to press in. Every change is in force at once and saved.
 
 The same bindings are in the settings file, where a text editor changes
 them too. Its `keys` table names each input (`a`, `b`, `z`, `start`, `l`, `r`, `c_up`,
 `c_down`, `c_left`, `c_right`, `d_up`, `d_down`, `d_left`, `d_right`,
-`stick_up`, `stick_down`, `stick_left`, `stick_right`) and lists what
-presses it: SDL key names such as `"X"`, `"Left Shift"`, `"Return"`,
+`stick_up`, `stick_down`, `stick_left`, `stick_right`, and the port's own
+`photo`, `fast_forward` and `slow_motion`) and lists what presses it: SDL key names such as `"X"`, `"Left Shift"`, `"Return"`,
 `"Space"`, or the mouse names `"Mouse Left"`, `"Mouse Right"`,
 `"Mouse Middle"`, `"Mouse X1"`, `"Mouse X2"`, `"Wheel Up"`, `"Wheel Down"`,
 or a controller's, written as `"Pad "` and SDL's own name for the button or
@@ -326,10 +354,10 @@ the frames it would have stepped through anyway, with the same scores and the
 same saves; the picture shows the latest frame at the display's rate, with
 frame interpolation off for the duration, and the sound plays quicker and
 higher, as a tape does. Release the key and everything is back at once. The
-key is the `fast_forward` entry of the `keys` table, changed in the file like
-any other; it has no row on the Button Setup page, which refuses its sources
-as it refuses Back. On the Switch Online N64 controller the right trigger is
-C-down, so only the key works until the file names another button.
+key is the `fast_forward` entry of the `keys` table, and the Fast Forward row
+of the Button Setup page moves it (until 1.1.7 only the file could). On a
+pad shaped like the N64's it is the pad's ZR where it has one, the Switch
+Online N64 controller's included.
 
 ### Slow motion
 
@@ -340,14 +368,19 @@ half speed is an easier shot than the cartridge offered). The picture stays
 smooth: frame interpolation keeps running, each game frame stretched over the
 longer time it stands for. The sound plays slower and lower. The key is the
 `slow_motion` entry of the `keys` table, on the left hand on purpose, so the
-right thumb stays free for A; when both keys are down, slow motion wins.
+right thumb stays free for A, and the Slow Motion row of the Button Setup
+page moves it; when both keys are down, slow motion wins. The Switch Online
+N64 controller has no stick to press in, so on it slow motion has a button
+only once that row sets one.
 
 Any SDL game controller overrides the keyboard while attached: left stick is
 the control stick, A is A, B or X is B, the left shoulder button is Z, Start
 is Start, the D-pad is the D-pad, the triggers are L and R, and the right stick
 is the C buttons. **Stick Swap** on the Controls page swaps the two sticks,
 so the right one aims and the left works the C buttons (`pad_sticks_swapped`
-in the settings file), and **Dead Zone** is how far the aiming stick moves
+in the settings file); a pad whose mapping has no right stick, such as the
+Switch Online N64 controller through SDL's driver, keeps its one stick as
+the stick, and the log says so. **Dead Zone** is how far the aiming stick moves
 before the game sees it, 15 percent as shipped and up to 40 for a pad whose
 stick drifts at rest (`pad_deadzone`); it is radial, and the travel past it
 is rescaled so the first movement the game sees is the smallest. The Back button (Select, View or Share on most pads) is not
@@ -356,8 +389,12 @@ the keyboard, and the right stick pressed in saves the photo on screen, as
 P does (see "Photos"; until 1.0.9 that was the Back button), or on a pad with
 no right stick to press in, its Capture or Share button. The eight buttons -- A, B, Z, Start, the D-pad's four, L and R --
 are each a row of the Button Setup page and of the settings file's `keys`
-table and can be moved; the two sticks can only be swapped, and the Back
-button keeps its job.
+table and can be moved, and since 1.1.7 so can the photo's button, the fast
+forward's and the slow motion's (their rows are Save Photo, Fast Forward
+and Slow Motion): a pad that sends its C buttons as the stick clicks, as
+some N64-style pads do when they pose as an Xbox pad, can have them as C
+buttons once Save Photo and Slow Motion let go of the clicks. The two
+sticks can only be swapped, and the Back button keeps its job.
 
 ### Which controllers work
 
@@ -385,15 +422,30 @@ here). On those the right trigger, where the pad has one, is the fast
 forward, and a pad whose mapping has a right trigger but no right shoulder
 has its R read from the trigger (the Mayflash N64 Adapter 0079:1879 in the
 list). The Controls page's **Pad Preset** row sets the layout by hand, in
-force at once: Auto, as shipped, is the recognition above; Standard reads
-the left shoulder as Z and the triggers as L and R; N64 reads the shoulders
-as L and R and the left trigger as Z (`pad_layout` in the settings file).
+force at once: Auto, as shipped, is the recognition above, and the row
+names what it picked for the pad in use ("Auto: N64" or "Auto: Standard");
+Standard reads the left shoulder as Z and the triggers as L and R; N64
+reads the shoulders as L and R and the left trigger as Z. The preset is
+kept for each pad, by its ids, so giving one pad N64 leaves the others as
+they were: the row sets the pad in use's (`pad_presets` in the settings
+file), and with no pad attached it sets the one every pad not yet given
+its own starts from (`pad_layout`).
+With Steam Input on for the game (a Steam shortcut, or Game Mode on a
+Deck), the pad the game sees is Steam's own virtual pad, with Steam's
+layout for the real pad already applied, though SDL gives it the real
+pad's name and ids. Auto reads it as a standard pad, so Steam's layout is
+the one in force, and the log says so (`the pad is Steam's virtual pad`);
+the Pad Preset still sets it by hand.
 The D-pad walks every menu as the
 stick does, since the cartridge never reads it. `pad_enabled: false` in the
 settings file makes the port ignore every pad without unplugging one.
 
-The first pad SDL recognizes is the one used, and SDL uses only a pad it
-has a mapping for. Its own list holds a few thousand; for the rest the port
+Every pad SDL recognizes is opened, and the one pressed last is the one
+read: press a button on another pad, or push its stick or a trigger well
+over, and the game follows that pad from that press on, the press included
+(the log says `[SNAP-Input] now reading ...`). Until 1.1.7 the first pad
+opened was the only one read until it was unplugged. SDL uses only a pad
+it has a mapping for. Its own list holds a few thousand; for the rest the port
 ships `gamecontrollerdb.txt`, the community's list
 ([SDL_GameControllerDB](https://github.com/mdqinc/SDL_GameControllerDB)),
 beside the executable, and reads it at start-up, saying in the log how many
@@ -404,6 +456,25 @@ does nothing until it is taught: a newer copy of the file from that
 project, dropped over the shipped one, is the first thing to try; a single
 mapping string in SDL's `SDL_GAMECONTROLLERCONFIG` environment variable,
 which SDL itself documents, is the second.
+
+One pad that neither list maps on Windows is the clear red N64-style pad
+with the USB ids 0079:0006, sold with no brand name. Other pads share those
+ids with different layouts, so no list can map it by its ids alone. A player
+with that pad can teach it to SDL: close the game, add this line at the end
+of `gamecontrollerdb.txt` beside the executable, and start the game again.
+
+```
+03000000790000000600000000000000,Generic Chinese N64 USB Controller,a:b5,b:b4,start:b9,leftshoulder:b6,rightshoulder:b7,lefttrigger:b8,leftx:a0,lefty:a1,+rightx:b1,-rightx:b3,+righty:b2,-righty:b0,dpup:h0.1,dpright:h0.2,dpdown:h0.4,dpleft:h0.8,crc:8630,platform:Windows,
+```
+
+The name says N64, so Auto gives the pad the N64 layout, and the Pad Preset
+row shows "Auto: N64". Its L, R and Z are L, R and Z, and its C buttons are
+the C buttons. It has no Back button: Esc opens the Options, and so does the
+Options pill on the pause menu in a course. Fast forward, slow motion and
+saving a photo stay on Tab, Space and P. An update replaces
+`gamecontrollerdb.txt`, so the line has to be added again after updating.
+The line comes from MatyMeatBoy's capture of the pad (pull request 37). The
+pad has not been tried here.
 
 ## In-game pages
 
@@ -428,18 +499,22 @@ tilts the camera down when the stick is pushed up; Reverse tilts it up; both
 are kept in the save, as on the cartridge, not in `snapsettings.json`); then
 Button Setup, the row that opens the Button Setup page (its value column
 says what opens it, in the words of the device in hand: "Press X" on the
-keyboard as shipped, "Click" with the mouse, "Press A" on a pad); Stick
-Swap; Dead
+keyboard as shipped, "Click" with the mouse, "Press A" on a pad); Pad
+Preset (above); Stick Swap; Dead
 Zone; Fast Forward (Off, 2x, 3x or 4x: the speed the held key runs the game
 at); Slow Motion (Off, 2x or 4x slower, the same way); Mouse Aim, Mouse
-Speed (25 to 400 percent of the shipped speed), Zoom Speed (the share of
+Speed (percent of the shipped speed: 5 to 200 in steps of five, then 250,
+300 and 400), Zoom Speed (the share of
 that speed used while zoomed in), Camera Tilt (Normal/Reverse, for the mouse
 and the gyro alike), Gyro Aim (Off, On, or Zoomed for only while zoomed in)
-Gyro Speed (25 to 400 percent of natural) and Pointer (Camera, the port's
+Gyro Speed (percent of natural, in the same steps), Pointer (Camera, the port's
 own arrow with a lens, or System, the system's arrow, for the mouse pointer
-the menus show). Fourteen rows, six on screen; the page scrolls for the
-last eight, as the Graphics page does. Every change
-applies as it is made; B puts the page back as it was opened.
+the menus show) and Pointer Shows (Auto, or Always to keep the pointer on
+every screen that takes the mouse). Sixteen rows, six on screen; the page
+scrolls for the last ten, as the Graphics page does. Every change
+applies as it is made; B puts the page back as it was opened. On Android
+six more rows follow Pointer Shows, for the touch controls
+([ANDROID.md](ANDROID.md#touch-controls)).
 
 **From anywhere**: Esc on a keyboard, or Select (View, Back, Minus: the
 small left button) on a pad, opens the same list on any screen -- the
@@ -557,7 +632,7 @@ editing `mods.json`; Options > Mods turns them back on.
 
 Options > **Game**: the list's sixth row, under Mods, in the screen's own
 font and rhythm, and the fifth row of the list the pause menu opens in a
-course. Three rows. **Save File**: which of four save files the game
+course. Four rows. **Save File**: which of four save files the game
 plays, File 1 (the file the port always had) to File 4, each a file of
 its own under `saves/` that starts empty, so a family can share the
 program; it takes effect at the next start, since the game reads its
@@ -566,7 +641,15 @@ playing" for the one the game is playing, "File 2, empty" for one that has
 never been saved to, and the day it was last saved for the others ("File
 4, Oct 9", with the year when it is not this one); the help box names the
 file in play for the whole session. When another file than the first is
-in play, the title screen's bottom line says so ("Save 2"). **Restart
+in play, the title screen's bottom line says so ("Save 2"). **Autosave**:
+Off or On, Off by default. The cartridge saves only when asked, at the
+lab's Save. On, the game saves itself each time the lab opens with
+anything the last save does not hold: after Oak's check, and back from the
+Album, the Report or the title. It is the game's own save, the one the
+lab's Save makes, with no text and no pause. After a new game started over
+a saved one, it waits for the first save made by hand, so the old save is
+not written over unasked. Off, the game saves only when asked, as on the
+cartridge. **Restart
 Game**: restarts the program, as the Mods page's row does, so a chosen file
 is played at once; it asks first, and anything not saved at the lab is
 lost. **Exit Game**: A turns the
@@ -602,17 +685,19 @@ investigating the renderer and are not features.
 | F12 | *diagnostic* Mark the moment in the statistics log (needs `SNAP_STATS=1`) |
 | Home | *diagnostic* 2D rectangle interpolation on/off |
 | End | *diagnostic* Effect-sprite naming on/off |
-| [ / ] | Mouse Speed down / up, through the Controls page's steps |
-| P | Save the photo on screen as a PNG in `photos/` (see "Photos") |
+| [ / ] | Mouse Speed down / up, through the Controls page's steps; in a course the new speed fades in at the top of the picture, on a gray panel, and fades out two seconds after the last press |
+| P | Save the photo on screen as a PNG in `photos/` (see "Photos"); the `photo` entry of `keys`, or the Save Photo row of Button Setup, moves it |
 | Esc | Tap: the port's Options, on any screen (Esc, Select or Start closes them). Held a second and released: the quit question |
-| Tab (held) | Fast forward, at the Controls page's Fast Forward speed; the `fast_forward` entry of `keys` moves it, and names a pad button too (the right shoulder as shipped; ZR on a pad shaped like the N64's) |
-| Space (held) | Slow motion, at the Controls page's Slow Motion speed, Off as shipped; the `slow_motion` entry of `keys` moves it (the left stick pressed in, on a pad) |
+| Tab (held) | Fast forward, at the Controls page's Fast Forward speed; the `fast_forward` entry of `keys`, or the Fast Forward row of Button Setup, moves it, and names a pad button too (the right shoulder as shipped; ZR on a pad shaped like the N64's) |
+| Space (held) | Slow motion, at the Controls page's Slow Motion speed, Off as shipped; the `slow_motion` entry of `keys`, or the Slow Motion row of Button Setup, moves it (the left stick pressed in, on a pad) |
 
 ## Photos
 
 
 **P**, or the pad's **right stick pressed in** (its Capture or Share button, on a
-pad with no right stick to press in), saves the photo on screen as a PNG:
+pad with no right stick to press in), saves the photo on screen as a PNG
+(the Save Photo row of the Button Setup page moves either, or puts the
+photo on a mouse button):
 the photo at the game's own resolution, pixel for pixel, with no scaling, no
 frame and no text over it. Files go to `photos/` next to the executable, named
 `snap_YYYYMMDD_HHMMSS_<course>_NN.png` (the course is left out if the game's
@@ -702,6 +787,26 @@ been measured again under interpolation, so it is still unverified.
 Original, the Frame Rate row's first choice, is the default because it is
 the console's rate.
 
+### Anti-aliasing, Widescreen and photo scoring
+
+RT64 draws every frame twice: once for the picture, and once at the
+console's own resolution into memory, where the game reads it back. Since
+1.1.7 that second copy is drawn at one sample whatever the Anti-Aliasing
+row says, and the picture keeps its MSAA. Before, the samples reached the
+photo check: MSAA 8x moved its pixel counts at the edges of things and, on
+the Beach tape, the points of 14 photos of 21. The focus dot's tiles and
+the photos the game makes come from the same copy, so with Photo Detail off
+the album's photos are now as without MSAA (read from the code). On Nov 10
+the Beach tape gave the photo check the same bytes with MSAA 8x as without
+it, and the same points, on Direct3D 12 and on Vulkan.
+
+Widescreen widens what is drawn, not what a photo lists. Each frame, the
+cartridge decides which Pokémon a photo taken then may list, twelve at
+most, with a test made for the 4:3 picture. Since 1.1.7 that test stays the
+cartridge's in a wide window too; only the drawing takes the wider bound.
+Before, a wide window could list a Pokémon from the edges with no pixel in
+the photo.
+
 ## Settings file
 
 
@@ -715,8 +820,8 @@ the defaults below are that file's.
 | --- | --- | --- |
 | `fullscreen` | `false` | saved as set; the window opens windowed and goes fullscreen a moment later when the file says so (a window created fullscreen comes up with broken chrome), and the Snap Station's own relaunches return in the state the print started in |
 | `window_maximized` | `false` | the window was maximized when the port last saw it, and opens maximized; `SNAP_WINDOW=WxH` wins over it |
-| `widescreen` | `false` | RT64 Expand: a true wider field of view in a course, as wide as the window's own shape (16:9, 16:10, 21:9 or wider), not a stretch; the film counter sits against the picture's right edge and the R and Z icons slide out to it; the title, the lab and the other 4:3 screens sit in black bars. Pokémon and effect sprites at the edges are kept ([Known issues](KNOWN-ISSUES.md)) |
-| `msaa` | `0` | 0, 2, 4 or 8 |
+| `widescreen` | `false` | RT64 Expand: a true wider field of view in a course, as wide as the window's own shape (16:9, 16:10, 21:9 or wider), not a stretch; the film counter sits against the picture's right edge and the R and Z icons slide out to it; the title, the lab and the other 4:3 screens sit in black bars. Pokémon and effect sprites at the edges are kept ([Known issues](KNOWN-ISSUES.md)); a photo lists only the Pokémon the cartridge would ([photo scoring](#anti-aliasing-widescreen-and-photo-scoring)) |
+| `msaa` | `0` | 0, 2, 4 or 8: the picture's samples; the copy the game reads back is drawn at one ([photo scoring](#anti-aliasing-widescreen-and-photo-scoring)) |
 | `fps_mode` | `0` | 0 Original, 1 Display refresh, 2 Manual (`fps_manual_target`) |
 | `fps_manual_target` | `120` | the rate a number on the Frame Rate row holds; a value not on the row shows as the nearest of its eight and becomes it once the page is edited |
 | `stereo` | `true` | the game's own Stereo/Mono flag (`hq_sound` is read as a legacy name) |
@@ -729,22 +834,25 @@ the defaults below are that file's.
 | `photo_detail` | `false` | Photo Detail: Off draws Oak's photos and the album at native pixels as the console did; On serves them from the renderer's full-resolution render |
 | `jynx_vc` | `false` | Jynx Recolor, Jynx's face and hands: Off: the cartridge's black; On: the purple of the re-releases, matched to a published Virtual Console screenshot |
 | `save_file` | `1` | Save File on the Game page: 1 plays `saves/pokemonsnap.bin`, 2 to 4 play `saves/pokemonsnap-2.bin` and on, each its own file starting empty (the file appears when the game first saves); read at the next start |
+| `autosave` | `false` | Autosave on the Game page: On, the game's own save runs each time the lab opens with anything the last save does not hold; Off, the game saves only when asked, as the cartridge does |
 | `wide_hud` | `false` | Wide HUD: On puts the film counter against the wide picture's right edge and slides the R and Z icons out to it; Off leaves both at the 4:3 picture's edge, as the cartridge has them |
 | `interpolate_camera` | `true` | interpolate the view as well as objects (F4; no row on the Graphics page) |
 | `snap_station` | `false` | keep the Snap Station on port 4 from the title menu on, every start (see [SNAP-STATION.md](SNAP-STATION.md)) |
 | `pad_enabled` | `true` | `false` makes the port ignore every pad: none is opened, and the keyboard and mouse carry on |
-| `pad_layout` | `0` | how a pad's shoulders and triggers are read (Pad Preset): `0` Auto, by the pad's ids and then its name, `1` Standard, the Xbox-style layout the defaults describe, `2` N64, a pad shaped like the N64's (the Switch Online N64 controller), whose L, R and Z are L, R and Z |
+| `pad_layout` | `0` | how a pad's shoulders and triggers are read (Pad Preset) on a pad `pad_presets` has no entry for: `0` Auto, by the pad's ids and then its name, `1` Standard, the Xbox-style layout the defaults describe, `2` N64, a pad shaped like the N64's (the Switch Online N64 controller), whose L, R and Z are L, R and Z |
+| `pad_presets` | `{}` | each pad's own Pad Preset, by its vendor and product ids: `{"057E:2019": 2}`; Steam's virtual pad standing for a pad is that pad's ids and ` Steam` (`"057E:2019 Steam"`), since its buttons arrive laid out by Steam already |
 | `pad_sticks_swapped` | `false` | the right stick aims and the left works the C buttons (Stick Swap) |
 | `pad_deadzone` | `15` | the aiming stick's dead zone in percent of full travel, 0 to 40 in steps of five (Dead Zone) |
 | `fast_forward_speed` | `3` | the speed the held fast-forward key runs the game at: 1 Off, 2, 3 or 4 (Fast Forward) |
 | `slow_motion_speed` | `1` | how much slower the held slow-motion key runs the game: 1 Off, 2 half speed, 4 a quarter (Slow Motion) |
 | `mouse_aim` | `true` | the mouse aims while a course runs and the window has focus ("Controls"), but not during the title's attract demo, which only A or Start ends, as on the cartridge (a click is A); its buttons work whenever the window has focus, through `keys` |
 | `custom_pointer` | `true` | the pointer on the menus is the port's own, an arrow carrying a camera lens whose shutter closes on a click; `false` keeps the system's. The Controls page's Pointer row (Camera or System) sets it |
-| `mouse_sensitivity` | `1.0` | angle per pixel of mouse: 1 is a full turn in about 2500 pixels, 2 twice as quick, 0.5 half; 0.1 to 10 |
+| `pointer_always` | `false` | `true` keeps the pointer on every screen that takes the mouse, whatever was pressed last and however long it sits still; `false` hides it after a key or pad press, as "Controls" says. It still goes for a ride or a cutscene. The Controls page's Pointer Shows row (Auto or Always) sets it |
+| `mouse_sensitivity` | `1.0` | angle per pixel of mouse: 1 is a full turn in about 2500 pixels, 2 twice as quick, 0.5 half; 0.05 to 10 |
 | `mouse_invert_y` | `false` | mouse forward, or the pad's front rising, tilts the view down (Camera Tilt: Reverse) |
 | `mouse_zoom_speed` | `0.5` | the mouse's speed while zoomed in, as a share of `mouse_sensitivity`; 0.25 to 1 (Zoom Speed) |
 | `gyro_aim` | `0` | the pad's gyro aims the camera: 0 off, 1 in a course, 2 only while zoomed in (Gyro Aim) |
-| `gyro_sensitivity` | `1.0` | multiplies the gyro's natural scale; 0.25 to 4 (Gyro Speed) |
+| `gyro_sensitivity` | `1.0` | multiplies the gyro's natural scale; 0.05 to 4 (Gyro Speed) |
 | `keys` | the table under "Controls" | what presses each input: SDL key names, the mouse names, and `"Pad "` plus SDL's controller button or axis name; one or a list |
 | `graphics_api` | `0` | 0 Direct3D 12, 1 Vulkan (RT64's other backend and the one the Linux build uses; run here on an AMD card through the replays, and an escape hatch if D3D12 fails); restart |
 | `downsample` | `1` | Super Sampling factor, 1 to 8; held to what the card's memory carries at the screen's size with the anti-aliasing chosen, and the file rewritten when held; a target the card still cannot make ends the run with a message, marks the setting in `snap64.gpu_failed` in the data folder, and the next start holds the factor below it |

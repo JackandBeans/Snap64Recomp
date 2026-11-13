@@ -25,6 +25,7 @@ PATCH = os.path.join(ROOT, 'patches', 'src', 'graphics_menu_patch.c')
 # name of the bank's base define: how many ids it spans
 BANKS = {
     'STR_BIND_DYN': 36,     # two banks of eighteen row values
+    'STR_BIND_DYN_PORT': 6, # two banks of three: the port entries' row values
     'STR_MODS_DYN': 24,     # two banks of six names and six help lines
     'STR_OPT_DYN': 36,      # two banks of six names, six values, six help lines
     'STR_DET_LINE': 24,     # the details page's lines

@@ -44,6 +44,8 @@ constexpr uint32_t kMailPointer   = 0x80C00088;  // x << 16 | y, all ones off th
 constexpr uint32_t kMailCounts    = 0x80C0008C;  // moved, click, back, wheel up
 constexpr uint32_t kMailWheelDown = 0x80C00090;
 constexpr uint32_t kMailClaim     = 0x80C00091;
+constexpr uint32_t kMailTypeClaim = 0x80C0009D;  // raised while a screen has the keyboard
+constexpr uint32_t kMailTypeChar  = 0x80C0009E;  // the next character typed, host-owned
 
 constexpr uint32_t kLiveRecord = 0x800BEDF8;     // D_800BEDF8[0], src/app_render/53AD0.c
 constexpr uint32_t kAuPlaySound = 0x800228E4;
@@ -57,10 +59,12 @@ constexpr uint32_t kStickLeft      = 0x800000;
 constexpr uint16_t kButtonA = 0x8000;
 constexpr uint16_t kButtonB = 0x4000;
 constexpr int32_t kButtonNone = 35;              // BUTTON_NONE, an empty panel slot
+constexpr int32_t kButtonCheck = 28;             // BUTTON_CHECK, first on the enlarged photo's panel
 
 enum : int { Moved = 1, Click = 2, Back = 4, Up = 8, Down = 16 };
 
 uint8_t rd8(uint8_t* rdram, uint32_t a) { return rdram[(a - 0x80000000u) ^ 3u]; }
+uint16_t rd16(uint8_t* rdram, uint32_t a) { return *reinterpret_cast<uint16_t*>(rdram + ((a - 0x80000000u) ^ 2u)); }
 void wr8(uint8_t* rdram, uint32_t a, uint8_t v) { rdram[(a - 0x80000000u) ^ 3u] = v; }
 uint32_t rd32(uint8_t* rdram, uint32_t a) { return *reinterpret_cast<uint32_t*>(rdram + (a - 0x80000000u)); }
 void wr32(uint8_t* rdram, uint32_t a, uint32_t v) { *reinterpret_cast<uint32_t*>(rdram + (a - 0x80000000u)) = v; }
@@ -137,9 +141,12 @@ void play(uint8_t* rdram, recomp_context* ctx, uint32_t id) {
 
 // A panel of eight button slots (src/window/layout.c: the buttons stand at
 // x 0, y 25 + 24i; the corner marks frame 62 by 13 at 22, 29 + 24i).
-// buttonsVar holds the screen's UIButton pointer.
+// buttonsVar holds the screen's UIButton pointer. With arrows, the header's
+// arrows beside the panel (the previous at x 96, the next at 280, as grid
+// has them) are the stick's left and right where no button is hit: the
+// enlarged photo steps to the previous or the next photo on them.
 void panel(uint8_t* rdram, recomp_context* ctx, Seen& seen, uint32_t buttonsVar, bool sound,
-           uint32_t told = 0) {
+           uint32_t told = 0, bool arrows = false) {
     const uint32_t record = uint32_t(ctx->r4);
     const uint32_t rowPtr = uint32_t(ctx->r5);
     if (record == 0) {
@@ -170,8 +177,14 @@ void panel(uint8_t* rdram, recomp_context* ctx, Seen& seen, uint32_t buttonsVar,
             play(rdram, ctx, 65);
         }
     }
-    if ((ev & Click) && (hit >= 0)) {
-        snap::input_inject_press(kButtonA);
+    if (ev & Click) {
+        if (hit >= 0) {
+            snap::input_inject_press(kButtonA);
+        } else if (arrows && in(rdram, 86, 0, 40, 40)) {
+            or_pressed(rdram, record, kStickSlowLeft);
+        } else if (arrows && in(rdram, 270, 0, 44, 40)) {
+            or_pressed(rdram, record, kStickSlowRight);
+        }
     }
     if (ev & Back) {
         snap::input_inject_press(kButtonB);
@@ -237,7 +250,7 @@ void grid(uint8_t* rdram, recomp_context* ctx, Seen& seen, int x0, int dx, bool 
     }
 }
 
-Seen g_album_panel, g_album_photos, g_album_drag;
+Seen g_album_panel, g_album_photos, g_album_drag, g_album_edit;
 Seen g_report_panel, g_report_photos, g_report_list;
 int g_list_target = -1;     // the Report table's row the pointer asked for
 bool g_list_click = false;  // and whether it was clicked: A when the bar is there
@@ -280,6 +293,90 @@ void single(uint8_t* rdram) {
     }
 }
 
+// The album's comment editor writes on the photographer card's grid, cell
+// for cell and at the same places (src/pokemon_album/9A6F70.c:
+// album_CharGrids, and its rows at x 23, y 20 + 10i with a letter every
+// 13), so the keyboard types on it as the card's patch types on the card
+// (patches/src/mouse_patch.inc).
+constexpr uint32_t kAlbumCharGrids  = 0x80208B70;   // album_CharGrids, char*[]
+constexpr uint32_t kAlbumCharGridId = 0x802500BC;   // album_CharGridId, u8
+constexpr uint32_t kAlbumCursorPos  = 0x802500BE;   // album_CommentCursorPos, s16: letters so far
+constexpr int kAlbumCommentFull = 31;
+
+// The grid's two-byte code (EUC-JP's full-width forms, as its text holds
+// them) for a typed character, or 0: the card's own map, snap_type_code.
+uint16_t type_code(uint8_t c) {
+    static const char sym[] = "!?@#%&*()_+=-'\";:/$.,<>[]~";
+    static const uint16_t code[] = {
+        0xA1AA, 0xA1A9, 0xA1F7, 0xA1F4, 0xA1F3, 0xA1F5, 0xA1F6, 0xA1CA, 0xA1CB,
+        0xA1B2, 0xA1DC, 0xA1E1, 0xA1BC, 0xA1C7, 0xA1C9, 0xA1A8, 0xA1A7, 0xA1BF,
+        0xA1F0, 0xA1A5, 0xA1A4, 0xA1E3, 0xA1E4, 0xA1CE, 0xA1CF, 0xA1C1,
+    };
+    if ((c >= 'A') && (c <= 'Z')) {
+        return uint16_t(0xA3C1 + (c - 'A'));
+    }
+    if ((c >= 'a') && (c <= 'z')) {
+        return uint16_t(0xA3E1 + (c - 'a'));
+    }
+    if ((c >= '0') && (c <= '9')) {
+        return uint16_t(0xA3B0 + (c - '0'));
+    }
+    if (c == 0xE9) {
+        return 0xA6C5;   // e acute: the grid's epsilon, which its font draws as one
+    }
+    for (int i = 0; sym[i] != 0; i++) {
+        if (uint8_t(sym[i]) == c) {
+            return code[i];
+        }
+    }
+    return 0;
+}
+
+// The cell under the pointer: the card's rectangles (snap_name_hit), 13 by
+// 10 around each letter, and the last row's left arrow, right arrow and
+// End.
+bool edit_hit(uint8_t* rdram, int& column, int& row) {
+    for (int r = 0; r < 19; r++) {
+        for (int c = 0; c < 5; c++) {
+            if (in(rdram, 20 + 13 * c, 19 + 10 * r, 13, 10)) {
+                column = c;
+                row = r;
+                return true;
+            }
+        }
+    }
+    const int lastRow[3][2] = {{20, 13}, {33, 13}, {58, 26}};
+    for (int c = 0; c < 3; c++) {
+        if (in(rdram, lastRow[c][0], 209, lastRow[c][1], 10)) {
+            column = c;
+            row = 19;
+            return true;
+        }
+    }
+    return false;
+}
+
+// The cell of the grid shown that holds the typed character's code: five
+// a row, two bytes each.
+bool edit_cell(uint8_t* rdram, uint8_t c, int& column, int& row) {
+    const uint16_t code = type_code(c);
+    if (code == 0) {
+        return false;
+    }
+    const uint32_t grid = rd32(rdram, kAlbumCharGrids + 4u * rd8(rdram, kAlbumCharGridId));
+    if ((grid < 0x80000000u) || (grid > 0x80800000u - 190u)) {
+        return false;
+    }
+    for (int i = 0; i < 95; i++) {
+        if ((rd8(rdram, grid + 2u * i) == (code >> 8)) && (rd8(rdram, grid + 2u * i + 1) == (code & 0xFF))) {
+            column = i % 5;
+            row = i / 5;
+            return true;
+        }
+    }
+    return false;
+}
+
 }  // namespace
 
 extern "C" {
@@ -287,6 +384,7 @@ extern "C" {
 void __real_album_UpdateButtonSelection(uint8_t* rdram, recomp_context* ctx);
 void __real_album_UpdatePhotoSelection(uint8_t* rdram, recomp_context* ctx);
 void __real_album_DragPhoto(uint8_t* rdram, recomp_context* ctx);
+void __real_album_EditComment(uint8_t* rdram, recomp_context* ctx);
 void __real_func_801E28D8_9D9248(uint8_t* rdram, recomp_context* ctx);
 void __real_func_801E2AC0_9D9430(uint8_t* rdram, recomp_context* ctx);
 void __real_func_camera_check_801DFA80(uint8_t* rdram, recomp_context* ctx);
@@ -301,9 +399,15 @@ void __real_func_801DFE74_9FDB34(uint8_t* rdram, recomp_context* ctx);
 void __real_func_801E006C_9FDD2C(uint8_t* rdram, recomp_context* ctx);
 
 // The album (src/pokemon_album/9ABB50.c): its panel, its pages of photos,
-// and a photo being moved to another place.
+// a photo being moved to another place, and a photo's comment being
+// written. The enlarged photo's panel (its first button is Check) has the
+// header's arrows beside it, which its loop reads as the stick's left and
+// right: the previous and the next photo.
 void album_UpdateButtonSelection(uint8_t* rdram, recomp_context* ctx) {
-    panel(rdram, ctx, g_album_panel, 0x80250124 /* album_PanelButtons */, true);
+    constexpr uint32_t kPanelButtons = 0x80250124;   // album_PanelButtons
+    const uint32_t buttons = rd32(rdram, kPanelButtons);
+    const bool photo = (buttons != 0) && (int32_t(rd32(rdram, buttons)) == kButtonCheck);
+    panel(rdram, ctx, g_album_panel, kPanelButtons, true, 0, photo);
     __real_album_UpdateButtonSelection(rdram, ctx);
 }
 
@@ -315,6 +419,85 @@ void album_UpdatePhotoSelection(uint8_t* rdram, recomp_context* ctx) {
 void album_DragPhoto(uint8_t* rdram, recomp_context* ctx) {
     grid(rdram, ctx, g_album_drag, 107, 66, true);
     __real_album_DragPhoto(rdram, ctx);
+}
+
+// The comment editor (album_EditComment: the grid's cursor on the stick,
+// called every frame with the live record while a comment is written, and
+// once with none as it opens). The keyboard types here as on the card: a
+// character the grid has is entered as if the cursor were moved onto it
+// and A pressed, Space is the grid's space, Backspace takes a letter back
+// and Enter is End. The claim on the keyboard (the mailbox's TYPE_CLAIM,
+// lowered by the host each reading) is raised every frame, and the host
+// hands one character at a time through TYPE_CHAR (src/input.cpp,
+// type_update). The album's loop reads A, B and Start from the same record
+// after this returns, so the cell and the press go in together and the
+// game's own path runs. A full comment (31 letters) takes no letter: the
+// game parks the cursor on End then, and a letter would only flick it.
+// The pointer picks a cell, a click is A on it, the right button is B (a
+// letter back) and the wheel is the stick's up and down. The arrow keys
+// move on the grid while W, A, S and D type, because the host moves the
+// stick for whatever is bound to the D-pad (src/input.cpp).
+void album_EditComment(uint8_t* rdram, recomp_context* ctx) {
+    const uint32_t record = uint32_t(ctx->r4);
+    const uint32_t colPtr = uint32_t(ctx->r5);
+    const uint32_t rowPtr = uint32_t(ctx->r6);
+    if (record == 0) {
+        begin(rdram, g_album_edit);
+        wr8(rdram, kMailTypeChar, 0);
+    } else if ((record == kLiveRecord) && (colPtr != 0) && (rowPtr != 0)) {
+        wr8(rdram, kMailTypeClaim, 4);
+        const int ev = take(rdram, g_album_edit);
+        const int letters = int16_t(rd16(rdram, kAlbumCursorPos));
+        int column = -1, row = -1;
+        uint32_t press = 0;
+        const uint8_t typed = rd8(rdram, kMailTypeChar);
+        if (typed != 0) {
+            wr8(rdram, kMailTypeChar, 0);
+            if (typed == 0x08) {
+                if (letters > 0) {
+                    press |= kButtonB;
+                }
+            } else if (typed == 0x0D) {
+                column = 2;
+                row = 19;
+                press |= kButtonA;
+            } else if (letters < kAlbumCommentFull) {
+                if (typed == ' ') {
+                    column = 1;
+                    row = 19;
+                    press |= kButtonA;
+                } else if (edit_cell(rdram, typed, column, row)) {
+                    press |= kButtonA;
+                }
+            }
+        }
+        int hitC = -1, hitR = -1;
+        const bool hit = edit_hit(rdram, hitC, hitR);
+        if ((ev & (Moved | Click)) && hit) {
+            column = hitC;
+            row = hitR;
+        }
+        if ((ev & Click) && hit) {
+            press |= kButtonA;
+        }
+        if (ev & Back) {
+            press |= kButtonB;
+        }
+        if (ev & Up) {
+            press |= kStickSlowUp;
+        }
+        if (ev & Down) {
+            press |= kStickSlowDown;
+        }
+        if (column >= 0) {
+            wr32(rdram, colPtr, uint32_t(column));
+            wr32(rdram, rowPtr, uint32_t(row));
+        }
+        if (press != 0) {
+            or_pressed(rdram, record, press);
+        }
+    }
+    __real_album_EditComment(rdram, ctx);
 }
 
 // The PKMN Report (src/pokemon_report/9D91C0.c): its panel and a Pokemon's

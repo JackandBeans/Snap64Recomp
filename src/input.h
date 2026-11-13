@@ -124,9 +124,9 @@ void input_release_mouse();
 
 // The binding table: an N64 input's name ("a", "b", "z", "start", "l", "r",
 // "c_up", "c_down", "c_left", "c_right", "d_up", "d_down", "d_left",
-// "d_right", "stick_up", "stick_down", "stick_left", "stick_right"), or the
-// port's own "fast_forward" and "slow_motion" (below), to the sources that
-// press it. A source is an SDL key name ("X", "Left Shift",
+// "d_right", "stick_up", "stick_down", "stick_left", "stick_right"), or one
+// of the port's own "photo", "fast_forward" and "slow_motion" (below), to
+// the sources that press it. A source is an SDL key name ("X", "Left Shift",
 // "Return", "Up"; positional scancodes, as SDL_GetScancodeFromName reads
 // them) or one of the mouse names "Mouse Left", "Mouse Right",
 // "Mouse Middle", "Mouse X1", "Mouse X2", "Wheel Up", "Wheel Down".
@@ -148,15 +148,21 @@ Bindings input_bindings();
 // so a display built from one knows when it is stale.
 uint32_t input_bindings_generation();
 
-// The port's own keys (src/fast_forward.cpp): the table's nineteenth and
-// twentieth names, "fast_forward" and "slow_motion", which are not N64
-// inputs and have no row on the Button Setup page -- the file carries them,
-// "Tab" and "Pad RightShoulder", "Space" and "Pad LeftStick" as shipped,
-// and the page refuses their sources as it refuses Back. True while one of
-// the entry's sources is down, as of the game's last controller reading
-// (input_get).
+// The port's own entries, which are not N64 inputs: "photo" saves the photo
+// on screen (photo_export.h), "fast_forward" and "slow_motion" run the game
+// faster or slower while held (src/fast_forward.cpp). "P" and
+// "Pad RightStick", "Tab" and "Pad RightShoulder", "Space" and
+// "Pad LeftStick" as shipped. Since 1.1.7 each has a row on the Button Setup
+// page, after the eighteen inputs, and no source is both a port entry's and
+// an input's: the page refuses a source another entry has (capture_refuses).
+// Held: true while one of the entry's sources is down, as of the game's last
+// controller reading (input_get).
 bool input_fast_forward_held();
 bool input_slow_motion_held();
+// The key is one the photo entry has (src/settings.cpp handle_settings_hotkey
+// saves the photo on it). The mouse's and the pad's photo presses are taken
+// in input.cpp. Main thread.
+bool input_photo_key(int scancode);
 
 // --- The BUTTON SETUP page (patches/src/graphics_menu_patch.c, snap_bind_page;
 // the host's side is src/menu_assets.cpp, poll_bind_bank). ----------------
@@ -168,6 +174,11 @@ constexpr int kBindPad = 2;
 
 // True while a game controller is attached (the pad thread's last snapshot).
 bool input_pad_attached();
+
+// True while a pad with a stick is attached: a keyboard SDL maps as a pad
+// (Android's emulator) is none. The touch controls' Never hides them only
+// while this holds (touch_controls.cpp).
+bool input_pad_in_hand();
 
 // The device of the player's last press, as the window's thread saw it: a
 // key (kBindKeyboard), a mouse button or the wheel (kBindMouse), or a
@@ -183,6 +194,15 @@ bool input_trace_on();
 // True while the attached pad is shaped like the N64's: its shoulders read as
 // Z and ZR, not as bumpers (input_bind_display names them so).
 bool input_pad_n64_layout();
+
+// The Controls page's Pad Preset row (menu_assets.cpp). The pad in use's key
+// in the settings' pad_presets ("057E:2019", "057E:2019 Steam"), or "" while
+// no pad is attached; what Auto makes of that pad, whatever its preset (0 no
+// pad, 1 Standard, 2 N64); and the call that tells the pad thread a preset
+// changed, so it lays the pad out again at once.
+std::string input_pad_preset_key();
+int input_pad_auto_pick();
+void input_pad_preset_changed();
 
 // The Button Setup page's clear keys, beside Z: Delete, and Backspace (the
 // key a Mac's keyboard calls delete), each while the table binds it to no
@@ -215,14 +235,15 @@ void input_bind_reset(int device);
 
 // The capture: the page asks for the next press on one device, and the game
 // is handed no input until the capture ends and every source is let go.
-// begin arms it (game thread); the window's thread feeds it the events
-// (input_handle_sdl_event) -- a key or button of that device binds, Esc
-// cancels, a key the port answers to itself (the hotkeys, Esc) is refused,
-// and eight seconds of nothing times it out; poll says how it stands and
+// begin arms it for one row's entry (game thread); the window's thread feeds
+// it the events (input_handle_sdl_event) -- a key or button of that device
+// binds, Esc cancels, a key the port answers to itself (the hotkeys, Esc) is
+// refused, as is a source one of the port's own entries has (or, on such an
+// entry's row, one an N64 input has), and eight seconds of nothing times it out; poll says how it stands and
 // hands over the name; end disarms it. active is what the window's thread asks
 // before it treats a key as a hotkey or as Esc's Start.
 enum class CaptureState { Idle, Listening, Bound, Canceled, RefusedJob, TimedOut };
-void input_capture_begin(int device);
+void input_capture_begin(int device, const char* input);
 CaptureState input_capture_poll(std::string* name);
 void input_capture_end();
 bool input_capture_active();

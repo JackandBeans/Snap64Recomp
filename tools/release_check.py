@@ -17,7 +17,13 @@ that a release build can be put through all of them in one go:
               no crash report
   score       the recorded run to Oak's evaluation scores every photo with the
               scorer's healthy signature (src/score_probe.cpp), and, in the
-              same run, the photo export saves the photos it shows
+              same run, the photo export saves the photos it shows; with
+              Autosave off, the lab opens with the ride's results unsaved, the
+              log says so and the save stays byte for byte
+  autosave    the same run on a copy of the save with Autosave on: the game's
+              own save runs once as the lab opens after Oak's check, the file
+              gains the Report's entries with its checksum right, and the old
+              file is kept as .bak
   menu        the in-game Graphics/Sound Options page: its interface strings
               stage from the harvested font with no character missing, so the
               page opens instead of falling back to the stock menu
@@ -46,6 +52,12 @@ that a release build can be put through all of them in one go:
   nsopad      the Switch Online N64 controller (issue #26): the virtual pad
               dressed with its name and ids must be told, with every pad's ids
               and SDL's mapping line in the log
+  padpress    buttons pressed on the built game (SNAP_VPAD_PRESS): the virtual
+              pad carrying the mapping SDL's own driver gives the Switch Online
+              N64 controller, then an Xbox-style pad, each part pressed in turn,
+              and what the game was handed and what the port did must be what
+              that button does on the console (or the port's own job for it);
+              1.1.5's dead R on that pad (issue #26) fails here
   package     (with --zip, once per archive) a release archive, Windows zip,
               Linux tarball (x86_64 or arm64) or Mac zip: it carries the
               program, the licenses and the documents, its .sha256 sidecar
@@ -276,6 +288,8 @@ def check_stats(c, exe_dir):
 def check_score(c, exe_dir):
     photos = exe_dir / 'photos'
     before = set(photos.glob('*.png')) if photos.exists() else set()
+    save = exe_dir / 'saves' / 'pokemonsnap.bin'
+    save_before = save.read_bytes() if save.is_file() else None
     out = run_game(exe_dir, {'SNAP_REPLAY': 'eval.inputs', 'SNAP_MUTE': '1', 'SNAP_STATS': '1',
                              'SNAP_PHOTO_AUTOEXPORT': '1'}, 400)
     lines = [l for l in out.splitlines() if l.startswith('[SNAP-SCORE] pokemon')]
@@ -297,6 +311,55 @@ def check_score(c, exe_dir):
     new = (set(photos.glob('*.png')) - before) if photos.exists() else set()
     c.add('score', len(new) >= 10, '%d photos exported by the run' % len(new))
     c.add('score', '[SNAP-AV]' not in out, 'crash report %s' % ('present' if '[SNAP-AV]' in out else 'none'))
+    # Autosave off, this folder's setting and the default: the cartridge's
+    # behavior, with only a log line to say the lab opened with changes.
+    off = [l for l in out.splitlines() if l.startswith('[SNAP-SAVE] autosave')]
+    same = (save_before is not None) and save.is_file() and (save.read_bytes() == save_before)
+    c.add('score', len(off) >= 1 and all(l.startswith('[SNAP-SAVE] autosave is off') for l in off) and same,
+          '%s; the save %s' % (off[0] if off else 'no line saying the lab opened with changes',
+                               'stayed byte for byte' if same else 'CHANGED'))
+
+
+def check_autosave(c, exe_dir):
+    """Autosave on (src/autosave.cpp), in a data directory of its own: the eval
+    tape's save, the ROM and this folder's settings with the row turned on. The
+    tape ends as the lab opens after Oak's check, the first place the ride's
+    results stand unsaved; ten seconds past the line take in the runtime's write
+    of the file, 250 ms after the game's writes stop."""
+    sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
+    import unlock_save
+    src = exe_dir / 'saves' / 'pokemonsnap.bin'
+    if not ensure_replay(exe_dir, 'eval.inputs') or not src.is_file():
+        c.add('autosave', False, 'eval.inputs or saves/pokemonsnap.bin is not beside the executable')
+        return
+    rig = exe_dir / 'autosave_check'
+    shutil.rmtree(rig, ignore_errors=True)
+    (rig / 'saves').mkdir(parents=True)
+    save = rig / 'saves' / 'pokemonsnap.bin'
+    shutil.copyfile(src, save)
+    shutil.copyfile(exe_dir / 'pokemonsnap.z64', rig / 'pokemonsnap.z64')
+    settings = json.loads((exe_dir / 'snapsettings.json').read_text(encoding='utf-8'))
+    settings.update({'autosave': True, 'snap_station': False, 'save_file': 1, 'fullscreen': False})
+    (rig / 'snapsettings.json').write_text(json.dumps(settings, indent=2), encoding='utf-8')
+    before = save.read_bytes()
+    t, out = run_game_until(exe_dir, {'SNAP_REPLAY': 'eval.inputs', 'SNAP_MUTE': '1', 'SNAP_DATA_DIR': str(rig)},
+                            '[SNAP-SAVE] autosave', 400, after=10)
+    said = [l for l in out.splitlines() if l.startswith('[SNAP-SAVE] autosave')]
+    c.add('autosave', len(said) == 1 and ', saved in ' in said[0],
+          (said[0] if len(said) == 1 else '%d autosave lines' % len(said)) + (' (%.0f s in)' % t if t else ''))
+    after = save.read_bytes() if save.is_file() else b''
+    right = (after != before) and (len(after) == len(before)) and (unlock_save.checksum(after) == after[0:0x10])
+    entries = lambda b: sum(1 for i in range(69) if struct.unpack_from('>i', b, 0x180 + i * 0x3A0 + 4)[0] != -1)
+    gained = (entries(after) - entries(before)) if right else 0
+    c.add('autosave', right and gained > 0, 'the file %s; its checksum is %s; the Report gained %d entries'
+          % ('changed' if after != before else 'did NOT change', 'right' if right else 'WRONG', gained))
+    bak = rig / 'saves' / 'pokemonsnap.bin.bak'
+    kept = bak.is_file() and (bak.read_bytes() == before)
+    c.add('autosave', kept and ('[SNAP-AV]' not in out),
+          'the old file %s; crash report %s' % ('is kept as .bak' if kept else 'is NOT the .bak',
+                                                'present' if '[SNAP-AV]' in out else 'none'))
+    if (len(said) == 1) and right and kept:     # a failure's files stay, to read
+        shutil.rmtree(rig, ignore_errors=True)
 
 
 _score_lines_1x = []   # check_score's photo lines, for check_speed to compare against
@@ -328,10 +391,10 @@ def check_speed(c, exe_dir):
     c.add('speed', '[SNAP-AV]' not in out, 'crash report %s' % ('present' if '[SNAP-AV]' in out else 'none'))
 
 
-def run_game_until(exe_dir, env_extra, marker, cap):
+def run_game_until(exe_dir, env_extra, marker, cap, after=0):
     """Run the game until a line starting with `marker` appears on its stdout
-    (or `cap` seconds pass), then kill it. Returns (seconds from the start
-    to the marker, or None; the captured text)."""
+    (or `cap` seconds pass) and `after` seconds more, then kill it. Returns
+    (seconds from the start to the marker, or None; the captured text)."""
     env = dict(os.environ)
     env.update(env_extra)
     p = subprocess.Popen([str(exe_dir / EXE)], cwd=str(exe_dir), env=env,
@@ -353,6 +416,8 @@ def run_game_until(exe_dir, env_extra, marker, cap):
     th = threading.Thread(target=reader, daemon=True)
     th.start()
     done.wait(timeout=cap)
+    if found and after:
+        time.sleep(after)
     p.kill()
     p.wait(timeout=30)
     th.join(timeout=10)
@@ -531,6 +596,20 @@ def _block_diff(buf, w, a, b, cw, ch, step=8):
     return t / max(n, 1)
 
 
+def end_folder_game(exe_dir):
+    """Ends the game started from this folder and no other: a relaunched game
+    is no child of this script, and a game open from another folder has the
+    same file name. Returns how many it ended."""
+    path = str(exe_dir / EXE).replace("'", "''")
+    script = ("$n = 0; Get-CimInstance Win32_Process -Filter \"Name='%s'\" | "
+              "Where-Object { $_.ExecutablePath -eq '%s' } | "
+              "ForEach-Object { Stop-Process -Id $_.ProcessId -Force; $n++ }; $n" % (EXE, path))
+    p = subprocess.run(['powershell', '-NoProfile', '-NonInteractive', '-Command', script],
+                       capture_output=True, text=True)
+    said = p.stdout.split()
+    return int(said[-1]) if said and said[-1].isdigit() else 0
+
+
 def check_station(c, exe_dir):
     """The whole print, through the two relaunches. Rewrites the save; puts it back."""
     import shutil
@@ -544,7 +623,7 @@ def check_station(c, exe_dir):
         if f.is_file():
             keep[f] = f.read_bytes()
     # The relaunched games run without the replay, so they mark the session
-    # as running (mod_installer.cpp), and the last is ended by taskkill: the
+    # as running (mod_installer.cpp), and the last is ended from outside: the
     # mark it leaves would make the next start ask whether to turn the mods off.
     mark = exe_dir / 'snap64.running'
     mark_was = mark.is_file()
@@ -600,7 +679,7 @@ def check_station(c, exe_dir):
                 time.sleep(8)
                 break
             time.sleep(2)
-        subprocess.run(['taskkill', '/F', '/IM', EXE], capture_output=True)
+        end_folder_game(exe_dir)
         slots = sum(1 for l in seen if ' captured (' in l)
         c.add('station', slots == 16, '%d of 16 slots captured in the display process' % slots)
         c.add('station', sheet is not None and any('normal boot' in l for l in seen),
@@ -750,6 +829,95 @@ def check_nsopad(c, exe_dir):
           + ('' if ids else '; no ids line'))
 
 
+# The mapping SDL 2.30's own driver gives the Switch Online N64 controller
+# (SDL_gamecontroller.c, SDL_CreateMappingForHIDAPIController, N64 case).
+NSO_HIDAPI_MAP = ('a:b0,b:b1,back:b4,dpdown:b12,dpleft:b13,dpright:b14,dpup:b11,guide:b5,leftshoulder:b9,'
+                  'leftstick:b7,lefttrigger:a4,leftx:a0,lefty:a1,rightshoulder:b10,righttrigger:a5,start:b6,'
+                  'x:b2,y:b3,misc1:b15')
+# (the joystick part SDL's driver sends, the pad's own name for it, what the
+# game must be handed, what the port must do). The parts of the Switch Online
+# pad are those of SDL's driver (SDL_hidapi_switch.c): ZR comes as the left
+# stick's click, C-down as the right trigger, C-right as Back, Capture as misc1.
+PADPRESS_NSO = [
+    ('b0', 'A', 'A', 'nothing'),
+    ('b1', 'B', 'B', 'nothing'),
+    ('a4', 'Z', 'Z', 'nothing'),
+    ('b9', 'L', 'L', 'nothing'),
+    ('b10', 'R', 'R', 'nothing'),
+    ('b7', 'ZR', 'nothing', 'fast-forward'),
+    ('b6', 'Start', 'Start', 'nothing'),
+    ('b3', 'C-up', 'C-Up', 'nothing'),
+    ('a5', 'C-down', 'C-Down', 'nothing'),
+    ('b2', 'C-left', 'C-Left', 'nothing'),
+    ('b4', 'C-right', 'C-Right', 'nothing'),
+    ('b11', 'D-pad up', 'D-Up Stick-Up', 'nothing'),   # the D-pad moves the stick too, by design (input.cpp)
+    ('a0', 'stick right', 'Stick-Right', 'nothing'),
+    ('a1-', 'stick up', 'Stick-Up', 'nothing'),
+    ('b15', 'Capture', 'nothing', 'photo'),
+]
+# The virtual pad as SDL makes it (every part, an Xbox-style layout).
+# Back last: it opens the port's Options.
+PADPRESS_STD = [
+    ('b0', 'A', 'A', 'nothing'),
+    ('b1', 'B', 'B', 'nothing'),
+    ('b2', 'X', 'B', 'nothing'),
+    ('b9', 'LB', 'Z', 'nothing'),
+    ('a4', 'LT', 'L', 'nothing'),
+    ('a5', 'RT', 'R', 'nothing'),
+    ('b10', 'RB', 'nothing', 'fast-forward'),
+    ('b7', 'L3', 'nothing', 'slow-motion'),
+    ('b8', 'R3', 'nothing', 'photo'),
+    ('a3-', 'right stick up', 'C-Up', 'nothing'),
+    ('a2', 'right stick right', 'C-Right', 'nothing'),
+    ('b6', 'Start', 'Start', 'nothing'),
+    ('b12', 'D-pad down', 'D-Down Stick-Down', 'nothing'),   # the D-pad moves the stick too, by design (input.cpp)
+    ('a0-', 'left stick left', 'Stick-Left', 'nothing'),
+    ('b4', 'Back', 'nothing', 'Options'),
+]
+
+
+def check_padpress(c, exe_dir):
+    """Buttons pressed on the built game: the virtual test pad's parts pressed
+    one at a time (SNAP_VPAD_PRESS), and for each the port's line of what the
+    game was handed while it was held and what the port did. Twice: the pad
+    dressed as the Switch Online N64 controller with the very mapping SDL's
+    driver gives it (SNAP_VPAD_MAP), so it reads as that pad does, and as SDL
+    makes it, an Xbox-style pad. The menu tape keeps the title on screen; what
+    the game is handed is read before the tape replaces it."""
+    if not ensure_replay(exe_dir, 'menu_title.inputs'):
+        c.add('padpress', False, 'menu_title.inputs is not beside the executable')
+        return
+    runs = [
+        ('the Switch Online N64 controller, SDL\'s mapping', PADPRESS_NSO,
+         {'SNAP_VPAD_NAME': 'Nintendo N64 Controller', 'SNAP_VPAD_IDS': '057E:2019', 'SNAP_VPAD_MAP': NSO_HIDAPI_MAP}),
+        ('an Xbox-style pad', PADPRESS_STD, {}),
+    ]
+    rx = re.compile(r'^\[SNAP-Input\] SNAP_VPAD_PRESS: (\S+) read as (.*); the port: (.*)$')
+    for what, presses, extra in runs:
+        env = {'SNAP_REPLAY': 'menu_title.inputs', 'SNAP_MUTE': '1', 'SNAP_VPAD_TEST': '1',
+               'SNAP_VPAD_PRESS': ','.join(p[0] for p in presses)}
+        env.update(extra)
+        marker = '[SNAP-Input] SNAP_VPAD_PRESS: %s read as' % presses[-1][0]
+        _, out = run_game_until(exe_dir, env, marker, 75)
+        got = []
+        for line in out.splitlines():
+            m = rx.match(line.strip())
+            if m:
+                got.append((m.group(1), m.group(2), m.group(3)))
+        wrong = []
+        for i, (part, name, game, port) in enumerate(presses):
+            if i >= len(got):
+                wrong.append('%s (%s): no line' % (name, part))
+                continue
+            gpart, ggame, gport = got[i]
+            if (gpart != part) or (ggame != game) or (gport != port):
+                wrong.append('%s (%s): read as %s, the port %s; wanted %s, %s' % (name, part, ggame, gport, game, port))
+        crashed = '[SNAP-AV]' in out
+        ok = not wrong and not crashed
+        c.add('padpress', ok, '%s: %s%s' % (what, ('all %d presses as on the console' % len(presses)) if not wrong
+                                              else '; '.join(wrong), '; crash report present' if crashed else ''))
+
+
 def check_rompick(c, exe_dir):
     """The first run's ROM chooser (src/rom_picker.cpp), answered by SNAP_ROM_PICK
     so no dialog opens: each case in a fresh data directory with no ROM."""
@@ -803,11 +971,13 @@ PACKAGE_NEEDS = {
                 'licenses/nlohmann-json.txt', 'licenses/roboto.txt', 'licenses/SDL_GameControllerDB.txt',
                 'gamecontrollerdb.txt',
                 'menu_text/recomp_logo.png', 'menu_text/pointer.png', 'menu_text/pointer_flash.png', 'mods/README.md',
-                'texture_packs/README.txt', 'Snap64Recomp.map'],
+                'texture_packs/README.txt', 'Snap64Recomp.map',
+                'steam_art/logo.png', 'steam_art/poster.png', 'steam_art/background.jpg', 'steam_art/wide.png'],
     'linux': ['Snap64Recomp', 'START HERE.txt', 'LICENSE', 'NOTICE.md', 'README.md', 'CHANGELOG.md',
               'licenses/nlohmann-json.txt', 'licenses/roboto.txt', 'licenses/SDL_GameControllerDB.txt',
               'gamecontrollerdb.txt', 'menu_text/recomp_logo.png', 'menu_text/pointer.png', 'menu_text/pointer_flash.png',
-              'mods/README.md', 'texture_packs/README.txt'],
+              'mods/README.md', 'texture_packs/README.txt',
+              'steam_art/logo.png', 'steam_art/poster.png', 'steam_art/background.jpg', 'steam_art/wide.png'],
     'macos': ['START HERE.txt', 'Snap64Recomp.app/Contents/Info.plist', 'Snap64Recomp.app/Contents/MacOS/Snap64Recomp',
               'Snap64Recomp.app/Contents/Resources/LICENSE', 'Snap64Recomp.app/Contents/Resources/NOTICE.md',
               'Snap64Recomp.app/Contents/Resources/README.md', 'Snap64Recomp.app/Contents/Resources/gamecontrollerdb.txt',
@@ -1078,9 +1248,11 @@ def main():
         print('--only package needs --zip <archive>', file=sys.stderr)
         return 2
     checks = [('subsystem', check_subsystem), ('stdio', check_stdio), ('attract', check_attract),
-              ('stats', check_stats), ('score', check_score), ('settings', check_settings),
+              ('stats', check_stats), ('score', check_score), ('autosave', check_autosave),
+              ('settings', check_settings),
               ('speed', check_speed), ('slow', check_slow), ('rompick', check_rompick),
               ('vram', check_vram), ('gpufail', check_gpufail), ('nsopad', check_nsopad),
+              ('padpress', check_padpress),
               ('menu', check_menu), ('pages', check_pages), ('station', check_station)]
     c = Check()
     t0 = time.time()

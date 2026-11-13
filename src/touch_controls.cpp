@@ -34,7 +34,11 @@
  *
  * touch_controls in the settings file: 0 automatic (shown until a pad or a
  * keyboard is used, and again at the next touch), 1 always, 2 never;
- * touch_size and touch_opacity in percent. No Options rows yet.
+ * touch_size and touch_opacity in percent; touch_mirror (Left-Handed) and
+ * touch_fade (Idle Fade); touch_layout, where Move Buttons put them. The
+ * CONTROLS page has a row for each on Android (menu_assets.cpp), and its
+ * Move Buttons opens the overlay's mode for dragging the buttons
+ * (touch_controls_move).
  */
 
 #include "touch_controls.h"
@@ -42,6 +46,8 @@
 #include <atomic>
 #include <chrono>
 #include <cstdio>
+#include <mutex>
+#include <string>
 
 #include <SDL2/SDL.h>
 
@@ -55,6 +61,7 @@ namespace snap {
 
 extern std::atomic<bool> g_app_level_resident;     // overlay_hook.cpp: a course's code is loaded
 void input_add_touch_look(float dx, float dy);     // input.cpp: motion the mouse's way
+bool input_pad_in_hand();                          // input.cpp: a pad with a stick is attached
 
 #if defined(__ANDROID__)
 
@@ -76,6 +83,10 @@ constexpr uint32_t ADDR_gIdleScript     = 0x803AE518;  // IdleScript*
 std::atomic<bool> g_zoomed{false};
 std::atomic<bool> g_zoom_switch{false};
 std::atomic<bool> g_demo{false};
+
+// Move Buttons pressed on the CONTROLS page, counted: the overlay opens its
+// mode for dragging the buttons when the count it sees moves.
+std::atomic<uint32_t> g_move_gen{0};
 
 // The photos the game has taken in a ride: its own count of the ride's
 // photos (app_render, makePhoto; reset as a ride starts), read at the pad
@@ -151,7 +162,10 @@ bool shown() {
         return true;
     }
     if (m == 2) {
-        return false;
+        // Never: hidden while a pad is in hand. With none, a phone has
+        // nothing else to press, so the buttons stay (and the Options are
+        // reachable to change the row); Never hid them for good until 1.1.7.
+        return !input_pad_in_hand();
     }
     return g_touch_at.load(std::memory_order_relaxed) >= g_other_at.load(std::memory_order_relaxed);
 }
@@ -379,6 +393,10 @@ bool touch_controls_shown() {
     return shown();
 }
 
+void touch_controls_move() {
+    g_move_gen.fetch_add(1, std::memory_order_relaxed);
+}
+
 void touch_controls_tick() {
     static uint32_t handed = 0;
     const uint32_t photos = g_photos.load(std::memory_order_relaxed);
@@ -406,12 +424,13 @@ void touch_controls_tick() {
 
 } // namespace snap
 
-// The overlay's two calls (Snap64TouchOverlay.java), on Android's UI thread.
+// The overlay's calls (Snap64TouchOverlay.java), on Android's UI thread.
 
 // What the overlay draws: bit 0 shown, bit 1 a course runs, bit 2 the
 // game's view zoomed in, bit 3 the game's Z Button is Switch, bit 4 the
-// course is the title's attract demo, bits 8-15 the size and bits 16-23 the
-// opacity in percent.
+// course is the title's attract demo, bit 5 Left-Handed, bit 6 Idle Fade,
+// bits 8-15 the size and bits 16-23 the opacity in percent, bits 24-27 the
+// count of Move Buttons presses (its low four bits).
 extern "C" JNIEXPORT jint JNICALL
 Java_io_github_jackandbeans_snap64recomp_Snap64TouchOverlay_nativeState(JNIEnv* env, jclass cls) {
     if (snap::g_overlay_class.load(std::memory_order_acquire) == nullptr) {
@@ -436,8 +455,42 @@ Java_io_github_jackandbeans_snap64recomp_Snap64TouchOverlay_nativeState(JNIEnv* 
     const bool zoomed = course && snap::g_zoomed.load(std::memory_order_relaxed);
     const bool zoomSwitch = course && snap::g_zoom_switch.load(std::memory_order_relaxed);
     const bool demo = course && snap::g_demo.load(std::memory_order_relaxed);
+    const uint32_t moves = snap::g_move_gen.load(std::memory_order_relaxed) & 0xFu;
     return jint((snap::shown() ? 1 : 0) | (course ? 2 : 0) | (zoomed ? 4 : 0) | (zoomSwitch ? 8 : 0) |
-                (demo ? 16 : 0) | ((size & 0xFF) << 8) | ((opacity & 0xFF) << 16));
+                (demo ? 16 : 0) | (s.touch_mirror ? 32 : 0) | (s.touch_fade ? 64 : 0) |
+                ((size & 0xFF) << 8) | ((opacity & 0xFF) << 16) | (moves << 24));
+}
+
+// Where Move Buttons put the buttons (settings.h touch_layout), for the
+// overlay's place.
+extern "C" JNIEXPORT jstring JNICALL
+Java_io_github_jackandbeans_snap64recomp_Snap64TouchOverlay_nativeLayout(JNIEnv* env, jclass /*cls*/) {
+    std::string layout;
+    {
+        std::lock_guard<std::mutex> lock(snap::settings_mutex());
+        layout = snap::settings().touch_layout;
+    }
+    return env->NewStringUTF(layout.c_str());
+}
+
+// Move Buttons' Done: the buttons' new places, kept in the settings file.
+extern "C" JNIEXPORT void JNICALL
+Java_io_github_jackandbeans_snap64recomp_Snap64TouchOverlay_nativeSetLayout(JNIEnv* env, jclass /*cls*/, jstring text) {
+    const char* chars = (text != nullptr) ? env->GetStringUTFChars(text, nullptr) : nullptr;
+    std::string layout = (chars != nullptr) ? chars : "";
+    if (chars != nullptr) {
+        env->ReleaseStringUTFChars(text, chars);
+    }
+    if (layout.size() > 512) {
+        layout.clear();
+    }
+    {
+        std::lock_guard<std::mutex> lock(snap::settings_mutex());
+        snap::settings().touch_layout = layout;
+    }
+    snap::settings_mark_dirty();
+    printf("[SNAP-TOUCH] Move Buttons done: %s\n", layout.empty() ? "every button where it came" : layout.c_str());
+    fflush(stdout);
 }
 
 // The buttons the overlay holds, whole, at every change.
@@ -471,6 +524,8 @@ uint16_t touch_controls_buttons() {
 bool touch_controls_aiming() {
     return false;
 }
+
+void touch_controls_move() {}
 
 bool touch_as_pointer(bool /*menuTakesMouse*/) {
     return false;

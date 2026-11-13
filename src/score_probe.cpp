@@ -27,6 +27,13 @@
  * Prints only under SNAP_STATS. Reads game memory; writes nothing.
  * Addresses from build/pokemonsnap.map.
  *
+ * After those lines, [SNAP-ZBUF] lines fingerprint what the renders handed
+ * the game, so two runs can be compared byte for byte: the scene's depth,
+ * each Pokemon's own depth and the copy taken before it was drawn (FNV-1a
+ * over the 6,144 bytes as the game reads them), and every count the game
+ * made of them, the wide pass's included. A tag of their own keeps the
+ * [SNAP-SCORE] lines that runs count as they were.
+ *
  * Measured on a recorded run through five scored photos (eval.inputs), same
  * replay, two builds. Renderer before the copy-mode fix: odd 3072, eq 0,
  * or1 == U on every Pokemon of every photo. After: odd 0, eq == U, or1 0.
@@ -52,7 +59,13 @@ constexpr uint32_t ScoreCurrentZBuffer          = 0x800BDFB4u;  // u16* (one buf
 constexpr uint32_t ScorePokemonZBuffer          = 0x800BDFB8u;  // u16*[12]
 constexpr uint32_t ScoreZBufferBefore           = 0x800BDFE8u;  // u16*[12]
 constexpr uint32_t ScorePokemonCount            = 0x800BE01Au;  // u16
+constexpr uint32_t ScorePixelCountWide          = 0x800BE020u;  // s32[12]
+constexpr uint32_t ScorePixelCountCenterPartWide = 0x800BE050u; // s32[12]
+constexpr uint32_t ScorePixelCount              = 0x800BE080u;  // s32[12]
 constexpr uint32_t ScorePixelCountUnobstructed  = 0x800BE0B0u;  // s32[12]
+constexpr uint32_t ScorePixelCountUnobstructedInCenter = 0x800BE0E0u; // s32[12]
+constexpr uint32_t ScoreApproxTotalPixelCount   = 0x800BE110u;  // s32[12]
+constexpr uint32_t ScorePixelCountInCenter      = 0x800BE140u;  // s32[12]
 constexpr uint32_t ScorePixels                  = 64 * 48;
 constexpr uint32_t ScoreBufferBytes             = ScorePixels * 2;
 
@@ -66,6 +79,21 @@ uint32_t rd32(uint8_t* rdram, uint32_t addr) {
 
 uint16_t rd16(uint8_t* rdram, uint32_t addr) {
     return static_cast<uint16_t>(MEM_HU(0x0, (gpr)(int32_t)addr));
+}
+
+int32_t rds32(uint8_t* rdram, uint32_t array, uint32_t i) {
+    return static_cast<int32_t>(rd32(rdram, array + 4 * i));
+}
+
+// FNV-1a over one 64x48 buffer, each pixel's two bytes as the game reads them.
+uint32_t buffer_hash(uint8_t* rdram, uint32_t addr) {
+    uint32_t h = 2166136261u;
+    for (uint32_t px = 0; px < ScorePixels; px++) {
+        const uint16_t v = rd16(rdram, addr + 2 * px);
+        h = (h ^ (v >> 8)) * 16777619u;
+        h = (h ^ (v & 0xFFu)) * 16777619u;
+    }
+    return h;
 }
 
 }  // namespace
@@ -117,6 +145,22 @@ extern "C" void func_800A007C(uint8_t* rdram, recomp_context* ctx) {
         printf("[SNAP-SCORE] pokemon %u: odd %u  U %u  eq %u  or1 %u  unobstructed recomputed %u game %d%s\n",
                i, odd, u, eq, or1, unobstructed, gameCount,
                (static_cast<int32_t>(unobstructed) == gameCount) ? "" : "  MISMATCH");
+    }
+
+    printf("[SNAP-ZBUF] scene depth %08X, %u pokemon\n", buffer_hash(rdram, currentZ), count);
+    for (uint32_t i = 0; i < count; i++) {
+        const uint32_t before = rd32(rdram, ScoreZBufferBefore + 4 * i);
+        const uint32_t pokeZ = rd32(rdram, ScorePokemonZBuffer + 4 * i);
+        if (!in_ram(before, ScoreBufferBytes) || !in_ram(pokeZ, ScoreBufferBytes)) {
+            continue;
+        }
+        printf("[SNAP-ZBUF] pokemon %u: depth %08X before %08X; wide %d center %d, pixels %d center %d, "
+               "unobstructed %d center %d, approx %d\n",
+               i, buffer_hash(rdram, pokeZ), buffer_hash(rdram, before),
+               rds32(rdram, ScorePixelCountWide, i), rds32(rdram, ScorePixelCountCenterPartWide, i),
+               rds32(rdram, ScorePixelCount, i), rds32(rdram, ScorePixelCountInCenter, i),
+               rds32(rdram, ScorePixelCountUnobstructed, i), rds32(rdram, ScorePixelCountUnobstructedInCenter, i),
+               rds32(rdram, ScoreApproxTotalPixelCount, i));
     }
     fflush(stdout);
 }

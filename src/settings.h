@@ -12,6 +12,7 @@
 
 #include <chrono>
 #include <cstdint>
+#include <map>
 #include <mutex>
 #include <string>
 #include <vector>
@@ -171,6 +172,13 @@ struct Settings {
     // swapped through the runtime just before that (src/save_file.cpp).
     // The GAME page's Save File row sets it.
     int   save_file         = 1;
+    // The cartridge saves only when asked: the lab's Save, the save before
+    // the credits and the Gallery's print tray. On, each time the lab opens
+    // with a save record that differs from the last save, the port runs the
+    // game's own save routine there, silently (src/autosave.cpp). Off by
+    // default: nothing the game can see changes. The GAME page's Autosave
+    // row (mailbox byte +0x606) and the file both set it.
+    bool  autosave          = false;
     // The mouse (src/input.cpp). While a course runs and the window has
     // focus the cursor is captured and its motion turns the view, added to
     // the game's own yaw and pitch in memory; the mouse's buttons and wheel
@@ -184,6 +192,12 @@ struct Settings {
     // lens whose shutter closes on a click (src/pointer.cpp); false keeps
     // the system's.
     bool  custom_pointer    = true;
+    // When the pointer shows on a screen that takes the mouse: false (Auto)
+    // hides it after a pad or key press or an idle spell, true (Always)
+    // keeps it up there whatever was pressed last (input.cpp). Rides and
+    // cutscenes hide it either way. The Controls page's Pointer Shows row
+    // (mailbox byte +0x688) and the file both set it.
+    bool  pointer_always    = false;
     // False makes the port ignore every controller: none is opened, the
     // keyboard and mouse carry on. For a pad whose driver misbehaves (issue
     // #7) without unplugging it. There is no rumble setting: the cartridge
@@ -196,8 +210,17 @@ struct Settings {
     // Online N64 controller), whose L and R arrive as SDL's shoulders and
     // whose Z arrives as the left trigger. The Controls page's Pad Preset
     // row (mailbox byte 0x80C0006F) and the file both set it; the pad
-    // thread applies a change at once (input.cpp, decide_pad_layout).
+    // thread applies a change at once (input.cpp, decide_pad_layout). It
+    // is the preset of every pad pad_presets has no entry for, and the row
+    // sets it while no pad is attached.
     int   pad_layout        = 0;
+    // Each pad's own Pad Preset, by its ids ("057E:2019"; "057E:2019 Steam"
+    // for Steam's virtual pad standing for it, whose buttons Steam has laid
+    // out already): 0 Auto, 1 Standard, 2 N64. The row sets the entry of
+    // the pad in use, so a preset given to one pad leaves the others as
+    // they were. Not word-sized: read under settings_mutex() (input.cpp,
+    // pad_presets_refresh; menu_assets.cpp).
+    std::map<std::string, int> pad_presets;
     // The pad's two sticks as the game reads them. False: the left stick is
     // the Control Stick and the right one works the C buttons, the mapping
     // every pad has had here. True swaps the two, for a player who aims
@@ -249,13 +272,21 @@ struct Settings {
     int   gyro_aim          = 0;
     // Multiplies the natural scale. Bounded to 0.25 .. 4 where read.
     float gyro_sensitivity  = 1.0f;
-    // Android's touch controls (src/touch_controls.cpp): 0 automatic (shown
-    // until a pad or a keyboard is used, and again at the next touch), 1
-    // always shown, 2 never. Their size and how opaque they are, in percent
-    // (50 .. 150 and 20 .. 100 where read). Only in the file for now.
+    // Android's touch controls (src/touch_controls.cpp), on the CONTROLS
+    // page there: 0 automatic (shown until a pad or a keyboard is used, and
+    // again at the next touch), 1 always shown, 2 never. Their size and how
+    // opaque they are, in percent (50 .. 150 and 20 .. 100 where read; the
+    // page steps by ten). Left-Handed swaps the two columns; Idle Fade dims
+    // them after a few seconds without a press. touch_layout is where Move
+    // Buttons put each one: "<button>:<dx>,<dy>" entries joined by ';', the
+    // offsets from its own place in thousandths of the screen's height
+    // (Snap64TouchOverlay.java), empty when none was moved.
     int   touch_controls    = 0;
     int   touch_size        = 100;
     int   touch_opacity     = 60;
+    bool  touch_mirror      = false;
+    bool  touch_fade        = false;
+    std::string touch_layout;
     // Interpolate the view and projection as well as object transforms.
     //
     // On, and it has to be: this game's camera lives in the projection stack,
@@ -323,9 +354,20 @@ struct Settings {
 };
 
 // The Controls page's Mouse Speed steps, as percentages of the shipped
-// speed; the [ and ] hotkeys and the page's row step through the same list
-// (menu_assets.cpp seeds and applies it, settings.cpp steps it).
-constexpr int kMouseSpeedSteps[11] = { 25, 50, 75, 100, 125, 150, 175, 200, 250, 300, 400 };
+// speed: every five from 5 to 200, then 250, 300 and 400 (steps of 25 from
+// 25 until 1.1.7; 25 was still too fast for a high-resolution mouse). The [
+// and ] hotkeys, the page's row and its Gyro Speed row step through the same
+// list (menu_assets.cpp seeds and applies it, settings.cpp steps it;
+// graphics_menu_patch.c shows it, snap_ctl_speed_str).
+constexpr int kMouseSpeedStepCount = 43;
+constexpr int kMouseSpeedSteps[kMouseSpeedStepCount] = {
+      5,  10,  15,  20,  25,  30,  35,  40,  45,  50,  55,  60,  65,  70,  75,  80,  85,  90,  95, 100,
+    105, 110, 115, 120, 125, 130, 135, 140, 145, 150, 155, 160, 165, 170, 175, 180, 185, 190, 195, 200,
+    250, 300, 400,
+};
+// The step of 100, the shipped speed.
+constexpr int kMouseSpeedStepDefault = 19;
+static_assert(kMouseSpeedSteps[kMouseSpeedStepDefault] == 100, "the default step is the shipped speed");
 
 // Threading. Three threads touch the struct. The main thread -- recomp::start's
 // loop, which pumps SDL events through update_gfx in src/main.cpp -- runs
@@ -419,6 +461,9 @@ void menu_anywhere_tick(uint8_t* rdram, void* ctx);
 // A mod's line over a course for five seconds (snap64_notice, mod_api.cpp):
 // composed in the help face over a dark panel, shown by the HUD's update.
 void menu_notice_set(const std::string& line);
+// The Mouse Speed row's readout, "Mouse Speed < 85 >", in the notice's place
+// for a second (the [ and ] keys in a course); from any thread.
+void menu_speed_readout(int pct);
 // The pages' arena cursor back to its start: every scene load, before the
 // scene rebuilds the pools the arena's objects sat in (overlay_hook.cpp).
 void menu_arena_reset(uint8_t* rdram);
@@ -501,7 +546,7 @@ void pointer_update();
 // The Controls page's Pointer row: the port's own (true) or the system's;
 // from any thread, applied on the next pump.
 void pointer_enable(bool on);
-// How long until fullscreen hides the pointer for sitting idle, in ms (0 or
+// How long until fullscreen hides the pointer, in ms (0 or
 // less once hidden), or INT32_MAX when it will not: the flash plays in the
 // last four tenths of a second. Once a pump, before pointer_update.
 void pointer_hiding_in(int32_t msLeft);
