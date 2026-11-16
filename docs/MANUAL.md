@@ -489,6 +489,15 @@ page's Frame Rate row runs Original, Display, then 60, 90, 120, 144, 165
 and 240: a number is the Manual mode (`fps_mode` 2) held at that rate by
 interpolation, and F8 still cycles the three modes.
 
+When the card cannot make a render target at the settings chosen, the port
+lowers one setting, says which, and asks for a restart: Super Sampling
+first, then Anti-Aliasing, then Color Depth, then Render Scale. When the
+port closed before it drew a picture two
+starts in a row (a crash, or the game ended from outside) and Super
+Sampling, Anti-Aliasing, Color Depth or Buffering is raised, the next start
+asks whether to put those four back to their defaults, so they can be
+lowered without editing `snapsettings.json`.
+
 Options > **Sound**: Master Volume, Music Volume, Sound Effects, Shutter
 Volume, Speaker Output (Stereo/Mono), Background Mute.
 
@@ -821,7 +830,7 @@ the defaults below are that file's.
 | `fullscreen` | `false` | saved as set; the window opens windowed and goes fullscreen a moment later when the file says so (a window created fullscreen comes up with broken chrome), and the Snap Station's own relaunches return in the state the print started in |
 | `window_maximized` | `false` | the window was maximized when the port last saw it, and opens maximized; `SNAP_WINDOW=WxH` wins over it |
 | `widescreen` | `false` | RT64 Expand: a true wider field of view in a course, as wide as the window's own shape (16:9, 16:10, 21:9 or wider), not a stretch; the film counter sits against the picture's right edge and the R and Z icons slide out to it; the title, the lab and the other 4:3 screens sit in black bars. Pokémon and effect sprites at the edges are kept ([Known issues](KNOWN-ISSUES.md)); a photo lists only the Pokémon the cartridge would ([photo scoring](#anti-aliasing-widescreen-and-photo-scoring)) |
-| `msaa` | `0` | 0, 2, 4 or 8: the picture's samples; the copy the game reads back is drawn at one ([photo scoring](#anti-aliasing-widescreen-and-photo-scoring)) |
+| `msaa` | `0` | 0, 2, 4 or 8: the picture's samples; the copy the game reads back is drawn at one ([photo scoring](#anti-aliasing-widescreen-and-photo-scoring)); held to the highest level the card offers, and the file rewritten when held; a level that failed with Super Sampling at 1x is marked in `snap64.gpu_failed`, and the next start holds below it |
 | `fps_mode` | `0` | 0 Original, 1 Display refresh, 2 Manual (`fps_manual_target`) |
 | `fps_manual_target` | `120` | the rate a number on the Frame Rate row holds; a value not on the row shows as the nearest of its eight and becomes it once the page is edited |
 | `stereo` | `true` | the game's own Stereo/Mono flag (`hq_sound` is read as a legacy name) |
@@ -830,7 +839,7 @@ the defaults below are that file's.
 | `three_point_filtering` | `true` | the console's texture filter (Texture Filter: Authentic) |
 | `crop_enabled` | `false` | Overscan Crop |
 | `crop_left`, `crop_right`, `crop_top`, `crop_bottom` | `16`, `16`, `12`, `12` | pixels hidden per side when the crop is on |
-| `intro_fix` | `false` | Cutscene Fix: skips the one frame the console drew from inside the player model at the end of the Beach and River intros |
+| `intro_fix` | `false` | Cutscene Fix: skips the one frame the console drew from inside the player model at the end of the Beach and River intros, and lets Pikachu and the Zero-One go fully off the title screen, where the cartridge hides each one at once while part of it still shows at the left edge |
 | `photo_detail` | `false` | Photo Detail: Off draws Oak's photos and the album at native pixels as the console did; On serves them from the renderer's full-resolution render |
 | `jynx_vc` | `false` | Jynx Recolor, Jynx's face and hands: Off: the cartridge's black; On: the purple of the re-releases, matched to a published Virtual Console screenshot |
 | `save_file` | `1` | Save File on the Game page: 1 plays `saves/pokemonsnap.bin`, 2 to 4 play `saves/pokemonsnap-2.bin` and on, each its own file starting empty (the file appears when the game first saves); read at the next start |
@@ -855,7 +864,7 @@ the defaults below are that file's.
 | `gyro_sensitivity` | `1.0` | multiplies the gyro's natural scale; 0.05 to 4 (Gyro Speed) |
 | `keys` | the table under "Controls" | what presses each input: SDL key names, the mouse names, and `"Pad "` plus SDL's controller button or axis name; one or a list |
 | `graphics_api` | `0` | 0 Direct3D 12, 1 Vulkan (RT64's other backend and the one the Linux build uses; run here on an AMD card through the replays, and an escape hatch if D3D12 fails); restart |
-| `downsample` | `1` | Super Sampling factor, 1 to 8; held to what the card's memory carries at the screen's size with the anti-aliasing chosen, and the file rewritten when held; a target the card still cannot make ends the run with a message, marks the setting in `snap64.gpu_failed` in the data folder, and the next start holds the factor below it |
+| `downsample` | `1` | Super Sampling factor, 1 to 8; held to what the card's memory carries at the screen's size with the anti-aliasing chosen, and the file rewritten when held; a target the card still cannot make ends the run with a message, marks the setting in `snap64.gpu_failed` in the data folder, and the next start holds the factor below it; at 1x the anti-aliasing is lowered one level instead, then Color Depth is set to Standard, then Render Scale is halved, one setting at each failed start; deleting `snap64.gpu_failed` forgets the mark |
 | `resolution_scale` | `0` | 0 follows the window; 1-8 caps the render scale in multiples of 320x240 |
 | `present_filter` | `2` | 0 nearest, 1 linear, 2 RT64's anti-aliased pixel scaling |
 | `upscale_2d` | `1` | 0 original pixels, 1 only content that scales anyway, 2 everything sharp, which can put a line under a logo and a fringe around a keyed sprite (seen on a Steam Deck) |

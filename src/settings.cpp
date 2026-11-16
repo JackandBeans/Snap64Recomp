@@ -594,8 +594,20 @@ bool handle_settings_hotkey(int scancode) {
             return true;
         case SDL_SCANCODE_F9:
             {
+                // One level up, or off after the highest the card can make
+                // (fit_msaa, issue #39): a step the fit holds back is the
+                // top, and the next press wraps as it does after 8x.
                 std::lock_guard<std::mutex> lock(s_settings_mutex);
-                s_settings.msaa = (s_settings.msaa == 0) ? 2 : (s_settings.msaa >= 8 ? 0 : s_settings.msaa * 2);
+                const int now = s_settings.msaa;
+                int next = 0;
+                for (int level = (now == 0) ? 2 : now * 2; level <= 8; level *= 2) {
+                    const int fitted = fit_msaa(level);
+                    if (fitted > now) {
+                        next = fitted;
+                        break;
+                    }
+                }
+                s_settings.msaa = next;
             }
             apply_graphics_settings();
             settings_mark_dirty();

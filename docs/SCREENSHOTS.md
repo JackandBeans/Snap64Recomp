@@ -10,13 +10,13 @@ them.
 
 ## The title
 
-<a href="screenshots/01r-title-117.png"><img src="screenshots/01r-title-117.png" width="640" alt="The title screen"></a>
+<a href="screenshots/01s-title-118.png"><img src="screenshots/01s-title-118.png" width="640" alt="The title screen"></a>
 
 **The title screen.** The game's own title with the port's "Recomp" wordmark
 under it, the copyright block, and the port's credits line
-(`JackandBeans (Snap64 Recomp) · v1.1.7`) set in the game's own lettering.
+(`JackandBeans (Snap64 Recomp) · v1.1.8`) set in the game's own lettering.
 The same picture from each earlier release, `01-title.png` for 1.0.0 and
-`01b` to `01q` for 1.0.1 to 1.1.6, stays in the folder for that release's
+`01b` to `01r` for 1.0.1 to 1.1.7, stays in the folder for that release's
 page.
 
 <a href="screenshots/02-title-menu.png"><img src="screenshots/02-title-menu.png" width="640" alt="The title menu with the Snap Station entry"></a>
@@ -104,6 +104,15 @@ Station row between Save File and Exit Game, a second switch for the title
 screen's own Snap Station item; 1.1.4 took it out, and 1.1.7 added
 Autosave. The picture was taken on the 1.1.7 build.
 
+
+<a href="screenshots/32-graphics-page-cutscene-118.png"><img src="screenshots/32-graphics-page-cutscene-118.png" width="640" alt="The Graphics page, 1.1.8: the Cutscene Fix row chosen and set to On, with its help line"></a>
+
+**The Graphics page, 1.1.8.** The cursor on Cutscene Fix, here set to On.
+Off as shipped, the fix skips the one frame the console drew from inside
+the player model at the end of two intros, and since 1.1.8 it also lets
+Pikachu and the Zero-One slide fully off the title screen, where the
+cartridge hides each one with part of it still showing. The picture was taken by the 1.1.8 build itself, on a tape
+that walks to the row.
 
 <a href="screenshots/27-graphics-page-115.png"><img src="screenshots/27-graphics-page-115.png" width="640" alt="The Graphics page, 1.1.5: Super Sampling held to the card"></a>
 

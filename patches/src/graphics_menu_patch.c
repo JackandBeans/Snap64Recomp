@@ -189,7 +189,7 @@ UnkStruct800BEDF8* func_800AA38C(s32);
  *                Detail, 5 Filter, 6 Dither, 7 Fullscreen,
  *                8 Super Sampling, 9 Texture Filter, 10 Color Depth,
  *                11 Buffering, 12 Overscan Crop, 13 Cutscene Fix (also
- *                read by the intro patches), 14 Photo Detail, 15 VC
+ *                read by the intro and title patches), 14 Photo Detail, 15 VC
  *                Recolor. The bank is full: field 16, Wide HUD, is the
  *                byte at +0x4D (MBOX_FIELD maps it there).
  *   +0x18  u32  SCRATCH_GRAPHICS_GOBJ, the patch's own (see below)
@@ -383,8 +383,9 @@ UnkStruct800BEDF8* func_800AA38C(s32);
 #define STR_SND_DESC   76   /* ..81: the SOUND page's descriptions */
 #define STR_CROP_LABEL 82   /* "Overscan Crop", the thirteenth Graphics row */
 #define STR_CROP_DESC  83
-/* "Cutscene Fix": the intro hand-off fix (settings.h intro_fix). Not
- * "Intro Fix" -- the body face the labels are set in has no capital I. */
+/* "Cutscene Fix": the intro hand-off fix and the title movers' exit
+ * (settings.h intro_fix). Not "Intro Fix" -- the body face the labels are
+ * set in has no capital I. */
 #define STR_INTRO_LABEL 84
 #define STR_INTRO_DESC  85
 #define STR_PHOTO_LABEL 86  /* "Photo Detail" (settings.h photo_detail) */

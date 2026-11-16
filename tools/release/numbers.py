@@ -42,9 +42,10 @@ def rewrite(rel, fn):
 
 
 def verification(s):
-    pat = re.compile(r'  On the (\S+) executable built here \(SHA-256 beginning `(\w+)`\), run\n'
-                     r'  without diagnostics in the environment, the suite passed (\d+) of (\d+) checks\n'
-                     r'  in (\d+) seconds(.*?), and the station\'s (\d+) of (\d+)\n?\s*in (\d+); the ', re.S)
+    # The paragraph is rewrapped at every release, so the words may break anywhere: any white space between them.
+    pat = re.compile(r'  On the (\S+) executable built here \(SHA-256 beginning `(\w+)`\),\s+run\s+'
+                     r'without\s+diagnostics\s+in\s+the\s+environment,\s+the\s+suite\s+passed\s+(\d+)\s+of\s+(\d+)\s+checks\s+'
+                     r'in\s+(\d+)\s+seconds(.*?),\s+and\s+the\s+station\'s\s+(\d+)\s+of\s+(\d+)\s+in\s+(\d+);\s+the\s+', re.S)
     m = pat.search(s)
     assert m, 'the paragraph on the executable built here was not found'
     prev, p_checks, p_total, p_secs, p_st, p_st_secs = m.group(1), m.group(3), m.group(4), m.group(5), m.group(7), m.group(9)

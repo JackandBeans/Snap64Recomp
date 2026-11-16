@@ -9,7 +9,8 @@
 # settings, the log, mods) goes to the sandbox's config folder,
 # ~/.var/app/io.github.jackandbeans.Snap64Recomp/config/Snap64Recomp/,
 # since /app is read-only (src/paths.cpp). @PRERELEASE@ is filled in by the
-# workflow (empty for a release).
+# workflow (empty for a release), and @BUILD_ID@ with the commit the
+# checkout is at.
 id: io.github.jackandbeans.Snap64Recomp
 runtime: org.freedesktop.Platform
 runtime-version: '24.08'
@@ -47,6 +48,13 @@ modules:
     build-options:
       append-path: /usr/lib/sdk/llvm18/bin
       prepend-ld-library-path: /usr/lib/sdk/llvm18/lib
+      # The commit the program says it was built from, at its start and in
+      # its log. The source below comes without its .git, so the build
+      # cannot ask git and is told here (tools/build_id.cmake reads this
+      # at every build); until 1.1.7 nothing told it, and the Flatpak said
+      # "built from commit unknown". Left empty, it says "unknown".
+      env:
+        SNAP_BUILD_ID: "@BUILD_ID@"
     build-commands:
       - >
         cmake -S . -B build-flatpak -G Ninja -DCMAKE_BUILD_TYPE=Release

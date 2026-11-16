@@ -117,6 +117,12 @@ struct Settings {
     // as its intro starts, from
     // mailbox byte 0x80C00015 -- seeded from here and edited by the GRAPHICS
     // page's Cutscene Fix row.
+    // The same row covers the title screen's two movers, Pikachu and the
+    // ZERO-ONE with Todd: the ROM hides each sprite at once when its x
+    // reaches -32, with up to 20 columns of it still on screen. On,
+    // patches/src/title_exit_patch.c runs each on until the sprite is wholly
+    // past the left edge (-45 for Pikachu, -60 for the ZERO-ONE); it reads
+    // the same byte once as each mover starts.
     bool  intro_fix         = false;
     // The game shows every photo -- the review window after a shot, Oak's
     // check, the album -- by rendering it into a 320x210 buffer in RAM at
@@ -523,6 +529,20 @@ void session_mark_clean();
 // Whether the last session's mark was found at this start: it was stopped
 // from outside or crashed.
 bool session_was_unclean();
+// The start mark: snap64.starting in the data folder, from the start until
+// the renderer has taken its first display lists (graphics_start_reached)
+// or the session ends by itself (session_mark_clean). It counts the starts
+// in a row that did neither: a crash, or a kill, before the first picture.
+// After two of those, with Super Sampling, Anti-Aliasing, Color Depth or
+// Buffering raised, graphics_safe_start asks whether to start with them at
+// their defaults: a setting that takes the driver down at the start could
+// otherwise never be lowered from inside the game (the render-target catch
+// sees only a target that came back empty; issue #39's round). Called
+// before the renderer exists. A replay or a scripted drop is a test run and
+// neither counts nor is asked, unless SNAP_SAFE_GFX_ANSWER=defaults or keep
+// answers the question (which a run can then exercise).
+void graphics_safe_start();
+void graphics_start_reached();
 // Says why in the log and in a box, marks the session as ended on
 // purpose, and ends the process from any thread (main.cpp): for a fault
 // the run cannot go on from, said properly rather than crashed on.
@@ -571,6 +591,12 @@ uint64_t d3d12_adapter_memory();
 // with this sample count: the wanted multiplier, or a lower one, said in
 // the log when lowered (rt64_render_context.cpp; issue #28).
 int fit_super_sampling(int wanted, int msaa);
+// The anti-aliasing the card can make its render targets with: the wanted
+// sample count (8, 4, 2, or 0 for off), or the highest lower one the device
+// offers, and below one the mark says failed on this card with Super
+// Sampling at 1x; said in the log when lowered (rt64_render_context.cpp;
+// issue #39).
+int fit_msaa(int wanted);
 const std::string& renderer_failure_detail();
 
 // The horizontal widening the renderer is applying to the game's

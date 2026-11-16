@@ -4,6 +4,7 @@ import android.content.Intent;
 import android.content.res.AssetManager;
 import android.database.Cursor;
 import android.net.Uri;
+import android.os.Build;
 import android.os.Bundle;
 import android.provider.OpenableColumns;
 import android.util.Log;
@@ -12,6 +13,7 @@ import java.io.File;
 import java.io.FileOutputStream;
 import java.io.InputStream;
 import java.io.OutputStream;
+import java.nio.charset.StandardCharsets;
 import java.util.concurrent.CountDownLatch;
 
 import org.libsdl.app.SDLActivity;
@@ -75,6 +77,24 @@ public class Snap64Activity extends SDLActivity {
                 if (value != null) {
                     SDLActivity.nativeSetenv(key, value.toString());
                 }
+            }
+        }
+
+        // Why the app's last runs ended, as Android kept it, for the native
+        // side to copy into snap64.log when it starts (Snap64ExitInfo).
+        if (Build.VERSION.SDK_INT >= 30) {
+            try {
+                final String ends = Snap64ExitInfo.collect(this, (folder != null) ? new File(folder, "snap64-crash.pb") : null);
+                final File note = new File(getFilesDir(), "exit_info.txt");
+                if (ends.isEmpty()) {
+                    note.delete();
+                } else {
+                    try (OutputStream out = new FileOutputStream(note)) {
+                        out.write(ends.getBytes(StandardCharsets.UTF_8));
+                    }
+                }
+            } catch (Throwable t) {
+                Log.w(TAG, "the app's last ends could not be noted: " + t);
             }
         }
 

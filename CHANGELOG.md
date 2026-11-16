@@ -1,5 +1,191 @@
 # Changelog
 
+## 1.1.8 -- 2026-11-16
+
+* On an AYN Thor the Android app closed as the game began to draw (#36,
+  reported by Shiniphil, whose log named the step). The Thor's Adreno 740
+  driver refused the renderer's texture table with
+  `VK_ERROR_OUT_OF_POOL_MEMORY`, and RT64 went on with the set it had not been
+  given. Qualcomm's driver charges a variable-count binding's declared count
+  to the descriptor pool, whatever count is asked; plume sized the pool to the
+  count asked, 2048 or more here, and RT64 declares 8192. The cause was found
+  on a Retroid Pocket 6, which has the Thor's chip and Android 13, by
+  sergiomanzur for cvlod_recomp, and the same error was fixed for an Adreno
+  730 in automobililamborghini-recomp. On a Qualcomm driver the pool now holds
+  the declared count from the start, and on any other driver a refused set is
+  asked for once more from such a pool. The log says what a refused set asked
+  for, and what the driver says of descriptor indexing. `SNAP_VK_POOL_TEST`
+  plays the Adreno accounting on any device (1: the retry answers; 2: the
+  device is also treated as Qualcomm's), and `tools/android/pool_check.py`
+  runs both on the emulator: 23 of 23 checks, with the Android check's 114 of
+  114 on the same build. On the reporter's Thor (the test build 1.1.7-test2,
+  November 14) the refusal was gone and the pools held the declared count.
+  The app still closed a moment later, by a second fault its log could not
+  name; the next entry is for that.
+* The Android app records why it closed (#36). A phone shows a player
+  neither a crash nor its reason, and the Thor's second log ended without a
+  word. When a fatal signal arrives, a handler writes straight into
+  `snap64.log` (`[SNAP-CRASH]`): the signal, the thread, the Vulkan call that
+  thread began last (the Vulkan layer names each call in a per-thread slot
+  before it runs), the code addresses on its stack as `libmain.so +offset`,
+  and the words on the stack that point into the port's code. The system's
+  own handler then gets the signal, so Android's report is still made. At the
+  next start the log opens with what Android kept of the app's last three
+  ends (`[SNAP-EXIT]`, Android 11 on), and for a native crash with the
+  system's own report, its tombstone (Android 12 on), reduced to the signal,
+  the abort message and the crashing thread's frames; the whole report is
+  kept as `snap64-crash.pb` in the game folder. A few one-time `[SNAP-VK]`
+  lines mark the first pipelines, the first variable-count set, the first
+  submit and the first presents, so a log that ends early says how far it
+  got. `SNAP_CRASH_TEST=<segv|abort>:<call>:<n>` crashes the thread that
+  begins its n-th named Vulkan call, and `tools/android/crash_check.py` reads
+  both records back on the emulator and compares them: 42 of 42 checks on
+  the signed test build 1.1.7-test3, where the two records named the same
+  thread and the same address. On the reporter's Thor, an arm64 device, the
+  record of one start and Android's report of the start before named the
+  same thread, the same call and the same code addresses.
+* On the AYN Thor the Android app still closed at the first frame with the
+  pool fix in (#36, Shiniphil, whose log from the crash record's test build
+  named the spot). Adreno's driver crashed in `vkCmdEndRenderPass`, closing
+  the first render pass of the first frame, and that pass held the frame's
+  query pool reset, which Vulkan allows only outside a render pass. The
+  port's own clear of a new render target (added in September for the Steam
+  Deck's stale memory) opens a pass just before the reset, and nothing
+  closed it; upstream RT64, and the three other Android ports on it, reset
+  before any pass opens. plume now closes an open pass before a query pool
+  reset, a dispatch or a resolve, as its copies and barriers already did,
+  and says so once in the log. Under the Khronos validation layer on
+  Vulkan on Windows, the old build reported
+  `VUID-vkCmdResetQueryPool-renderpass` within seconds, and the new one ran
+  the eval tape to the lab (45 scored lines, 155 s) with that error gone
+  and nothing new. On Android's emulator the Android checks passed, 114 of
+  114, and the pool check, 23 of 23; in every run that drew a frame the
+  reset found a pass open, and a dispatch or a resolve never did. On the
+  reporter's Thor (the test build 1.1.7-test4, November 14) the game ran and
+  the first course was played; its log shows the pass ended before the
+  reset, at the spot where the earlier build had crashed.
+* Three things Vulkan does not allow are no longer passed to the driver, each
+  found on an Adreno by another RT64 port on Android (JetForceGemini-Recompiled
+  on an Adreno 740, automobililamborghini-recomp on an Adreno 615): a clear
+  whose rectangle reaches past the framebuffer is cut to it (RT64's inclusive
+  N64 fill rectangles clear 321 wide on a 320 target), a scissor never starts
+  at a negative offset, and nothing is written into a descriptor set the
+  driver refused. A valid frame is drawn as before.
+* On the title screen, the Zero-One vanished at the left edge with its back
+  still in view, and Pikachu did the same. JackandBeans found it on 1.1.7 on
+  Nov 14, with Overscan Crop off. It is the cartridge's own rule: each of the
+  title's two movers (`func_800E2C60_A0A1F0` for Pikachu,
+  `func_800E2DC8_A0A358` for the Zero-One with Todd) hides its sprite once
+  the sprite's x reaches -32. The Zero-One is 60 pixels wide and Pikachu 45,
+  so up to 20 columns of the vehicle's back and 11 of Pikachu went in one
+  frame; the crop hides all but a few of those columns. A capture of 1.1.7
+  on the idle title tape matched the code: both halves of the Zero-One drawn
+  down to x = -32, then gone at once. Cutscene Fix, off by default, now
+  also runs each mover on until its sprite is wholly past the edge, to -60
+  and -45. Off, the title is the cartridge's. Checked on the same tape with
+  this build: with the fix off, both movers were drawn where 1.1.7 drew them
+  at every captured reading and still vanished at -32; with it on, Pikachu
+  went on to -45 and the Zero-One to -60 before they were hidden, and the
+  rest of the title was drawn as with the fix off.
+* On a phone with an Exynos 2400 the Android app ended at every start with
+  "The card could not make a color render target of 1600x1200 with MSAA 8x:
+  Super Sampling 1x is more than its memory carries. It is set to 1x now",
+  once the graphics settings had been set to their highest, and a reinstall
+  did not help (#39, reported by doctoroftardis). The catch for a render
+  target the card cannot make (1.1.5, issue #28) lowered Super Sampling
+  alone. At 1x it lowered nothing, so the saved 8x was asked for again at
+  every start, and the game folder, which holds the settings, outlives the
+  app. Three changes. The catch now lowers one setting at every failure, the
+  first that has anything left to give, so a start that ends there is never
+  the same start again: Super Sampling by one, then Anti-Aliasing by one
+  level, then Color Depth to Standard where the color targets are 16 bits a
+  channel, then Render Scale to half. Its message names the setting it
+  changed, and with all four at their lowest it says that nothing was. A
+  level the device does not offer for its color and depth targets is no
+  longer asked for: the port passed the saved level to RT64 whatever the
+  device answered, and now holds it to the highest level offered, says so in
+  the log and writes it back. And a level that failed is remembered in
+  `snap64.gpu_failed`, as a Super Sampling factor is: the next start, the
+  Graphics page and F9 stay below it on the same card. The log names the
+  levels the card offers. Which of the two the Exynos did, not offering 8x
+  or failing to make it, is not known: the report came without a log.
+  `SNAP_MSAA_TEST=<n>` plays a card that offers up to nx, and the suite has
+  six checks for this (msaafit, msaafail, msaafail-next, catch-color,
+  catch-scale, catch-floor). `SNAP_TARGET_FAIL_TEST` takes a number of lines
+  now, so a check can fail the first target at the window's scale; the very
+  first target is made at one times the console's size, and at that size
+  nothing is left to lower. On Windows (Direct3D 12, an AMD card) the six
+  passed, with the three older checks of the catch (vram, gpufail,
+  gpufail-next): 8x was held to 4x on a card played as offering 4x, and
+  written back; a failed target at 8x set the saved level to 4x and marked
+  it, and the next start, asked 8x again, held 4x; Color Depth High went to
+  Standard; Render Scale went from the 4x in force to 2x; and at the floor
+  nothing was changed. The same source builds for Linux and for Android.
+  On Android's emulator the test build 1.1.8-test1 passed the same steps in
+  `tools/android/catch_check.py`, 16 of 16: the emulator offered 2x, 4x and
+  8x, and Render Scale went from 5x to 2x on its 1080 lines. The released
+  1.1.7, put in the report's state there, gave the report's message at two
+  starts running; with the signed test build installed over it, the next
+  start read 1.1.7's own mark, held 4x and reached the title, the save
+  untouched. Not run on an Exynos or on any Android device.
+* A start that could not make its graphics device ended with the advice to
+  set `graphics_api` to 1 and try Vulkan, also when the file already asked
+  for Vulkan, and on Linux and Android, where there is no other backend. On
+  Windows the message now names the backend the file does not, and elsewhere
+  it names the driver alone. Read from the code; not run.
+* A graphics setting that takes the driver down at the start, or makes
+  Windows remove the device, left no way back in. The port sees no failed
+  render target then: it shows no message and changes nothing, so every
+  start ends the same way. Nobody reported it; it was found on reading every
+  way a saved setting can end a start, after #39. The port now counts the
+  starts that end before their first frames and not by themselves
+  (`snap64.starting` in the data folder, written at the start and removed
+  once thirty display lists have been taken, or at any end the port makes
+  itself). After two in a row, with Super Sampling, Anti-Aliasing, Color
+  Depth or Buffering raised, the next start asks whether to put those four
+  back to their defaults, as the mods question does for mods. It only asks,
+  and a replay run neither counts nor is asked. `SNAP_EARLY_DEATH_TEST` ends
+  a start at its first display list as a crash would, and
+  `SNAP_SAFE_GFX_ANSWER` answers the question, for the suite's two checks
+  (safestart, safestart-ask). On Windows both passed: two starts ended at
+  their first display list and the mark counted 1, then 2; the third start
+  found them, took the answer, saved Anti-Aliasing off, and the mark was
+  gone once it had drawn. On Android's emulator the same two steps passed in
+  `tools/android/catch_check.py`. The checks answer through the variable.
+  The box itself was then photographed from the screen on Windows, started
+  on a folder with the mark of two such starts: its text and both buttons
+  show whole, Keep mine the default.
+* 1.1.7's Flatpak said "built from commit unknown" where every other build
+  named its commit; JackandBeans saw it on his Deck. flatpak-builder takes
+  the source without its `.git`, so the build could not ask git, and nothing
+  told it. The workflow now writes the commit into the manifest, which hands
+  it to the build as `SNAP_BUILD_ID`, the variable `tools/build_id.cmake`
+  already read for a tree with no `.git`, and the step that installs and
+  starts the bundle fails unless the start names that commit. Checked in
+  parts on this machine: the script gave the header the id from the
+  variable on a folder with no `.git` (and "unknown" with it empty),
+  flatpak-builder 1.4.2 read the manifest with the variable in it, and in a
+  small test build it handed a variable set that way to the build's
+  commands. The Flatpak itself is built on GitHub, and that run has not
+  happened yet.
+* The Android paths check (`tools/android/paths_check.py`) failed twice on
+  the APK of the 1.1.7 release page, both times in its own steps. Its "Don't
+  ask again" path waited for the game's start by reading the log the "Not
+  now" start had left, so it stopped the app the moment after the tap, and
+  at the next start the question was back. The path now removes that log
+  first, waits for the answer's own start, and stops the app two seconds
+  later. Its copy path put its test file in a `saves` folder the shell made,
+  and the app's copy missed it in three runs of four, with 1.1.7's
+  three-second wait too ("12 files copied", Snap64's `saves` made and left
+  empty). The file now goes in `mods`, which the app makes at its first
+  start, as a player's files are all the app's own, and the one run since
+  copied it ("13 files copied"). Whether the shell's folder was the cause is
+  not proved. With both changes the signed 1.1.7 APK passed 11 of 11 on
+  Android's emulator.
+* The README's box about copies of the port is a note now, without the
+  sentence about a fake download: the repository it meant and the account
+  that posted it are gone from GitHub. The 1.1.7 release page says the same.
+
 ## 1.1.7 -- 2026-11-13
 
 * On an Options page, a click between a setting's arrows changed the

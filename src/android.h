@@ -23,4 +23,17 @@ std::string android_pick_document();
 // tag Snap64): the write end, for the log echo in main.cpp, or -1.
 int android_logcat_pipe();
 
+// The crash record. A phone gives a player no way to read why an app closed,
+// so the log has to say it. android_exit_report copies in what Android kept
+// of the app's last ends (the activity asked for it before this side
+// started: Snap64ExitInfo.java), with the system's own report of a native
+// crash reduced to its signal and the crashing thread's frames.
+// android_crash_install puts handlers on the fatal signals: each writes the
+// signal, the thread, the Vulkan call that thread began last and the code
+// addresses on its stack straight into the log, then hands the signal back
+// to the system, whose own report is still made. Both are called once, after
+// the log is bound.
+void android_exit_report();
+void android_crash_install();
+
 } // namespace snap

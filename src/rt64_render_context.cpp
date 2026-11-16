@@ -133,6 +133,8 @@ static std::atomic<RT64::Application*> s_live_app{ nullptr };
 // whether the Deck warning about it has been given.
 static std::atomic<uint32_t> s_surface_size{ 0 };
 static std::atomic<uint64_t> s_device_memory{ 0 };     // the renderer's device's dedicated memory, once it exists
+static std::atomic<uint32_t> s_msaa_offered{ 0 };      // the sample counts it offers for the color and depth targets, as the sum of the counts; 0 until it exists
+static std::atomic<bool> s_color_16{ false };          // its color targets are 16 bits a channel (Color Depth High, or Auto on a card that prefers it)
 static std::chrono::steady_clock::time_point s_surface_since;
 static bool s_surface_warned = false;
 
@@ -261,8 +263,10 @@ public:
         // antialiasing level in particular tears down and rebuilds the whole
         // shader cache when changed after setup, so starting at the saved
         // level makes that cost never happen. Config file I/O is off, so
-        // these writes are the configuration.
-        switch (snap::settings().msaa) {
+        // these writes are the configuration. The level is the saved one,
+        // or a lower one where the mark says the saved one failed (fit_msaa;
+        // what the device offers is known only after setup, below).
+        switch (snap::fit_msaa(snap::settings().msaa)) {
             case 8: app_->userConfig.antialiasing = RT64::UserConfiguration::Antialiasing::MSAA8X; break;
             case 4: app_->userConfig.antialiasing = RT64::UserConfiguration::Antialiasing::MSAA4X; break;
             case 2: app_->userConfig.antialiasing = RT64::UserConfiguration::Antialiasing::MSAA2X; break;
@@ -383,6 +387,24 @@ public:
         printf("[SNAP-RT64] Renderer context created (result=%d, api=%d)\n",
                static_cast<int>(result), static_cast<int>(chosen_api));
 
+        // The device exists: its memory and the anti-aliasing it offers are
+        // known, so the saved level is held to them here and written back
+        // when held (issue #39), as Super Sampling is above. RT64's own
+        // setup turned a level the device does not offer off; the first
+        // configuration below asks for the fitted one.
+        learn_device();
+        {
+            const int wanted = snap::settings().msaa;
+            const int fitted = snap::fit_msaa(wanted);
+            if (fitted != wanted) {
+                {
+                    std::lock_guard<std::mutex> lock(snap::settings_mutex());
+                    snap::settings().msaa = fitted;
+                }
+                snap::save_settings();
+            }
+        }
+
         // Load any texture packs sitting in texture_packs/ next to the
         // executable. RT64's replacement subsystem is complete -- database,
         // .rtz archives, DDS and PNG, streaming, its own VRAM pool -- and was
@@ -463,11 +485,23 @@ public:
         // no-op until the next launch (seen in a Steam Deck's log, the
         // renderer at one sample with the setting at 8x, 2026-09-12).
         const uint32_t prevSamples = app_->userConfig.msaaSampleCount();
+        // The level asked for, held to what the device offers and below a
+        // level the mark says failed on it (fit_msaa, issue #39). The file's
+        // level and the Graphics page's both come through here, and until
+        // 1.1.7 a level the device could not make was asked for all the same.
+        learn_device();
+        int wantedSamples = 0;
         switch (new_config.msaa_option) {
-            case ren::Antialiasing::MSAA8X: app_->userConfig.antialiasing = RT64::UserConfiguration::Antialiasing::MSAA8X; break;
-            case ren::Antialiasing::MSAA4X: app_->userConfig.antialiasing = RT64::UserConfiguration::Antialiasing::MSAA4X; break;
-            case ren::Antialiasing::MSAA2X: app_->userConfig.antialiasing = RT64::UserConfiguration::Antialiasing::MSAA2X; break;
-            default:                        app_->userConfig.antialiasing = RT64::UserConfiguration::Antialiasing::None;   break;
+            case ren::Antialiasing::MSAA8X: wantedSamples = 8; break;
+            case ren::Antialiasing::MSAA4X: wantedSamples = 4; break;
+            case ren::Antialiasing::MSAA2X: wantedSamples = 2; break;
+            default:                        wantedSamples = 0; break;
+        }
+        switch (snap::fit_msaa(wantedSamples)) {
+            case 8:  app_->userConfig.antialiasing = RT64::UserConfiguration::Antialiasing::MSAA8X; break;
+            case 4:  app_->userConfig.antialiasing = RT64::UserConfiguration::Antialiasing::MSAA4X; break;
+            case 2:  app_->userConfig.antialiasing = RT64::UserConfiguration::Antialiasing::MSAA2X; break;
+            default: app_->userConfig.antialiasing = RT64::UserConfiguration::Antialiasing::None;   break;
         }
 
         switch (new_config.rr_option) {
@@ -476,17 +510,6 @@ public:
             default:                        app_->userConfig.refreshRate = RT64::UserConfiguration::RefreshRate::Original; break;
         }
         app_->userConfig.refreshRateTarget = new_config.rr_manual_value;
-        if (app_->device) {
-            // An integrated GPU (the Steam Deck, a laptop's) reports a small
-            // carve-out as its dedicated memory while its targets live in the
-            // system's RAM: its budget is half of that RAM, if more.
-            const auto& description = app_->device->getDescription();
-            uint64_t memory = description.dedicatedVideoMemory;
-            if (description.type == decltype(description.type)::INTEGRATED) {
-                memory = std::max(memory, uint64_t(std::max(SDL_GetSystemRAM(), 0)) << 20 >> 1);
-            }
-            s_device_memory.store(memory, std::memory_order_relaxed);
-        }
         // Fitted here too: the first configuration pushed at the start carries
         // the file's own value, read before the start's fit could hold it
         // (settings.cpp set_graphics_config), and the Graphics page's value
@@ -579,6 +602,23 @@ public:
             enable_instant_present();
         }
         if (!app_) return;
+
+        // The start's first frames: once thirty display lists have been
+        // taken, the start mark goes (settings.h, graphics_safe_start); a
+        // start that dies before that is counted by the next one.
+        // SNAP_EARLY_DEATH_TEST ends the run at the first list as a crash
+        // would, with no word and no mark cleared (release_check.py
+        // safestart).
+        if (first_lists_ < 30) {
+            if ((first_lists_ == 0) && (std::getenv("SNAP_EARLY_DEATH_TEST") != nullptr)) {
+                printf("[SNAP-CFG] SNAP_EARLY_DEATH_TEST: ending before the first frame, as a crash would\n");
+                fflush(stdout);
+                std::_Exit(9);
+            }
+            if (++first_lists_ == 30) {
+                snap::graphics_start_reached();
+            }
+        }
 
         // task->t.ucode / ucode_data / data_ptr are PTR(u64) = int32_t holding
         // N64 KSEG0 virtual addresses (e.g. 0x80XXXXXX).
@@ -969,8 +1009,44 @@ private:
         wide_applied_ = wide;
     }
 
+    // What the device says of itself, kept for the two fits
+    // (fit_super_sampling, fit_msaa), which the game's thread runs too: its
+    // memory, and the sample counts it offers for both render target formats.
+    // Said once in the log, so a report names what the card can do.
+    void learn_device() {
+        if (device_learned_ || !app_ || !app_->device) {
+            return;
+        }
+        device_learned_ = true;
+        // An integrated GPU (the Steam Deck, a laptop's, a phone's) reports a
+        // small carve-out as its dedicated memory while its targets live in
+        // the system's RAM: its budget is half of that RAM, if more.
+        const auto& description = app_->device->getDescription();
+        uint64_t memory = description.dedicatedVideoMemory;
+        if (description.type == decltype(description.type)::INTEGRATED) {
+            memory = std::max(memory, uint64_t(std::max(SDL_GetSystemRAM(), 0)) << 20 >> 1);
+        }
+        s_device_memory.store(memory, std::memory_order_relaxed);
+
+        const bool hdr = (app_->shaderLibrary != nullptr) && app_->shaderLibrary->usesHDR;
+        const uint32_t color = app_->device->getSampleCountsSupported(RT64::RenderTarget::colorBufferFormat(hdr));
+        const uint32_t depth = app_->device->getSampleCountsSupported(RT64::RenderTarget::depthBufferFormat());
+        // The count of one is every device's; it marks the answer as known.
+        const uint32_t offered = (color & depth) | 1u;
+        s_msaa_offered.store(offered, std::memory_order_relaxed);
+        s_color_16.store(hdr, std::memory_order_relaxed);
+        {
+            printf("[SNAP-CFG] anti-aliasing the card offers for its render targets:%s%s%s%s (color %s, mask 0x%X; depth mask 0x%X)\n",
+                   (offered & 2u) ? " 2x" : "", (offered & 4u) ? " 4x" : "", (offered & 8u) ? " 8x" : "",
+                   ((offered & 14u) == 0) ? " none" : "", hdr ? "16 bits a channel" : "8 bits a channel", color, depth);
+            fflush(stdout);
+        }
+    }
+
     std::unique_ptr<RT64::Application> app_;
     bool wide_applied_ = false;
+    bool device_learned_ = false;
+    int first_lists_ = 0;          // display lists taken so far, counted to thirty
 };
 
 // ---------------------------------------------------------------------------
@@ -1123,36 +1199,188 @@ int fit_super_sampling(int wanted, int msaa) {
     return ds;
 }
 
+// The anti-aliasing level one below a level: 8x, 4x, 2x, off (0).
+static int msaa_below(int msaa) {
+    return (msaa >= 8) ? 4 : (msaa >= 4) ? 2 : 0;
+}
+
+// The anti-aliasing the card can make its render targets with (issue #39,
+// doctoroftardis: a phone asked for 8x could not make the color target, and
+// with Super Sampling at 1x the catch below had nothing to lower, so every
+// start ended on the same message). The level wanted, or the highest lower
+// one the device offers for both the color and the depth target (known once
+// the device exists), and below a level the mark says failed on this card
+// with Super Sampling at 1x, where the sample count is all that is left to
+// blame. Before the device exists its memory is not known either, and the
+// mark is taken as this card's. 0 is off. A held level is said in the log,
+// once for each. SNAP_MSAA_TEST=<n> stands in for the device's answer
+// ("up to nx"), so the suite can exercise this (release_check.py msaafit).
+int fit_msaa(int wanted) {
+    const int want = (wanted >= 8) ? 8 : (wanted >= 4) ? 4 : (wanted >= 2) ? 2 : 0;
+    if (want == 0) {
+        return 0;
+    }
+    uint32_t offered = s_msaa_offered.load(std::memory_order_relaxed);
+    if (const char* fake = std::getenv("SNAP_MSAA_TEST")) {
+        const int top = std::atoi(fake);
+        if (top >= 1) {
+            static std::atomic<bool> said{ false };
+            offered = 1u | ((top >= 2) ? 2u : 0u) | ((top >= 4) ? 4u : 0u) | ((top >= 8) ? 8u : 0u);
+            if (!said.exchange(true)) {
+                printf("[SNAP-CFG] SNAP_MSAA_TEST: the card offers anti-aliasing up to %dx\n", (top >= 8) ? 8 : (top >= 4) ? 4 : (top >= 2) ? 2 : 1);
+                fflush(stdout);
+            }
+        }
+    }
+    // The highest level at or below `level` that the device offers; with no
+    // answer from a device yet, the level itself.
+    const auto offered_at_most = [offered](int level) {
+        while ((offered != 0) && (level >= 2) && ((offered & uint32_t(level)) == 0)) {
+            level = msaa_below(level);
+        }
+        return level;
+    };
+    int held = offered_at_most(want);
+
+    uint64_t memory = s_device_memory.load(std::memory_order_relaxed);
+    if (memory == 0) {
+        memory = snap::d3d12_adapter_memory();
+    }
+    const GpuFailed failed = gpu_failed_read();
+    bool marked = false;
+    // A mark made, or read, while the card's memory was not known cannot be
+    // told from another card's, and is taken as this one's.
+    if ((failed.downsample == 1) && (failed.msaa >= 2) && (held >= failed.msaa) &&
+        ((memory == 0) || (failed.memory == 0) || (failed.memory == memory))) {
+        held = offered_at_most(msaa_below(failed.msaa));
+        marked = true;
+    }
+
+    if (held != want) {
+        // Said once for each pair: the fit runs at every configuration.
+        static std::atomic<int> saidPair{ -1 };
+        const int pair = want * 16 + held + (marked ? 256 : 0);
+        if (saidPair.exchange(pair) != pair) {
+            char to[16];
+            if (held >= 2) {
+                snprintf(to, sizeof(to), "%dx", held);
+            } else {
+                snprintf(to, sizeof(to), "off");
+            }
+            if (marked) {
+                printf("[SNAP-CFG] anti-aliasing %dx failed on this card before (snap64.gpu_failed): held to %s\n", failed.msaa, to);
+            } else {
+                printf("[SNAP-CFG] anti-aliasing %dx is not offered by this card for its render targets: held to %s\n", want, to);
+            }
+            fflush(stdout);
+        }
+    }
+    return held;
+}
+
 // A render target the card could not make, from the renderer's worker
 // (lib/rt64 rt64_render_target.cpp; plume gives nothing back for it):
-// the fit's model was wrong for this card. Said in the log and in a box,
-// the setting that failed marked for every later fit, the saved Super
-// Sampling held one below it, and the run ended as a refused start is,
-// not as a crash (issue #28).
+// the fits' models were wrong for this card. Said in the log and in a box,
+// the setting that failed marked for every later fit, one saved setting
+// lowered, and the run ended as a refused start is, not as a crash (issue
+// #28). One setting is lowered at each failure, the first of these that has
+// anything left to give, so a start that ends here is never the same start
+// again (issue #39: until 1.1.7 only Super Sampling was lowered, so a failure
+// at 1x changed nothing and came back at every start): Super Sampling by
+// one while it is above 1x; then the anti-aliasing by one level; then Color
+// Depth to Standard while the color targets are 16 bits a channel (twice
+// the memory, and a format a Vulkan device need not offer); then Render
+// Scale to half of the scale in force. With all four at their lowest nothing
+// is lowered, and the message says so.
 extern "C" void snap_render_target_failed(uint32_t width, uint32_t height, uint32_t samples, const char* what) {
     int wanted = 1;
     int msaa = 0;
+    int colorDepth = 0;
     {
         std::lock_guard<std::mutex> lock(snap::settings_mutex());
         wanted = std::clamp(snap::settings().downsample, 1, 8);
         msaa = snap::settings().msaa;
+        colorDepth = snap::settings().color_depth;
     }
-    const int held = std::max(1, wanted - 1);
+    msaa = (msaa >= 8) ? 8 : (msaa >= 4) ? 4 : (msaa >= 2) ? 2 : 0;
+    const bool color16 = s_color_16.load(std::memory_order_relaxed) || (colorDepth == 2);
+    // The scale the targets are made at: the failed target's height over the
+    // console's 240 lines, or the renderer's own figure if that is more (it
+    // is 1 until the renderer has sized its first frame).
+    int scale = int(height / 240u);
+    if (RT64::Application* app = snap::s_live_app.load(std::memory_order_acquire)) {
+        if (app->sharedQueueResources != nullptr) {
+            const float sy = app->sharedQueueResources->resolutionScale.y * 1.0f;
+            scale = std::max(scale, int(sy + 0.5f));
+        }
+    }
     uint64_t memory = s_device_memory.load(std::memory_order_relaxed);
     if (memory == 0) {
         memory = snap::d3d12_adapter_memory();
     }
     char msg[512];
-    snprintf(msg, sizeof(msg),
-             "The card could not make a %s render target of %ux%u with MSAA %ux: Super Sampling %dx is more than its memory carries. "
-             "It is set to %dx now. Start Snap64 Recomp again.",
-             what, width, height, std::max(1u, samples), wanted, held);
-    printf("[SNAP-GPU] %s (memory %llu MB; the setting is marked in snap64.gpu_failed)\n", msg, (unsigned long long)(memory >> 20));
-    fflush(stdout);
-    gpu_failed_write(wanted, msaa, memory);
-    {
-        std::lock_guard<std::mutex> lock(snap::settings_mutex());
-        snap::settings().downsample = held;
+    if (wanted > 1) {
+        const int held = wanted - 1;
+        snprintf(msg, sizeof(msg),
+                 "The card could not make a %s render target of %ux%u with MSAA %ux: Super Sampling %dx is more than its memory carries. "
+                 "It is set to %dx now. Start Snap64 Recomp again.",
+                 what, width, height, std::max(1u, samples), wanted, held);
+        printf("[SNAP-GPU] %s (memory %llu MB; the setting is marked in snap64.gpu_failed)\n", msg, (unsigned long long)(memory >> 20));
+        fflush(stdout);
+        gpu_failed_write(wanted, msaa, memory);
+        {
+            std::lock_guard<std::mutex> lock(snap::settings_mutex());
+            snap::settings().downsample = held;
+        }
+    } else if (msaa >= 2) {
+        const int held = msaa_below(msaa);
+        char to[16];
+        if (held >= 2) {
+            snprintf(to, sizeof(to), "%dx", held);
+        } else {
+            snprintf(to, sizeof(to), "Off");
+        }
+        snprintf(msg, sizeof(msg),
+                 "The card could not make a %s render target of %ux%u with Anti-Aliasing at %dx. "
+                 "Anti-Aliasing is set to %s now. Start Snap64 Recomp again.",
+                 what, width, height, msaa, to);
+        printf("[SNAP-GPU] %s (memory %llu MB; the setting is marked in snap64.gpu_failed)\n", msg, (unsigned long long)(memory >> 20));
+        fflush(stdout);
+        gpu_failed_write(1, msaa, memory);
+        {
+            std::lock_guard<std::mutex> lock(snap::settings_mutex());
+            snap::settings().msaa = held;
+        }
+    } else if (color16) {
+        snprintf(msg, sizeof(msg),
+                 "The card could not make a %s render target of %ux%u at 16 bits a channel. "
+                 "Color Depth is set to Standard now. Start Snap64 Recomp again.",
+                 what, width, height);
+        printf("[SNAP-GPU] %s (memory %llu MB)\n", msg, (unsigned long long)(memory >> 20));
+        fflush(stdout);
+        {
+            std::lock_guard<std::mutex> lock(snap::settings_mutex());
+            snap::settings().color_depth = 1;
+        }
+    } else if (scale > 1) {
+        const int held = std::clamp(scale / 2, 1, 8);
+        snprintf(msg, sizeof(msg),
+                 "The card could not make a %s render target of %ux%u. "
+                 "Render Scale is set to %dx now. Start Snap64 Recomp again.",
+                 what, width, height, held);
+        printf("[SNAP-GPU] %s (memory %llu MB; the scale in force was %dx)\n", msg, (unsigned long long)(memory >> 20), scale);
+        fflush(stdout);
+        {
+            std::lock_guard<std::mutex> lock(snap::settings_mutex());
+            snap::settings().resolution_scale = held;
+        }
+    } else {
+        snprintf(msg, sizeof(msg),
+                 "The card could not make a %s render target of %ux%u. Super Sampling, Anti-Aliasing, Color Depth and "
+                 "Render Scale are already at their lowest, so nothing was changed. snap64.log says more.",
+                 what, width, height);
+        printf("[SNAP-GPU] %s (memory %llu MB; no setting was left to lower)\n", msg, (unsigned long long)(memory >> 20));
+        fflush(stdout);
     }
     snap::save_settings();
     snap::fatal_now(msg);

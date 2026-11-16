@@ -46,7 +46,7 @@ here should be assumed untried.
   here before they are published (`BUILDING.md`, "To cut a release"). The
   Android APK is signed with the release key here, so it carries no GitHub
   build record.
-* Version `1.1.7`, typed once in `CMakeLists.txt` and shown in the title
+* Version `1.1.8`, typed once in `CMakeLists.txt` and shown in the title
   bar, the log banner, the credits line, the executable's file properties and
   the ZIP's name. `CHANGELOG.md` says what each release changed.
 * Licensed under the GPLv3 (`LICENSE`); `NOTICE.md` lists every third-party
@@ -89,9 +89,19 @@ here should be assumed untried.
   the screen: the host's line for each BGM player gives its own clock at
   the hold and at the release, and the check passes only when they are
   equal.
-  On the 1.1.7 executable built here (SHA-256 beginning `b42fe724`), run
-  without diagnostics in the environment, the suite passed 39 of 39 checks in
-  1414 seconds, and the station's 5 of 5 in 488; the 1.1.6 executable had
+  Since 1.1.5 the suite plays a card with little memory and makes a render
+  target fail on purpose, and checks the start after it. Since 1.1.7 it
+  presses a virtual controller's buttons, as the Switch Online N64
+  controller and as an Xbox-style pad, and checks Autosave on the scoring
+  ride, on and off. Since 1.1.8 it plays a card that offers less
+  Anti-Aliasing than the file asks for, fails a target at every step of the
+  catch (Anti-Aliasing, Color Depth, Render Scale, and the floor where
+  nothing is left to lower) with the start after it, and ends two starts
+  early to check the question that follows.
+  On the 1.1.8 executable built here (SHA-256 beginning `6bec1a64`), run
+  without diagnostics in the environment, the suite passed 47 of 47 checks in
+  1489 seconds, and the station's 5 of 5 in 488; the 1.1.7 executable had
+  passed 39 of 39 in 1414 and the station's 5 in 488, the 1.1.6 executable had
   passed 33 of 33 in 1227 and the station's 5 in 488, the 1.1.5 executable had passed 33 of 33 in 1226 and the station's
   5 in 488, the 1.1.4 executable had passed 29 of 29 in 1150 and the station's
   5 in 491, the 1.1.3 executable had
@@ -104,7 +114,7 @@ here should be assumed untried.
   and 487, 1.0.6 the 22 of 22 before that in 781 and 487, 1.0.5 the same in 781 and 489, 1.0.4
   in 781 and 487, 1.0.3, 1.0.2 and 1.0.1 in 781 and 491 each, and 1.0.0 in
   781 and 489 on a cold shader cache. The suite opens the game window for
-  each run and takes about nineteen minutes, plus eight for the station.
+  each run and takes about twenty-five minutes, plus eight for the station.
   GitHub's machines record two kinds of run. The build workflow's
   (BUILDING.md, step 14) configures, compiles and packages the tree and runs
   no game: on the 1.1.0 tree (run 36301759264, 2026-09-27) it made the

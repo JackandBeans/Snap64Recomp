@@ -49,6 +49,23 @@ that a release build can be put through all of them in one go:
   gpufail     a render target the card cannot make (SNAP_TARGET_FAIL_TEST):
               the port says so, marks the setting, holds Super Sampling one
               below it and ends by itself; the next start holds below the mark
+  msaafit     anti-aliasing held to what the card offers (issue #39): the file
+              asks 8x, SNAP_MSAA_TEST says the card offers up to 4x, and the
+              start must hold it, say so and write the held level back
+  msaafail    a render target the card cannot make with Super Sampling at 1x
+              (issue #39): the port lowers the anti-aliasing one level, marks
+              it and ends by itself, where it used to lower nothing; the next
+              start, asked the failed level again, holds below the mark
+  catch       the rest of that ladder (issue #39), three starts whose first
+              color target fails with Super Sampling at 1x and anti-aliasing
+              off: Color Depth High is set to Standard, then Render Scale to
+              half the scale in force, then, with nothing left, the message
+              says so and no setting changes
+  safestart   the question after two starts that died before their first
+              frames: SNAP_EARLY_DEATH_TEST ends two starts as a crash would
+              with anti-aliasing at 4x, the mark snap64.starting counts
+              them, and the third start, answered "defaults", says so, saves
+              anti-aliasing off and clears the mark once it has drawn
   nsopad      the Switch Online N64 controller (issue #26): the virtual pad
               dressed with its name and ids must be told, with every pad's ids
               and SDL's mapping line in the log
@@ -809,6 +826,285 @@ def check_gpufail(c, exe_dir):
             mark.write_bytes(kept_mark)
 
 
+def check_msaafit(c, exe_dir):
+    """Anti-aliasing held to what the card offers (issue #39): the file asks
+    8x and SNAP_MSAA_TEST says the card offers up to 4x; the start must hold
+    the level, say so, run on without a lost target and write 4 back. The
+    file and the mark are put back as they were."""
+    check_msaa(c, exe_dir, 'msaafit')
+
+
+def check_msaafail(c, exe_dir):
+    """The catch for a render target the card cannot make, at Super Sampling
+    1x (issue #39): with 8x asked, SNAP_TARGET_FAIL_TEST fails the first
+    color target; the port must say so, mark the level, set the saved
+    anti-aliasing one level down and end by itself (exit 3), where until
+    1.1.7 it lowered nothing and every start ended the same way. A second
+    start, asked 8x again, must hold below the mark. The file and the mark
+    are put back as they were."""
+    check_msaa(c, exe_dir, 'msaafail')
+
+
+def check_msaa(c, exe_dir, part):
+    if not ensure_replay(exe_dir, 'menu_title.inputs'):
+        c.add(part, False, 'menu_title.inputs is not beside the executable')
+        return
+    p = exe_dir / 'snapsettings.json'
+    mark = exe_dir / 'snap64.gpu_failed'
+    kept = p.read_bytes() if p.is_file() else None
+    kept_mark = mark.read_bytes() if mark.is_file() else None
+    try:
+        j = json.loads(kept.decode('utf-8')) if kept else {}
+    except ValueError:
+        j = {}
+
+    def ask_8x():
+        j['downsample'] = 1
+        j['msaa'] = 8
+        p.write_text(json.dumps(j, indent=2), encoding='utf-8')
+
+    def saved():
+        try:
+            now = json.loads(p.read_text(encoding='utf-8'))
+            return now.get('msaa'), now.get('downsample')
+        except (OSError, ValueError):
+            return None, None
+
+    quiet = {'SNAP_REPLAY': 'menu_title.inputs', 'SNAP_MUTE': '1', 'SNAP_NO_BOX': '1'}
+    try:
+        if part == 'msaafit':
+            # The card offers up to 4x: held at the start, said, written back.
+            mark.unlink(missing_ok=True)
+            ask_8x()
+            out = run_game(exe_dir, dict(quiet, SNAP_MSAA_TEST='4'), 30)
+            after, _ = saved()
+            lines = out.splitlines()
+            faked = [l for l in lines if l.startswith('[SNAP-CFG] SNAP_MSAA_TEST: the card offers anti-aliasing up to 4x')]
+            held = [l for l in lines
+                    if l.startswith('[SNAP-CFG] anti-aliasing 8x is not offered by this card') and l.endswith(': held to 4x')]
+            lost = [l for l in lines if l.startswith('[SNAP-GPU] ') or l.startswith('[SNAP-AV]') or l.startswith('[SNAP-HANG]')]
+            c.add('msaafit', bool(faked) and bool(held) and not lost and (after == 4),
+                  (held[0].split('] ', 1)[1] if held else 'the start never held the level')
+                  + ('' if faked else '; SNAP_MSAA_TEST was not taken')
+                  + ('; written back as %s' % after)
+                  + ('; ' + lost[0] if lost else ''))
+            return
+
+        # The first color target fails at Super Sampling 1x with 8x asked.
+        mark.unlink(missing_ok=True)
+        ask_8x()
+        env1 = dict(os.environ)
+        env1.update(quiet)
+        env1['SNAP_TARGET_FAIL_TEST'] = '1'
+        p1 = subprocess.Popen([str(exe_dir / EXE)], cwd=str(exe_dir), env=env1,
+                              stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace')
+        try:
+            out1, _ = p1.communicate(timeout=60)
+            ended = p1.returncode
+        except subprocess.TimeoutExpired:
+            p1.kill()
+            out1, _ = p1.communicate()
+            ended = None
+        marked = mark.read_text(encoding='utf-8').strip() if mark.is_file() else ''
+        after, after_ds = saved()
+        said = [l for l in out1.splitlines() if l.startswith('[SNAP-GPU] The card could not make a color render target')
+                and 'Anti-Aliasing is set to 4x now.' in l]
+        c.add('msaafail', bool(said) and (ended == 3) and marked.startswith('downsample 1 msaa 8 ') and (after == 4) and (after_ds == 1),
+              ('said; ' if said else 'never said; ')
+              + ('ended by itself with %s' % ended if ended is not None else 'did NOT end by itself (killed)')
+              + '; mark "%s"' % marked + '; saved anti-aliasing %s, super sampling %s' % (after, after_ds))
+
+        # The next start, asked 8x again, holds below the mark.
+        ask_8x()
+        out2 = run_game(exe_dir, quiet, 20)
+        after, _ = saved()
+        held = [l for l in out2.splitlines()
+                if l.startswith('[SNAP-CFG] anti-aliasing 8x failed on this card before') and l.endswith(': held to 4x')]
+        lost = [l for l in out2.splitlines() if l.startswith('[SNAP-GPU] ') or l.startswith('[SNAP-AV]')]
+        c.add('msaafail-next', bool(held) and not lost and (after == 4),
+              (held[0].split('] ', 1)[1] if held else 'the next start did not hold below the mark')
+              + ('; written back as %s' % after) + ('; ' + lost[0] if lost else ''))
+    finally:
+        if kept is None:
+            p.unlink(missing_ok=True)
+        else:
+            p.write_bytes(kept)
+        if kept_mark is None:
+            mark.unlink(missing_ok=True)
+        else:
+            mark.write_bytes(kept_mark)
+
+
+def check_catch(c, exe_dir):
+    """The rest of the catch's ladder (issue #39): a failed render target
+    always lowers one setting, so a start that ends there is never the same
+    start again. With Super Sampling at 1x and anti-aliasing off,
+    SNAP_TARGET_FAIL_TEST fails the first color target three times: with
+    Color Depth High (catch-color: it must be set to Standard), with Color
+    Depth Standard on a 1280x960 window, where the target that fails is the
+    first at the window's scale (catch-scale: Render Scale must be set to
+    half the scale in force), and with Render Scale at 1x
+    (catch-floor: nothing is left, the message must say so and no setting
+    may change). Each start must end by itself (exit 3). The file and the
+    mark are put back as they were."""
+    if not ensure_replay(exe_dir, 'menu_title.inputs'):
+        c.add('catch-color', False, 'menu_title.inputs is not beside the executable')
+        return
+    p = exe_dir / 'snapsettings.json'
+    mark = exe_dir / 'snap64.gpu_failed'
+    kept = p.read_bytes() if p.is_file() else None
+    kept_mark = mark.read_bytes() if mark.is_file() else None
+    try:
+        j = json.loads(kept.decode('utf-8')) if kept else {}
+    except ValueError:
+        j = {}
+    keys = ('downsample', 'msaa', 'color_depth', 'resolution_scale')
+
+    def fail_once(color_depth, resolution_scale, least='1'):
+        """One start where a color target fails, the first one or the first at least `least` lines high:
+        (the port's line, how it ended, the four settings after)."""
+        mark.unlink(missing_ok=True)
+        j.update({'downsample': 1, 'msaa': 0, 'color_depth': color_depth, 'resolution_scale': resolution_scale,
+                  'fullscreen': False})
+        p.write_text(json.dumps(j, indent=2), encoding='utf-8')
+        env = dict(os.environ)
+        env.update({'SNAP_REPLAY': 'menu_title.inputs', 'SNAP_MUTE': '1', 'SNAP_NO_BOX': '1',
+                    'SNAP_TARGET_FAIL_TEST': least, 'SNAP_WINDOW': '1280x960'})
+        proc = subprocess.Popen([str(exe_dir / EXE)], cwd=str(exe_dir), env=env,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace')
+        try:
+            out, _ = proc.communicate(timeout=60)
+            ended = proc.returncode
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            out, _ = proc.communicate()
+            ended = None
+        said = [l for l in out.splitlines() if l.startswith('[SNAP-GPU] The card could not make a color render target')]
+        try:
+            now = json.loads(p.read_text(encoding='utf-8'))
+            after = tuple(now.get(k) for k in keys)
+        except (OSError, ValueError):
+            after = (None,) * len(keys)
+        return (said[0] if said else ''), ended, after
+
+    def how(ended):
+        return 'ended by itself with %s' % ended if ended is not None else 'did NOT end by itself (killed)'
+
+    try:
+        line, ended, after = fail_once(2, 0)
+        c.add('catch-color', ('at 16 bits a channel. Color Depth is set to Standard now.' in line) and (ended == 3)
+              and (after == (1, 0, 1, 0)),
+              ('said; ' if line else 'never said; ') + how(ended)
+              + '; saved super sampling %s, anti-aliasing %s, color depth %s, render scale %s' % after)
+
+        # The first target is made at one times the console's size, before the
+        # renderer knows the window's: the one that fails here is the first at
+        # the window's scale (480 lines or more on a 960-line window).
+        line, ended, after = fail_once(1, 0, least='480')
+        m = re.search(r'Render Scale is set to (\d+)x now\..*the scale in force was (\d+)x', line)
+        held, was = (int(m.group(1)), int(m.group(2))) if m else (None, None)
+        c.add('catch-scale', bool(m) and (was > 1) and (held == max(1, was // 2)) and (ended == 3)
+              and (after == (1, 0, 1, held)),
+              (('said: %dx in force, set to %dx; ' % (was, held)) if m
+               else ('never said; ' if not line else 'said something else ("%s"); ' % line.split('] ', 1)[-1][:150]))
+              + how(ended) + '; saved super sampling %s, anti-aliasing %s, color depth %s, render scale %s' % after)
+
+        line, ended, after = fail_once(1, 1)
+        c.add('catch-floor', ('are already at their lowest, so nothing was changed.' in line) and (ended == 3)
+              and (after == (1, 0, 1, 1)) and not mark.is_file(),
+              ('said; ' if line else 'never said; ') + how(ended)
+              + '; saved super sampling %s, anti-aliasing %s, color depth %s, render scale %s' % after
+              + ('; a mark was written' if mark.is_file() else '; no mark'))
+    finally:
+        if kept is None:
+            p.unlink(missing_ok=True)
+        else:
+            p.write_bytes(kept)
+        if kept_mark is None:
+            mark.unlink(missing_ok=True)
+        else:
+            mark.write_bytes(kept_mark)
+
+
+def check_safestart(c, exe_dir):
+    """The question after two starts that died before their first frames
+    (issue #39's round): a saved graphics setting that takes the driver down
+    at the start changes nothing by itself, so the port counts such starts
+    (snap64.starting) and, after two in a row with a setting raised, asks
+    whether to start with those settings at their defaults. Anti-aliasing is
+    set to 4x; SNAP_EARLY_DEATH_TEST ends two starts at their first display
+    list as a crash would (safestart: each ends with 9, and the mark counts
+    1, then 2); the third start, answered by SNAP_SAFE_GFX_ANSWER=defaults,
+    must say what it found, take the answer, save anti-aliasing off, and
+    clear the mark once it has drawn (safestart-ask). The file and the mark
+    are put back as they were."""
+    if not ensure_replay(exe_dir, 'menu_title.inputs'):
+        c.add('safestart', False, 'menu_title.inputs is not beside the executable')
+        return
+    p = exe_dir / 'snapsettings.json'
+    mark = exe_dir / 'snap64.starting'
+    kept = p.read_bytes() if p.is_file() else None
+    kept_mark = mark.read_bytes() if mark.is_file() else None
+    try:
+        j = json.loads(kept.decode('utf-8')) if kept else {}
+    except ValueError:
+        j = {}
+    j.update({'downsample': 1, 'msaa': 4, 'triple_buffering': False})
+    quiet = {'SNAP_REPLAY': 'menu_title.inputs', 'SNAP_MUTE': '1', 'SNAP_NO_BOX': '1'}
+
+    def die_early():
+        """One start that ends at its first display list: (how it ended, what the mark holds after)."""
+        env = dict(os.environ)
+        env.update(quiet)
+        env.update({'SNAP_EARLY_DEATH_TEST': '1', 'SNAP_SAFE_GFX_ANSWER': 'keep'})
+        proc = subprocess.Popen([str(exe_dir / EXE)], cwd=str(exe_dir), env=env,
+                                stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, encoding='utf-8', errors='replace')
+        try:
+            proc.communicate(timeout=60)
+            ended = proc.returncode
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.communicate()
+            ended = None
+        return ended, (mark.read_text(encoding='utf-8').strip() if mark.is_file() else '')
+
+    try:
+        mark.unlink(missing_ok=True)
+        p.write_text(json.dumps(j, indent=2), encoding='utf-8')
+        first = die_early()
+        second = die_early()
+        c.add('safestart', (first == (9, 'starts 1')) and (second == (9, 'starts 2')),
+              'two starts ended at their first display list: %s with the mark "%s", then %s with "%s"'
+              % (first[0], first[1], second[0], second[1]))
+
+        out = run_game(exe_dir, dict(quiet, SNAP_SAFE_GFX_ANSWER='defaults'), 20)
+        lines = out.splitlines()
+        found = [l for l in lines if l.startswith('[SNAP-CFG] start: the last 2 starts ended before their first frames')]
+        answered = [l for l in lines if l.startswith('[SNAP-CFG] start: SNAP_SAFE_GFX_ANSWER=defaults answers the question')]
+        lowered = [l for l in lines if l.startswith('[SNAP-CFG] start: Super Sampling 1x, Anti-Aliasing off')]
+        lost = [l for l in lines if l.startswith('[SNAP-GPU] ') or l.startswith('[SNAP-AV]') or l.startswith('[SNAP-HANG]')]
+        try:
+            after = json.loads(p.read_text(encoding='utf-8')).get('msaa')
+        except (OSError, ValueError):
+            after = None
+        c.add('safestart-ask', bool(found) and bool(answered) and bool(lowered) and not lost and (after == 0) and not mark.is_file(),
+              ('found the two starts; ' if found else 'did NOT find the two starts; ')
+              + ('answered; ' if answered else 'not answered; ')
+              + (lowered[0].split('] ', 1)[1] if lowered else 'nothing lowered')
+              + '; saved anti-aliasing %s' % after
+              + ('; the mark is still there' if mark.is_file() else '; the mark cleared once it drew')
+              + ('; ' + lost[0] if lost else ''))
+    finally:
+        if kept is None:
+            p.unlink(missing_ok=True)
+        else:
+            p.write_bytes(kept)
+        if kept_mark is None:
+            mark.unlink(missing_ok=True)
+        else:
+            mark.write_bytes(kept_mark)
+
+
 def check_nsopad(c, exe_dir):
     """The Switch Online N64 controller (issue #26): the virtual test pad
     dressed with its name and ids (SNAP_VPAD_NAME, SNAP_VPAD_IDS) must be told
@@ -1251,7 +1547,9 @@ def main():
               ('stats', check_stats), ('score', check_score), ('autosave', check_autosave),
               ('settings', check_settings),
               ('speed', check_speed), ('slow', check_slow), ('rompick', check_rompick),
-              ('vram', check_vram), ('gpufail', check_gpufail), ('nsopad', check_nsopad),
+              ('vram', check_vram), ('gpufail', check_gpufail), ('msaafit', check_msaafit),
+              ('msaafail', check_msaafail), ('catch', check_catch), ('safestart', check_safestart),
+              ('nsopad', check_nsopad),
               ('padpress', check_padpress),
               ('menu', check_menu), ('pages', check_pages), ('station', check_station)]
     c = Check()

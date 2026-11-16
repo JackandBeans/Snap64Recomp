@@ -266,13 +266,18 @@ def question():
         return
 
     # "Don't ask again": the app's own folder, now and at the next start,
-    # with no question and the toast again.
+    # with no question and the toast again. The log the "Not now" start left
+    # goes first, so the start waited for is this answer's own, and the app
+    # is stopped only a moment after it. (1.1.7's release run read the old
+    # log and stopped the app at once, and the question came back.)
     never = find(text_is('Don\'t ask again'), 5)
     if never is None:
         say(False, 'never', 'the question has no "Don\'t ask again" button')
         return
+    dev.sh('rm -f %s/snap64.log' % OWN)
     tap(never, 'Don\'t ask again')
     line, ls = wait_own(60)
+    time.sleep(2.0)
     dev.stop()
     dev.sh('rm -f %s/snap64.log' % OWN)
     texts = toasts_during(lambda: dev.sh('am start -n %s' % ac.LAUNCHER), 12)
@@ -290,12 +295,13 @@ def question():
     # in Snap64, with the app's own folder's files copied across (a save
     # stands in for them) and a toast saying so.
     dev.stop()
-    made = dev.sh('mkdir -p %s/saves; echo paths > %s/saves/zz_paths_copy.txt; ls -la %s/saves'
+    # The test file goes in a folder the app made itself at its first start (mods), as a player's
+    # files are all the app's own. A saves folder the shell made was the shell's, and the app's copy
+    # found nothing in it in three runs of four (Nov 12 twice, and Nov 13 on the signed 1.1.7 APK:
+    # "12 files copied", Snap64's saves made and empty). The shell writes through the shared storage's
+    # FUSE layer and the app reads its own folder from the disk below it, so it gets three seconds.
+    made = dev.sh('ls -ld %s/mods; echo paths > %s/mods/zz_paths_copy.txt; ls -la %s/mods'
                   % (OWN, OWN, OWN))
-    # The shell writes the test file through the shared storage's FUSE layer and the app reads its own
-    # folder straight from the disk below it. Started the moment after, the app twice listed its folder
-    # without the file (Nov 12: "12 files copied", the passing run "13"), so it gets three seconds to
-    # appear. A player's own files were written by the app itself, long before.
     time.sleep(3.0)
     dev.sh('rm -rf %s; mkdir -p %s' % (GAME, GAME))
     dev.sh('appops set %s MANAGE_EXTERNAL_STORAGE allow' % ac.PKG)
@@ -313,7 +319,7 @@ def question():
     copied = False
     t_copy = time.time()
     for _ in range(30):
-        listing = dev.sh('ls %s/saves 2>/dev/null' % GAME)
+        listing = dev.sh('ls %s/mods 2>/dev/null' % GAME)
         copied = 'zz_paths_copy.txt' in listing.split()
         if copied:
             break
@@ -324,12 +330,12 @@ def question():
     (OUT / 'copy-launcher.txt').write_text('\n'.join(launcher) + '\n', encoding='utf-8')
     # Both sides of the copy as the shell sees them (run-as is refused on the shared storage).
     (OUT / 'copy-listing.txt').write_text(
-        '--- the test file as the shell made it (%s/saves):\n%s\n'
+        '--- the test file as the shell made it (%s/mods):\n%s\n'
         '--- Snap64 after the copy:\n%s\n--- the app\'s own folder after the copy:\n%s\n'
         % (OWN, made, dev.sh('ls -laR %s 2>&1 | head -80' % GAME), dev.sh('ls -laR %s 2>&1 | head -80' % OWN)),
         encoding='utf-8')
     said = any('copied to Internal storage > Snap64' in t for t in texts)
-    say(public and copied and said, 'copy', '%s; the save in Snap64: %s (the shell saw it after %.0f s); '
+    say(public and copied and said, 'copy', '%s; the test file in Snap64: %s (found or given up after %.0f s); '
         'the launcher: %s; the toasts: %s'
         % (folder or 'no log in /sdcard/Snap64', copied, waited,
            ' | '.join(l.split(': ', 1)[-1] for l in launcher[-3:]) or 'no line', texts or 'none'))

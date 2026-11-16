@@ -1770,6 +1770,12 @@ int main(int argc, char* argv[]) {
     if (snap::is_steam_deck()) {
         printf("[SNAP] machine: Steam Deck%s\n", snap::in_gamescope() ? " (gaming mode)" : "");
     }
+#if defined(__ANDROID__)
+    // Why the last run ended, as Android kept it, then this run's own crash
+    // record (android.h): a phone shows a player neither.
+    snap::android_exit_report();
+    snap::android_crash_install();
+#endif
 
     snap::load_settings();
     // Before anything else opens the save or the caches: a relaunch after a
@@ -1898,6 +1904,10 @@ int main(int argc, char* argv[]) {
     // zip left in mods/, installed before the runtime opens the folder
     // (mod_installer.cpp).
     snap::mods_safe_start();
+    // After two starts in a row that ended before their first frames, with
+    // a graphics setting raised, the player may start with those settings
+    // at their defaults (settings.h, graphics_safe_start).
+    snap::graphics_safe_start();
     snap::mods_install_at_start();
     // The game functions the port intercepts, declared before the mods load
     // so a hook on one keeps the port's work in it (host_hooks.cpp).
@@ -1909,8 +1919,18 @@ int main(int argc, char* argv[]) {
         // The renderer's setup throws when the graphics device cannot be
         // created (no Direct3D 12, a driver that refuses). Say so, in a
         // dialog and in the log, instead of dying silently.
+        // The other backend is offered where there is one, and it is the one
+        // the file does not name: until 1.1.7 a start that failed on Vulkan
+        // was told to try Vulkan.
         std::string msg = std::string("The game could not start: ") + e.what() +
-            "\n\nIf this is a graphics error, update the GPU driver, or set \"graphics_api\": 1 in snapsettings.json to try Vulkan.";
+            "\n\nIf this is a graphics error, update the GPU driver";
+#if defined(_WIN32)
+        msg += (snap::settings().graphics_api == 1)
+            ? ", or set \"graphics_api\": 0 in snapsettings.json to go back to Direct3D 12."
+            : ", or set \"graphics_api\": 1 in snapsettings.json to try Vulkan.";
+#else
+        msg += ".";
+#endif
         error_message_box(msg.c_str());
         return 1;
     }

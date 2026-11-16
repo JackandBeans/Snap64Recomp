@@ -572,9 +572,107 @@ void mods_safe_start() {
     fflush(stdout);
 }
 
+// The start mark (settings.h): snap64.starting, "starts N", N the starts in
+// a row that neither reached their first frames nor ended by themselves.
+static fs::path starting_mark() {
+    return base_path("snap64.starting");
+}
+
 void session_mark_clean() {
     std::error_code ec;
     fs::remove(running_mark(), ec);
+    fs::remove(starting_mark(), ec);
+}
+
+void graphics_safe_start() {
+    const char* answer = getenv("SNAP_SAFE_GFX_ANSWER");
+    if ((answer == nullptr) && ((getenv("SNAP_REPLAY") != nullptr) || (getenv("SNAP_DROP_TEST") != nullptr))) {
+        return;
+    }
+    int died = 0;
+    {
+        std::ifstream in(starting_mark());
+        if (in.is_open()) {
+            std::string word;
+            if (!(in >> word >> died) || (died < 1)) {
+                died = 1;   // the mark is there, whatever it holds
+            }
+        }
+    }
+    if (died >= 2) {
+        int superSampling = 1;
+        int antiAliasing = 0;
+        int colorDepth = 0;
+        bool triple = false;
+        {
+            std::lock_guard<std::mutex> lock(settings_mutex());
+            superSampling = settings().downsample;
+            antiAliasing = settings().msaa;
+            colorDepth = settings().color_depth;
+            triple = settings().triple_buffering;
+        }
+        const bool raised = (superSampling > 1) || (antiAliasing >= 2) || (colorDepth == 2) || triple;
+        printf("[SNAP-CFG] start: the last %d starts ended before their first frames%s\n", died,
+               raised ? "" : "; no graphics setting is raised, so nothing is asked");
+        if (raised) {
+            const std::string text = std::string(SNAP_PORT_NAME) + " closed before it drew a picture the last " +
+                ((died == 2) ? std::string("two") : std::to_string(died)) + " times. A graphics setting may be the cause.\n\n"
+                "Put Super Sampling, Anti-Aliasing, Color Depth and Buffering back to their defaults? "
+                "Options > Graphics changes them again.";
+            // Each button is 88 pixels wide on Windows whatever its label
+            // (see the mods question above): none wider than "Keep mods on".
+            const SDL_MessageBoxButtonData buttons[] = {
+                { SDL_MESSAGEBOX_BUTTON_RETURNKEY_DEFAULT | SDL_MESSAGEBOX_BUTTON_ESCAPEKEY_DEFAULT, 0, "Keep mine" },
+                { 0, 1, "Use defaults" },
+            };
+            const SDL_MessageBoxData box = {
+                SDL_MESSAGEBOX_WARNING, nullptr, SNAP_PORT_NAME, text.c_str(),
+                SDL_arraysize(buttons), buttons, nullptr,
+            };
+            int choice = 0;
+            if (answer != nullptr) {
+                choice = (std::string(answer) == "defaults") ? 1 : 0;
+                printf("[SNAP-CFG] start: SNAP_SAFE_GFX_ANSWER=%s answers the question\n", answer);
+            } else if (SDL_ShowMessageBox(&box, &choice) != 0) {
+                printf("[SNAP-CFG] start: the question could not be shown (%s)\n", SDL_GetError());
+                choice = 0;
+            }
+            if (choice == 1) {
+                {
+                    std::lock_guard<std::mutex> lock(settings_mutex());
+                    settings().downsample = 1;
+                    settings().msaa = 0;
+                    if (settings().color_depth == 2) {
+                        settings().color_depth = 0;
+                    }
+                    settings().triple_buffering = false;
+                }
+                const bool saved = save_settings();
+                // The configuration the renderer will be given was made from
+                // the file's values at the settings' load; made again here.
+                apply_graphics_settings();
+                printf("[SNAP-CFG] start: Super Sampling 1x, Anti-Aliasing off, Color Depth %s and Buffering double, at the player's word "
+                       "(they were %dx, %dx, %s and %s)%s\n",
+                       (colorDepth == 1) ? "Standard" : "Auto", superSampling, antiAliasing,
+                       (colorDepth == 2) ? "High" : (colorDepth == 1) ? "Standard" : "Auto", triple ? "triple" : "double",
+                       saved ? "" : "; the settings file could not be written");
+            } else {
+                printf("[SNAP-CFG] start: the graphics settings kept\n");
+            }
+        }
+        died = 0;   // asked, or nothing to ask: the count begins again
+    }
+    std::ofstream mark(starting_mark(), std::ios::trunc);
+    mark << "starts " << (died + 1) << "\n";
+    fflush(stdout);
+}
+
+void graphics_start_reached() {
+    static std::atomic<bool> done{false};
+    if (!done.exchange(true)) {
+        std::error_code ec;
+        fs::remove(starting_mark(), ec);
+    }
 }
 
 // The Install row's request, from the game's thread to the window's.

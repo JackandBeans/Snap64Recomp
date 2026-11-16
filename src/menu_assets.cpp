@@ -1950,9 +1950,10 @@ static void write_setting_bytes(const Settings &s) {
     write_u8(MailboxAddr + 0x13, s.triple_buffering ? 1 : 0);
     write_u8(MailboxAddr + 0x14, s.crop_enabled ? 1 : 0);
     // Read by the intro patches themselves (patches/src/beach_intro_patch.c,
-    // river_intro_patch.c) once, as a course intro starts -- this byte
-    // reaches the game whether or not the page is ever opened, on every
-    // overlay load's re-seed.
+    // river_intro_patch.c) once, as a course intro starts, and by the title
+    // patch (title_exit_patch.c) as each of the title's movers starts --
+    // this byte reaches the game whether or not the page is ever opened, on
+    // every overlay load's re-seed.
     write_u8(MailboxAddr + 0x15, s.intro_fix ? 1 : 0);
     // Fields 14 and 15 fill the bank: +0x18 is the patch's own pointer
     // word (the byte map at SNAP_GFX_MAILBOX in the patch).
@@ -2622,8 +2623,8 @@ void stage_menu_strings(uint8_t* rdram) {
             h = strip.height;
         }
         else if (id == BaseCount + 55) {
-            strip = compose_lines("Skips the clipped frame the console drew",
-                                  "as a course intro hands off the camera.");
+            strip = compose_lines("Skips the clipped frame of two intros.",
+                                  "Todd and Pikachu go fully off the title.");
             w = strip.width;
             h = strip.height;
         }
@@ -5976,8 +5977,10 @@ void poll_menu_mailbox(uint8_t* rdram) {
         std::lock_guard<std::mutex> lock(settings_mutex());
         Settings &s = settings();
         s.resolution_scale = std::min<int>(read_u8_mail(MailboxAddr + 0x8), 8);
+        // Held to a level the card can make (fit_msaa, issue #39); the row
+        // shows the held level when the page is next opened.
         const uint8_t msaaIndex = read_u8_mail(MailboxAddr + 0x9);
-        s.msaa = (msaaIndex >= 3) ? 8 : (msaaIndex == 2) ? 4 : (msaaIndex == 1) ? 2 : 0;
+        s.msaa = fit_msaa((msaaIndex >= 3) ? 8 : (msaaIndex == 2) ? 4 : (msaaIndex == 1) ? 2 : 0);
         s.widescreen = read_u8_mail(MailboxAddr + 0xA) != 0;
         {
             // Original, Display, or one of the held rates: the Manual

@@ -3,20 +3,22 @@
 Snap64 Recomp runs on Android as a beta. The app is the same port as on a
 PC: the game's own code, recompiled, drawn by RT64 through Vulkan, with the
 same Options pages and the same mods. It has run on one phone, a Samsung
-Galaxy S25 Ultra with a Snapdragon chip, and on Google's Android emulator.
-It has not been played with a real pad yet. Everything below says what was
-run and where; anything not listed is untried.
+Galaxy S25 Ultra with a Snapdragon chip, on two players' handhelds, and on
+Google's Android emulator. It has not been played with a real pad yet.
+Everything below says what was run and where; anything not listed is
+untried.
 
 ## What you need
 
 * Android 10 or newer, on a 64-bit phone or handheld (arm64). A 32-bit
   phone cannot run it.
-* A GPU with a Vulkan 1.2 driver. On a real device only Qualcomm's Adreno
-  830 (the Snapdragon 8 Elite) has run the app. Other Adreno chips, Mali
-  (most Samsung Exynos phones and Google's Pixels) and PowerVR are
-  untried, and so is how fast the game runs on any other phone. A device
-  whose driver offers less than Vulkan 1.2 is told so at start, in a
-  dialog naming its GPU.
+* A GPU with a Vulkan 1.2 driver. On real devices two of Qualcomm's chips
+  have run the app: the Adreno 830 (the Snapdragon 8 Elite) and the Adreno
+  740 (an AYN Thor, on a test build of the fixes in 1.1.8). Other Adreno
+  chips, Mali (most Samsung Exynos phones and Google's Pixels) and PowerVR
+  are untried, and so is how fast the game runs on any other phone. A
+  device whose driver offers less than Vulkan 1.2 is told so at start, in
+  a dialog naming its GPU.
 * Your own ROM of the US cartridge, as on a PC. The port checks it and
   refuses a wrong one.
 
@@ -220,6 +222,12 @@ left shoulder button (L1) on its own, and the inverted aim he had asked for
 was there. He had not tried widescreen or the other settings yet. He also
 found the lost first-start question (CHANGELOG, 1.1.7).
 
+On another handheld, by a player: Shiniphil's AYN Thor (Adreno 740) closed
+1.1.6 and 1.1.7 as the game began to draw (issue 36). The logs sent from
+it named two faults, one after the other. On the test build with both
+fixed, on Nov 14 2026, the game ran and the first course was played. Both
+fixes are in 1.1.8 (CHANGELOG, 1.1.8).
+
 [BUILDING.md, step 16](../BUILDING.md#16-android-cross-build-experimental)
 has every run with its numbers.
 
@@ -228,7 +236,10 @@ Not tried yet:
 * a Bluetooth or USB pad;
 * the touch controls on a real screen, by a hand, and their feel;
 * Gyro Aim with a phone's own gyroscope, in a hand;
-* any GPU but the Adreno 830;
+* any GPU but the Adreno 830 and the Adreno 740;
+* 1.1.8's answer to a graphics setting a phone cannot carry, on a real
+  phone: 1.1.7 showed the fault on a player's phone with an Exynos 2400
+  (issue 39), and the fix has run on the emulator only;
 * Android 10 to 14.
 
 ## Known limits
@@ -253,3 +264,8 @@ phone's browser and pick the file from that folder, or copy it to a PC
 over USB and drag it into the issue. Each start keeps the previous run's
 log as `snap64.prev.log`: if the problem was in the run before, attach
 that one too.
+
+From 1.1.8 a crash writes itself into the log as the app closes
+(`[SNAP-CRASH]` lines), and on Android 11 or newer the next start's log
+opens with Android's own record of how the app last ended (`[SNAP-EXIT]`
+lines). After a crash, attach the log of the next start as well.

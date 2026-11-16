@@ -1162,12 +1162,27 @@ on the day named.
   on the emulator before Oak's check (12 of its 20 photos in this run), so
   `SNAP_AUTOSAVE_TEST` makes the change the lab finds.
 
+* Google's emulator, 2026-11-13 to 2026-11-15, the 1.1.8 tree (test
+  builds of both ABIs). With the two fixes for the AYN Thor (issue 36):
+  `tools/android_check.py`, every stage, 114 of 114 in 1351 seconds, and
+  `tools/android/pool_check.py`, 23 of 23. On a signed test build with the
+  crash record: `tools/android/crash_check.py`, 42 of 42. With the fix for
+  issue 39: `tools/android/catch_check.py`, 16 of 16, and that build,
+  signed, installed over a released 1.1.7 that had been stuck the
+  reporter's way: the next start lowered Anti-Aliasing by itself and
+  reached the title, with the save untouched.
+
+* An AYN Thor (Adreno 740), by its owner, 2026-11-14, a signed test build
+  with both fixes for issue 36: the game ran and the first course was
+  played.
+
 Not run anywhere yet: a real pad, wired or Bluetooth; the Button Setup
 page's capture of a press on Android (its code is shared with the PC);
 the sound, heard by a person;
 the touch controls on a real screen; the touch controls and the lifecycle
-work on a real device; any GPU but the Adreno 830 on a real device (Mali,
-PowerVR and older Adreno chips are untried); Android 10 to 14 (the app's
+work on a real device; any GPU but the Adreno 830 and, by a player, the
+Adreno 740 on a real device (Mali, PowerVR and the other Adreno chips are
+untried); Android 10 to 14 (the app's
 floor is Android 10, and both the emulator and the phone ran Android 15).
 
 ## What a clean checkout is missing
