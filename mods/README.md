@@ -9,7 +9,7 @@ ones and is the way to turn one off (`mod_config/` holds each mod's own
 settings file). A mod must target the game id `pokemonsnap`. Writing one
 starts from the template and the symbol files named in `docs/MODS.md`.
 
-A mod downloaded as a zip (Thunderstore's Manual Download) can go here as it
+A mod downloaded as a zip (Thunderstore's Download) can go here as it
 is: at the next start the port takes the `.nrm` out of it and renames the
 zip `.zip.installed`. Or drop the `.nrm` or the zip on the game window; a box
 says what was installed, and it loads at the next start.

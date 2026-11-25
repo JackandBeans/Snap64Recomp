@@ -5,6 +5,7 @@
 <a href="https://github.com/JackandBeans/Snap64Recomp/releases/latest"><img src="https://img.shields.io/github/v/release/JackandBeans/Snap64Recomp?label=release" alt="Latest release"></a>
 <a href="https://github.com/JackandBeans/Snap64Recomp/releases"><img src="https://img.shields.io/github/downloads/JackandBeans/Snap64Recomp/total?label=downloads" alt="Downloads"></a>
 <a href="https://github.com/JackandBeans/Snap64Recomp/actions/workflows/build.yml"><img src="https://github.com/JackandBeans/Snap64Recomp/actions/workflows/build.yml/badge.svg?branch=main" alt="Build"></a>
+<a href="https://thunderstore.io/c/pokemon-snap-recompiled/"><img src="https://img.shields.io/badge/mods-Thunderstore-blue" alt="Mods: on Thunderstore"></a>
 <img src="https://img.shields.io/badge/platform-Windows%2010%2F11%20x64%20%7C%20Linux%20x86__64%20%2B%20ARM64%20%7C%20Steam%20Deck%20%7C%20macOS%2014%2B%20%7C%20Android%2010%2B%20%28beta%29-lightgrey" alt="Platform: Windows 10 or 11 x64, Linux x86_64 and ARM64, Steam Deck, macOS 14 or newer, Android 10 or newer (beta)">
 </p>
 
@@ -210,8 +211,10 @@ every one in full.
   [mod template](https://github.com/JackandBeans/Snap64RecompModTemplate)
   and the game's [symbol files](https://github.com/JackandBeans/Snap64RecompSyms)
   let anyone write a mod ([MODS.md](docs/MODS.md)). No mods or packs ship
-  with the port; three mods are published in the
-  [mods repository](https://github.com/JackandBeans/Snap64RecompMods).
+  with the port. Mods are listed on
+  [Thunderstore](https://thunderstore.io/c/pokemon-snap-recompiled/), and
+  the project's own three are published in the
+  [mods repository](https://github.com/JackandBeans/Snap64RecompMods) too.
 
 <a id="the-rule-the-port-follows"></a>
 ## Faithful by default
@@ -375,8 +378,10 @@ checksum. The port opens no network connection at all.
 ### Can I use mods or HD texture packs?
 
 Yes. Mods go in `mods/` and texture packs in `texture_packs/`, and Options >
-Mods turns mods on and off. [MODS.md](docs/MODS.md) says how to install
-them, and how to write one.
+Mods turns mods on and off. Mods are listed on
+[Thunderstore](https://thunderstore.io/c/pokemon-snap-recompiled/). The port
+itself is not released there, only on this repository's Releases page.
+[MODS.md](docs/MODS.md) says how to install them, and how to write one.
 
 <a id="known-limitations"></a>
 ## Known issues

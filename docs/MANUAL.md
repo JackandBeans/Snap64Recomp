@@ -744,9 +744,11 @@ loads them in alphabetical order with later packs winning, and does it once
 at start-up, so the folder's contents are the switch. `README` files in both
 folders say the same.
 
-Nothing is bundled and nothing is curated. No texture pack exists for this
-game in RT64's format today, and no mod community exists for it, so the
-port links the format's specification rather than a list: RT64's
+Nothing is bundled and nothing is curated. Mods are listed on
+[Thunderstore](https://thunderstore.io/c/pokemon-snap-recompiled/), on the
+port's page there; [MODS.md](MODS.md) says how to install one. No texture
+pack exists for this game in RT64's format today, so for packs the port
+links the format's specification rather than a list: RT64's
 `TEXTURE-PACKS.md`, and the `texture_hasher` and `texture_packer` tools in
 `lib/rt64/src/tools/`. Making a pack needs RT64's developer mode to dump
 the textures a pack is keyed on; `SNAP_DEV=1` in the environment turns it

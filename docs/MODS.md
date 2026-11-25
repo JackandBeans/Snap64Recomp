@@ -17,14 +17,21 @@ anywhere, and prefer ones whose source is published.
 
 ## Installing a mod
 
-Three mods are published in the
-[mods repository](https://github.com/JackandBeans/Snap64RecompMods):
-Unlimited Film, Unlock Everything and Island Skies. Each release there
-carries the `.nrm` and the Thunderstore zip.
+Mods for the port are listed on Thunderstore, where the other
+recompilations list theirs. The port's page there is
+[Pokémon Snap: Recompiled](https://thunderstore.io/c/pokemon-snap-recompiled/),
+and anyone can upload a mod to it. Three of the mods there are this
+project's own, Unlimited Film, Unlock Everything and Island Skies, and they
+are published in the
+[mods repository](https://github.com/JackandBeans/Snap64RecompMods) as
+well, where each release carries the `.nrm` and the Thunderstore zip. The
+port itself is not released on Thunderstore, only on this repository's
+[Releases](https://github.com/JackandBeans/Snap64Recomp/releases) page.
 
 Drop the mod on the game window: the `.nrm` itself, or the `.zip` it came
-in. A zip is how Thunderstore packages a mod; take Thunderstore's Manual
-Download, as for the other recompilations, since no mod manager is needed.
+in. A zip is how Thunderstore packages a mod; take the Download on the
+mod's page there (Manual Download on Thunderstore's legacy site), as for
+the other recompilations, since no mod manager is needed.
 The port takes every mod and texture pack out of the zip, wherever in it
 they sit, checks that each is a mod for this game that this release can
 run, and puts it in `mods/` (a texture pack in `texture_packs/`). A box
@@ -118,7 +125,8 @@ the port's own patches replace, and on one that waits a frame (the game
 stopped when that process ended). A mod with such a hook should ask for
 1.1.0 in `minimum_recomp_version`. The template also packs a mod for
 Thunderstore: `tools/pack_thunderstore.py` makes the zip from `mod.toml`
-and the page, changelog and icon in its `thunderstore/` folder.
+and the page, changelog and icon in its `thunderstore/` folder, and its
+README says where to upload it.
 
 A hook on a function the port itself intercepts -- `fx_draw`, `omGetMtx`,
 `fx_createParticle`, `renPrepareCameraMatrix` and the rest of the list in
@@ -146,8 +154,6 @@ interpolating form.
   (the hashmaps, hashsets and slotmaps a mod keeps between calls), the port
   does provide, with the same names and meanings (`src/mod_data_api.cpp`);
   the template carries the header.
-* A place to find mods. The other recompilations use Thunderstore; when
-  there is something to list, this port will ask for a community there.
 
 ## Texture packs
 
